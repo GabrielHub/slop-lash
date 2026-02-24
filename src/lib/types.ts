@@ -5,7 +5,7 @@ export type GameStatus =
   | "ROUND_RESULTS"
   | "FINAL_RESULTS";
 
-export type PlayerType = "HUMAN" | "AI";
+export type PlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
 export type TtsMode = "OFF" | "AI_VOICE" | "BROWSER_VOICE";
 
@@ -16,6 +16,7 @@ export interface GamePlayer {
   name: string;
   type: PlayerType;
   modelId: string | null;
+  idleRounds: number;
   score: number;
   humorRating: number;
   winStreak: number;

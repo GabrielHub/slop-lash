@@ -89,11 +89,13 @@ export function Voting({
   playerId,
   code,
   isHost,
+  isSpectator = false,
 }: {
   game: GameState;
   playerId: string | null;
   code: string;
   isHost: boolean;
+  isSpectator?: boolean;
 }) {
   const [voted, setVoted] = useState<Set<string>>(new Set());
   const [voting, setVoting] = useState(false);
@@ -198,8 +200,8 @@ export function Voting({
   const player = game.players.find((p) => p.id === playerId);
   const isAI = player?.type === "AI";
 
-  // Spectator / AI view — gets the full host display
-  if (isAI || !playerId) {
+  // AI / unidentified view — gets the full host display (spectators get interactive voting below)
+  if ((isAI || !playerId) && !isSpectator) {
     return (
       <HostDisplay
         game={game}
@@ -423,6 +425,7 @@ function HostDisplay({
 
 /** Host display during voting — shows the two answers without vote buttons. */
 function HostVotingView({ prompt }: { prompt: GamePrompt }) {
+  if (prompt.responses.length < 2) return null;
   const [respA, respB] = prompt.responses;
 
   return (
@@ -579,6 +582,20 @@ function PassiveView({
   );
 }
 
+/** Animated wrapper for outcome stamps (SLOPPED, FLAWLESS, etc.). */
+function StampWrapper({ delay, children }: { delay: number; children: React.ReactNode }) {
+  return (
+    <motion.div
+      className="flex justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 /** SVG crown icon for winner badges. */
 function CrownIcon({ className }: { className?: string }) {
   return (
@@ -696,7 +713,11 @@ function RevealResponseCard({
       {/* Vote fill bar */}
       <motion.div
         className={`absolute inset-0 ${
-          isWinner ? "bg-teal/8" : isLoser && aiBeatsHuman ? "bg-punch/5" : "bg-ink/[0.02]"
+          isWinner
+            ? "bg-teal/8"
+            : isLoser && aiBeatsHuman
+              ? "bg-punch/5"
+              : "bg-ink/[0.02]"
         }`}
         initial={{ width: "0%" }}
         animate={{ width: `${pct}%` }}
@@ -764,7 +785,11 @@ function RevealResponseCard({
             transition={{ ...springBouncy, delay: 0.4 }}
           >
             <span className={`${pctSize} font-mono font-black tabular-nums ${
-              isWinner ? "text-teal" : isTie ? "text-gold" : "text-ink-dim/40"
+              isWinner
+                ? "text-teal"
+                : isTie
+                  ? "text-gold"
+                  : "text-ink-dim/40"
             }`}>
               {pct}
               <span className={isHostDisplay ? "text-lg sm:text-2xl" : "text-sm"}>%</span>
@@ -789,13 +814,14 @@ function RevealView({
   players: GamePlayer[];
   isHostDisplay?: boolean;
 }) {
-  const [respA, respB] = prompt.responses;
+  const respA = prompt.responses[0];
+  const respB = prompt.responses[1];
 
-  const actualVotes = filterCastVotes(prompt.votes);
+  const actualVotes = respA && respB ? filterCastVotes(prompt.votes) : [];
   const totalVotes = actualVotes.length;
 
-  const votesA = actualVotes.filter((v) => v.responseId === respA.id);
-  const votesB = actualVotes.filter((v) => v.responseId === respB.id);
+  const votesA = respA && respB ? actualVotes.filter((v) => v.responseId === respA.id) : [];
+  const votesB = respA && respB ? actualVotes.filter((v) => v.responseId === respB.id) : [];
 
   const pctA = totalVotes > 0 ? Math.round((votesA.length / totalVotes) * 100) : 0;
   const pctB = totalVotes > 0 ? Math.round((votesB.length / totalVotes) * 100) : 0;
@@ -809,7 +835,7 @@ function RevealView({
   const hasWinner = winnerIsA || winnerIsB;
   const winnerResp = winnerIsA ? respA : respB;
   const loserResp = winnerIsA ? respB : respA;
-  const aiBeatsHuman = hasWinner && winnerResp.player.type === "AI" && loserResp.player.type === "HUMAN";
+  const aiBeatsHuman = hasWinner && winnerResp?.player.type === "AI" && loserResp?.player.type === "HUMAN";
   const isSlopped = isUnanimous && aiBeatsHuman;
 
   // Fire confetti for unanimous votes
@@ -864,6 +890,8 @@ function RevealView({
       }, 800);
     }
   }, [isUnanimous, isSlopped]);
+
+  if (!respA || !respB) return null;
 
   const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
 
@@ -925,14 +953,9 @@ function RevealView({
         />
       </div>
 
-      {/* SLOPPED! stamp — dramatic slam-down effect */}
+      {/* SLOPPED! stamp -- dramatic slam-down effect */}
       {isSlopped && (
-        <motion.div
-          className="flex justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-        >
+        <StampWrapper delay={0.6}>
           <div
             className={`animate-stamp-slam inline-flex flex-col items-center gap-1 px-8 py-3 rounded-xl border-3 border-punch bg-punch/15 backdrop-blur-sm ${
               isHostDisplay ? "px-12 py-5" : ""
@@ -953,17 +976,12 @@ function RevealView({
               Obliterated by the machine
             </span>
           </div>
-        </motion.div>
+        </StampWrapper>
       )}
 
-      {/* FLAWLESS! — unanimous non-AI win */}
+      {/* FLAWLESS! -- unanimous non-AI win */}
       {isUnanimous && !isSlopped && (
-        <motion.div
-          className="flex justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-        >
+        <StampWrapper delay={0.6}>
           <div
             className={`animate-stamp-slam inline-flex flex-col items-center gap-1 px-8 py-3 rounded-xl border-3 border-teal bg-teal/15 backdrop-blur-sm ${
               isHostDisplay ? "px-12 py-5" : ""
@@ -979,17 +997,12 @@ function RevealView({
               FLAWLESS!
             </span>
           </div>
-        </motion.div>
+        </StampWrapper>
       )}
 
-      {/* Lost to the slop — non-unanimous AI win */}
+      {/* Lost to the slop -- non-unanimous AI win */}
       {aiBeatsHuman && !isUnanimous && (
-        <motion.div
-          className="flex justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.9 }}
-        >
+        <StampWrapper delay={0.9}>
           <div
             className={`animate-slop-drip inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border-2 border-punch/30 bg-gradient-to-b from-punch/10 to-punch/5 ${
               isHostDisplay ? "px-8 py-4" : ""
@@ -1006,7 +1019,7 @@ function RevealView({
             </span>
             <SlopIcon className={`text-punch/60 ${isHostDisplay ? "w-6 h-6" : "w-4 h-4"}`} />
           </div>
-        </motion.div>
+        </StampWrapper>
       )}
 
       {/* Tie indicator */}

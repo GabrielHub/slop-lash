@@ -11,7 +11,7 @@ export interface BestPrompt {
   promptText: string;
   responseText: string;
   playerName: string;
-  playerType: "HUMAN" | "AI";
+  playerType: "HUMAN" | "AI" | "SPECTATOR";
   playerModelId: string | null;
   votePct: number;
   roundNumber: number;

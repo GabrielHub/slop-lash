@@ -12,14 +12,14 @@ import {
   fadeInUp,
   buttonTapPrimary,
 } from "@/lib/animations";
-import { MIN_PLAYERS, MAX_PLAYERS } from "@/lib/game-constants";
+import { MIN_PLAYERS, MAX_PLAYERS, MAX_SPECTATORS } from "@/lib/game-constants";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
-function getStartButtonText(starting: boolean, playerCount: number): string {
+function getStartButtonText(starting: boolean, activePlayerCount: number): string {
   if (starting) return "Starting...";
-  if (playerCount < MIN_PLAYERS) {
-    const needed = MIN_PLAYERS - playerCount;
+  if (activePlayerCount < MIN_PLAYERS) {
+    const needed = MIN_PLAYERS - activePlayerCount;
     return `Need ${needed} more player${needed === 1 ? "" : "s"}`;
   }
   return "Start Game";
@@ -40,6 +40,27 @@ export function Lobby({
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const { triggerElement } = usePixelDissolve();
+  const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
+  const spectators = game.players.filter((p) => p.type === "SPECTATOR");
+
+  const handleKick = useCallback(
+    async (targetPlayerId: string) => {
+      const playerId = localStorage.getItem("playerId");
+      if (!playerId) return;
+      const target = game.players.find((p) => p.id === targetPlayerId);
+      if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
+      try {
+        await fetch(`/api/games/${code}/kick`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerId, targetPlayerId }),
+        });
+      } catch {
+        // ignore
+      }
+    },
+    [code, game.players],
+  );
 
   const copyCode = useCallback(() => {
     preloadSounds();
@@ -139,10 +160,19 @@ export function Lobby({
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-sm font-medium text-ink-dim">Players</h2>
             <span className="text-xs font-mono text-ink-dim/60">
-              {game.players.length}/{MAX_PLAYERS}
+              {activePlayers.length}/{MAX_PLAYERS}
+              {spectators.length > 0 && (
+                <span className="ml-2">
+                  Spectators {spectators.length}/{MAX_SPECTATORS}
+                </span>
+              )}
             </span>
           </div>
-          <PlayerList players={game.players} />
+          <PlayerList
+            players={game.players}
+            onKick={isHost ? handleKick : undefined}
+            hostPlayerId={game.hostPlayerId ?? undefined}
+          />
         </div>
 
         <ErrorBanner error={error} />
@@ -154,9 +184,9 @@ export function Lobby({
               triggerElement(e.currentTarget);
               startGame();
             }}
-            disabled={starting || game.players.length < MIN_PLAYERS}
+            disabled={starting || activePlayers.length < MIN_PLAYERS}
             className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${
-              game.players.length < MIN_PLAYERS
+              activePlayers.length < MIN_PLAYERS
                 ? "bg-raised/80 backdrop-blur-sm text-ink-dim border-2 border-edge"
                 : "bg-teal/90 backdrop-blur-sm hover:bg-teal-hover text-white disabled:opacity-50"
             }`}
@@ -165,7 +195,7 @@ export function Lobby({
             animate="visible"
             {...buttonTapPrimary}
           >
-            {getStartButtonText(starting, game.players.length)}
+            {getStartButtonText(starting, activePlayers.length)}
           </motion.button>
         ) : (
           <div className="text-center py-4">

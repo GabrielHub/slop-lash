@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { Lobby } from "@/app/game/[code]/lobby";
@@ -25,6 +25,7 @@ const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
 const POLL_SLOW_MS = 2000;
+const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
 
 function useGamePoller(code: string, playerId: string | null) {
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -74,8 +75,8 @@ function useGamePoller(code: string, playerId: string | null) {
           // Silently retry on network errors
         }
         // Poll faster during active input phases for snappier feel
-        const isActivePhase = statusRef.current === "WRITING" || statusRef.current === "VOTING";
-        await new Promise((resolve) => setTimeout(resolve, isActivePhase ? POLL_FAST_MS : POLL_SLOW_MS));
+        const delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -92,10 +93,43 @@ function useGamePoller(code: string, playerId: string | null) {
 
 export function GameShell({ code }: { code: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
   const { gameState, error, refresh } = useGamePoller(code, playerId);
   const [endingGame, setEndingGame] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const rejoinAttempted = useRef(false);
   const soundsMuted = useSyncExternalStore(subscribeMute, isMuted, () => false);
+
+  // Session recovery: detect disconnected player and attempt rejoin
+  useEffect(() => {
+    if (!gameState || rejoinAttempted.current) return;
+    // Only attempt if we have a playerId but it's not in the player list
+    const inGame = gameState.players.some((p) => p.id === playerId);
+    if (inGame || !playerId) return;
+
+    rejoinAttempted.current = true;
+    const token = searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
+    if (!token) return;
+
+    setReconnecting(true);
+    fetch(`/api/games/${code}/rejoin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          localStorage.setItem("playerId", data.playerId);
+          localStorage.setItem("playerName", data.playerName);
+          localStorage.setItem("rejoinToken", token);
+          refresh();
+        }
+      })
+      .catch(() => {})
+      .finally(() => setReconnecting(false));
+  }, [gameState, playerId, code, searchParams, refresh]);
 
   // Preload sounds on first user interaction
   useEffect(() => {
@@ -153,6 +187,9 @@ export function GameShell({ code }: { code: string }) {
         if (res.ok) {
           const data = await res.json();
           localStorage.setItem("playerId", data.playerId);
+          if (data.rejoinToken) {
+            localStorage.setItem("rejoinToken", data.rejoinToken);
+          }
           router.push(`/game/${nextGameCode}`);
         } else {
           // Name conflict or game full - redirect to join page
@@ -179,6 +216,22 @@ export function GameShell({ code }: { code: string }) {
       return () => clearTimeout(timer);
     }
   }, [gameState?.status, gameState?.nextGameCode, gameState?.hostPlayerId, playerId, handlePlayAgainRedirect]);
+
+  if (reconnecting) {
+    return (
+      <main className="min-h-svh flex items-center justify-center px-6">
+        <motion.div
+          className="text-center"
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+        >
+          <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
+          <p className="text-ink-dim text-sm">Reconnecting...</p>
+        </motion.div>
+      </main>
+    );
+  }
 
   if (error) {
     return (
@@ -260,6 +313,8 @@ export function GameShell({ code }: { code: string }) {
   }
 
   const isHost = playerId === gameState.hostPlayerId;
+  const currentPlayer = gameState.players.find((p) => p.id === playerId);
+  const isSpectator = currentPlayer?.type === "SPECTATOR";
 
   const canEndGame =
     isHost &&
@@ -351,10 +406,10 @@ export function GameShell({ code }: { code: string }) {
             />
           )}
           {gameState.status === "WRITING" && (
-            <Writing game={gameState} playerId={playerId} code={code} isHost={isHost} />
+            <Writing game={gameState} playerId={playerId} code={code} isHost={isHost} isSpectator={isSpectator} />
           )}
           {gameState.status === "VOTING" && (
-            <Voting game={gameState} playerId={playerId} code={code} isHost={isHost} />
+            <Voting game={gameState} playerId={playerId} code={code} isHost={isHost} isSpectator={isSpectator} />
           )}
           {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
             <Results

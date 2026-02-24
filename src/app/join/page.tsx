@@ -13,6 +13,7 @@ export default function JoinPage() {
   const { triggerElement } = usePixelDissolve();
   const [roomCode, setRoomCode] = useState("");
   const [name, setName] = useState("");
+  const [spectator, setSpectator] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,7 +35,7 @@ export default function JoinPage() {
       const res = await fetch(`/api/games/${code}/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name: name.trim(), spectator }),
       });
 
       const data = await res.json();
@@ -45,6 +46,12 @@ export default function JoinPage() {
 
       localStorage.setItem("playerId", data.playerId);
       localStorage.setItem("playerName", name.trim());
+      if (data.rejoinToken) {
+        localStorage.setItem("rejoinToken", data.rejoinToken);
+      }
+      if (data.playerType) {
+        localStorage.setItem("playerType", data.playerType);
+      }
       router.push(`/game/${code}`);
     } catch {
       setError("Something went wrong");
@@ -128,6 +135,29 @@ export default function JoinPage() {
             />
           </div>
 
+          {/* Spectator Toggle */}
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => setSpectator((v) => !v)}
+              className="w-full p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+            >
+              <div
+                className={`relative w-10 h-6 rounded-full transition-colors ${spectator ? "bg-punch" : "bg-edge-strong"}`}
+              >
+                <div
+                  className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${spectator ? "translate-x-[18px]" : "translate-x-0.5"}`}
+                />
+              </div>
+              <div>
+                <span className="font-semibold text-sm">Watch as Spectator</span>
+                <p className="text-xs text-ink-dim/60">
+                  Vote on answers but don&apos;t write — join mid-game too
+                </p>
+              </div>
+            </button>
+          </div>
+
           <ErrorBanner error={error} />
 
           {/* Submit */}
@@ -138,7 +168,11 @@ export default function JoinPage() {
             onClick={(e) => triggerElement(e.currentTarget)}
             {...buttonTapPrimary}
           >
-            {loading ? "Joining..." : "Join Game"}
+            {loading
+              ? "Joining..."
+              : spectator
+                ? "Watch Game"
+                : "Join Game"}
           </motion.button>
         </form>
       </motion.div>

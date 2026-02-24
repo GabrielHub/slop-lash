@@ -45,23 +45,24 @@ export interface PromptOutcome {
 export function analyzePromptOutcome(
   prompt: GameState["rounds"][0]["prompts"][0],
 ): PromptOutcome {
-  const actualVotes = filterCastVotes(prompt.votes);
-  const totalVotes = actualVotes.length;
+  const castVotes = filterCastVotes(prompt.votes);
+  const totalVotes = castVotes.length;
+  if (totalVotes === 0) return { totalVotes: 0, isUnanimous: false, aiBeatsHuman: false };
 
-  const voteCounts = prompt.responses.map((r) => ({
-    resp: r,
-    count: actualVotes.filter((v) => v.responseId === r.id).length,
-  }));
-  const ranked = [...voteCounts].sort((a, b) => b.count - a.count);
-  const top = ranked[0];
-  const bottom = ranked[1];
+  const voteCounts = prompt.responses
+    .map((r) => ({
+      resp: r,
+      count: castVotes.filter((v) => v.responseId === r.id).length,
+    }))
+    .sort((a, b) => b.count - a.count);
 
-  const isUnanimous = totalVotes > 0 && !!top && top.count === totalVotes;
-  const hasWinner =
-    totalVotes > 0 && !!top && top.count > (bottom?.count ?? 0);
+  const top = voteCounts[0];
+  const bottom = voteCounts[1];
+  const isUnanimous = top.count === totalVotes;
+  const hasWinner = top.count > (bottom?.count ?? 0);
   const aiBeatsHuman =
     hasWinner &&
-    top!.resp.player.type === "AI" &&
+    top.resp.player.type === "AI" &&
     bottom?.resp.player.type === "HUMAN";
 
   return { totalVotes, isUnanimous, aiBeatsHuman };
@@ -186,7 +187,23 @@ export function Results({
       }, 1200);
     }
   }, [currentRound, isFinal]);
+
   const sortedPlayers = [...game.players].sort((a, b) => b.score - a.score);
+  const afkPlayers = game.players.filter((p) => p.type === "HUMAN" && p.idleRounds >= 2);
+
+  async function handleKick(targetPlayerId: string) {
+    const target = game.players.find((p) => p.id === targetPlayerId);
+    if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
+    try {
+      await fetch(`/api/games/${code}/kick`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId, targetPlayerId }),
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   const bestPrompts = isFinal ? extractBestPrompts(game) : [];
   const achievements = isFinal ? computeAchievements(game) : [];
@@ -440,6 +457,26 @@ export function Results({
               </h2>
               <PlayerList players={sortedPlayers} showScores />
             </div>
+
+            {/* AFK Warning */}
+            {isHost && !isFinal && afkPlayers.length > 0 && (
+              <div className="mb-4 p-3 rounded-xl border-2 border-fail/30 bg-fail-soft/50">
+                <p className="text-xs font-medium text-fail mb-2">AFK Players:</p>
+                {afkPlayers.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between py-1">
+                    <span className="text-sm text-ink">
+                      {p.name} <span className="text-ink-dim text-xs">({p.idleRounds} rounds)</span>
+                    </span>
+                    <button
+                      onClick={() => handleKick(p.id)}
+                      className="text-xs font-medium text-fail hover:text-fail/80 transition-colors cursor-pointer px-2 py-0.5 rounded border border-fail/30"
+                    >
+                      Kick
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <ErrorBanner error={error} />
 

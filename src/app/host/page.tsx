@@ -107,6 +107,9 @@ export default function HostPage() {
 
       localStorage.setItem("playerId", data.hostPlayerId);
       localStorage.setItem("playerName", hostName.trim());
+      if (data.rejoinToken) {
+        localStorage.setItem("rejoinToken", data.rejoinToken);
+      }
       router.push(`/game/${data.roomCode}`);
     } catch {
       setError("Something went wrong");

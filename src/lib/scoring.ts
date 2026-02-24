@@ -10,6 +10,7 @@ import type { PlayerType } from "./types";
 const BASE_COEFF = 50;
 const HUMAN_VOTE_MULT = 1.5;
 const AI_VOTE_MULT = 1.0;
+const SPECTATOR_VOTE_MULT = 0.5;
 const HR_WIN_DELTA = 0.2;
 const HR_LOSE_DELTA = -0.1;
 const HR_FLOOR = 0.5;
@@ -30,6 +31,14 @@ export function streakMultiplier(streak: number): number {
   if (streak === 2) return 1.3;
   if (streak === 3) return 1.7;
   return 2.0;
+}
+
+function voteMultiplier(type: PlayerType): number {
+  switch (type) {
+    case "HUMAN": return HUMAN_VOTE_MULT;
+    case "SPECTATOR": return SPECTATOR_VOTE_MULT;
+    case "AI": return AI_VOTE_MULT;
+  }
 }
 
 // --------------- Types ---------------
@@ -123,7 +132,7 @@ export function scorePrompt(
 
   for (const voter of castVoters) {
     const voterHR = playerStates.get(voter.id)?.humorRating ?? 1.0;
-    const mult = voter.type === "HUMAN" ? HUMAN_VOTE_MULT : AI_VOTE_MULT;
+    const mult = voteMultiplier(voter.type);
     const power = voterHR * mult;
     const current = votePowerByResponse.get(voter.responseId!) ?? 0;
     votePowerByResponse.set(voter.responseId!, current + power);

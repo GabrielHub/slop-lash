@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 import { MAX_PLAYERS } from "@/lib/game-logic";
+import { MAX_SPECTATORS } from "@/lib/game-constants";
 import { sanitize } from "@/lib/sanitize";
 
 export async function POST(
@@ -8,7 +10,8 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { name } = await request.json();
+  const { name, spectator } = await request.json();
+  const isSpectator = spectator === true;
 
   if (!name || typeof name !== "string") {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -28,18 +31,31 @@ export async function POST(
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  if (game.status !== "LOBBY") {
+  // Non-spectators can only join in LOBBY
+  if (!isSpectator && game.status !== "LOBBY") {
     return NextResponse.json(
       { error: "Game already in progress" },
       { status: 400 }
     );
   }
 
-  if (game.players.length >= MAX_PLAYERS) {
-    return NextResponse.json(
-      { error: `Game is full (max ${MAX_PLAYERS} players)` },
-      { status: 400 }
-    );
+  // Quick capacity check before transaction
+  if (!isSpectator) {
+    const playerCount = game.players.filter((p) => p.type !== "SPECTATOR").length;
+    if (playerCount >= MAX_PLAYERS) {
+      return NextResponse.json(
+        { error: `Game is full (max ${MAX_PLAYERS} players)` },
+        { status: 400 }
+      );
+    }
+  } else {
+    const spectatorCount = game.players.filter((p) => p.type === "SPECTATOR").length;
+    if (spectatorCount >= MAX_SPECTATORS) {
+      return NextResponse.json(
+        { error: `Spectator slots full (max ${MAX_SPECTATORS})` },
+        { status: 400 }
+      );
+    }
   }
 
   // Case-insensitive duplicate name check
@@ -53,37 +69,60 @@ export async function POST(
     );
   }
 
-  // Use a transaction to prevent race conditions (duplicate names / exceeding max players)
+  // Use a transaction to prevent race conditions
   let player;
   try {
     player = await prisma.$transaction(async (tx) => {
-      const current = await tx.player.count({ where: { gameId: game.id } });
-      if (current >= MAX_PLAYERS) throw new Error("FULL");
+      if (isSpectator) {
+        const spectatorCount = await tx.player.count({
+          where: { gameId: game.id, type: "SPECTATOR" },
+        });
+        if (spectatorCount >= MAX_SPECTATORS) throw new Error("SPEC_FULL");
+      } else {
+        const playerCount = await tx.player.count({
+          where: { gameId: game.id, type: { not: "SPECTATOR" } },
+        });
+        if (playerCount >= MAX_PLAYERS) throw new Error("FULL");
+      }
 
       const existing = await tx.player.findFirst({
         where: { gameId: game.id, name: { equals: cleanName, mode: "insensitive" } },
       });
       if (existing) throw new Error("NAME_TAKEN");
 
+      const rejoinToken = randomBytes(12).toString("base64url");
       return tx.player.create({
-        data: { gameId: game.id, name: cleanName, type: "HUMAN" },
+        data: {
+          gameId: game.id,
+          name: cleanName,
+          type: isSpectator ? "SPECTATOR" : "HUMAN",
+          rejoinToken,
+        },
       });
     });
   } catch (e) {
-    if (e instanceof Error && e.message === "FULL") {
-      return NextResponse.json(
-        { error: `Game is full (max ${MAX_PLAYERS} players)` },
-        { status: 400 }
-      );
-    }
-    if (e instanceof Error && e.message === "NAME_TAKEN") {
-      return NextResponse.json(
-        { error: "That name is already taken" },
-        { status: 400 }
-      );
+    const errorMessages: Record<string, string> = {
+      FULL: `Game is full (max ${MAX_PLAYERS} players)`,
+      SPEC_FULL: `Spectator slots full (max ${MAX_SPECTATORS})`,
+      NAME_TAKEN: "That name is already taken",
+    };
+    const msg = e instanceof Error ? errorMessages[e.message] : undefined;
+    if (msg) {
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
     throw e;
   }
 
-  return NextResponse.json({ playerId: player.id, gameId: game.id });
+  // Bump version so pollers pick up the new player
+  await prisma.game.update({
+    where: { id: game.id },
+    data: { version: { increment: 1 } },
+  });
+
+  return NextResponse.json({
+    playerId: player.id,
+    gameId: game.id,
+    playerType: player.type,
+    rejoinToken: player.rejoinToken,
+  });
 }

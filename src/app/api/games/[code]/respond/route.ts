@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { checkAllResponsesIn, startVoting, generateAiVotes, preGenerateTtsAudio } from "@/lib/game-logic";
 import { sanitize } from "@/lib/sanitize";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(
   request: Request,
@@ -48,6 +49,22 @@ export async function POST(
     return NextResponse.json(
       { error: "Player not in this game" },
       { status: 403 }
+    );
+  }
+
+  // Spectators cannot submit responses
+  if (player.type === "SPECTATOR") {
+    return NextResponse.json(
+      { error: "Spectators cannot submit responses" },
+      { status: 403 }
+    );
+  }
+
+  // Per-player rate limit
+  if (!checkRateLimit(`respond:${playerId}`, 20, 60_000)) {
+    return NextResponse.json(
+      { error: "Too many requests, please slow down" },
+      { status: 429 }
     );
   }
 

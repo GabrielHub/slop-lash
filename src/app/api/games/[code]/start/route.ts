@@ -32,7 +32,8 @@ export async function POST(
     );
   }
 
-  if (game.players.length < MIN_PLAYERS) {
+  const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
+  if (activePlayers.length < MIN_PLAYERS) {
     return NextResponse.json(
       { error: `Need at least ${MIN_PLAYERS} players` },
       { status: 400 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Metadata } from "next";
 import { GameShell } from "@/components/game-shell";
 
@@ -12,5 +13,9 @@ export default async function GamePage({
 }) {
   const { code } = await params;
 
-  return <GameShell code={code} />;
+  return (
+    <Suspense>
+      <GameShell code={code} />
+    </Suspense>
+  );
 }

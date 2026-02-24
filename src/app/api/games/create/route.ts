@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
 import { AI_MODELS } from "@/lib/models";
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const hostRejoinToken = randomBytes(12).toString("base64url");
   const game = await prisma.game.create({
     data: {
       roomCode,
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
       ttsMode: VALID_TTS_MODES.includes(ttsMode) ? ttsMode : "OFF",
       ttsVoice: VALID_TTS_VOICES.includes(ttsVoice) ? ttsVoice : "MALE",
       players: {
-        create: [{ name: cleanName, type: "HUMAN" }],
+        create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
       },
     },
     include: { players: true },
@@ -88,5 +90,6 @@ export async function POST(request: Request) {
     roomCode,
     gameId: game.id,
     hostPlayerId: game.players[0].id,
+    rejoinToken: hostRejoinToken,
   });
 }

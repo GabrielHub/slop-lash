@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { getVotablePrompts, checkAllVotesForCurrentPrompt, revealCurrentPrompt } from "@/lib/game-logic";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(
   request: Request,
@@ -61,6 +62,14 @@ export async function POST(
     );
   }
 
+  // Per-player rate limit
+  if (!checkRateLimit(`vote:${voterId}`, 20, 60_000)) {
+    return NextResponse.json(
+      { error: "Too many requests, please slow down" },
+      { status: 429 }
+    );
+  }
+
   // Verify response belongs to this prompt
   const response = await prisma.response.findFirst({
     where: { id: responseId, promptId },
@@ -106,8 +115,9 @@ export async function POST(
         { status: 400 }
       );
     }
-    // P2002: unique constraint violation — forfeit vote pre-creation raced with this human vote
-    if (e != null && typeof e === "object" && "code" in e && (e as { code: string }).code === "P2002") {
+    // P2002: unique constraint violation -- forfeit vote pre-creation raced with this human vote
+    const isPrismaConflict = e != null && typeof e === "object" && "code" in e && (e as Record<string, unknown>).code === "P2002";
+    if (isPrismaConflict) {
       return NextResponse.json(
         { error: "Already voted on this prompt" },
         { status: 400 }

@@ -18,6 +18,7 @@ enum GameStatus {
 enum PlayerType {
   HUMAN
   AI
+  SPECTATOR
 }
 
 enum TtsMode {
@@ -78,6 +79,8 @@ model Player {
   name        String
   type        PlayerType         @default(HUMAN)
   modelId     String?
+  rejoinToken String?
+  idleRounds  Int                @default(0)
   score       Int                @default(0)
   humorRating Float              @default(1.0)
   winStreak   Int                @default(0)
@@ -86,6 +89,7 @@ model Player {
   votes       Vote[]
   assignments PromptAssignment[]
 
+  @@unique([gameId, rejoinToken])
   @@index([gameId])
 }
 
