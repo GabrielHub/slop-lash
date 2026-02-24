@@ -35,11 +35,11 @@ export async function POST(request: Request) {
   }
 
   // Clean up stale games older than 24 hours (non-blocking)
-  after(
-    prisma.game.deleteMany({
+  after(async () => {
+    await prisma.game.deleteMany({
       where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-    })
-  );
+    });
+  });
 
   const roomCode = await generateUniqueRoomCode();
   if (!roomCode) {

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
+import { getPlayerColor } from "@/lib/player-colors";
 
 export interface BestPrompt {
   promptText: string;
@@ -118,12 +119,12 @@ export function BestPromptsCarousel({ prompts }: { prompts: BestPrompt[] }) {
             transition={{ duration: 0.25 }}
           >
             {/* Prompt text */}
-            <p className="font-display font-semibold text-sm text-gold mb-3 leading-snug">
+            <p className="font-display font-semibold text-base text-gold mb-3 leading-snug">
               {item.promptText}
             </p>
 
             {/* Winning response */}
-            <p className="text-ink font-semibold text-sm sm:text-base leading-snug mb-3">
+            <p className="text-ink font-semibold text-base sm:text-lg leading-snug mb-3">
               &ldquo;{item.responseText}&rdquo;
             </p>
 
@@ -131,20 +132,26 @@ export function BestPromptsCarousel({ prompts }: { prompts: BestPrompt[] }) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 min-w-0">
                 {model ? (
-                  <ModelIcon model={model} size={16} className="shrink-0" />
+                  <ModelIcon model={model} size={18} className="shrink-0" />
                 ) : (
-                  <span className="w-4 h-4 flex items-center justify-center rounded-sm bg-human-soft text-human text-[10px] font-bold shrink-0">
-                    H
+                  <span
+                    className="w-[18px] h-[18px] flex items-center justify-center rounded-sm text-xs font-bold shrink-0"
+                    style={{
+                      color: getPlayerColor(item.playerName),
+                      backgroundColor: `${getPlayerColor(item.playerName)}20`,
+                    }}
+                  >
+                    {item.playerName[0]?.toUpperCase() ?? "?"}
                   </span>
                 )}
-                <span className="text-xs text-ink-dim truncate">
+                <span className="text-sm text-ink-dim truncate">
                   {item.playerName}
                 </span>
-                <span className="text-[10px] text-ink-dim/50">
+                <span className="text-xs text-ink-dim/70">
                   &middot; Round {item.roundNumber}
                 </span>
               </div>
-              <span className="font-mono font-bold text-sm text-gold tabular-nums shrink-0">
+              <span className="font-mono font-bold text-base text-gold tabular-nums shrink-0">
                 {item.votePct}%
               </span>
             </div>

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 
 const roundsInclude = {
   prompts: {
+    omit: { ttsAudio: true },
     include: {
       responses: {
         include: { player: { select: { id: true, name: true, type: true, modelId: true, lastSeen: true } } },
@@ -29,6 +30,10 @@ export async function GET(
       rounds: {
         orderBy: { roundNumber: "asc" as const },
         include: roundsInclude,
+      },
+      modelUsages: {
+        select: { modelId: true, inputTokens: true, outputTokens: true, costUsd: true },
+        orderBy: { costUsd: "desc" as const },
       },
     },
   });

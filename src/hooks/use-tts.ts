@@ -148,6 +148,11 @@ export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn 
           const { text, pitch, delay } = utterances[index];
           index++;
 
+          // Chrome bug: after speechSynthesis.cancel(), calling speak()
+          // immediately can cause the utterance to repeat. Add a small
+          // delay on the first utterance so the engine fully resets.
+          const effectiveDelay = index === 1 ? Math.max(delay, 100) : delay;
+
           setTimeout(() => {
             if (!mountedRef.current) {
               resolve();
@@ -159,7 +164,7 @@ export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn 
             utt.onend = () => speakNext();
             utt.onerror = () => speakNext();
             window.speechSynthesis.speak(utt);
-          }, delay);
+          }, effectiveDelay);
         }
 
         speakNext();

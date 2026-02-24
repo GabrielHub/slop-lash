@@ -56,6 +56,13 @@ export interface GameRound {
   prompts: GamePrompt[];
 }
 
+export interface GameModelUsage {
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 export interface GameState {
   id: string;
   roomCode: string;
@@ -67,8 +74,14 @@ export interface GameState {
   timersDisabled: boolean;
   ttsMode: TtsMode;
   ttsVoice: TtsVoice;
+  votingPromptIndex: number;
+  votingRevealing: boolean;
   nextGameCode: string | null;
   version: number;
+  aiInputTokens: number;
+  aiOutputTokens: number;
+  aiCostUsd: number;
+  modelUsages: GameModelUsage[];
   players: GamePlayer[];
   rounds: GameRound[];
 }

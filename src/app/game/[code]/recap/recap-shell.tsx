@@ -5,12 +5,14 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { GameState } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
+import { analyzePromptOutcome } from "@/app/game/[code]/results";
 import { ModelIcon } from "@/components/model-icon";
 import { ScoreBarChart } from "@/components/score-bar-chart";
 import {
   BestPromptsCarousel,
   extractBestPrompts,
 } from "@/components/best-prompts-carousel";
+import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
 import {
   fadeInUp,
   floatIn,
@@ -73,20 +75,22 @@ export function RecapShell({ code }: { code: string }) {
           <div className="h-4 w-14 rounded bg-edge/40 animate-pulse" />
         </div>
         <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
-          <div className="w-full max-w-lg space-y-8">
+          <div className="w-full max-w-lg lg:max-w-4xl space-y-8">
             <div className="flex justify-center">
               <div className="h-10 w-48 rounded-lg bg-edge/40 animate-pulse" />
             </div>
-            <div className="space-y-3">
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-10 rounded-lg bg-edge/40 animate-pulse"
-                  style={{ animationDelay: `${i * 100}ms` }}
-                />
-              ))}
+            <div className="lg:grid lg:grid-cols-2 lg:gap-8">
+              <div className="space-y-3 mb-8 lg:mb-0">
+                {[0, 1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-10 rounded-lg bg-edge/40 animate-pulse"
+                    style={{ animationDelay: `${i * 100}ms` }}
+                  />
+                ))}
+              </div>
+              <div className="h-44 rounded-xl bg-edge/40 animate-pulse" />
             </div>
-            <div className="h-44 rounded-xl bg-edge/40 animate-pulse" />
           </div>
         </main>
       </>
@@ -165,11 +169,11 @@ export function RecapShell({ code }: { code: string }) {
       </div>
 
       <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
-        <div className="w-full max-w-lg">
+        <div className="w-full max-w-lg lg:max-w-4xl">
           {/* Title */}
           <div className="text-center mb-10">
             <motion.h1
-              className="font-display text-4xl sm:text-5xl font-extrabold text-punch mb-3"
+              className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-3"
               initial={{ opacity: 0, scale: 0.8, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
@@ -178,34 +182,37 @@ export function RecapShell({ code }: { code: string }) {
             </motion.h1>
           </div>
 
-          {/* Score Bar Chart */}
-          <motion.div
-            className="mb-10"
-            variants={fadeInUp}
-            initial="hidden"
-            animate="visible"
-          >
-            <h2 className="text-sm font-medium text-ink-dim mb-3">
-              Scoreboard
-            </h2>
-            <ScoreBarChart game={game} />
-          </motion.div>
-
-          {/* Best Prompts Carousel */}
-          {bestPrompts.length > 0 && (
+          {/* Scoreboard + Best Moments — side by side on desktop */}
+          <div className="lg:grid lg:grid-cols-2 lg:gap-8 mb-10">
+            {/* Score Bar Chart */}
             <motion.div
-              className="mb-10"
+              className="mb-10 lg:mb-0"
               variants={fadeInUp}
               initial="hidden"
               animate="visible"
-              transition={{ delay: 0.3 }}
             >
               <h2 className="text-sm font-medium text-ink-dim mb-3">
-                Best Moments
+                Scoreboard
               </h2>
-              <BestPromptsCarousel prompts={bestPrompts} />
+              <ScoreBarChart game={game} />
             </motion.div>
-          )}
+
+            {/* Best Prompts Carousel */}
+            {bestPrompts.length > 0 && (
+              <motion.div
+                className="mb-10 lg:mb-0"
+                variants={fadeInUp}
+                initial="hidden"
+                animate="visible"
+                transition={{ delay: 0.3 }}
+              >
+                <h2 className="text-sm font-medium text-ink-dim mb-3">
+                  Best Moments
+                </h2>
+                <BestPromptsCarousel prompts={bestPrompts} />
+              </motion.div>
+            )}
+          </div>
 
           {/* Round-by-round breakdown */}
           {game.rounds.map((round) => (
@@ -220,38 +227,14 @@ export function RecapShell({ code }: { code: string }) {
                 Round {round.roundNumber}
               </h2>
               <motion.div
-                className="space-y-5"
+                className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5"
                 variants={staggerContainerSlow}
                 initial="hidden"
                 animate="visible"
               >
                 {round.prompts.map((prompt, promptIdx) => {
-                  const totalVotes = prompt.votes.length;
-
-                  // Detect special outcomes
-                  const respVoteCounts = prompt.responses.map((r) => ({
-                    resp: r,
-                    count: prompt.votes.filter(
-                      (v) => v.responseId === r.id
-                    ).length,
-                  }));
-                  const ranked = [...respVoteCounts].sort(
-                    (a, b) => b.count - a.count
-                  );
-                  const topResp = ranked[0];
-                  const bottomResp = ranked[1];
-                  const isUnanimous =
-                    totalVotes > 0 &&
-                    !!topResp &&
-                    topResp.count === totalVotes;
-                  const hasWinner =
-                    totalVotes > 0 &&
-                    !!topResp &&
-                    topResp.count > (bottomResp?.count ?? 0);
-                  const aiBeatsHuman =
-                    hasWinner &&
-                    topResp!.resp.player.type === "AI" &&
-                    bottomResp?.resp.player.type === "HUMAN";
+                  const { totalVotes, isUnanimous, aiBeatsHuman } =
+                    analyzePromptOutcome(prompt);
 
                   return (
                     <motion.div
@@ -324,7 +307,7 @@ export function RecapShell({ code }: { code: string }) {
                                     </span>
                                     {isWinner && (
                                       <motion.span
-                                        className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gold/20 text-gold ml-1"
+                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gold/20 text-gold ml-1"
                                         variants={popIn}
                                         initial="hidden"
                                         animate="visible"
@@ -332,6 +315,9 @@ export function RecapShell({ code }: { code: string }) {
                                           delay: 0.6 + respIdx * 0.15,
                                         }}
                                       >
+                                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-2.5 h-2.5">
+                                          <path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.14-3.47-6.22c-.42-.75-1.64-.75-2.06 0L7.01 9.72l-4.23-1.14c-.8-.22-1.63.26-1.84 1.06-.11.4-.02.82.24 1.13L5.5 15.5h13l4.32-4.73c.26-.31.35-.73.25-1.13z" />
+                                        </svg>
                                         Winner
                                       </motion.span>
                                     )}
@@ -356,41 +342,68 @@ export function RecapShell({ code }: { code: string }) {
                         })}
                       </div>
 
-                      {/* SLOPPED! banner — unanimous vote */}
-                      {isUnanimous && (
+                      {/* SLOPPED! stamp — unanimous AI win */}
+                      {isUnanimous && aiBeatsHuman && (
                         <motion.div
-                          className="mt-4 text-center py-2.5 rounded-lg bg-punch/10 border border-punch/30"
-                          initial={{ opacity: 0, scale: 0.5, y: 10 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 500,
-                            damping: 15,
-                            delay: 0.8 + promptIdx * 0.2,
-                          }}
+                          className="mt-4 flex justify-center"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.8 + promptIdx * 0.2 }}
                         >
-                          <span className="font-display font-extrabold text-xl text-punch tracking-wider uppercase">
-                            Slopped!
-                          </span>
-                          {aiBeatsHuman && (
-                            <p className="text-xs font-medium text-punch/70 mt-0.5">
-                              You lost to the slop
-                            </p>
-                          )}
+                          <div
+                            className="animate-stamp-slam inline-flex flex-col items-center gap-0.5 px-5 py-2 rounded-lg border-2 border-punch bg-punch/15"
+                            style={{
+                              boxShadow: "0 0 20px rgba(255, 86, 71, 0.2)",
+                              textShadow: "0 0 12px rgba(255, 86, 71, 0.3)",
+                            }}
+                          >
+                            <span className="font-display font-black text-lg tracking-[0.15em] uppercase text-punch">
+                              SLOPPED!
+                            </span>
+                            <span className="text-[10px] font-bold text-punch/60 uppercase tracking-wider">
+                              Lost to the machine
+                            </span>
+                          </div>
                         </motion.div>
                       )}
 
-                      {/* AI beats human — non-unanimous */}
+                      {/* FLAWLESS! stamp — unanimous non-AI win */}
+                      {isUnanimous && !aiBeatsHuman && (
+                        <motion.div
+                          className="mt-4 flex justify-center"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.8 + promptIdx * 0.2 }}
+                        >
+                          <div
+                            className="animate-stamp-slam inline-flex items-center gap-1.5 px-5 py-2 rounded-lg border-2 border-teal bg-teal/15"
+                            style={{
+                              boxShadow: "0 0 20px rgba(45, 212, 184, 0.2)",
+                              textShadow: "0 0 12px rgba(45, 212, 184, 0.3)",
+                            }}
+                          >
+                            <span className="font-display font-black text-lg tracking-[0.15em] uppercase text-teal">
+                              FLAWLESS!
+                            </span>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {/* Lost to the slop — non-unanimous AI win */}
                       {aiBeatsHuman && !isUnanimous && (
                         <motion.div
-                          className="mt-4 text-center py-2 rounded-lg bg-punch/5 border border-punch/20"
+                          className="mt-4 flex justify-center"
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: 0.9 + promptIdx * 0.2 }}
                         >
-                          <span className="font-display font-bold text-sm text-punch/80">
-                            Lost to the slop
-                          </span>
+                          <div className="animate-slop-drip inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg border-2 border-punch/30 bg-gradient-to-b from-punch/10 to-punch/5"
+                            style={{ boxShadow: "0 4px 12px rgba(255, 86, 71, 0.1)" }}
+                          >
+                            <span className="font-display font-bold text-sm text-punch uppercase tracking-wider">
+                              Lost to the slop
+                            </span>
+                          </div>
                         </motion.div>
                       )}
                     </motion.div>
@@ -399,6 +412,24 @@ export function RecapShell({ code }: { code: string }) {
               </motion.div>
             </motion.div>
           ))}
+
+          {/* AI Usage Stats */}
+          <motion.div
+            className="mb-10"
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+          >
+            <h2 className="text-sm font-medium text-ink-dim mb-3">
+              AI Usage
+            </h2>
+            <AiUsageBreakdown
+              modelUsages={game.modelUsages}
+              totalInput={game.aiInputTokens}
+              totalOutput={game.aiOutputTokens}
+              totalCost={game.aiCostUsd}
+            />
+          </motion.div>
 
           {/* Back to Home */}
           <div className="text-center pb-8">

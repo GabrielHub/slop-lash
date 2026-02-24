@@ -14,6 +14,7 @@ import {
 } from "@/lib/animations";
 import { MIN_PLAYERS, MAX_PLAYERS } from "@/lib/game-constants";
 import { playSound, preloadSounds } from "@/lib/sounds";
+import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 function getStartButtonText(starting: boolean, playerCount: number): string {
   if (starting) return "Starting...";
@@ -38,6 +39,7 @@ export function Lobby({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const { triggerElement } = usePixelDissolve();
 
   const copyCode = useCallback(() => {
     preloadSounds();
@@ -74,7 +76,7 @@ export function Lobby({
     <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
       <div className="w-full max-w-md">
         <motion.h1
-          className="font-display text-3xl font-bold mb-2 text-center"
+          className="font-display text-3xl font-bold mb-2 text-center text-ink"
           variants={fadeInUp}
           initial="hidden"
           animate="visible"
@@ -148,7 +150,10 @@ export function Lobby({
         {/* Start / Waiting */}
         {isHost ? (
           <motion.button
-            onClick={startGame}
+            onClick={(e) => {
+              triggerElement(e.currentTarget);
+              startGame();
+            }}
             disabled={starting || game.players.length < MIN_PLAYERS}
             className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${
               game.players.length < MIN_PLAYERS

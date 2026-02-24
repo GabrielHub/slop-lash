@@ -6,9 +6,11 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
+import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 export default function JoinPage() {
   const router = useRouter();
+  const { triggerElement } = usePixelDissolve();
   const [roomCode, setRoomCode] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -79,7 +81,7 @@ export default function JoinPage() {
           Back
         </Link>
 
-        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-10">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-10 text-ink">
           Join a Game
         </h1>
 
@@ -133,6 +135,7 @@ export default function JoinPage() {
             type="submit"
             disabled={loading}
             className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 px-8 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+            onClick={(e) => triggerElement(e.currentTarget)}
             {...buttonTapPrimary}
           >
             {loading ? "Joining..." : "Join Game"}

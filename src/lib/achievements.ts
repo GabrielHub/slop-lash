@@ -110,7 +110,8 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
   const sloppedIds = new Set<string>();
   const underdogIds = new Set<string>();
 
-  for (const prompt of allPrompts) {
+  for (const round of game.rounds) {
+    for (const prompt of round.prompts) {
     const totalVotes = prompt.votes.length;
     if (totalVotes === 0 || prompt.responses.length < 2) continue;
 
@@ -165,14 +166,15 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
       underdogIds.add(winner.playerId);
     }
 
-    // Update running scores after this prompt
+    // Update running scores after this prompt (matches game-logic.ts scoring)
     for (const vc of voteCounts) {
-      let points = vc.count * 100;
-      if (totalVotes >= 2 && vc.count === totalVotes) points += 100;
+      let points = vc.count * 100 * round.roundNumber;
+      if (totalVotes >= 2 && vc.count === totalVotes) points += 100 * round.roundNumber;
       runningScores.set(
         vc.playerId,
         (runningScores.get(vc.playerId) ?? 0) + points,
       );
+    }
     }
   }
 

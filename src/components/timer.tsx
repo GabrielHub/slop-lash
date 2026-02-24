@@ -7,6 +7,7 @@ import { popIn } from "@/lib/animations";
 interface TimerProps {
   deadline: string | null;
   disabled?: boolean;
+  total?: number;
 }
 
 function computeRemaining(deadline: string | null): number {
@@ -20,11 +21,12 @@ function getUrgency(pct: number): "urgent" | "warning" | "normal" {
   return "normal";
 }
 
-export function Timer({ deadline, disabled }: TimerProps) {
+export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) {
   const total = useMemo(() => {
+    if (totalOverride != null) return totalOverride;
     const remaining = computeRemaining(deadline);
     return remaining > 45 ? 90 : 45;
-  }, [deadline]);
+  }, [deadline, totalOverride]);
 
   // A tick counter that forces re-render every second, letting us derive remaining
   const [, setTick] = useState(0);

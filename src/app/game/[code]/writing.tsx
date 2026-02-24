@@ -15,6 +15,7 @@ import {
   buttonTap,
 } from "@/lib/animations";
 import { playSound } from "@/lib/sounds";
+import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 function getSkipButtonText(
   skipping: boolean,
@@ -42,6 +43,7 @@ export function Writing({
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [skipping, setSkipping] = useState(false);
   const [error, setError] = useState("");
+  const { triggerElement } = usePixelDissolve();
 
   const currentRound = game.rounds[0];
   const myPrompts = useMemo(() => {
@@ -123,7 +125,7 @@ export function Writing({
           initial="hidden"
           animate="visible"
         >
-          <h1 className="font-display text-3xl font-bold mb-3">
+          <h1 className="font-display text-3xl font-bold mb-3 text-ink">
             Round {game.currentRound}
           </h1>
           <PulsingDot>Players are writing their answers...</PulsingDot>
@@ -148,7 +150,7 @@ export function Writing({
       >
         {/* Header */}
         <div className="text-center mb-6">
-          <h1 className="font-display text-2xl sm:text-3xl font-bold">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">
             Round {game.currentRound}
           </h1>
           <p className="text-ink-dim text-sm mt-1">
@@ -158,12 +160,14 @@ export function Writing({
 
         {/* Timer */}
         <div className="mb-8">
-          <Timer deadline={game.phaseDeadline} disabled={game.timersDisabled} />
+          {!game.timersDisabled && (
+            <Timer deadline={game.phaseDeadline} />
+          )}
           {isHost && (
             <motion.button
               onClick={skipTimer}
               disabled={skipping}
-              className="mt-3 w-full py-2 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`${game.timersDisabled ? "" : "mt-3 "}w-full py-2 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               {...buttonTap}
             >
               {getSkipButtonText(skipping, game.timersDisabled, "Writing")}
@@ -200,7 +204,7 @@ export function Writing({
                     variants={floatIn}
                     layout
                   >
-                    <p className="font-display font-semibold text-base sm:text-lg mb-3 leading-snug">
+                    <p className="font-display font-semibold text-base sm:text-lg mb-3 leading-snug text-ink">
                       {prompt.text}
                     </p>
                     <AnimatePresence mode="wait">
@@ -256,7 +260,10 @@ export function Writing({
                             enterKeyHint="send"
                           />
                           <motion.button
-                            onClick={() => submitResponse(prompt.id)}
+                            onClick={(e) => {
+                              triggerElement(e.currentTarget);
+                              submitResponse(prompt.id);
+                            }}
                             disabled={
                               submitting === prompt.id ||
                               !responses[prompt.id]?.trim()

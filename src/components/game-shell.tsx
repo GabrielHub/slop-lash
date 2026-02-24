@@ -114,6 +114,20 @@ export function GameShell({ code }: { code: string }) {
     playSound("phase-transition");
   }, [gameState?.status]);
 
+  // Play transition sound when votingPromptIndex changes within VOTING
+  const prevVotingIndex = useRef(gameState?.votingPromptIndex);
+  useEffect(() => {
+    if (gameState?.status !== "VOTING") {
+      prevVotingIndex.current = undefined;
+      return;
+    }
+    const idx = gameState.votingPromptIndex;
+    if (prevVotingIndex.current != null && idx !== prevVotingIndex.current) {
+      playSound("phase-transition");
+    }
+    prevVotingIndex.current = idx;
+  }, [gameState?.status, gameState?.votingPromptIndex]);
+
   // Handle play-again redirect for non-host players
   const handlePlayAgainRedirect = useCallback(
     async (nextGameCode: string) => {
@@ -273,11 +287,11 @@ export function GameShell({ code }: { code: string }) {
           {gameState.roomCode}
         </span>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pr-14">
         <button
           onClick={toggleMute}
           aria-label={soundsMuted ? "Unmute sounds" : "Mute sounds"}
-          className="text-ink-dim hover:text-ink transition-colors"
+          className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
         >
           {soundsMuted ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -297,7 +311,7 @@ export function GameShell({ code }: { code: string }) {
           <button
             onClick={handleEndGame}
             disabled={endingGame}
-            className="text-xs font-medium text-ink-dim hover:text-fail transition-colors disabled:opacity-50"
+            className="text-xs font-medium text-ink-dim hover:text-fail transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {endingGame ? "Ending..." : "End Game"}
           </button>

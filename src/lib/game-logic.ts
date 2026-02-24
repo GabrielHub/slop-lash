@@ -2,12 +2,12 @@ import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
 import { generateJoke, aiVote, type AiUsage } from "./ai";
 import { generateSpeechAudio } from "./tts";
-import { WRITING_DURATION_SECONDS, VOTING_DURATION_SECONDS, HOST_STALE_MS } from "./game-constants";
+import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
-export { MAX_PLAYERS, MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTING_DURATION_SECONDS, HOST_STALE_MS } from "./game-constants";
+export { MAX_PLAYERS, MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
 /** The phase that was advanced to, or null if no transition occurred. */
-export type PhaseAdvanceResult = "VOTING" | "ROUND_RESULTS" | null;
+export type PhaseAdvanceResult = "VOTING" | "VOTING_SUBPHASE" | "ROUND_RESULTS" | null;
 
 function getAiPlayers<T extends { id: string; type: string; modelId: string | null }>(
   players: T[],
@@ -27,23 +27,52 @@ async function collectUsages(
 }
 
 async function accumulateUsage(gameId: string, usages: AiUsage[]): Promise<void> {
-  const totals = usages.reduce(
-    (acc, u) => ({
-      inputTokens: acc.inputTokens + u.inputTokens,
-      outputTokens: acc.outputTokens + u.outputTokens,
-      costUsd: acc.costUsd + u.costUsd,
+  if (usages.length === 0) return;
+
+  // Group by modelId — aggregate totals are derived from this map
+  const byModel = new Map<string, { inputTokens: number; outputTokens: number; costUsd: number }>();
+  for (const u of usages) {
+    if (!u.modelId) continue;
+    const prev = byModel.get(u.modelId) ?? { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+    prev.inputTokens += u.inputTokens;
+    prev.outputTokens += u.outputTokens;
+    prev.costUsd += u.costUsd;
+    byModel.set(u.modelId, prev);
+  }
+
+  if (byModel.size === 0) return;
+
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCost = 0;
+  for (const m of byModel.values()) {
+    totalInput += m.inputTokens;
+    totalOutput += m.outputTokens;
+    totalCost += m.costUsd;
+  }
+
+  await Promise.all([
+    prisma.game.update({
+      where: { id: gameId },
+      data: {
+        aiInputTokens: { increment: totalInput },
+        aiOutputTokens: { increment: totalOutput },
+        aiCostUsd: { increment: totalCost },
+      },
     }),
-    { inputTokens: 0, outputTokens: 0, costUsd: 0 },
-  );
-  if (totals.inputTokens === 0 && totals.outputTokens === 0) return;
-  await prisma.game.update({
-    where: { id: gameId },
-    data: {
-      aiInputTokens: { increment: totals.inputTokens },
-      aiOutputTokens: { increment: totals.outputTokens },
-      aiCostUsd: { increment: totals.costUsd },
-    },
-  });
+    // Atomic INSERT ... ON CONFLICT to avoid race conditions between
+    // concurrent accumulateUsage calls (e.g. AI responses + AI votes overlap)
+    ...Array.from(byModel.entries()).map(([modelId, m]) =>
+      prisma.$executeRaw`
+        INSERT INTO "GameModelUsage" (id, "gameId", "modelId", "inputTokens", "outputTokens", "costUsd")
+        VALUES (gen_random_uuid(), ${gameId}, ${modelId}, ${m.inputTokens}, ${m.outputTokens}, ${m.costUsd})
+        ON CONFLICT ("gameId", "modelId") DO UPDATE SET
+          "inputTokens" = "GameModelUsage"."inputTokens" + EXCLUDED."inputTokens",
+          "outputTokens" = "GameModelUsage"."outputTokens" + EXCLUDED."outputTokens",
+          "costUsd" = "GameModelUsage"."costUsd" + EXCLUDED."costUsd"
+      `
+    ),
+  ]);
 }
 
 /** Generate a random 4-character room code using unambiguous characters. */
@@ -139,6 +168,7 @@ export async function startRound(gameId: string, roundNumber: number): Promise<v
  * Auto-advances to voting if all responses are in after AI finishes.
  */
 export async function generateAiResponses(gameId: string): Promise<void> {
+  const t0 = Date.now();
   const [players, round] = await Promise.all([
     prisma.player.findMany({ where: { gameId } }),
     prisma.round.findFirst({
@@ -151,6 +181,7 @@ export async function generateAiResponses(gameId: string): Promise<void> {
   if (!round) return;
 
   const aiPlayers = getAiPlayers(players);
+  console.log(`[generateAiResponses] Starting ${aiPlayers.length} AI players × ${round.prompts.length} prompts for game ${gameId}`);
 
   const aiResponsePromises = round.prompts.flatMap((prompt) =>
     prompt.assignments
@@ -167,6 +198,7 @@ export async function generateAiResponses(gameId: string): Promise<void> {
 
   const usages = await collectUsages(aiResponsePromises);
   await accumulateUsage(gameId, usages);
+  console.log(`[generateAiResponses] All AI responses done in ${Date.now() - t0}ms for game ${gameId}`);
 
   // If humans submitted before AI finished, all responses may now be in.
   const allIn = await checkAllResponsesIn(gameId);
@@ -203,22 +235,118 @@ export async function startVoting(gameId: string): Promise<boolean> {
 
   const deadline = game?.timersDisabled
     ? null
-    : new Date(Date.now() + VOTING_DURATION_SECONDS * 1000);
+    : new Date(Date.now() + VOTE_PER_PROMPT_SECONDS * 1000);
 
   // Atomic guard: only one caller can claim WRITING→VOTING
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: "WRITING" },
-    data: { status: "VOTING", phaseDeadline: deadline, version: { increment: 1 } },
+    data: {
+      status: "VOTING",
+      votingPromptIndex: 0,
+      votingRevealing: false,
+      phaseDeadline: deadline,
+      version: { increment: 1 },
+    },
   });
 
   return claim.count > 0;
 }
 
+/** Returns prompts with 2+ responses for the current round, ordered by id asc. */
+export async function getVotablePrompts(gameId: string) {
+  const round = await prisma.round.findFirst({
+    where: { gameId },
+    orderBy: { roundNumber: "desc" },
+    include: {
+      prompts: {
+        include: { responses: true, votes: true },
+        orderBy: { id: "asc" },
+      },
+    },
+  });
+  if (!round) return [];
+  return round.prompts.filter((p) => p.responses.length >= 2);
+}
+
+/** Check if all eligible voters have voted on the prompt at votingPromptIndex. */
+export async function checkAllVotesForCurrentPrompt(gameId: string): Promise<boolean> {
+  const game = await prisma.game.findUnique({ where: { id: gameId } });
+  if (!game || game.status !== "VOTING") return false;
+
+  const votablePrompts = await getVotablePrompts(gameId);
+  const currentPrompt = votablePrompts[game.votingPromptIndex];
+  if (!currentPrompt) return false;
+
+  const players = await prisma.player.findMany({ where: { gameId } });
+  const respondentIds = new Set(currentPrompt.responses.map((r) => r.playerId));
+  const eligibleVoters = players.filter((p) => !respondentIds.has(p.id));
+
+  return currentPrompt.votes.length >= eligibleVoters.length;
+}
+
+/** Atomically reveal the current prompt. Returns true if this caller claimed the transition. */
+export async function revealCurrentPrompt(gameId: string): Promise<boolean> {
+  const game = await prisma.game.findUnique({ where: { id: gameId } });
+  if (!game || game.status !== "VOTING") return false;
+
+  const deadline = game.timersDisabled
+    ? null
+    : new Date(Date.now() + REVEAL_SECONDS * 1000);
+
+  const claim = await prisma.game.updateMany({
+    where: { id: gameId, status: "VOTING", votingRevealing: false },
+    data: {
+      votingRevealing: true,
+      phaseDeadline: deadline,
+      version: { increment: 1 },
+    },
+  });
+
+  return claim.count > 0;
+}
+
+/** Advance to the next prompt, or transition to ROUND_RESULTS if last prompt. */
+export async function advanceToNextPrompt(gameId: string): Promise<"VOTING_SUBPHASE" | "ROUND_RESULTS" | null> {
+  const game = await prisma.game.findUnique({ where: { id: gameId } });
+  if (!game || game.status !== "VOTING" || !game.votingRevealing) return null;
+
+  const votablePrompts = await getVotablePrompts(gameId);
+  const nextIndex = game.votingPromptIndex + 1;
+
+  if (nextIndex >= votablePrompts.length) {
+    // Last prompt done — transition to ROUND_RESULTS
+    await calculateRoundScores(gameId);
+    return "ROUND_RESULTS";
+  }
+
+  const deadline = game.timersDisabled
+    ? null
+    : new Date(Date.now() + VOTE_PER_PROMPT_SECONDS * 1000);
+
+  const claim = await prisma.game.updateMany({
+    where: {
+      id: gameId,
+      status: "VOTING",
+      votingRevealing: true,
+      votingPromptIndex: game.votingPromptIndex,
+    },
+    data: {
+      votingPromptIndex: nextIndex,
+      votingRevealing: false,
+      phaseDeadline: deadline,
+      version: { increment: 1 },
+    },
+  });
+
+  return claim.count > 0 ? "VOTING_SUBPHASE" : null;
+}
+
 /**
  * Generate AI votes for the current round (slow, run in background).
- * Auto-advances to round results if all votes are in after AI finishes.
+ * After completion, checks if the current prompt can be revealed.
  */
 export async function generateAiVotes(gameId: string): Promise<void> {
+  const t0 = Date.now();
   const [players, round] = await Promise.all([
     prisma.player.findMany({ where: { gameId } }),
     prisma.round.findFirst({
@@ -233,10 +361,11 @@ export async function generateAiVotes(gameId: string): Promise<void> {
   if (!round) return;
 
   const aiPlayers = getAiPlayers(players);
+  console.log(`[generateAiVotes] Starting AI votes for game ${gameId}: ${aiPlayers.length} voters × ${round.prompts.length} prompts`);
 
   const votePromises = round.prompts.flatMap((prompt) => {
     if (prompt.responses.length < 2) return [];
-    const [respA, respB] = prompt.responses;
+    const [respA, respB] = [...prompt.responses].sort((a, b) => a.id.localeCompare(b.id));
     const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
 
     return aiPlayers
@@ -262,36 +391,13 @@ export async function generateAiVotes(gameId: string): Promise<void> {
 
   const voteUsages = await collectUsages(votePromises);
   await accumulateUsage(gameId, voteUsages);
+  console.log(`[generateAiVotes] All AI votes done in ${Date.now() - t0}ms for game ${gameId}`);
 
-  // If humans voted before AI finished, all votes may now be in.
-  const allVotesIn = await checkAllVotesIn(gameId);
+  // After AI votes: check if current prompt can be revealed
+  const allVotesIn = await checkAllVotesForCurrentPrompt(gameId);
   if (allVotesIn) {
-    await calculateRoundScores(gameId);
+    await revealCurrentPrompt(gameId);
   }
-}
-
-/** Return true if every eligible voter has voted on every prompt in the current round. */
-export async function checkAllVotesIn(gameId: string): Promise<boolean> {
-  const [players, round] = await Promise.all([
-    prisma.player.findMany({ where: { gameId } }),
-    prisma.round.findFirst({
-      where: { gameId },
-      orderBy: { roundNumber: "desc" },
-      include: {
-        prompts: { include: { responses: true, votes: true } },
-      },
-    }),
-  ]);
-
-  if (!round) return false;
-
-  for (const prompt of round.prompts) {
-    const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
-    const eligibleVoters = players.filter((p) => !respondentIds.has(p.id));
-    if (prompt.votes.length < eligibleVoters.length) return false;
-  }
-
-  return true;
 }
 
 async function applyRoundScores(gameId: string): Promise<void> {
@@ -369,16 +475,20 @@ async function fillPlaceholderResponses(gameId: string): Promise<void> {
     const submittedPlayerIds = new Set(prompt.responses.map((r) => r.playerId));
     return prompt.assignments
       .filter((a) => !submittedPlayerIds.has(a.playerId))
-      .map((a) =>
-        prisma.response.create({
+      .map((a) => {
+        console.warn(`[fillPlaceholder] Player ${a.playerId} timed out on prompt "${prompt.text.slice(0, 50)}" in game ${gameId}`);
+        return prisma.response.create({
           data: {
             promptId: prompt.id,
             playerId: a.playerId,
             text: "...",
           },
-        })
-      );
+        });
+      });
   });
+  if (creates.length > 0) {
+    console.warn(`[fillPlaceholder] Filling ${creates.length} placeholder responses for game ${gameId}`);
+  }
   await Promise.all(creates);
 }
 
@@ -407,6 +517,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
 
 /**
  * Fill placeholder responses for missing players and advance the phase.
+ * During VOTING, steps through sub-phases (vote→reveal→next) instead of jumping to ROUND_RESULTS.
  * Returns the phase advanced to, so callers can trigger AI work in background.
  */
 export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceResult> {
@@ -418,8 +529,12 @@ export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceRes
     const claimed = await startVoting(gameId);
     return claimed ? "VOTING" : null;
   } else if (game.status === "VOTING") {
-    await calculateRoundScores(gameId);
-    return "ROUND_RESULTS";
+    if (!game.votingRevealing) {
+      const claimed = await revealCurrentPrompt(gameId);
+      return claimed ? "VOTING_SUBPHASE" : null;
+    } else {
+      return advanceToNextPrompt(gameId);
+    }
   }
   return null;
 }
@@ -427,6 +542,7 @@ export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceRes
 /**
  * Check if the phase deadline has passed and advance if so.
  * Uses optimistic locking to prevent duplicate transitions from concurrent pollers.
+ * During VOTING, delegates to sub-phase functions which have their own atomic guards.
  * Returns the phase advanced to, so callers can trigger AI work in background.
  */
 export async function checkAndEnforceDeadline(gameId: string): Promise<PhaseAdvanceResult> {
@@ -435,7 +551,17 @@ export async function checkAndEnforceDeadline(gameId: string): Promise<PhaseAdva
 
   if (new Date() < game.phaseDeadline) return null;
 
-  // Optimistic lock: only one concurrent caller succeeds
+  // VOTING sub-phases: delegate to sub-phase functions with their own atomic guards
+  if (game.status === "VOTING") {
+    if (!game.votingRevealing) {
+      const claimed = await revealCurrentPrompt(gameId);
+      return claimed ? "VOTING_SUBPHASE" : null;
+    } else {
+      return advanceToNextPrompt(gameId);
+    }
+  }
+
+  // Non-VOTING phases: optimistic lock on phaseDeadline
   const result = await prisma.game.updateMany({
     where: { id: gameId, phaseDeadline: game.phaseDeadline },
     data: { phaseDeadline: null },

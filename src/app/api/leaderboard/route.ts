@@ -51,21 +51,47 @@ export async function GET() {
     return NextResponse.json(cache.data);
   }
 
+  const emptyData = {
+    leaderboard: [],
+    headToHead: [],
+    bestResponses: [],
+    modelUsage: [] as { modelId: string; modelName: string; modelShortName: string; inputTokens: number; outputTokens: number; costUsd: number }[],
+    stats: { totalGames: 0, totalPrompts: 0, totalVotes: 0, totalTokens: 0, totalCost: 0 },
+  };
+
   try {
     // Quick check: if no completed games, return empty data immediately
     const totalGames = await prisma.game.count({ where: { status: "FINAL_RESULTS" } });
     if (totalGames === 0) {
-      const emptyData = {
-        leaderboard: [],
-        headToHead: [],
-        bestResponses: [],
-        stats: { totalGames: 0, totalPrompts: 0, totalVotes: 0 },
-      };
       cache = { data: emptyData, timestamp: Date.now() };
       return NextResponse.json(emptyData);
     }
 
     // Fetch all prompts from completed games with responses and vote counts
+    // Aggregate token usage per model across completed games
+    const modelUsageRaw = await prisma.gameModelUsage.groupBy({
+      by: ["modelId"],
+      where: { game: { status: "FINAL_RESULTS" } },
+      _sum: { inputTokens: true, outputTokens: true, costUsd: true },
+    });
+
+    const modelUsage = modelUsageRaw
+      .map((row) => {
+        const model = AI_MODELS.find((m) => m.id === row.modelId);
+        return {
+          modelId: row.modelId,
+          modelName: model?.name ?? row.modelId,
+          modelShortName: model?.shortName ?? row.modelId,
+          inputTokens: row._sum.inputTokens ?? 0,
+          outputTokens: row._sum.outputTokens ?? 0,
+          costUsd: row._sum.costUsd ?? 0,
+        };
+      })
+      .sort((a, b) => b.costUsd - a.costUsd);
+
+    const totalTokens = modelUsage.reduce((s, m) => s + m.inputTokens + m.outputTokens, 0);
+    const totalCost = modelUsage.reduce((s, m) => s + m.costUsd, 0);
+
     const [prompts, totalVotes] = await Promise.all([
       prisma.prompt.findMany({
         where: {
@@ -272,10 +298,13 @@ export async function GET() {
       leaderboard,
       headToHead,
       bestResponses: topResponses,
+      modelUsage,
       stats: {
         totalGames,
         totalPrompts: prompts.length,
         totalVotes,
+        totalTokens,
+        totalCost,
       },
     };
 
@@ -284,9 +313,7 @@ export async function GET() {
     return NextResponse.json(responseData);
   } catch (error) {
     console.error("Leaderboard fetch error:", error);
-    return NextResponse.json(
-      { error: "Failed to load leaderboard" },
-      { status: 500 }
-    );
+    // Return empty data instead of an error so the client can show the empty state
+    return NextResponse.json(emptyData);
   }
 }

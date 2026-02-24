@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { GameState } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
+import { getPlayerColor } from "@/lib/player-colors";
 import { springGentle } from "@/lib/animations";
 
 export function ScoreBarChart({ game }: { game: GameState }) {
@@ -38,7 +39,7 @@ export function ScoreBarChart({ game }: { game: GameState }) {
           >
             {/* Rank */}
             <span
-              className={`w-6 text-center font-mono font-bold text-sm shrink-0 ${
+              className={`w-6 text-center font-mono font-bold text-base shrink-0 ${
                 isWinner ? "text-gold" : "text-ink-dim"
               }`}
             >
@@ -48,17 +49,23 @@ export function ScoreBarChart({ game }: { game: GameState }) {
             {/* Icon */}
             <div className="shrink-0">
               {model ? (
-                <ModelIcon model={model} size={22} />
+                <ModelIcon model={model} size={24} />
               ) : (
-                <span className="w-[22px] h-[22px] flex items-center justify-center rounded-sm bg-human-soft text-human text-xs font-bold">
-                  H
+                <span
+                  className="w-6 h-6 flex items-center justify-center rounded-sm text-sm font-bold"
+                  style={{
+                    color: getPlayerColor(player.name),
+                    backgroundColor: `${getPlayerColor(player.name)}20`,
+                  }}
+                >
+                  {player.name[0]?.toUpperCase() ?? "?"}
                 </span>
               )}
             </div>
 
             {/* Name */}
             <span
-              className={`w-20 sm:w-28 text-sm font-semibold truncate shrink-0 ${
+              className={`w-20 sm:w-28 text-base font-semibold truncate shrink-0 ${
                 isWinner ? "text-gold" : "text-ink"
               }`}
             >
@@ -86,7 +93,7 @@ export function ScoreBarChart({ game }: { game: GameState }) {
 
             {/* Score */}
             <motion.span
-              className={`font-mono font-bold text-sm tabular-nums shrink-0 w-10 text-right ${
+              className={`font-mono font-bold text-base tabular-nums shrink-0 w-12 text-right ${
                 isWinner ? "text-gold" : "text-ink-dim"
               }`}
               initial={{ opacity: 0 }}

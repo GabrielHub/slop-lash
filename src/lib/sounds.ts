@@ -1,11 +1,11 @@
 const SOUND_MAP = {
-  "game-start": "/sfx/Short_2-second_game__#2-1771908035837.mp3",
-  "phase-transition": "/sfx/Quick_0.5-second_who_#1-1771908063128.mp3",
-  "submitted": "/sfx/Short_0.3-second_suc_#1-1771908098119.mp3",
-  "vote-cast": "/sfx/Punchy_0.2-second_ta_#3-1771908125774.mp3",
-  "winner-reveal": "/sfx/1.5-second_triumphan_#3-1771908176203.mp3",
-  "celebration": "/sfx/big_celebration_fanf_#2-1771908214520.mp3",
-  "round-transition": "/sfx/1-second_short_music_#4-1771908237860.mp3",
+  "game-start": "/sfx/Short_2-second_game___2-1771908035837.mp3",
+  "phase-transition": "/sfx/Quick_0.5-second_who__1-1771908063128.mp3",
+  "submitted": "/sfx/Short_0.3-second_suc__1-1771908098119.mp3",
+  "vote-cast": "/sfx/Punchy_0.2-second_ta__3-1771908125774.mp3",
+  "winner-reveal": "/sfx/1.5-second_triumphan__3-1771908176203.mp3",
+  "celebration": "/sfx/big_celebration_fanf__2-1771908214520.mp3",
+  "round-transition": "/sfx/1-second_short_music__4-1771908237860.mp3",
 } as const;
 
 export type SoundName = keyof typeof SOUND_MAP;

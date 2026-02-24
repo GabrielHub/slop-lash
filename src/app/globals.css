@@ -219,6 +219,84 @@ body::after {
   background-size: 200px 200px;
 }
 
+/* --- Stamp Slam (SLOPPED!) --- */
+@keyframes stamp-slam {
+  0% {
+    transform: scale(3) rotate(-12deg);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(0.85) rotate(2deg);
+    opacity: 1;
+  }
+  55% {
+    transform: scale(1.08) rotate(-1deg);
+  }
+  70% {
+    transform: scale(0.97) rotate(0.5deg);
+  }
+  100% {
+    transform: scale(1) rotate(-3deg);
+    opacity: 1;
+  }
+}
+
+.animate-stamp-slam {
+  animation: stamp-slam 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* --- Slop Drip (Lost to the slop) --- */
+@keyframes slop-drip {
+  0% {
+    clip-path: inset(0 0 100% 0);
+    opacity: 0;
+  }
+  30% {
+    clip-path: inset(0 0 40% 0);
+    opacity: 1;
+  }
+  60% {
+    clip-path: inset(0 0 10% 0);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
+.animate-slop-drip {
+  animation: slop-drip 0.8s ease-out forwards;
+}
+
+/* --- Winner Crown Shimmer --- */
+@keyframes crown-shimmer {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--gold) 40%, transparent));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--gold) 70%, transparent));
+  }
+}
+
+.animate-crown-shimmer {
+  animation: crown-shimmer 2s ease-in-out infinite;
+}
+
+/* --- Achievement badge shine --- */
+@keyframes badge-shine {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.animate-badge-shine {
+  background-size: 200% 100%;
+  animation: badge-shine 3s ease-in-out infinite;
+}
+
 /* --- Reduced Motion --- */
 @media (prefers-reduced-motion: reduce) {
   body::after {
@@ -227,7 +305,11 @@ body::after {
 
   .animate-pulse-urgent,
   .animate-gentle-float,
-  .animate-pixel-rain {
+  .animate-pixel-rain,
+  .animate-stamp-slam,
+  .animate-slop-drip,
+  .animate-crown-shimmer,
+  .animate-badge-shine {
     animation: none !important;
     opacity: 1 !important;
   }

@@ -1,5 +1,4 @@
 import { generateText, Output, createGateway } from "ai";
-import { z } from "zod";
 import { calculateCostUsd } from "./models";
 
 const gateway = createGateway({
@@ -21,29 +20,53 @@ function extractUsage(modelId: string, usage: { inputTokens?: number; outputToke
   return { modelId, inputTokens: input, outputTokens: output, costUsd: calculateCostUsd(modelId, input, output) };
 }
 
-const jokeSchema = z.object({
-  joke: z.string().describe("Your Quiplash answer, under 80 characters"),
-});
+/**
+ * Returns provider-specific options to minimize reasoning token usage.
+ * Only applies to models that support configurable reasoning effort/budget.
+ */
+type JSONish = Record<string, string | Record<string, string>>;
+
+function getLowReasoningProviderOptions(
+  modelId: string,
+): Record<string, JSONish> | undefined {
+  const provider = modelId.split("/")[0];
+  if (provider === "anthropic") return { anthropic: { effort: "low" } };
+  if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
+  if (provider === "xai" && modelId.includes("reasoning")) return { xai: { reasoningEffort: "low" } };
+  // openai/gpt-5.2 is not a reasoning model (o3/o4-mini are)
+  // deepseek: only enable/disable, no effort levels — leave default
+  // moonshotai, minimax, zai, xiaomi: no documented reasoning options
+  return undefined;
+}
 
 export async function generateJoke(
   modelId: string,
   promptText: string
 ): Promise<{ text: string; usage: AiUsage }> {
+  const t0 = Date.now();
   try {
+    const providerOptions = getLowReasoningProviderOptions(modelId);
     const result = await generateText({
       model: gateway(modelId),
-      maxOutputTokens: 150,
       system:
-        "You are a Quiplash player. Write a short, unexpected, funny answer to each prompt. Only output the joke — nothing else. Keep it under 80 characters.",
-      output: Output.object({ schema: jokeSchema }),
+        "You are a Quiplash player. Write a short, unexpected, funny answer to each prompt. Only output the joke — nothing else. Keep it under 80 characters. No quotes, no explanation.",
       prompt: promptText,
-      providerOptions: { openai: { reasoningEffort: "low" } },
+      providerOptions,
     });
+    const elapsed = Date.now() - t0;
+    const text = result.text.trim().replace(/^["']|["']$/g, "");
+    if (!text) {
+      console.warn(`[generateJoke] ${modelId} returned empty text in ${elapsed}ms. finishReason: ${JSON.stringify(result.finishReason)}, usage: ${JSON.stringify(result.usage)}`);
+    } else {
+      console.log(`[generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
+    }
     return {
-      text: result.output?.joke ?? "I got nothing...",
+      text: text || "I got nothing...",
       usage: extractUsage(modelId, result.usage),
     };
-  } catch {
+  } catch (err) {
+    const elapsed = Date.now() - t0;
+    console.error(`[generateJoke] ${modelId} FAILED in ${elapsed}ms:`, err);
     return { text: "My circuits are fried... 🤖", usage: { ...ZERO_USAGE, modelId } };
   }
 }
@@ -54,26 +77,32 @@ export async function aiVote(
   responseA: string,
   responseB: string
 ): Promise<{ choice: "A" | "B"; usage: AiUsage }> {
+  const t0 = Date.now();
   try {
     // Randomize order to prevent position bias
     const showAFirst = Math.random() > 0.5;
     const first = showAFirst ? responseA : responseB;
     const second = showAFirst ? responseB : responseA;
 
+    const providerOptions = getLowReasoningProviderOptions(modelId);
     const result = await generateText({
       model: gateway(modelId),
-      maxOutputTokens: 50,
       system: "You are a Quiplash judge. Pick the funnier answer: A or B.",
       output: Output.choice({ options: ["A", "B"] as const }),
       prompt: `Prompt: "${promptText}"\n\nA: "${first}"\nB: "${second}"`,
-      providerOptions: { openai: { reasoningEffort: "low" } },
+      providerOptions,
     });
 
+    const elapsed = Date.now() - t0;
     const rawChoice = result.output ?? "A";
     // Map back to original A/B positions when order was swapped
-    const choice = showAFirst ? rawChoice : rawChoice === "A" ? "B" : "A";
+    const flipped = rawChoice === "A" ? "B" : "A";
+    const choice: "A" | "B" = showAFirst ? rawChoice : flipped;
+    console.log(`[aiVote] ${modelId} chose ${choice} in ${elapsed}ms`);
     return { choice, usage: extractUsage(modelId, result.usage) };
-  } catch {
+  } catch (err) {
+    const elapsed = Date.now() - t0;
+    console.error(`[aiVote] ${modelId} FAILED in ${elapsed}ms:`, err);
     return {
       choice: Math.random() > 0.5 ? "A" : "B",
       usage: { ...ZERO_USAGE, modelId },

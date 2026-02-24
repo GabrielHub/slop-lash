@@ -42,6 +42,8 @@ model Game {
   timersDisabled  Boolean    @default(false)
   ttsMode         TtsMode    @default(OFF)
   ttsVoice        TtsVoice   @default(MALE)
+  votingPromptIndex Int       @default(0)
+  votingRevealing   Boolean   @default(false)
   nextGameCode    String?
   aiInputTokens   Int        @default(0)
   aiOutputTokens  Int        @default(0)
@@ -50,9 +52,23 @@ model Game {
   createdAt       DateTime   @default(now())
   players         Player[]
   rounds          Round[]
+  modelUsages     GameModelUsage[]
 
   @@index([status])
   @@index([createdAt])
+}
+
+model GameModelUsage {
+  id            String @id @default(cuid())
+  gameId        String
+  game          Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  modelId       String
+  inputTokens   Int    @default(0)
+  outputTokens  Int    @default(0)
+  costUsd       Float  @default(0)
+
+  @@unique([gameId, modelId])
+  @@index([gameId])
 }
 
 model Player {

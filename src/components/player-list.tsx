@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { GamePlayer } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
+import { getPlayerColor } from "@/lib/player-colors";
 import { staggerContainer, fadeInUp, popIn } from "@/lib/animations";
 
 export function PlayerList({
@@ -37,17 +38,23 @@ export function PlayerList({
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 {model ? (
-                  <ModelIcon model={model} size={22} className="shrink-0" />
+                  <ModelIcon model={model} size={24} className="shrink-0" />
                 ) : (
-                  <span className="w-[22px] h-[22px] flex items-center justify-center rounded-sm bg-human-soft text-human text-xs font-bold shrink-0">
-                    H
+                  <span
+                    className="w-6 h-6 flex items-center justify-center rounded-sm text-sm font-bold shrink-0"
+                    style={{
+                      color: getPlayerColor(player.name),
+                      backgroundColor: `${getPlayerColor(player.name)}20`,
+                    }}
+                  >
+                    {player.name[0]?.toUpperCase() ?? "?"}
                   </span>
                 )}
-                <span className="font-semibold text-sm truncate">
+                <span className="font-semibold text-base truncate text-ink">
                   {player.name}
                 </span>
                 {player.type === "AI" && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-ai-soft text-ai shrink-0">
+                  <span className="text-xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-ai-soft text-ai shrink-0">
                     AI
                   </span>
                 )}
@@ -55,7 +62,7 @@ export function PlayerList({
               {showScores && (
                 <motion.span
                   key={player.score}
-                  className="font-mono font-bold text-gold text-sm tabular-nums"
+                  className="font-mono font-bold text-gold text-base tabular-nums"
                   variants={popIn}
                   initial="hidden"
                   animate="visible"

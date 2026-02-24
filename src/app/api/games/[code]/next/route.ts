@@ -52,10 +52,13 @@ export async function POST(
         { status: 403 }
       );
     }
-    await prisma.game.update({
-      where: { id: game.id },
-      data: { phaseDeadline: null },
-    });
+    // Only clear deadline for WRITING; VOTING sub-phases manage their own deadlines
+    if (game.status === "WRITING") {
+      await prisma.game.update({
+        where: { id: game.id },
+        data: { phaseDeadline: null },
+      });
+    }
     const advancedTo = await forceAdvancePhase(game.id);
     if (advancedTo === "VOTING") {
       after(() => Promise.all([

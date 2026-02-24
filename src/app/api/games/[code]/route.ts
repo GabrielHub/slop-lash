@@ -24,6 +24,10 @@ const gameInclude = {
     take: 1,
     include: roundsInclude,
   },
+  modelUsages: {
+    select: { modelId: true, inputTokens: true, outputTokens: true, costUsd: true },
+    orderBy: { costUsd: "desc" as const },
+  },
 } as const;
 
 function findGame(roomCode: string, { allRounds = false } = {}) {
@@ -39,6 +43,28 @@ function findGame(roomCode: string, { allRounds = false } = {}) {
         }
       : gameInclude,
   });
+}
+
+/**
+ * Strip votes from prompts that haven't been revealed yet during VOTING phase.
+ * Prevents clients from peeking at partial vote results.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function stripUnrevealedVotes(game: any): void {
+  if (game.status !== "VOTING" || !game.rounds?.[0]) return;
+
+  const round = game.rounds[0];
+  const votable = [...round.prompts]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((p: any) => p.responses.length >= 2)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .sort((a: any, b: any) => a.id.localeCompare(b.id));
+
+  for (let i = 0; i < votable.length; i++) {
+    if (i > game.votingPromptIndex || (i === game.votingPromptIndex && !game.votingRevealing)) {
+      votable[i].votes = [];
+    }
+  }
 }
 
 export async function GET(
@@ -89,7 +115,9 @@ export async function GET(
   }
 
   if (advancedTo || hostPromoted) {
-    return NextResponse.json(await findGame(roomCode));
+    const fresh = await findGame(roomCode);
+    stripUnrevealedVotes(fresh);
+    return NextResponse.json(fresh);
   }
 
   // Smart polling: skip full response if version unchanged
@@ -102,5 +130,6 @@ export async function GET(
     return NextResponse.json(await findGame(roomCode, { allRounds: true }));
   }
 
+  stripUnrevealedVotes(game);
   return NextResponse.json(game);
 }

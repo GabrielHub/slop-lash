@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { AI_MODELS, getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
+import { getPlayerColor } from "@/lib/player-colors";
 import {
   fadeInUp,
   floatIn,
@@ -53,14 +54,26 @@ interface BestResponse {
   totalVotes: number;
 }
 
+interface ModelUsage {
+  modelId: string;
+  modelName: string;
+  modelShortName: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 interface LeaderboardData {
   leaderboard: ContestantStats[];
   headToHead: HeadToHead[];
   bestResponses: BestResponse[];
+  modelUsage: ModelUsage[];
   stats: {
     totalGames: number;
     totalPrompts: number;
     totalVotes: number;
+    totalTokens: number;
+    totalCost: number;
   };
 }
 
@@ -144,10 +157,10 @@ function LeaderboardChart({
             }}
           >
             {/* Main bar row */}
-            <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex items-center gap-3 sm:gap-4">
               {/* Rank */}
               <span
-                className={`w-6 text-center font-mono font-bold text-sm shrink-0 ${
+                className={`w-7 text-center font-mono font-bold text-base sm:text-lg shrink-0 ${
                   isTop ? "text-gold" : "text-ink-dim"
                 }`}
               >
@@ -157,17 +170,23 @@ function LeaderboardChart({
               {/* Icon */}
               <div className="shrink-0">
                 {model ? (
-                  <ModelIcon model={model} size={22} />
+                  <ModelIcon model={model} size={26} />
                 ) : (
-                  <span className="w-[22px] h-[22px] flex items-center justify-center rounded-sm bg-human-soft text-human text-xs font-bold">
-                    H
+                  <span
+                    className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-sm font-bold"
+                    style={{
+                      color: getPlayerColor(entry.name),
+                      backgroundColor: `${getPlayerColor(entry.name)}20`,
+                    }}
+                  >
+                    {entry.shortName[0]?.toUpperCase() ?? "?"}
                   </span>
                 )}
               </div>
 
               {/* Name */}
               <span
-                className={`w-16 sm:w-24 text-sm font-semibold truncate shrink-0 ${
+                className={`w-20 sm:w-28 text-base font-semibold truncate shrink-0 ${
                   isTop ? "text-gold" : "text-ink"
                 }`}
               >
@@ -175,7 +194,7 @@ function LeaderboardChart({
               </span>
 
               {/* Bar track */}
-              <div className="flex-1 h-8 rounded-lg bg-edge/40 relative overflow-hidden">
+              <div className="flex-1 h-9 rounded-lg bg-edge/40 relative overflow-hidden">
                 <motion.div
                   className={`absolute inset-y-0 left-0 rounded-lg ${
                     isTop ? "bg-gold/80" : "bg-teal/40"
@@ -196,7 +215,7 @@ function LeaderboardChart({
 
               {/* Vote count */}
               <motion.span
-                className={`font-mono font-bold text-sm tabular-nums shrink-0 w-10 text-right ${
+                className={`font-mono font-bold text-base sm:text-lg tabular-nums shrink-0 w-10 text-right ${
                   isTop ? "text-gold" : "text-ink-dim"
                 }`}
                 initial={{ opacity: 0 }}
@@ -208,14 +227,14 @@ function LeaderboardChart({
             </div>
 
             {/* Stat chips (below bar, subtle) */}
-            <div className="flex gap-3 ml-[54px] sm:ml-[66px] mt-1.5">
-              <span className="text-[11px] text-ink-dim/70 tabular-nums font-mono">
+            <div className="flex gap-4 ml-[62px] sm:ml-[78px] mt-1.5">
+              <span className="text-xs text-ink-dim/70 tabular-nums font-mono">
                 {entry.winRate}% win
               </span>
-              <span className="text-[11px] text-ink-dim/70 tabular-nums font-mono">
+              <span className="text-xs text-ink-dim/70 tabular-nums font-mono">
                 {entry.totalResponses} resp
               </span>
-              <span className="text-[11px] text-ink-dim/70 tabular-nums font-mono">
+              <span className="text-xs text-ink-dim/70 tabular-nums font-mono">
                 {entry.voteShare}% share
               </span>
             </div>
@@ -239,7 +258,7 @@ function HeadToHeadSection({
 
   return (
     <motion.div
-      className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3"
       variants={staggerContainerSlow}
       initial="hidden"
       animate="visible"
@@ -417,8 +436,14 @@ function HallOfFame({
                   className="shrink-0"
                 />
               ) : (
-                <span className="w-4 h-4 flex items-center justify-center rounded-sm bg-human-soft text-human text-[10px] font-bold shrink-0">
-                  H
+                <span
+                  className="w-4 h-4 flex items-center justify-center rounded-sm text-[10px] font-bold shrink-0"
+                  style={{
+                    color: getPlayerColor(item.playerName),
+                    backgroundColor: `${getPlayerColor(item.playerName)}20`,
+                  }}
+                >
+                  {item.playerName[0]?.toUpperCase() ?? "?"}
                 </span>
               )}
               <span className="text-xs text-ink-dim truncate">
@@ -454,6 +479,96 @@ function HallOfFame({
 }
 
 /* ------------------------------------------------------------------ */
+/*  AI Cost Breakdown                                                  */
+/* ------------------------------------------------------------------ */
+
+function formatCost(cost: number): string {
+  return cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2);
+}
+
+function ModelUsageSection({
+  usages,
+  totalTokens,
+  totalCost,
+}: {
+  usages: ModelUsage[];
+  totalTokens: number;
+  totalCost: number;
+}) {
+  if (usages.length === 0) return null;
+
+  const maxCost = usages[0]?.costUsd || 1;
+
+  return (
+    <motion.div
+      className="space-y-2.5"
+      initial="hidden"
+      animate="visible"
+      variants={{
+        hidden: {},
+        visible: { transition: { staggerChildren: 0.06 } },
+      }}
+    >
+      {usages.map((mu, idx) => {
+        const model = AI_MODELS.find((m) => m.id === mu.modelId);
+        const pct = (mu.costUsd / maxCost) * 100;
+        const tokens = mu.inputTokens + mu.outputTokens;
+
+        return (
+          <motion.div
+            key={mu.modelId}
+            className="p-3 rounded-lg bg-surface/60 border border-edge/60"
+            variants={{
+              hidden: { opacity: 0, x: -12 },
+              visible: { opacity: 1, x: 0, transition: springGentle },
+            }}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div className="shrink-0">
+                {model ? (
+                  <ModelIcon model={model} size={22} />
+                ) : (
+                  <span className="w-[22px] h-[22px] rounded-full bg-edge" />
+                )}
+              </div>
+              <span className="font-semibold text-sm text-ink truncate flex-1">
+                {mu.modelShortName}
+              </span>
+              <span className="font-mono text-xs tabular-nums text-ink-dim shrink-0">
+                {tokens.toLocaleString()} tok
+              </span>
+              <span className="font-mono text-sm font-bold tabular-nums text-teal shrink-0">
+                ${formatCost(mu.costUsd)}
+              </span>
+            </div>
+            {/* Cost bar */}
+            <div className="h-2 rounded-full bg-edge/30 overflow-hidden">
+              <motion.div
+                className={`h-full rounded-full ${idx === 0 ? "bg-punch/70" : "bg-teal/50"}`}
+                initial={{ width: "0%" }}
+                animate={{ width: `${Math.max(pct, 3)}%` }}
+                transition={{ ...springGentle, delay: 0.15 + idx * 0.06 }}
+              />
+            </div>
+          </motion.div>
+        );
+      })}
+
+      {/* Total row */}
+      <div className="flex items-center gap-3 pt-2 mt-1 border-t border-edge/40">
+        <span className="font-bold text-sm text-ink flex-1">Total</span>
+        <span className="font-mono text-xs font-bold tabular-nums text-ink shrink-0">
+          {totalTokens.toLocaleString()} tok
+        </span>
+        <span className="font-mono text-sm font-bold tabular-nums text-teal shrink-0">
+          ${formatCost(totalCost)}
+        </span>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Empty State                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -484,6 +599,55 @@ function EmptyState() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Loading Taglines                                                   */
+/* ------------------------------------------------------------------ */
+
+const LOADING_TAGLINES = [
+  "Crunching the numbers...",
+  "Tallying the votes...",
+  "Ranking the contestants...",
+  "Sizing up the matchups...",
+  "Polishing the trophies...",
+];
+
+function LoadingSpinner() {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex((i) => (i + 1) % LOADING_TAGLINES.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="text-center py-16">
+      <motion.div
+        className="w-8 h-8 border-3 border-edge border-t-punch rounded-full mx-auto"
+        animate={{ rotate: 360 }}
+        transition={{
+          duration: 0.8,
+          repeat: Infinity,
+          ease: "linear",
+        }}
+      />
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={index}
+          className="text-ink-dim text-sm mt-4"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.2 }}
+        >
+          {LOADING_TAGLINES[index]}
+        </motion.p>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main Page                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -491,6 +655,7 @@ export default function LeaderboardPage() {
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     fetch("/api/leaderboard")
@@ -501,7 +666,7 @@ export default function LeaderboardPage() {
       .then(setData)
       .catch(() => setError("Failed to load leaderboard"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [retryCount]);
 
   return (
     <main className="min-h-svh flex flex-col items-center px-4 sm:px-6 py-12 pt-16 relative overflow-hidden">
@@ -515,7 +680,7 @@ export default function LeaderboardPage() {
         <div className="absolute top-[55%] left-[8%] w-[250px] h-[250px] rounded-full blur-[70px] bg-punch opacity-[0.04]" />
       </div>
 
-      <div className="w-full max-w-2xl relative z-10">
+      <div className="w-full max-w-2xl lg:max-w-5xl relative z-10">
         {/* Back link */}
         <motion.div
           className="mb-6"
@@ -534,7 +699,7 @@ export default function LeaderboardPage() {
         {/* Title */}
         <div className="text-center mb-8">
           <motion.h1
-            className="font-display text-4xl sm:text-5xl font-extrabold text-punch mb-2 title-glow"
+            className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-2 title-glow"
             initial={{ opacity: 0, scale: 0.9, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{
@@ -556,86 +721,111 @@ export default function LeaderboardPage() {
         </div>
 
         {/* Loading state */}
-        {loading && (
-          <div className="text-center py-16">
-            <motion.div
-              className="w-8 h-8 border-3 border-edge border-t-punch rounded-full mx-auto"
-              animate={{ rotate: 360 }}
-              transition={{
-                duration: 0.8,
-                repeat: Infinity,
-                ease: "linear",
-              }}
-            />
-            <p className="text-ink-dim text-sm mt-4">
-              Crunching the numbers...
-            </p>
-          </div>
-        )}
+        {loading && <LoadingSpinner />}
 
         {/* Error state */}
         {error && (
           <div className="text-center py-16">
-            <p className="text-fail text-sm">{error}</p>
+            <p className="text-fail text-sm mb-4">{error}</p>
+            <button
+              onClick={() => {
+                setLoading(true);
+                setError("");
+                setRetryCount((c) => c + 1);
+              }}
+              className="text-sm text-ink-dim hover:text-ink underline transition-colors"
+            >
+              Try again
+            </button>
           </div>
         )}
 
         {/* Empty state */}
-        {data && data.stats.totalGames === 0 && <EmptyState />}
+        {data &&
+          (data.stats.totalGames === 0 || data.leaderboard.length === 0) && (
+            <EmptyState />
+          )}
 
         {/* Main content */}
-        {data && data.stats.totalGames > 0 && (
+        {data && data.stats.totalGames > 0 && data.leaderboard.length > 0 && (
           <>
             {/* Stats Banner */}
             <StatsBanner stats={data.stats} />
 
-            {/* Leaderboard */}
-            <motion.div
-              className="mb-10"
-              variants={fadeInUp}
-              initial="hidden"
-              animate="visible"
-            >
-              <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gold" />
-                Rankings
-              </h2>
-              <LeaderboardChart entries={data.leaderboard} />
-            </motion.div>
-
-            {/* Head-to-Head */}
-            {data.headToHead.length > 0 && (
+            {/* Desktop: two-column layout — Rankings left, H2H + Hall of Fame right */}
+            <div className="lg:grid lg:grid-cols-[3fr_2fr] lg:gap-10">
+              {/* Leaderboard (left column on desktop) */}
               <motion.div
-                className="mb-10"
+                className="mb-10 lg:mb-0"
                 variants={fadeInUp}
                 initial="hidden"
                 animate="visible"
-                transition={{ delay: 0.15 }}
               >
                 <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-teal" />
-                  Human vs AI
+                  <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+                  Rankings
                 </h2>
-                <HeadToHeadSection matchups={data.headToHead} />
+                <LeaderboardChart entries={data.leaderboard} />
               </motion.div>
-            )}
 
-            {/* Hall of Fame */}
-            {data.bestResponses.length > 0 && (
-              <motion.div
-                className="mb-10"
-                variants={fadeInUp}
-                initial="hidden"
-                animate="visible"
-                transition={{ delay: 0.3 }}
-              >
-                <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-punch" />
-                  Hall of Fame
-                </h2>
-                <HallOfFame responses={data.bestResponses} />
-              </motion.div>
-            )}
+              {/* Right column on desktop: H2H + Hall of Fame stacked */}
+              <div>
+                {/* Head-to-Head */}
+                {data.headToHead.length > 0 && (
+                  <motion.div
+                    className="mb-10"
+                    variants={fadeInUp}
+                    initial="hidden"
+                    animate="visible"
+                    transition={{ delay: 0.15 }}
+                  >
+                    <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal" />
+                      Human vs AI
+                    </h2>
+                    <HeadToHeadSection matchups={data.headToHead} />
+                  </motion.div>
+                )}
+
+                {/* Hall of Fame */}
+                {data.bestResponses.length > 0 && (
+                  <motion.div
+                    className="mb-10"
+                    variants={fadeInUp}
+                    initial="hidden"
+                    animate="visible"
+                    transition={{ delay: 0.3 }}
+                  >
+                    <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-punch" />
+                      Hall of Fame
+                    </h2>
+                    <HallOfFame responses={data.bestResponses} />
+                  </motion.div>
+                )}
+
+                {/* AI Cost Breakdown */}
+                {data.modelUsage && data.modelUsage.length > 0 && (
+                  <motion.div
+                    className="mb-10"
+                    variants={fadeInUp}
+                    initial="hidden"
+                    animate="visible"
+                    transition={{ delay: 0.45 }}
+                  >
+                    <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal" />
+                      AI Cost
+                    </h2>
+                    <ModelUsageSection
+                      usages={data.modelUsage}
+                      totalTokens={data.stats.totalTokens}
+                      totalCost={data.stats.totalCost}
+                    />
+                  </motion.div>
+                )}
+              </div>
+            </div>
           </>
         )}
       </div>

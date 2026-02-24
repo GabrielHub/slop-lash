@@ -12,6 +12,7 @@ import {
   fadeInUp,
   buttonTapPrimary,
 } from "@/lib/animations";
+import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 const MotionLink = motion.create(Link);
 
@@ -70,10 +71,9 @@ const TAGLINES = [
   "Come for the laughs. Stay because you have no friends.",
 ];
 
-
-
 export default function Home() {
   const { mounted } = useTheme();
+  const { triggerElement } = usePixelDissolve();
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [tagline] = useState(
     () => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]
@@ -118,7 +118,7 @@ export default function Home() {
             return (
               <motion.div
                 key={model.id}
-                className={`absolute w-11 h-11 rounded-xl bg-surface/80 backdrop-blur-sm border border-edge/50 flex items-center justify-center animate-gentle-float ${GLOW_CLASSES[i]}`}
+                className={`absolute w-11 h-11 rounded-xl bg-surface/80 backdrop-blur-sm border border-edge/50 flex items-center justify-center animate-gentle-float pointer-events-auto cursor-pointer ${GLOW_CLASSES[i]}`}
                 style={{
                   top: pos.top,
                   left: pos.left,
@@ -133,6 +133,7 @@ export default function Home() {
                   stiffness: 300,
                   damping: 20,
                 }}
+                onClick={(e) => triggerElement(e.currentTarget)}
               >
                 <ModelIcon model={model} size={22} />
               </motion.div>
@@ -153,7 +154,7 @@ export default function Home() {
             return (
               <motion.div
                 key={model.id}
-                className={`absolute w-9 h-9 rounded-lg bg-surface/60 backdrop-blur-sm border border-edge/30 flex items-center justify-center animate-gentle-float ${GLOW_CLASSES[i]}`}
+                className={`absolute w-9 h-9 rounded-lg bg-surface/60 backdrop-blur-sm border border-edge/30 flex items-center justify-center animate-gentle-float pointer-events-auto cursor-pointer ${GLOW_CLASSES[i]}`}
                 style={{
                   top: pos.top,
                   left: pos.left,
@@ -168,6 +169,7 @@ export default function Home() {
                   stiffness: 300,
                   damping: 20,
                 }}
+                onClick={(e) => triggerElement(e.currentTarget)}
               >
                 <ModelIcon model={model} size={16} />
               </motion.div>

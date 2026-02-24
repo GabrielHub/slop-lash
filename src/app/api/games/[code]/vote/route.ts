@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAllVotesIn, calculateRoundScores } from "@/lib/game-logic";
+import { getVotablePrompts, checkAllVotesForCurrentPrompt, revealCurrentPrompt } from "@/lib/game-logic";
 
 export async function POST(
   request: Request,
@@ -31,6 +31,25 @@ export async function POST(
     );
   }
 
+  // Reject votes during reveal sub-phase
+  if (game.votingRevealing) {
+    return NextResponse.json(
+      { error: "Voting is paused during reveal" },
+      { status: 400 }
+    );
+  }
+
+  // Validate vote is for the currently active prompt
+  const votablePrompts = await getVotablePrompts(game.id);
+  const currentPrompt = votablePrompts[game.votingPromptIndex];
+
+  if (!currentPrompt || currentPrompt.id !== promptId) {
+    return NextResponse.json(
+      { error: "Not the current prompt" },
+      { status: 400 }
+    );
+  }
+
   // Verify voter belongs to this game
   const voter = await prisma.player.findFirst({
     where: { id: voterId, gameId: game.id },
@@ -53,24 +72,19 @@ export async function POST(
     );
   }
 
-  const voterResponse = await prisma.response.findFirst({
-    where: { promptId, playerId: voterId },
-  });
-
-  if (voterResponse) {
-    return NextResponse.json(
-      { error: "Cannot vote on a prompt you responded to" },
-      { status: 400 }
-    );
-  }
-
-  // Use transaction to prevent race conditions on duplicate votes
+  // Use transaction to prevent race conditions on self-vote and duplicate votes
   try {
     await prisma.$transaction(async (tx) => {
+      const voterResponse = await tx.response.findFirst({
+        where: { promptId, playerId: voterId },
+      });
+      if (voterResponse) {
+        throw new Error("RESPONDENT");
+      }
+
       const existingVote = await tx.vote.findFirst({
         where: { promptId, voterId },
       });
-
       if (existingVote) {
         throw new Error("ALREADY_VOTED");
       }
@@ -80,6 +94,12 @@ export async function POST(
       });
     });
   } catch (e) {
+    if (e instanceof Error && e.message === "RESPONDENT") {
+      return NextResponse.json(
+        { error: "Cannot vote on a prompt you responded to" },
+        { status: 400 }
+      );
+    }
     if (e instanceof Error && e.message === "ALREADY_VOTED") {
       return NextResponse.json(
         { error: "Already voted on this prompt" },
@@ -89,11 +109,11 @@ export async function POST(
     throw e;
   }
 
-  // Check and advance in background so the human gets an instant response
+  // Check and reveal in background so the human gets an instant response
   after(async () => {
-    const allIn = await checkAllVotesIn(game.id);
+    const allIn = await checkAllVotesForCurrentPrompt(game.id);
     if (allIn) {
-      await calculateRoundScores(game.id);
+      await revealCurrentPrompt(game.id);
     }
   });
 

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Urbanist, Outfit, Geist_Mono } from "next/font/google";
 import { ThemeProvider, ThemeToggle } from "@/components/theme-provider";
 import { PixelRain } from "@/components/pixel-rain";
+import { PixelDissolveOverlay } from "@/components/pixel-dissolve-overlay";
 import "./globals.css";
 
 const urbanist = Urbanist({
@@ -67,6 +68,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <PixelRain />
+          <PixelDissolveOverlay />
           <ThemeToggle />
           {children}
         </ThemeProvider>
