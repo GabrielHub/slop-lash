@@ -13,6 +13,7 @@ export interface GamePlayer {
   type: PlayerType;
   modelId: string | null;
   score: number;
+  lastSeen: string;
 }
 
 export interface GameResponse {
@@ -30,12 +31,18 @@ export interface GameVote {
   responseId: string;
 }
 
+export interface PromptAssignmentInfo {
+  promptId: string;
+  playerId: string;
+}
+
 export interface GamePrompt {
   id: string;
   roundId: string;
   text: string;
   responses: GameResponse[];
   votes: GameVote[];
+  assignments: PromptAssignmentInfo[];
 }
 
 export interface GameRound {
@@ -52,6 +59,10 @@ export interface GameState {
   currentRound: number;
   totalRounds: number;
   hostPlayerId: string | null;
+  phaseDeadline: string | null;
+  timersDisabled: boolean;
+  nextGameCode: string | null;
+  version: number;
   players: GamePlayer[];
   rounds: GameRound[];
 }
