@@ -32,7 +32,20 @@ export interface GameVote {
   id: string;
   promptId: string;
   voterId: string;
-  responseId: string;
+  responseId: string | null;
+}
+
+/** A vote with a non-null responseId (the voter picked a response). */
+export type CastVote = GameVote & { responseId: string };
+
+/** Filter out abstain votes (null responseId), returning only cast votes with narrowed type. */
+export function filterCastVotes(votes: GameVote[]): CastVote[] {
+  return votes.filter((v): v is CastVote => v.responseId != null);
+}
+
+/** Filter to only abstain votes (null responseId). */
+export function filterAbstainVotes(votes: GameVote[]): GameVote[] {
+  return votes.filter((v) => v.responseId == null);
 }
 
 export interface PromptAssignmentInfo {

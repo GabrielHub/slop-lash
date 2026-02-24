@@ -122,6 +122,7 @@ const getLeaderboardData = unstable_cache(
       prisma.vote.count({
         where: {
           prompt: { round: { game: { status: "FINAL_RESULTS" } } },
+          NOT: { responseId: null },
         },
       }),
     ]);
@@ -172,8 +173,6 @@ const getLeaderboardData = unstable_cache(
 
     // Process each prompt
     for (const prompt of prompts) {
-      const promptTotalVotes = prompt._count.votes;
-
       for (const resp of prompt.responses) {
         const key = contestantKey(resp.player);
         const entry = statsMap.get(key);
@@ -184,7 +183,9 @@ const getLeaderboardData = unstable_cache(
       }
 
       // Matchup calculations (only for prompts with exactly 2 responses and votes)
-      if (prompt.responses.length === 2 && promptTotalVotes > 0) {
+      // Use sum of per-response votes (excludes abstain votes with null responseId)
+      const actualTotalVotes = prompt.responses.reduce((sum, r) => sum + r._count.votes, 0);
+      if (prompt.responses.length === 2 && actualTotalVotes > 0) {
         const [a, b] = prompt.responses;
         const aVotes = a._count.votes;
         const bVotes = b._count.votes;
@@ -240,10 +241,10 @@ const getLeaderboardData = unstable_cache(
               playerType: resp.player.type as "HUMAN" | "AI",
               modelId: resp.player.modelId,
               votePct: Math.round(
-                (resp._count.votes / promptTotalVotes) * 100
+                (resp._count.votes / actualTotalVotes) * 100
               ),
               voteCount: resp._count.votes,
-              totalVotes: promptTotalVotes,
+              totalVotes: actualTotalVotes,
             });
           }
         }

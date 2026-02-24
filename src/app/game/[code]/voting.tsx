@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { GameState, GamePrompt, GamePlayer } from "@/lib/types";
+import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes } from "@/lib/types";
 import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/lib/game-constants";
 import { Timer } from "@/components/timer";
 import { ErrorBanner } from "@/components/error-banner";
@@ -790,10 +790,12 @@ function RevealView({
   isHostDisplay?: boolean;
 }) {
   const [respA, respB] = prompt.responses;
-  const totalVotes = prompt.votes.length;
 
-  const votesA = prompt.votes.filter((v) => v.responseId === respA.id);
-  const votesB = prompt.votes.filter((v) => v.responseId === respB.id);
+  const actualVotes = filterCastVotes(prompt.votes);
+  const totalVotes = actualVotes.length;
+
+  const votesA = actualVotes.filter((v) => v.responseId === respA.id);
+  const votesB = actualVotes.filter((v) => v.responseId === respB.id);
 
   const pctA = totalVotes > 0 ? Math.round((votesA.length / totalVotes) * 100) : 0;
   const pctB = totalVotes > 0 ? Math.round((votesB.length / totalVotes) * 100) : 0;
@@ -864,9 +866,16 @@ function RevealView({
   }, [isUnanimous, isSlopped]);
 
   const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
-  const voterIds = new Set(prompt.votes.map((v) => v.voterId));
-  const abstained = players.filter(
-    (p) => !respondentIds.has(p.id) && !voterIds.has(p.id)
+
+  const abstainVoterIds = new Set(
+    filterAbstainVotes(prompt.votes).map((v) => v.voterId),
+  );
+  const abstainedVoters = players.filter((p) => abstainVoterIds.has(p.id));
+
+  // Players who never voted at all (disconnected, etc.)
+  const allVoterIds = new Set(prompt.votes.map((v) => v.voterId));
+  const didntVote = players.filter(
+    (p) => !respondentIds.has(p.id) && !allVoterIds.has(p.id),
   );
 
   return (
@@ -1016,8 +1025,33 @@ function RevealView({
         </motion.div>
       )}
 
-      {/* Abstained */}
-      {abstained.length > 0 && (
+      {/* Abstained voters — explicitly chose not to vote */}
+      {abstainedVoters.length > 0 && (
+        <motion.div
+          className="flex justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.0 }}
+        >
+          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-edge bg-surface/50 ${
+            isHostDisplay ? "text-sm" : "text-xs"
+          }`}>
+            <span className="text-ink-dim/50 font-medium">Abstained:</span>
+            <div className="flex flex-wrap gap-1">
+              {abstainedVoters.map((p) => (
+                <VoterChip
+                  key={p.id}
+                  player={p}
+                  size={isHostDisplay ? "lg" : "sm"}
+                />
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Didn't vote — no vote record at all */}
+      {didntVote.length > 0 && (
         <motion.p
           className={`text-center text-ink-dim/35 ${
             isHostDisplay ? "text-sm" : "text-xs"
@@ -1026,7 +1060,7 @@ function RevealView({
           animate={{ opacity: 1 }}
           transition={{ delay: 1.0 }}
         >
-          Didn&apos;t vote: {abstained.map((p) => p.name).join(", ")}
+          Didn&apos;t vote: {didntVote.map((p) => p.name).join(", ")}
         </motion.p>
       )}
     </div>

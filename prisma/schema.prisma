@@ -138,13 +138,13 @@ model Response {
 }
 
 model Vote {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   promptId   String
-  prompt     Prompt   @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  prompt     Prompt    @relation(fields: [promptId], references: [id], onDelete: Cascade)
   voterId    String
-  voter      Player   @relation(fields: [voterId], references: [id], onDelete: Cascade)
-  responseId String
-  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  voter      Player    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  responseId String?
+  response   Response? @relation(fields: [responseId], references: [id], onDelete: Cascade)
 
   @@unique([promptId, voterId])
   @@index([promptId])

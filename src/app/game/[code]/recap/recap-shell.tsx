@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { GameState } from "@/lib/types";
+import { GameState, filterCastVotes } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { analyzePromptOutcome } from "@/app/game/[code]/results";
 import { ModelIcon } from "@/components/model-icon";
@@ -254,7 +254,7 @@ export function RecapShell({ code }: { code: string }) {
                       </p>
                       <div className="space-y-3">
                         {prompt.responses.map((resp, respIdx) => {
-                          const voteCount = prompt.votes.filter(
+                          const voteCount = filterCastVotes(prompt.votes).filter(
                             (v) => v.responseId === resp.id
                           ).length;
                           const pct =

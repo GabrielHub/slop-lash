@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { GameState } from "@/lib/types";
+import { GameState, filterCastVotes } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { PlayerList } from "@/components/player-list";
@@ -43,11 +43,12 @@ export interface PromptOutcome {
 export function analyzePromptOutcome(
   prompt: GameState["rounds"][0]["prompts"][0],
 ): PromptOutcome {
-  const totalVotes = prompt.votes.length;
+  const actualVotes = filterCastVotes(prompt.votes);
+  const totalVotes = actualVotes.length;
 
   const voteCounts = prompt.responses.map((r) => ({
     resp: r,
-    count: prompt.votes.filter((v) => v.responseId === r.id).length,
+    count: actualVotes.filter((v) => v.responseId === r.id).length,
   }));
   const ranked = [...voteCounts].sort((a, b) => b.count - a.count);
   const top = ranked[0];
@@ -160,11 +161,10 @@ export function Results({
   useEffect(() => {
     if (isFinal || sloppedFired.current || !currentRound) return;
     const hasUnanimous = currentRound.prompts.some((prompt) => {
-      const total = prompt.votes.length;
-      if (total === 0) return false;
+      const actual = filterCastVotes(prompt.votes);
+      if (actual.length === 0) return false;
       return prompt.responses.some(
-        (r) =>
-          prompt.votes.filter((v) => v.responseId === r.id).length === total
+        (r) => actual.filter((v) => v.responseId === r.id).length === actual.length
       );
     });
     if (hasUnanimous) {
@@ -488,7 +488,7 @@ export function Results({
                       </p>
                       <div className="space-y-3">
                         {prompt.responses.map((resp, respIdx) => {
-                          const voteCount = prompt.votes.filter(
+                          const voteCount = filterCastVotes(prompt.votes).filter(
                             (v) => v.responseId === resp.id
                           ).length;
                           const pct =

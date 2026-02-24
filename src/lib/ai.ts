@@ -18,10 +18,18 @@ export interface AiUsage {
  * Keeping these byte-identical across calls maximizes cache hit rates.
  */
 const JOKE_SYSTEM_PROMPT =
-  "You are a Quiplash player. Write a short, unexpected, funny answer to each prompt. Only output the joke — nothing else. Keep it under 80 characters. No quotes, no explanation." as const;
+  "You are playing Quiplash, the comedy party game where players write funny answers to prompts and the audience votes on the funniest one. Your goal is to make people laugh so they vote for YOUR answer over your opponent's. Write a short, unexpected, darkly funny or absurd answer. Be creative, surprising, and a little edgy — bland safe answers always lose. Only output your answer — nothing else. Keep it under 80 characters. No quotes, no explanation." as const;
 
-const VOTE_SYSTEM_PROMPT =
-  "You are a Quiplash judge. Pick the funnier answer: A or B." as const;
+const VOTE_SYSTEM_PROMPT = `You are judging Quiplash, a comedy party game. Two players wrote competing funny answers to the same prompt. Pick the answer that would get the biggest laugh from a room full of friends.
+
+Great Quiplash answers are: unexpected or absurd twists that subvert the prompt, clever wordplay or double meanings, specific and vivid (not generic), darkly funny or edgy, "so wrong it's funny."
+
+Weak answers are: boring, predictable, or safe, just restating the prompt, generic filler that isn't really a joke, overly long or try-hard.
+
+Choose A (first answer is funnier), B (second answer is funnier), or C (neither answer is funny enough to endorse — abstain).` as const;
+
+/** Sentinel text stored for AI responses that failed to generate. */
+export const FORFEIT_TEXT = "[forfeit]" as const;
 
 const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
@@ -53,7 +61,7 @@ function getLowReasoningProviderOptions(
 export async function generateJoke(
   modelId: string,
   promptText: string
-): Promise<{ text: string; usage: AiUsage }> {
+): Promise<{ text: string; usage: AiUsage; failed: boolean }> {
   const t0 = Date.now();
   try {
     const providerOptions = getLowReasoningProviderOptions(modelId);
@@ -67,17 +75,14 @@ export async function generateJoke(
     const text = result.text.trim().replace(/^["']|["']$/g, "");
     if (!text) {
       console.warn(`[generateJoke] ${modelId} returned empty text in ${elapsed}ms. finishReason: ${JSON.stringify(result.finishReason)}, usage: ${JSON.stringify(result.usage)}`);
-    } else {
-      console.log(`[generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
+      return { text: FORFEIT_TEXT, usage: extractUsage(modelId, result.usage), failed: true };
     }
-    return {
-      text: text || "I got nothing...",
-      usage: extractUsage(modelId, result.usage),
-    };
+    console.log(`[generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
+    return { text, usage: extractUsage(modelId, result.usage), failed: false };
   } catch (err) {
     const elapsed = Date.now() - t0;
     console.error(`[generateJoke] ${modelId} FAILED in ${elapsed}ms:`, err);
-    return { text: "My circuits are fried... 🤖", usage: { ...ZERO_USAGE, modelId } };
+    return { text: FORFEIT_TEXT, usage: { ...ZERO_USAGE, modelId }, failed: true };
   }
 }
 
@@ -86,7 +91,7 @@ export async function aiVote(
   promptText: string,
   responseA: string,
   responseB: string
-): Promise<{ choice: "A" | "B"; usage: AiUsage }> {
+): Promise<{ choice: "A" | "B" | "ABSTAIN"; usage: AiUsage }> {
   const t0 = Date.now();
   try {
     // Randomize order to prevent position bias
@@ -98,13 +103,19 @@ export async function aiVote(
     const result = await generateText({
       model: gateway(modelId),
       system: VOTE_SYSTEM_PROMPT,
-      output: Output.choice({ options: ["A", "B"] as const }),
-      prompt: `Prompt: "${promptText}"\n\nA: "${first}"\nB: "${second}"`,
+      output: Output.choice({ options: ["A", "B", "C"] as const }),
+      prompt: `Prompt: "${promptText}"\n\nA: "${first}"\nB: "${second}"\nC: Abstain (neither is funny)`,
       providerOptions,
     });
 
     const elapsed = Date.now() - t0;
-    const rawChoice = result.output ?? "A";
+    const rawChoice = result.output ?? "C";
+
+    if (rawChoice === "C") {
+      console.log(`[aiVote] ${modelId} ABSTAINED in ${elapsed}ms`);
+      return { choice: "ABSTAIN", usage: extractUsage(modelId, result.usage) };
+    }
+
     // Map back to original A/B positions when order was swapped
     const flipped = rawChoice === "A" ? "B" : "A";
     const choice: "A" | "B" = showAFirst ? rawChoice : flipped;
@@ -113,9 +124,7 @@ export async function aiVote(
   } catch (err) {
     const elapsed = Date.now() - t0;
     console.error(`[aiVote] ${modelId} FAILED in ${elapsed}ms:`, err);
-    return {
-      choice: Math.random() > 0.5 ? "A" : "B",
-      usage: { ...ZERO_USAGE, modelId },
-    };
+    // On error, abstain rather than casting a random vote
+    return { choice: "ABSTAIN", usage: { ...ZERO_USAGE, modelId } };
   }
 }

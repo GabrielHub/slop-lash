@@ -1,3 +1,4 @@
+import { filterCastVotes } from "./types";
 import type { GameState } from "./types";
 
 export interface Achievement {
@@ -112,13 +113,14 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
 
   for (const round of game.rounds) {
     for (const prompt of round.prompts) {
-    const totalVotes = prompt.votes.length;
+    const actualVotes = filterCastVotes(prompt.votes);
+    const totalVotes = actualVotes.length;
     if (totalVotes === 0 || prompt.responses.length < 2) continue;
 
     const voteCounts = prompt.responses.map((r) => ({
       playerId: r.playerId,
       playerType: r.player.type,
-      count: prompt.votes.filter((v) => v.responseId === r.id).length,
+      count: actualVotes.filter((v) => v.responseId === r.id).length,
     }));
 
     // Accumulate votes received

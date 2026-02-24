@@ -106,6 +106,13 @@ export async function POST(
         { status: 400 }
       );
     }
+    // P2002: unique constraint violation — forfeit vote pre-creation raced with this human vote
+    if (e != null && typeof e === "object" && "code" in e && (e as { code: string }).code === "P2002") {
+      return NextResponse.json(
+        { error: "Already voted on this prompt" },
+        { status: 400 }
+      );
+    }
     throw e;
   }
 

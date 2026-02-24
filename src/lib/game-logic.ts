@@ -1,7 +1,8 @@
 import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
-import { generateJoke, aiVote, type AiUsage } from "./ai";
+import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage } from "./ai";
 import { generateSpeechAudio } from "./tts";
+import { filterCastVotes } from "./types";
 import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
 export { MAX_PLAYERS, MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
@@ -252,7 +253,7 @@ export async function startVoting(gameId: string): Promise<boolean> {
   return claim.count > 0;
 }
 
-/** Returns prompts with 2+ responses for the current round, ordered by id asc. */
+/** Returns prompts with 2+ non-forfeited responses for the current round, ordered by id asc. */
 export async function getVotablePrompts(gameId: string) {
   const round = await prisma.round.findFirst({
     where: { gameId },
@@ -265,7 +266,9 @@ export async function getVotablePrompts(gameId: string) {
     },
   });
   if (!round) return [];
-  return round.prompts.filter((p) => p.responses.length >= 2);
+  return round.prompts.filter(
+    (p) => p.responses.length >= 2 && !p.responses.some((r) => r.text === FORFEIT_TEXT),
+  );
 }
 
 /** Check if all eligible voters have voted on the prompt at votingPromptIndex. */
@@ -343,6 +346,8 @@ export async function advanceToNextPrompt(gameId: string): Promise<"VOTING_SUBPH
 
 /**
  * Generate AI votes for the current round (slow, run in background).
+ * Forfeited prompts (where an AI failed to generate a response) get auto-resolved:
+ * all eligible voters' votes are pre-created for the non-forfeited response.
  * After completion, checks if the current prompt can be revealed.
  */
 export async function generateAiVotes(gameId: string): Promise<void> {
@@ -363,28 +368,34 @@ export async function generateAiVotes(gameId: string): Promise<void> {
   const aiPlayers = getAiPlayers(players);
   console.log(`[generateAiVotes] Starting AI votes for game ${gameId}: ${aiPlayers.length} voters × ${round.prompts.length} prompts`);
 
+  // AI voting — skip forfeited prompts (handled separately in scoring)
   const votePromises = round.prompts.flatMap((prompt) => {
     if (prompt.responses.length < 2) return [];
+    if (prompt.responses.some((r) => r.text === FORFEIT_TEXT)) return [];
+
     const [respA, respB] = [...prompt.responses].sort((a, b) => a.id.localeCompare(b.id));
     const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
 
     return aiPlayers
       .filter((p) => !respondentIds.has(p.id))
-      .map(async (aiPlayer) => {
+      .map(async (aiPlayer): Promise<AiUsage> => {
         const { choice, usage } = await aiVote(
           aiPlayer.modelId,
           prompt.text,
           respA.text,
-          respB.text
+          respB.text,
         );
-        const chosenResponse = choice === "A" ? respA : respB;
-        await prisma.vote.create({
-          data: {
-            promptId: prompt.id,
-            voterId: aiPlayer.id,
-            responseId: chosenResponse.id,
-          },
-        });
+        if (choice === "ABSTAIN") {
+          // Omit responseId — nullable column defaults to null (abstention)
+          await prisma.vote.create({
+            data: { promptId: prompt.id, voterId: aiPlayer.id },
+          });
+        } else {
+          const chosenResponse = choice === "A" ? respA : respB;
+          await prisma.vote.create({
+            data: { promptId: prompt.id, voterId: aiPlayer.id, responseId: chosenResponse.id },
+          });
+        }
         return usage;
       });
   });
@@ -401,24 +412,44 @@ export async function generateAiVotes(gameId: string): Promise<void> {
 }
 
 async function applyRoundScores(gameId: string): Promise<void> {
-  const round = await prisma.round.findFirst({
-    where: { gameId },
-    orderBy: { roundNumber: "desc" },
-    include: {
-      prompts: { include: { responses: true, votes: true } },
-    },
-  });
+  const [round, players] = await Promise.all([
+    prisma.round.findFirst({
+      where: { gameId },
+      orderBy: { roundNumber: "desc" },
+      include: {
+        prompts: { include: { responses: true, votes: true } },
+      },
+    }),
+    prisma.player.findMany({ where: { gameId } }),
+  ]);
 
   if (!round) return;
 
   const scoreUpdates: Record<string, number> = {};
 
   for (const prompt of round.prompts) {
+    const hasForfeit = prompt.responses.some((r) => r.text === FORFEIT_TEXT);
+
+    if (hasForfeit) {
+      // Forfeited prompt: award the non-forfeited response full points (unanimous win equivalent)
+      const winner = prompt.responses.find((r) => r.text !== FORFEIT_TEXT);
+      if (!winner) continue; // both forfeited — no points for anyone
+      const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+      const eligibleVoterCount = players.filter((p) => !respondentIds.has(p.id)).length;
+      const points = eligibleVoterCount * 100 * round.roundNumber
+        + (eligibleVoterCount >= 2 ? 100 * round.roundNumber : 0);
+      scoreUpdates[winner.playerId] = (scoreUpdates[winner.playerId] ?? 0) + points;
+      continue;
+    }
+
+    // Normal scoring
+    const actualVotes = filterCastVotes(prompt.votes);
+    const totalVotes = actualVotes.length;
+
     for (const response of prompt.responses) {
-      const voteCount = prompt.votes.filter(
+      const voteCount = actualVotes.filter(
         (v) => v.responseId === response.id
       ).length;
-      const totalVotes = prompt.votes.length;
 
       let points = voteCount * 100 * round.roundNumber;
       if (totalVotes >= 2 && voteCount === totalVotes) {

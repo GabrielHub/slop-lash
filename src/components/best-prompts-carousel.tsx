@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { GameState } from "@/lib/types";
+import { GameState, filterCastVotes } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
@@ -22,12 +22,12 @@ export function extractBestPrompts(game: GameState): BestPrompt[] {
 
   for (const round of game.rounds) {
     for (const prompt of round.prompts) {
-      const totalVotes = prompt.votes.length;
+      const actualVotes = filterCastVotes(prompt.votes);
+      const totalVotes = actualVotes.length;
       if (totalVotes === 0) continue;
 
-      // Count votes per response
       const voteCounts = new Map<string, number>();
-      for (const v of prompt.votes) {
+      for (const v of actualVotes) {
         voteCounts.set(v.responseId, (voteCounts.get(v.responseId) ?? 0) + 1);
       }
 
