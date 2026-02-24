@@ -1,10 +1,10 @@
 # Slop-Lash
 
-A Quiplash-inspired AI vs. Humans comedy party game. Players compete against AI models to write the funniest responses to prompts, then vote on the best answers.
+A Quiplash-inspired comedy party game where AI models play alongside humans. Everyone writes funny responses to prompts, votes on the best answers, and competes for the top score.
 
 ## How It Works
 
-1. **Host** creates a game and picks which AI models to play against
+1. **Host** creates a game and picks which AI models to include
 2. **Players** join using a 4-character room code
 3. Everyone gets prompts and writes funny responses within a time limit
 4. Players vote on the funniest response for each prompt
@@ -15,7 +15,7 @@ AI models generate responses and vote just like human players.
 
 ## AI Models
 
-Opponents are served through the Vercel AI Gateway and include:
+AI players are served through the Vercel AI Gateway and include:
 
 - OpenAI (GPT-5 Mini)
 - Anthropic (Claude Sonnet 4.6)

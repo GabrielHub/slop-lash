@@ -8,15 +8,19 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "check": "pnpm lint && pnpm typecheck",
     "prepare": "husky"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.30",
     "@ai-sdk/openai": "^3.0.31",
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
     "ai": "^6.0.97",
+    "canvas-confetti": "^1.9.4",
+    "motion": "^12.34.3",
     "next": "16.1.6",
     "prisma": "^7.4.1",
     "react": "19.2.3",
@@ -33,6 +37,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -41,6 +46,7 @@
     "eslint-config-next": "16.1.6",
     "husky": "^9.1.7",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18"
   }
 }
