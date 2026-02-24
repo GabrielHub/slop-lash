@@ -21,27 +21,39 @@ enum PlayerType {
 }
 
 model Game {
-  id           String     @id @default(cuid())
-  roomCode     String     @unique
-  status       GameStatus @default(LOBBY)
-  currentRound Int        @default(0)
-  totalRounds  Int        @default(3)
-  hostPlayerId String?
-  createdAt    DateTime   @default(now())
-  players      Player[]
-  rounds       Round[]
+  id              String     @id @default(cuid())
+  roomCode        String     @unique
+  status          GameStatus @default(LOBBY)
+  currentRound    Int        @default(0)
+  totalRounds     Int        @default(3)
+  hostPlayerId    String?
+  phaseDeadline   DateTime?
+  timersDisabled  Boolean    @default(false)
+  nextGameCode    String?
+  aiInputTokens   Int        @default(0)
+  aiOutputTokens  Int        @default(0)
+  aiCostUsd       Float      @default(0)
+  version         Int        @default(0)
+  createdAt       DateTime   @default(now())
+  players         Player[]
+  rounds          Round[]
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model Player {
-  id        String     @id @default(cuid())
-  gameId    String
-  game      Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  name      String
-  type      PlayerType @default(HUMAN)
-  modelId   String?
-  score     Int        @default(0)
-  responses Response[]
-  votes     Vote[]
+  id          String             @id @default(cuid())
+  gameId      String
+  game        Game               @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name        String
+  type        PlayerType         @default(HUMAN)
+  modelId     String?
+  score       Int                @default(0)
+  lastSeen    DateTime           @default(now())
+  responses   Response[]
+  votes       Vote[]
+  assignments PromptAssignment[]
 
   @@index([gameId])
 }
@@ -58,14 +70,27 @@ model Round {
 }
 
 model Prompt {
-  id        String     @id @default(cuid())
-  roundId   String
-  round     Round      @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  text      String
-  responses Response[]
-  votes     Vote[]
+  id          String             @id @default(cuid())
+  roundId     String
+  round       Round              @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  text        String
+  responses   Response[]
+  votes       Vote[]
+  assignments PromptAssignment[]
 
   @@index([roundId])
+}
+
+model PromptAssignment {
+  id       String @id @default(cuid())
+  promptId String
+  prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([promptId, playerId])
+  @@index([promptId])
+  @@index([playerId])
 }
 
 model Response {
