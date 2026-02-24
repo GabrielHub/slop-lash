@@ -28,7 +28,7 @@ Opponents are served through the Vercel AI Gateway and include:
 
 - **Framework:** Next.js 16 / React 19 / TypeScript
 - **Styling:** Tailwind CSS 4
-- **Database:** PostgreSQL + Prisma ORM (Neon in production, Prisma Postgres locally)
+- **Database:** Neon PostgreSQL + Prisma ORM
 - **AI:** Vercel AI SDK + AI Gateway
 
 ## Getting Started
@@ -45,11 +45,11 @@ Opponents are served through the Vercel AI Gateway and include:
 # Install dependencies
 pnpm install
 
-# Copy env file and fill in your values
-cp .env .env.local
+# Pull env vars from Vercel (requires vercel link first)
+npx vercel env pull .env.local
 
-# Push the database schema
-pnpm exec prisma db push
+# Run database migrations
+pnpm prisma migrate dev
 
 # Start the dev server
 pnpm dev
@@ -59,11 +59,13 @@ Open [http://localhost:3000](http://localhost:3000) to play.
 
 ### Environment Variables
 
+Set these in the Vercel dashboard (Neon vars are auto-injected via the integration):
+
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | Neon PostgreSQL connection string |
+| `DATABASE_URL` | Neon pooled connection string (auto-injected) |
+| `DATABASE_URL_UNPOOLED` | Neon direct connection string (auto-injected) |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway API key |
-| `AI_GATEWAY_BASE_URL` | AI Gateway base URL (defaults to `https://ai-gateway.vercel.sh/v1`) |
 | `HOST_SECRET` | Secret for host authentication |
 
 ## Scripts
