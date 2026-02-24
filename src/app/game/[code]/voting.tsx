@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { Timer } from "@/components/timer";
@@ -17,6 +17,7 @@ import {
   buttonTap,
 } from "@/lib/animations";
 import { playSound } from "@/lib/sounds";
+import { useTts } from "@/hooks/use-tts";
 
 function getSkipButtonText(
   skipping: boolean,
@@ -26,6 +27,26 @@ function getSkipButtonText(
   if (skipping) return "Skipping...";
   if (timersDisabled) return `End ${phase}`;
   return "Skip Timer";
+}
+
+/** Animated equalizer bars shown next to a prompt while TTS is playing. */
+function TtsIndicator({ mirror = false }: { mirror?: boolean }) {
+  const bars = [
+    { height: "h-3", delay: "" },
+    { height: "h-4", delay: "[animation-delay:150ms]" },
+    { height: "h-2.5", delay: "[animation-delay:300ms]" },
+  ];
+  const ordered = mirror ? [...bars].reverse() : bars;
+  return (
+    <span className="inline-flex items-center gap-0.5 shrink-0">
+      {ordered.map((bar, i) => (
+        <span
+          key={i}
+          className={`w-0.5 ${bar.height} bg-gold rounded-full animate-pulse ${bar.delay}`}
+        />
+      ))}
+    </span>
+  );
 }
 
 export function Voting({
@@ -44,6 +65,7 @@ export function Voting({
   const [skipping, setSkipping] = useState(false);
   const [error, setError] = useState("");
 
+  const ttsTriggeredRef = useRef(false);
   const currentRound = game.rounds[0];
 
   const votablePrompts = useMemo(() => {
@@ -66,6 +88,25 @@ export function Voting({
     return set;
   }, [currentRound, playerId]);
 
+  const { playPromptTts, currentPromptId } = useTts({
+    code,
+    ttsMode: game.ttsMode,
+    prompts: votablePrompts,
+  });
+
+  // Auto-play TTS for the first unvoted prompt on mount
+  useEffect(() => {
+    if (ttsTriggeredRef.current) return;
+    if (game.ttsMode === "OFF" || votablePrompts.length === 0) return;
+    const firstUnvoted = votablePrompts.find(
+      (p) => !voted.has(p.id) && !alreadyVoted.has(p.id),
+    );
+    if (firstUnvoted) {
+      ttsTriggeredRef.current = true;
+      playPromptTts(firstUnvoted.id);
+    }
+  }, [game.ttsMode, votablePrompts, voted, alreadyVoted, playPromptTts]);
+
   async function castVote(promptId: string, responseId: string) {
     if (!playerId) return;
     setVoting(true);
@@ -85,7 +126,18 @@ export function Voting({
       }
 
       playSound("vote-cast");
-      setVoted((prev) => new Set(prev).add(promptId));
+      const next = new Set(voted).add(promptId);
+      setVoted(next);
+
+      // Play TTS for the next unvoted prompt
+      if (game.ttsMode !== "OFF") {
+        const nextUnvoted = votablePrompts.find(
+          (p) => !next.has(p.id) && !alreadyVoted.has(p.id),
+        );
+        if (nextUnvoted) {
+          playPromptTts(nextUnvoted.id);
+        }
+      }
     } catch {
       setError("Something went wrong");
     } finally {
@@ -202,8 +254,10 @@ export function Voting({
                       layout
                     >
                       {/* Prompt text */}
-                      <p className="font-display font-semibold text-base sm:text-lg text-center mb-5 text-gold leading-snug">
-                        {prompt.text}
+                      <p className="font-display font-semibold text-base sm:text-lg text-center mb-5 text-gold leading-snug flex items-center justify-center gap-2">
+                        {currentPromptId === prompt.id && <TtsIndicator />}
+                        <span>{prompt.text}</span>
+                        {currentPromptId === prompt.id && <TtsIndicator mirror />}
                       </p>
 
                       <div className="space-y-3">

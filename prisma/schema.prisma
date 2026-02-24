@@ -20,6 +20,17 @@ enum PlayerType {
   AI
 }
 
+enum TtsMode {
+  OFF
+  AI_VOICE
+  BROWSER_VOICE
+}
+
+enum TtsVoice {
+  MALE
+  FEMALE
+}
+
 model Game {
   id              String     @id @default(cuid())
   roomCode        String     @unique
@@ -29,6 +40,8 @@ model Game {
   hostPlayerId    String?
   phaseDeadline   DateTime?
   timersDisabled  Boolean    @default(false)
+  ttsMode         TtsMode    @default(OFF)
+  ttsVoice        TtsVoice   @default(MALE)
   nextGameCode    String?
   aiInputTokens   Int        @default(0)
   aiOutputTokens  Int        @default(0)
@@ -74,6 +87,7 @@ model Prompt {
   roundId     String
   round       Round              @relation(fields: [roundId], references: [id], onDelete: Cascade)
   text        String
+  ttsAudio    String?
   responses   Response[]
   votes       Vote[]
   assignments PromptAssignment[]

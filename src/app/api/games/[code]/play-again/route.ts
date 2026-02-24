@@ -76,6 +76,8 @@ export async function POST(
     data: {
       roomCode: newRoomCode,
       timersDisabled: game.timersDisabled,
+      ttsMode: game.ttsMode,
+      ttsVoice: game.ttsVoice,
       players: {
         create: [
           { name: hostPlayer.name, type: "HUMAN" },

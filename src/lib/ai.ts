@@ -1,16 +1,10 @@
-import { generateText, Output } from "ai";
-import { createOpenAI, type OpenAILanguageModelChatOptions } from "@ai-sdk/openai";
+import { generateText, Output, createGateway } from "ai";
 import { z } from "zod";
 import { calculateCostUsd } from "./models";
 
-const provider = createOpenAI({
+const gateway = createGateway({
   apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
-  baseURL: process.env.AI_GATEWAY_BASE_URL ?? "https://ai-gateway.vercel.sh/v1",
 });
-
-const LOW_REASONING: { openai: OpenAILanguageModelChatOptions } = {
-  openai: { reasoningEffort: "low" },
-};
 
 export interface AiUsage {
   modelId: string;
@@ -37,13 +31,13 @@ export async function generateJoke(
 ): Promise<{ text: string; usage: AiUsage }> {
   try {
     const result = await generateText({
-      model: provider(modelId),
+      model: gateway(modelId),
       maxOutputTokens: 150,
       system:
         "You are a Quiplash player. Write a short, unexpected, funny answer to each prompt. Only output the joke — nothing else. Keep it under 80 characters.",
       output: Output.object({ schema: jokeSchema }),
       prompt: promptText,
-      providerOptions: LOW_REASONING,
+      providerOptions: { openai: { reasoningEffort: "low" } },
     });
     return {
       text: result.output?.joke ?? "I got nothing...",
@@ -67,12 +61,12 @@ export async function aiVote(
     const second = showAFirst ? responseB : responseA;
 
     const result = await generateText({
-      model: provider(modelId),
+      model: gateway(modelId),
       maxOutputTokens: 50,
       system: "You are a Quiplash judge. Pick the funnier answer: A or B.",
       output: Output.choice({ options: ["A", "B"] as const }),
       prompt: `Prompt: "${promptText}"\n\nA: "${first}"\nB: "${second}"`,
-      providerOptions: LOW_REASONING,
+      providerOptions: { openai: { reasoningEffort: "low" } },
     });
 
     const rawChoice = result.output ?? "A";

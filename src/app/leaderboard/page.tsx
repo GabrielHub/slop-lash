@@ -551,7 +551,7 @@ export default function LeaderboardPage() {
             initial="hidden"
             animate="visible"
           >
-            Who&rsquo;s the funniest? Human vs Machine.
+            Who&rsquo;s the funniest? Human vs Machine vs Machine.
           </motion.p>
         </div>
 

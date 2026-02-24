@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { AI_MODELS, type AIModel } from "@/lib/models";
+import type { TtsMode, TtsVoice } from "@/lib/types";
 import { ModelIcon } from "@/components/model-icon";
 import { MAX_PLAYERS } from "@/lib/game-constants";
 import { ErrorBanner } from "@/components/error-banner";
@@ -16,6 +17,8 @@ export default function HostPage() {
   const [hostName, setHostName] = useState("");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [timersDisabled, setTimersDisabled] = useState(false);
+  const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
+  const [ttsVoice, setTtsVoice] = useState<TtsVoice>("MALE");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -64,6 +67,8 @@ export default function HostPage() {
           hostName: hostName.trim(),
           aiModelIds: selectedModels,
           timersDisabled,
+          ttsMode,
+          ttsVoice: ttsMode === "AI_VOICE" ? ttsVoice : undefined,
         }),
       });
 
@@ -243,6 +248,63 @@ export default function HostPage() {
                 </p>
               </div>
             </button>
+          </div>
+
+          {/* Voice Readout */}
+          <div className="mb-8">
+            <label className="block text-sm font-medium text-ink-dim mb-1">
+              Voice Readout
+            </label>
+            <p className="text-xs text-ink-dim/60 mb-3">
+              Read prompts and responses aloud during voting
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  { value: "OFF", label: "Off" },
+                  { value: "AI_VOICE", label: "AI Voice" },
+                  { value: "BROWSER_VOICE", label: "Browser" },
+                ] as const
+              ).map((opt) => (
+                <motion.button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setTtsMode(opt.value)}
+                  className={`py-2.5 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
+                    ttsMode === opt.value
+                      ? "bg-punch/15 backdrop-blur-sm border-punch text-punch"
+                      : "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                  }`}
+                  {...buttonTap}
+                >
+                  {opt.label}
+                </motion.button>
+              ))}
+            </div>
+            {ttsMode === "AI_VOICE" && (
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                {(
+                  [
+                    { value: "MALE", label: "Male" },
+                    { value: "FEMALE", label: "Female" },
+                  ] as const
+                ).map((opt) => (
+                  <motion.button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setTtsVoice(opt.value)}
+                    className={`py-2 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
+                      ttsVoice === opt.value
+                        ? "bg-punch/15 backdrop-blur-sm border-punch text-punch"
+                        : "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                    }`}
+                    {...buttonTap}
+                  >
+                    {opt.label}
+                  </motion.button>
+                ))}
+              </div>
+            )}
           </div>
 
           <ErrorBanner error={error} />

@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAllResponsesIn, startVoting } from "@/lib/game-logic";
+import { checkAllResponsesIn, startVoting, generateAiVotes, preGenerateTtsAudio } from "@/lib/game-logic";
 import { sanitize } from "@/lib/sanitize";
 
 export async function POST(
@@ -88,10 +88,19 @@ export async function POST(
     throw e;
   }
 
-  const allIn = await checkAllResponsesIn(game.id);
-  if (allIn) {
-    await startVoting(game.id);
-  }
+  // Check and advance in background so the human gets an instant response
+  after(async () => {
+    const allIn = await checkAllResponsesIn(game.id);
+    if (allIn) {
+      const claimed = await startVoting(game.id);
+      if (claimed) {
+        await Promise.all([
+          generateAiVotes(game.id),
+          preGenerateTtsAudio(game.id),
+        ]);
+      }
+    }
+  });
 
   return NextResponse.json({ success: true });
 }

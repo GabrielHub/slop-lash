@@ -23,15 +23,20 @@ function getPlayerName() {
 
 const noopSubscribe = () => () => {};
 
+const POLL_FAST_MS = 1000;
+const POLL_SLOW_MS = 2000;
+
 function useGamePoller(code: string, playerId: string | null) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const versionRef = useRef<number | null>(null);
+  const statusRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     versionRef.current = null;
+    statusRef.current = null;
 
     async function poll() {
       while (!cancelled) {
@@ -56,12 +61,15 @@ function useGamePoller(code: string, playerId: string | null) {
             if (data.changed !== false) {
               setGameState(data);
               versionRef.current = data.version ?? null;
+              statusRef.current = data.status ?? null;
             }
           }
         } catch {
           // Silently retry on network errors
         }
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Poll faster during active input phases for snappier feel
+        const isActivePhase = statusRef.current === "WRITING" || statusRef.current === "VOTING";
+        await new Promise((resolve) => setTimeout(resolve, isActivePhase ? POLL_FAST_MS : POLL_SLOW_MS));
       }
     }
 
@@ -85,10 +93,7 @@ export function GameShell({ code }: { code: string }) {
 
   // Preload sounds on first user interaction
   useEffect(() => {
-    const handler = () => {
-      preloadSounds();
-      window.removeEventListener("pointerdown", handler);
-    };
+    const handler = () => preloadSounds();
     window.addEventListener("pointerdown", handler, { once: true });
     return () => window.removeEventListener("pointerdown", handler);
   }, []);
@@ -102,6 +107,10 @@ export function GameShell({ code }: { code: string }) {
     prevStatus.current = status;
     // Skip on initial mount (prev is undefined) and LOBBY phase
     if (!prev || status === "LOBBY") return;
+    // Cancel any TTS when leaving VOTING phase
+    if (prev === "VOTING" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
     playSound("phase-transition");
   }, [gameState?.status]);
 

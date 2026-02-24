@@ -1,9 +1,10 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAndEnforceDeadline, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
+import { checkAndEnforceDeadline, generateAiVotes, preGenerateTtsAudio, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
 
 const roundsInclude = {
   prompts: {
+    omit: { ttsAudio: true },
     include: {
       responses: {
         include: { player: { select: { id: true, name: true, type: true, modelId: true, lastSeen: true } } },
@@ -58,7 +59,7 @@ export async function GET(
 
   // Heartbeat: update lastSeen for the polling player (non-blocking)
   if (playerId) {
-    after(
+    after(() =>
       prisma.player.updateMany({
         where: { id: playerId, gameId: game.id },
         data: { lastSeen: new Date() },
@@ -77,14 +78,21 @@ export async function GET(
   }
 
   // Check and enforce deadline (auto-advance if expired)
-  const advanced = await checkAndEnforceDeadline(game.id);
+  const advancedTo = await checkAndEnforceDeadline(game.id);
 
-  if (advanced || hostPromoted) {
-    // Re-fetch to get fresh data after state changes
-    return NextResponse.json(await findGame(roomCode, { allRounds: true }));
+  // If deadline advanced WRITING→VOTING, generate AI votes + TTS in background
+  if (advancedTo === "VOTING") {
+    after(() => Promise.all([
+      generateAiVotes(game.id),
+      preGenerateTtsAudio(game.id),
+    ]));
   }
 
-  // Smart polling: skip full response if version unchanged and no deadline was enforced
+  if (advancedTo || hostPromoted) {
+    return NextResponse.json(await findGame(roomCode));
+  }
+
+  // Smart polling: skip full response if version unchanged
   if (clientVersion && Number(clientVersion) === game.version) {
     return NextResponse.json({ changed: false });
   }

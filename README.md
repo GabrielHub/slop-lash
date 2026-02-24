@@ -4,25 +4,36 @@ A Quiplash-inspired comedy party game where AI models play alongside humans. Eve
 
 ## How It Works
 
-1. **Host** creates a game and picks which AI models to include
+1. **Host** creates a game, picks which AI models to include, and optionally enables voice readout
 2. **Players** join using a 4-character room code
 3. Everyone gets prompts and writes funny responses within a time limit
-4. Players vote on the funniest response for each prompt
+4. Players vote on the funniest response for each prompt — with optional TTS reading prompts and answers aloud
 5. Scores are tallied (100 pts per vote, +100 bonus for unanimous wins)
 6. Repeat for 3 rounds — highest score wins
 
 AI models generate responses and vote just like human players.
 
+### Voice Readout (TTS)
+
+The host can enable text-to-speech during game creation:
+
+- **Off** — No voice readout (default)
+- **AI Voice** — Multi-speaker Gemini TTS with game-show energy (host voice reads the prompt, two player voices read the responses). Choose between male and female voice presets. Falls back to browser voice if Gemini is unavailable.
+- **Browser Voice** — Uses the browser's built-in Web Speech API with distinct pitches for prompt vs responses.
+
 ## AI Models
 
 AI players are served through the Vercel AI Gateway and include:
 
-- OpenAI (GPT-5 Mini)
-- Anthropic (Claude Sonnet 4.6)
 - Google (Gemini 3 Flash)
-- DeepSeek
-- xAI (Grok)
-- and more
+- Zhipu AI (GLM-5)
+- MiniMax (M2.5)
+- DeepSeek (V3.2)
+- OpenAI (GPT-5.2)
+- Moonshot AI (Kimi K2.5)
+- Xiaomi (MiMo V2 Flash)
+- xAI (Grok 4.1 Fast)
+- Anthropic (Claude Sonnet 4.6)
 
 ## Tech Stack
 
@@ -30,6 +41,7 @@ AI players are served through the Vercel AI Gateway and include:
 - **Styling:** Tailwind CSS 4
 - **Database:** Neon PostgreSQL + Prisma ORM
 - **AI:** Vercel AI SDK + AI Gateway
+- **TTS:** Google Gemini multi-speaker TTS + Web Speech API fallback
 
 ## Getting Started
 
@@ -38,6 +50,7 @@ AI players are served through the Vercel AI Gateway and include:
 - Node.js 20+
 - A Neon PostgreSQL database
 - AI Gateway API key
+- Gemini API key (optional, for AI Voice TTS)
 
 ### Setup
 
@@ -66,6 +79,7 @@ Set these in the Vercel dashboard (Neon vars are auto-injected via the integrati
 | `DATABASE_URL` | Neon pooled connection string (auto-injected) |
 | `DATABASE_URL_UNPOOLED` | Neon direct connection string (auto-injected) |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway API key |
+| `GEMINI_API_KEY` | Google Gemini API key (for AI Voice TTS) |
 | `HOST_SECRET` | Secret for host authentication |
 
 ## Scripts
@@ -76,5 +90,6 @@ Set these in the Vercel dashboard (Neon vars are auto-injected via the integrati
 | `pnpm build` | Production build |
 | `pnpm start` | Start production server |
 | `pnpm check` | Run lint + typecheck |
+| `pnpm test` | Run tests |
 | `pnpm lint` | Run ESLint |
 | `pnpm typecheck` | Run TypeScript type checking |

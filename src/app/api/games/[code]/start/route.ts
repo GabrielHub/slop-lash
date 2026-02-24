@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { startRound, MIN_PLAYERS } from "@/lib/game-logic";
+import { startRound, generateAiResponses, MIN_PLAYERS } from "@/lib/game-logic";
 
 export async function POST(
   request: Request,
@@ -39,7 +39,11 @@ export async function POST(
     );
   }
 
+  // Create round and set WRITING (fast DB work)
   await startRound(game.id, 1);
+
+  // Generate AI responses in background (slow AI work)
+  after(() => generateAiResponses(game.id));
 
   return NextResponse.json({ success: true });
 }

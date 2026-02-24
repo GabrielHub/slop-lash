@@ -12,6 +12,8 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
     hostPlayerId: "p1",
     phaseDeadline: null,
     timersDisabled: false,
+    ttsMode: "OFF",
+    ttsVoice: "MALE",
     nextGameCode: null,
     version: 1,
     players: [

@@ -7,6 +7,10 @@ export type GameStatus =
 
 export type PlayerType = "HUMAN" | "AI";
 
+export type TtsMode = "OFF" | "AI_VOICE" | "BROWSER_VOICE";
+
+export type TtsVoice = "MALE" | "FEMALE";
+
 export interface GamePlayer {
   id: string;
   name: string;
@@ -61,6 +65,8 @@ export interface GameState {
   hostPlayerId: string | null;
   phaseDeadline: string | null;
   timersDisabled: boolean;
+  ttsMode: TtsMode;
+  ttsVoice: TtsVoice;
   nextGameCode: string | null;
   version: number;
   players: GamePlayer[];

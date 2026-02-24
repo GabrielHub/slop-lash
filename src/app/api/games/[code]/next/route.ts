@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { advanceGame, forceAdvancePhase, HOST_STALE_MS } from "@/lib/game-logic";
+import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, preGenerateTtsAudio, HOST_STALE_MS } from "@/lib/game-logic";
 
 export async function POST(
   request: Request,
@@ -38,7 +38,10 @@ export async function POST(
         );
       }
     }
-    await advanceGame(game.id);
+    const newRoundStarted = await advanceGame(game.id);
+    if (newRoundStarted) {
+      after(() => generateAiResponses(game.id));
+    }
     return NextResponse.json({ success: true });
   }
 
@@ -53,7 +56,13 @@ export async function POST(
       where: { id: game.id },
       data: { phaseDeadline: null },
     });
-    await forceAdvancePhase(game.id);
+    const advancedTo = await forceAdvancePhase(game.id);
+    if (advancedTo === "VOTING") {
+      after(() => Promise.all([
+        generateAiVotes(game.id),
+        preGenerateTtsAudio(game.id),
+      ]));
+    }
     return NextResponse.json({ success: true });
   }
 

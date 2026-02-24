@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { checkAllVotesIn, calculateRoundScores } from "@/lib/game-logic";
 
@@ -89,10 +89,13 @@ export async function POST(
     throw e;
   }
 
-  const allIn = await checkAllVotesIn(game.id);
-  if (allIn) {
-    await calculateRoundScores(game.id);
-  }
+  // Check and advance in background so the human gets an instant response
+  after(async () => {
+    const allIn = await checkAllVotesIn(game.id);
+    if (allIn) {
+      await calculateRoundScores(game.id);
+    }
+  });
 
   return NextResponse.json({ success: true });
 }

@@ -52,8 +52,21 @@ export async function GET() {
   }
 
   try {
+    // Quick check: if no completed games, return empty data immediately
+    const totalGames = await prisma.game.count({ where: { status: "FINAL_RESULTS" } });
+    if (totalGames === 0) {
+      const emptyData = {
+        leaderboard: [],
+        headToHead: [],
+        bestResponses: [],
+        stats: { totalGames: 0, totalPrompts: 0, totalVotes: 0 },
+      };
+      cache = { data: emptyData, timestamp: Date.now() };
+      return NextResponse.json(emptyData);
+    }
+
     // Fetch all prompts from completed games with responses and vote counts
-    const [prompts, totalGames, totalVotes] = await Promise.all([
+    const [prompts, totalVotes] = await Promise.all([
       prisma.prompt.findMany({
         where: {
           round: {
@@ -84,7 +97,6 @@ export async function GET() {
           },
         },
       }),
-      prisma.game.count({ where: { status: "FINAL_RESULTS" } }),
       prisma.vote.count({
         where: {
           prompt: { round: { game: { status: "FINAL_RESULTS" } } },
