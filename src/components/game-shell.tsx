@@ -1,38 +1,62 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { Lobby } from "@/app/game/[code]/lobby";
 import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
 import { Results } from "@/app/game/[code]/results";
+import { phaseTransition, fadeInUp } from "@/lib/animations";
+import { playSound, preloadSounds, subscribeMute, isMuted, toggleMute } from "@/lib/sounds";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("playerId");
 }
 
-const noop = () => () => {};
+function getPlayerName() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("playerName");
+}
 
-function useGamePoller(code: string) {
+const noopSubscribe = () => () => {};
+
+function useGamePoller(code: string, playerId: string | null) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const versionRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    versionRef.current = null;
 
     async function poll() {
       while (!cancelled) {
         try {
-          const res = await fetch(`/api/games/${code}`);
+          const params = new URLSearchParams();
+          if (playerId) params.set("playerId", playerId);
+          if (versionRef.current !== null) params.set("v", String(versionRef.current));
+          const qs = params.toString();
+          const url = `/api/games/${code}${qs ? `?${qs}` : ""}`;
+          const res = await fetch(url);
           if (!cancelled) {
             if (!res.ok) {
-              setError("Game not found");
-              return;
+              if (res.status === 404) {
+                setError("Game not found");
+                return; // Stop polling on 404 only
+              }
+              // Retry on transient errors (500, etc.)
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+              continue;
             }
             const data = await res.json();
-            setGameState(data);
+            if (data.changed !== false) {
+              setGameState(data);
+              versionRef.current = data.version ?? null;
+            }
           }
         } catch {
           // Silently retry on network errors
@@ -45,7 +69,7 @@ function useGamePoller(code: string) {
     return () => {
       cancelled = true;
     };
-  }, [code, refreshKey]);
+  }, [code, playerId, refreshKey]);
 
   const refresh = () => setRefreshKey((k) => k + 1);
 
@@ -53,13 +77,89 @@ function useGamePoller(code: string) {
 }
 
 export function GameShell({ code }: { code: string }) {
-  const playerId = useSyncExternalStore(noop, getPlayerId, () => null);
-  const { gameState, error, refresh } = useGamePoller(code);
+  const router = useRouter();
+  const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
+  const { gameState, error, refresh } = useGamePoller(code, playerId);
+  const [endingGame, setEndingGame] = useState(false);
+  const soundsMuted = useSyncExternalStore(subscribeMute, isMuted, () => false);
+
+  // Preload sounds on first user interaction
+  useEffect(() => {
+    const handler = () => {
+      preloadSounds();
+      window.removeEventListener("pointerdown", handler);
+    };
+    window.addEventListener("pointerdown", handler, { once: true });
+    return () => window.removeEventListener("pointerdown", handler);
+  }, []);
+
+  // Play phase-transition sound when game status changes
+  const prevStatus = useRef(gameState?.status);
+  useEffect(() => {
+    const status = gameState?.status;
+    if (!status || status === prevStatus.current) return;
+    const prev = prevStatus.current;
+    prevStatus.current = status;
+    // Skip on initial mount (prev is undefined) and LOBBY phase
+    if (!prev || status === "LOBBY") return;
+    playSound("phase-transition");
+  }, [gameState?.status]);
+
+  // Handle play-again redirect for non-host players
+  const handlePlayAgainRedirect = useCallback(
+    async (nextGameCode: string) => {
+      const playerName = getPlayerName();
+      if (!playerName) {
+        router.push("/join");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/games/${nextGameCode}/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: playerName }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          localStorage.setItem("playerId", data.playerId);
+          router.push(`/game/${nextGameCode}`);
+        } else {
+          // Name conflict or game full - redirect to join page
+          router.push("/join");
+        }
+      } catch {
+        router.push("/join");
+      }
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    if (
+      gameState?.status === "FINAL_RESULTS" &&
+      gameState.nextGameCode &&
+      playerId && // Wait for hydration — playerId is null before localStorage is read
+      playerId !== gameState.hostPlayerId
+    ) {
+      // Small delay so non-host players can see the final results briefly
+      const timer = setTimeout(() => {
+        handlePlayAgainRedirect(gameState.nextGameCode!);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState?.status, gameState?.nextGameCode, gameState?.hostPlayerId, playerId, handlePlayAgainRedirect]);
 
   if (error) {
     return (
       <main className="min-h-svh flex items-center justify-center px-6">
-        <div className="text-center animate-fade-in-up">
+        <motion.div
+          className="text-center"
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+        >
           <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-fail-soft border-2 border-fail/30 flex items-center justify-center">
             <svg
               width="24"
@@ -78,23 +178,80 @@ export function GameShell({ code }: { code: string }) {
             </svg>
           </div>
           <p className="text-fail font-display font-bold text-xl">{error}</p>
-        </div>
+        </motion.div>
       </main>
     );
   }
 
   if (!gameState) {
     return (
-      <main className="min-h-svh flex items-center justify-center px-6">
-        <div className="text-center">
-          <div className="w-8 h-8 mx-auto mb-4 rounded-full border-2 border-edge border-t-punch animate-spin" />
-          <p className="text-ink-dim font-medium">Loading game...</p>
+      <>
+        {/* Skeleton header */}
+        <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
+          <div className="h-4 w-20 rounded bg-edge/40 animate-pulse" />
+          <div className="h-4 w-px bg-edge-strong" />
+          <div className="h-4 w-14 rounded bg-edge/40 animate-pulse" />
         </div>
-      </main>
+        <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+          <div className="w-full max-w-md space-y-8">
+            {/* Title */}
+            <div className="flex justify-center">
+              <div className="h-8 w-40 rounded-lg bg-edge/40 animate-pulse" />
+            </div>
+            {/* Subtitle */}
+            <div className="flex justify-center">
+              <div className="h-4 w-36 rounded bg-edge/40 animate-pulse" />
+            </div>
+            {/* Room code boxes */}
+            <div className="flex justify-center gap-2.5">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="w-14 h-[4.5rem] sm:w-16 sm:h-20 rounded-xl bg-edge/40 animate-pulse"
+                />
+              ))}
+            </div>
+            {/* Player list heading */}
+            <div className="space-y-3">
+              <div className="h-4 w-16 rounded bg-edge/40 animate-pulse" />
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-12 rounded-xl bg-edge/40 animate-pulse"
+                  style={{ animationDelay: `${i * 150}ms` }}
+                />
+              ))}
+            </div>
+            {/* Button */}
+            <div className="h-14 rounded-xl bg-edge/40 animate-pulse" />
+          </div>
+        </main>
+      </>
     );
   }
 
   const isHost = playerId === gameState.hostPlayerId;
+
+  const canEndGame =
+    isHost &&
+    (gameState.status === "WRITING" ||
+      gameState.status === "VOTING" ||
+      gameState.status === "ROUND_RESULTS");
+
+  async function handleEndGame() {
+    if (!playerId || !canEndGame) return;
+    if (!window.confirm("End the game early? Scores will be calculated for completed rounds.")) return;
+    setEndingGame(true);
+    try {
+      await fetch(`/api/games/${code}/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId }),
+      });
+    } finally {
+      setEndingGame(false);
+    }
+  }
 
   const gameHeader = (
     <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
@@ -107,58 +264,80 @@ export function GameShell({ code }: { code: string }) {
           {gameState.roomCode}
         </span>
       </div>
-      {gameState.status !== "LOBBY" && (
-        <span className="text-xs font-medium text-ink-dim">
-          Round {gameState.currentRound}/{gameState.totalRounds}
-        </span>
-      )}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={toggleMute}
+          aria-label={soundsMuted ? "Unmute sounds" : "Mute sounds"}
+          className="text-ink-dim hover:text-ink transition-colors"
+        >
+          {soundsMuted ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 5L6 9H2v6h4l5 4V5z" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            </svg>
+          )}
+        </button>
+        {canEndGame && (
+          <button
+            onClick={handleEndGame}
+            disabled={endingGame}
+            className="text-xs font-medium text-ink-dim hover:text-fail transition-colors disabled:opacity-50"
+          >
+            {endingGame ? "Ending..." : "End Game"}
+          </button>
+        )}
+        {gameState.status !== "LOBBY" && (
+          <span className="text-xs font-medium text-ink-dim">
+            Round {gameState.currentRound}/{gameState.totalRounds}
+          </span>
+        )}
+      </div>
     </div>
   );
-
-  const content = (() => {
-    switch (gameState.status) {
-      case "LOBBY":
-        return (
-          <Lobby
-            game={gameState}
-            isHost={isHost}
-            code={code}
-            onRefresh={refresh}
-          />
-        );
-      case "WRITING":
-        return (
-          <Writing game={gameState} playerId={playerId} code={code} />
-        );
-      case "VOTING":
-        return (
-          <Voting game={gameState} playerId={playerId} code={code} />
-        );
-      case "ROUND_RESULTS":
-        return (
-          <Results
-            game={gameState}
-            isHost={isHost}
-            code={code}
-            isFinal={false}
-          />
-        );
-      case "FINAL_RESULTS":
-        return (
-          <Results
-            game={gameState}
-            isHost={isHost}
-            code={code}
-            isFinal={true}
-          />
-        );
-    }
-  })();
 
   return (
     <>
       {gameHeader}
-      {content}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={gameState.status}
+          variants={phaseTransition}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+        >
+          {gameState.status === "LOBBY" && (
+            <Lobby
+              game={gameState}
+              isHost={isHost}
+              code={code}
+              onRefresh={refresh}
+            />
+          )}
+          {gameState.status === "WRITING" && (
+            <Writing game={gameState} playerId={playerId} code={code} isHost={isHost} />
+          )}
+          {gameState.status === "VOTING" && (
+            <Voting game={gameState} playerId={playerId} code={code} isHost={isHost} />
+          )}
+          {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
+            <Results
+              game={gameState}
+              isHost={isHost}
+              playerId={playerId}
+              code={code}
+              isFinal={gameState.status === "FINAL_RESULTS"}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
     </>
   );
 }

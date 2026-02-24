@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion } from "motion/react";
+import { ErrorBanner } from "@/components/error-banner";
+import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
 
 export default function JoinPage() {
   const router = useRouter();
@@ -49,8 +52,13 @@ export default function JoinPage() {
   }
 
   return (
-    <main className="min-h-svh flex flex-col items-center justify-center px-6 py-12">
-      <div className="w-full max-w-sm animate-fade-in-up">
+    <main className="min-h-svh flex flex-col items-center sm:justify-center px-6 py-12 pt-20">
+      <motion.div
+        className="w-full max-w-sm"
+        variants={fadeInUp}
+        initial="hidden"
+        animate="visible"
+      >
         {/* Back link */}
         <Link
           href="/"
@@ -75,52 +83,62 @@ export default function JoinPage() {
           Join a Game
         </h1>
 
-        {/* Name */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-ink-dim mb-2">
-            Your Name
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Enter your name"
-            className="w-full py-3 px-4 rounded-xl bg-surface border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
-            maxLength={20}
-          />
-        </div>
-
-        {/* Room Code */}
-        <div className="mb-8">
-          <label className="block text-sm font-medium text-ink-dim mb-2">
-            Room Code
-          </label>
-          <input
-            type="text"
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            placeholder="ABCD"
-            className="w-full py-4 px-4 rounded-xl bg-surface border-2 border-edge text-ink placeholder:text-ink-dim/30 focus:outline-none focus:border-punch transition-colors text-center text-3xl tracking-[0.3em] font-mono font-bold"
-            maxLength={4}
-          />
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-fail-soft border-2 border-fail/30 text-fail text-sm text-center font-medium">
-            {error}
-          </div>
-        )}
-
-        {/* Submit */}
-        <button
-          onClick={joinGame}
-          disabled={loading}
-          className="w-full bg-punch hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 px-8 rounded-xl text-lg transition-all active:scale-[0.97] cursor-pointer disabled:cursor-not-allowed"
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            joinGame();
+          }}
         >
-          {loading ? "Joining..." : "Join Game"}
-        </button>
-      </div>
+          {/* Name */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-ink-dim mb-2">
+              Your Name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your name"
+              className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
+              maxLength={20}
+              autoComplete="name"
+              autoCapitalize="words"
+              enterKeyHint="next"
+            />
+          </div>
+
+          {/* Room Code */}
+          <div className="mb-8">
+            <label className="block text-sm font-medium text-ink-dim mb-2">
+              Room Code
+            </label>
+            <input
+              type="text"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+              placeholder="ABCD"
+              className="w-full py-4 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/30 focus:outline-none focus:border-punch transition-colors text-center text-3xl tracking-[0.3em] font-mono font-bold"
+              maxLength={4}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              enterKeyHint="go"
+            />
+          </div>
+
+          <ErrorBanner error={error} />
+
+          {/* Submit */}
+          <motion.button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 px-8 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+            {...buttonTapPrimary}
+          >
+            {loading ? "Joining..." : "Join Game"}
+          </motion.button>
+        </form>
+      </motion.div>
     </main>
   );
 }

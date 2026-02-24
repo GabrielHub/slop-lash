@@ -1,30 +1,53 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { Timer } from "@/components/timer";
+import { CompletionCard } from "@/components/completion-card";
+import { ErrorBanner } from "@/components/error-banner";
+import { PulsingDot } from "@/components/pulsing-dot";
+import {
+  fadeInUp,
+  floatIn,
+  popIn,
+  staggerContainer,
+  buttonTap,
+} from "@/lib/animations";
+import { playSound } from "@/lib/sounds";
+
+function getSkipButtonText(
+  skipping: boolean,
+  timersDisabled: boolean,
+  phase: string
+): string {
+  if (skipping) return "Skipping...";
+  if (timersDisabled) return `End ${phase}`;
+  return "Skip Timer";
+}
 
 export function Writing({
   game,
   playerId,
   code,
+  isHost,
 }: {
   game: GameState;
   playerId: string | null;
   code: string;
+  isHost: boolean;
 }) {
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [skipping, setSkipping] = useState(false);
   const [error, setError] = useState("");
 
   const currentRound = game.rounds[0];
   const myPrompts = useMemo(() => {
     if (!currentRound || !playerId) return [];
-    return currentRound.prompts.filter(
-      (p) =>
-        p.responses.length < 2 ||
-        p.responses.some((r) => r.playerId === playerId)
+    return currentRound.prompts.filter((p) =>
+      p.assignments.some((a) => a.playerId === playerId)
     );
   }, [currentRound, playerId]);
 
@@ -59,6 +82,7 @@ export function Writing({
         return;
       }
 
+      playSound("submitted");
       setSubmitted((prev) => new Set(prev).add(promptId));
     } catch {
       setError("Something went wrong");
@@ -67,36 +91,61 @@ export function Writing({
     }
   }
 
+  async function skipTimer() {
+    setSkipping(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/games/${code}/next`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Failed to skip");
+      }
+    } catch {
+      setError("Something went wrong");
+    } finally {
+      setSkipping(false);
+    }
+  }
+
   const player = game.players.find((p) => p.id === playerId);
   const isAI = player?.type === "AI";
 
   if (isAI || !playerId) {
     return (
-      <main className="min-h-svh flex flex-col items-center justify-center px-6 pt-16">
-        <div className="text-center animate-fade-in-up">
+      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+        <motion.div
+          className="text-center"
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+        >
           <h1 className="font-display text-3xl font-bold mb-3">
             Round {game.currentRound}
           </h1>
-          <div className="inline-flex items-center gap-2 text-ink-dim">
-            <div className="w-2 h-2 rounded-full bg-teal animate-pulse" />
-            <p className="font-medium">
-              Players are writing their answers...
-            </p>
-          </div>
-        </div>
+          <PulsingDot>Players are writing their answers...</PulsingDot>
+        </motion.div>
       </main>
     );
   }
 
   const allDone =
-    myPrompts.length > 0 &&
+    myPrompts.length === 0 ||
     myPrompts.every(
       (p) => submitted.has(p.id) || alreadyAnswered.has(p.id)
     );
 
   return (
     <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
-      <div className="w-full max-w-lg animate-fade-in-up">
+      <motion.div
+        className="w-full max-w-lg"
+        variants={fadeInUp}
+        initial="hidden"
+        animate="visible"
+      >
         {/* Header */}
         <div className="text-center mb-6">
           <h1 className="font-display text-2xl sm:text-3xl font-bold">
@@ -109,117 +158,130 @@ export function Writing({
 
         {/* Timer */}
         <div className="mb-8">
-          <Timer seconds={90} />
+          <Timer deadline={game.phaseDeadline} disabled={game.timersDisabled} />
+          {isHost && (
+            <motion.button
+              onClick={skipTimer}
+              disabled={skipping}
+              className="mt-3 w-full py-2 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              {...buttonTap}
+            >
+              {getSkipButtonText(skipping, game.timersDisabled, "Writing")}
+            </motion.button>
+          )}
         </div>
 
-        {allDone ? (
-          <div className="text-center py-12 animate-scale-in">
-            <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-win-soft border-2 border-win/30 flex items-center justify-center">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-win"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
-            <p className="font-display text-xl font-bold text-win mb-1">
-              All submitted!
-            </p>
-            <p className="text-ink-dim text-sm">
-              Waiting for other players to finish...
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {myPrompts.map((prompt, i) => {
-              const isDone =
-                submitted.has(prompt.id) || alreadyAnswered.has(prompt.id);
-              return (
-                <div
-                  key={prompt.id}
-                  className={`p-4 sm:p-5 rounded-xl border-2 transition-all animate-fade-in-up delay-${Math.min(i + 1, 5)} ${
-                    isDone
-                      ? "bg-win-soft border-win/30"
-                      : "bg-surface border-edge"
-                  }`}
-                  style={{ boxShadow: isDone ? undefined : "var(--shadow-card)" }}
-                >
-                  <p className="font-display font-semibold text-base sm:text-lg mb-3 leading-snug">
-                    {prompt.text}
-                  </p>
-                  {isDone ? (
-                    <div className="flex items-center gap-1.5 text-win text-sm font-medium">
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      Submitted
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={responses[prompt.id] || ""}
-                        onChange={(e) =>
-                          setResponses((prev) => ({
-                            ...prev,
-                            [prompt.id]: e.target.value,
-                          }))
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && responses[prompt.id]?.trim()) {
-                            submitResponse(prompt.id);
-                          }
-                        }}
-                        placeholder="Your answer..."
-                        className="flex-1 py-3 px-4 rounded-xl bg-raised border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors text-sm sm:text-base"
-                        maxLength={100}
-                        disabled={submitting === prompt.id}
-                      />
-                      <button
-                        onClick={() => submitResponse(prompt.id)}
-                        disabled={
-                          submitting === prompt.id ||
-                          !responses[prompt.id]?.trim()
-                        }
-                        className="px-5 py-3 bg-punch hover:bg-punch-hover disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed shrink-0"
-                      >
-                        {submitting === prompt.id ? (
-                          <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                        ) : (
-                          "Send"
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <AnimatePresence mode="wait">
+          {allDone ? (
+            <CompletionCard
+              title="All submitted!"
+              subtitle="Waiting for other players to finish..."
+            />
+          ) : (
+            <motion.div
+              key="prompts"
+              className="space-y-5"
+              variants={staggerContainer}
+              initial="hidden"
+              animate="visible"
+            >
+              {myPrompts.map((prompt) => {
+                const isDone =
+                  submitted.has(prompt.id) || alreadyAnswered.has(prompt.id);
+                return (
+                  <motion.div
+                    key={prompt.id}
+                    className={`p-4 sm:p-5 rounded-xl border-2 transition-colors ${
+                      isDone
+                        ? "bg-win-soft/80 backdrop-blur-md border-win/30"
+                        : "bg-surface/80 backdrop-blur-md border-edge"
+                    }`}
+                    style={{ boxShadow: isDone ? undefined : "var(--shadow-card)" }}
+                    variants={floatIn}
+                    layout
+                  >
+                    <p className="font-display font-semibold text-base sm:text-lg mb-3 leading-snug">
+                      {prompt.text}
+                    </p>
+                    <AnimatePresence mode="wait">
+                      {isDone ? (
+                        <motion.div
+                          key="submitted"
+                          className="flex items-center gap-1.5 text-win text-sm font-medium"
+                          variants={popIn}
+                          initial="hidden"
+                          animate="visible"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Submitted
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="input"
+                          className="flex gap-2"
+                          initial={{ opacity: 1 }}
+                          exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                        >
+                          <input
+                            type="text"
+                            value={responses[prompt.id] || ""}
+                            onChange={(e) =>
+                              setResponses((prev) => ({
+                                ...prev,
+                                [prompt.id]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && responses[prompt.id]?.trim()) {
+                                submitResponse(prompt.id);
+                              }
+                            }}
+                            placeholder="Your answer..."
+                            className="flex-1 py-3 px-4 rounded-xl bg-raised/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors text-base"
+                            maxLength={100}
+                            disabled={submitting === prompt.id}
+                            autoComplete="off"
+                            autoCapitalize="sentences"
+                            enterKeyHint="send"
+                          />
+                          <motion.button
+                            onClick={() => submitResponse(prompt.id)}
+                            disabled={
+                              submitting === prompt.id ||
+                              !responses[prompt.id]?.trim()
+                            }
+                            className="px-5 py-3 bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0"
+                            {...buttonTap}
+                          >
+                            {submitting === prompt.id ? (
+                              <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                            ) : (
+                              "Send"
+                            )}
+                          </motion.button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Error */}
-        {error && (
-          <div className="mt-4 px-4 py-3 rounded-xl bg-fail-soft border-2 border-fail/30 text-fail text-sm text-center font-medium">
-            {error}
-          </div>
-        )}
-      </div>
+        <ErrorBanner error={error} className="mt-4" />
+      </motion.div>
     </main>
   );
 }

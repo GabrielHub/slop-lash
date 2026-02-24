@@ -1,16 +1,16 @@
 import { Metadata } from "next";
-import { GameShell } from "@/components/game-shell";
+import { RecapShell } from "./recap-shell";
 
 export const metadata: Metadata = {
-  title: "Game",
+  title: "Game Recap",
 };
 
-export default async function GamePage({
+export default async function RecapPage({
   params,
 }: {
   params: Promise<{ code: string }>;
 }) {
   const { code } = await params;
 
-  return <GameShell code={code} />;
+  return <RecapShell code={code} />;
 }

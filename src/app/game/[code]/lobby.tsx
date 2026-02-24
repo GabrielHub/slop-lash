@@ -1,8 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { motion } from "motion/react";
 import { GameState } from "@/lib/types";
 import { PlayerList } from "@/components/player-list";
+import { ErrorBanner } from "@/components/error-banner";
+import { PulsingDot } from "@/components/pulsing-dot";
+import {
+  staggerContainer,
+  popIn,
+  fadeInUp,
+  buttonTapPrimary,
+} from "@/lib/animations";
+import { MIN_PLAYERS, MAX_PLAYERS } from "@/lib/game-constants";
+import { playSound, preloadSounds } from "@/lib/sounds";
+
+function getStartButtonText(starting: boolean, playerCount: number): string {
+  if (starting) return "Starting...";
+  if (playerCount < MIN_PLAYERS) {
+    const needed = MIN_PLAYERS - playerCount;
+    return `Need ${needed} more player${needed === 1 ? "" : "s"}`;
+  }
+  return "Start Game";
+}
 
 export function Lobby({
   game,
@@ -17,18 +37,30 @@ export function Lobby({
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(() => {
+    preloadSounds();
+    navigator.clipboard.writeText(game.roomCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [game.roomCode]);
 
   async function startGame() {
+    const playerId = localStorage.getItem("playerId");
     setStarting(true);
     setError("");
     try {
       const res = await fetch(`/api/games/${code}/start`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to start");
       } else {
+        playSound("game-start");
         onRefresh();
       }
     } catch {
@@ -39,28 +71,65 @@ export function Lobby({
   }
 
   return (
-    <main className="min-h-svh flex flex-col items-center justify-center px-6 py-12 pt-20">
-      <div className="w-full max-w-md animate-float-in">
-        <h1 className="font-display text-3xl font-bold mb-2 text-center">
+    <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+      <div className="w-full max-w-md">
+        <motion.h1
+          className="font-display text-3xl font-bold mb-2 text-center"
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+        >
           Game Lobby
-        </h1>
+        </motion.h1>
 
         {/* Room Code Display */}
         <div className="text-center mb-10">
-          <p className="text-sm text-ink-dim mb-3">
+          <motion.p
+            className="text-sm text-ink-dim mb-3"
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+          >
             Share this code to join
-          </p>
-          <div className="flex justify-center gap-2.5">
+          </motion.p>
+          <motion.div
+            className="flex justify-center gap-2.5"
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+          >
             {game.roomCode.split("").map((char, i) => (
-              <div
+              <motion.div
                 key={i}
-                className={`w-14 h-[4.5rem] sm:w-16 sm:h-20 flex items-center justify-center bg-surface border-2 border-edge-strong rounded-xl font-mono font-extrabold text-3xl sm:text-4xl text-gold animate-scale-in delay-${i + 1}`}
+                className="w-14 h-[4.5rem] sm:w-16 sm:h-20 flex items-center justify-center bg-surface/80 backdrop-blur-md border-2 border-edge-strong rounded-xl font-mono font-extrabold text-3xl sm:text-4xl text-gold"
                 style={{ boxShadow: "var(--shadow-card)" }}
+                variants={popIn}
               >
                 {char}
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
+          <button
+            onClick={copyCode}
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
+          >
+            {copied ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Copied!
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Copy Code
+              </>
+            )}
+          </button>
         </div>
 
         {/* Player List */}
@@ -68,44 +137,36 @@ export function Lobby({
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-sm font-medium text-ink-dim">Players</h2>
             <span className="text-xs font-mono text-ink-dim/60">
-              {game.players.length}
+              {game.players.length}/{MAX_PLAYERS}
             </span>
           </div>
           <PlayerList players={game.players} />
         </div>
 
-        {/* Error */}
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-fail-soft border-2 border-fail/30 text-fail text-sm text-center font-medium">
-            {error}
-          </div>
-        )}
+        <ErrorBanner error={error} />
 
         {/* Start / Waiting */}
         {isHost ? (
-          <button
+          <motion.button
             onClick={startGame}
-            disabled={starting || game.players.length < 3}
-            className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-all active:scale-[0.97] cursor-pointer disabled:cursor-not-allowed ${
-              game.players.length < 3
-                ? "bg-raised text-ink-dim border-2 border-edge"
-                : "bg-teal hover:bg-teal-hover text-white disabled:opacity-50"
+            disabled={starting || game.players.length < MIN_PLAYERS}
+            className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${
+              game.players.length < MIN_PLAYERS
+                ? "bg-raised/80 backdrop-blur-sm text-ink-dim border-2 border-edge"
+                : "bg-teal/90 backdrop-blur-sm hover:bg-teal-hover text-white disabled:opacity-50"
             }`}
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+            {...buttonTapPrimary}
           >
-            {starting
-              ? "Starting..."
-              : game.players.length < 3
-                ? `Need ${3 - game.players.length} more player${game.players.length === 2 ? "" : "s"}`
-                : "Start Game"}
-          </button>
+            {getStartButtonText(starting, game.players.length)}
+          </motion.button>
         ) : (
           <div className="text-center py-4">
-            <div className="inline-flex items-center gap-2 text-ink-dim">
-              <div className="w-2 h-2 rounded-full bg-teal animate-pulse" />
-              <p className="text-sm font-medium">
-                Waiting for host to start...
-              </p>
-            </div>
+            <PulsingDot>
+              <span className="text-sm">Waiting for host to start...</span>
+            </PulsingDot>
           </div>
         )}
       </div>

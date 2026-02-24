@@ -141,74 +141,70 @@ body {
 }
 
 /* --- Animation Keyframes --- */
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes scale-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 @keyframes pulse-urgent {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
-}
-
-@keyframes float-in {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes bar-fill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s ease-out both;
-}
-
-.animate-scale-in {
-  animation: scale-in 0.3s ease-out both;
-}
-
-.animate-float-in {
-  animation: float-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .animate-pulse-urgent {
   animation: pulse-urgent 1s ease-in-out infinite;
 }
 
-/* Stagger delays */
-.delay-1 { animation-delay: 60ms; }
-.delay-2 { animation-delay: 120ms; }
-.delay-3 { animation-delay: 180ms; }
-.delay-4 { animation-delay: 240ms; }
-.delay-5 { animation-delay: 300ms; }
-.delay-6 { animation-delay: 360ms; }
-.delay-7 { animation-delay: 420ms; }
-.delay-8 { animation-delay: 480ms; }
+@keyframes gentle-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-gentle-float {
+  animation: gentle-float 4s ease-in-out infinite;
+}
+
+/* --- Periodic Wiggle (attention hint for clickable icons) --- */
+@keyframes wiggle {
+  0%, 85% { transform: translateY(0) rotate(0deg); }
+  88% { transform: translateY(-2px) rotate(-12deg); }
+  91% { transform: translateY(-1px) rotate(10deg); }
+  94% { transform: translateY(-2px) rotate(-8deg); }
+  97% { transform: translateY(-1px) rotate(4deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+.animate-wiggle {
+  animation: wiggle 6s ease-in-out infinite;
+}
+
+/* --- Pixel Rain --- */
+@keyframes pixel-rain {
+  0% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--rain-opacity, 0.3);
+  }
+  92% {
+    opacity: var(--rain-opacity, 0.3);
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+.animate-pixel-rain {
+  animation: pixel-rain linear infinite backwards;
+}
+
+/* --- Title Glow --- */
+.title-glow {
+  text-shadow: 0 0 80px color-mix(in srgb, var(--punch) 20%, transparent),
+               0 4px 24px color-mix(in srgb, var(--punch) 10%, transparent);
+}
+
+/* --- Icon Glow (floating icons) --- */
+.icon-glow-punch { box-shadow: 0 0 12px color-mix(in srgb, var(--punch) 20%, transparent), var(--shadow-card); }
+.icon-glow-teal  { box-shadow: 0 0 12px color-mix(in srgb, var(--teal) 20%, transparent), var(--shadow-card); }
+.icon-glow-gold  { box-shadow: 0 0 12px color-mix(in srgb, var(--gold) 20%, transparent), var(--shadow-card); }
 
 /* --- Noise Texture --- */
 body::after {
@@ -229,11 +225,10 @@ body::after {
     display: none;
   }
 
-  .animate-fade-in-up,
-  .animate-scale-in,
-  .animate-float-in {
+  .animate-pulse-urgent,
+  .animate-gentle-float,
+  .animate-pixel-rain {
     animation: none !important;
     opacity: 1 !important;
-    transform: none !important;
   }
 }
