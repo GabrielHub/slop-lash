@@ -297,6 +297,16 @@ body::after {
   animation: badge-shine 3s ease-in-out infinite;
 }
 
+/* --- Blinking Cursor (streaming tagline) --- */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-blink-cursor {
+  animation: blink-cursor 0.8s step-end infinite;
+}
+
 /* --- Reduced Motion --- */
 @media (prefers-reduced-motion: reduce) {
   body::after {
@@ -309,7 +319,8 @@ body::after {
   .animate-stamp-slam,
   .animate-slop-drip,
   .animate-crown-shimmer,
-  .animate-badge-shine {
+  .animate-badge-shine,
+  .animate-blink-cursor {
     animation: none !important;
     opacity: 1 !important;
   }

@@ -27,6 +27,8 @@ import {
 } from "@/lib/animations";
 import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { useWinnerTagline } from "@/hooks/use-winner-tagline";
+import { WinnerTagline } from "@/components/winner-tagline";
 
 function getAdvanceButtonText(advancing: boolean, isLastRound: boolean): string {
   if (advancing) return "Starting...";
@@ -123,6 +125,7 @@ export function Results({
   const [playingAgain, setPlayingAgain] = useState(false);
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
+  const { tagline, isStreaming, winner: taglineWinner } = useWinnerTagline(code, isFinal, game.players);
 
   const confettiFired = useRef(false);
   const sloppedFired = useRef(false);
@@ -249,6 +252,11 @@ export function Results({
               Game Over!
             </motion.h1>
           </div>
+
+          {/* Winner tagline speech bubble */}
+          {taglineWinner && (
+            <WinnerTagline winner={taglineWinner} tagline={tagline} isStreaming={isStreaming} />
+          )}
 
           {/* Scoreboard + Best Moments — side by side on desktop */}
           <div className="lg:grid lg:grid-cols-2 lg:gap-8 mb-10">
@@ -416,6 +424,11 @@ export function Results({
             </p>
           </motion.div>
         </div>
+
+        {/* Winner tagline speech bubble */}
+        {taglineWinner && (
+          <WinnerTagline winner={taglineWinner} tagline={tagline} isStreaming={isStreaming} />
+        )}
 
         {/* Two-column layout on desktop; sidebar-first on mobile */}
         <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-8">

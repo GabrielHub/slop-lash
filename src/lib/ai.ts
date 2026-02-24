@@ -1,4 +1,4 @@
-import { generateText, Output, createGateway } from "ai";
+import { generateText, streamText, Output, createGateway } from "ai";
 import { calculateCostUsd } from "./models";
 
 const gateway = createGateway({
@@ -127,4 +127,26 @@ export async function aiVote(
     // On error, abstain rather than casting a random vote
     return { choice: "ABSTAIN", usage: { ...ZERO_USAGE, modelId } };
   }
+}
+
+const TAGLINE_SYSTEM_PROMPT =
+  "You are an AI comedian who just won a round of Quiplash. Write a short, snarky victory tagline (1-2 sentences max). You can roast the losing players by name. Be savage but funny. Only output the tagline — nothing else. No quotes." as const;
+
+export function generateWinnerTagline(
+  modelId: string,
+  playerName: string,
+  isFinal: boolean,
+  context: string,
+  onUsage: (usage: AiUsage) => void | Promise<void>,
+) {
+  const providerOptions = getLowReasoningProviderOptions(modelId);
+  return streamText({
+    model: gateway(modelId),
+    system: TAGLINE_SYSTEM_PROMPT,
+    prompt: `You are ${playerName}. You just won ${isFinal ? "the entire game" : "this round"}.\n\n${context}`,
+    providerOptions,
+    onFinish: async ({ usage }) => {
+      await onUsage(extractUsage(modelId, usage));
+    },
+  });
 }

@@ -27,7 +27,7 @@ async function collectUsages(
     .map((r) => r.value);
 }
 
-async function accumulateUsage(gameId: string, usages: AiUsage[]): Promise<void> {
+export async function accumulateUsage(gameId: string, usages: AiUsage[]): Promise<void> {
   if (usages.length === 0) return;
 
   // Group by modelId — aggregate totals are derived from this map
