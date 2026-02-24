@@ -1,24 +1,41 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateRoomCode } from "@/lib/game-logic";
+import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
 import { AI_MODELS } from "@/lib/models";
+import { sanitize } from "@/lib/sanitize";
 
 export async function POST(request: Request) {
-  const { hostName, aiModelIds, hostSecret } = await request.json();
+  const { hostName, aiModelIds, hostSecret, timersDisabled } = await request.json();
 
-  if (hostSecret !== process.env.HOST_SECRET) {
+  const secret = process.env.HOST_SECRET;
+  if (!secret || hostSecret !== secret) {
     return NextResponse.json(
       { error: "Invalid host password" },
       { status: 403 }
     );
   }
 
-  if (!hostName || typeof hostName !== "string" || hostName.trim().length === 0) {
+  if (!hostName || typeof hostName !== "string") {
     return NextResponse.json(
       { error: "Host name is required" },
       { status: 400 }
     );
   }
+
+  const cleanName = sanitize(hostName, 20);
+  if (cleanName.length === 0) {
+    return NextResponse.json(
+      { error: "Host name is required" },
+      { status: 400 }
+    );
+  }
+
+  // Clean up stale games older than 24 hours (non-blocking)
+  after(
+    prisma.game.deleteMany({
+      where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+    })
+  );
 
   const roomCode = await generateUniqueRoomCode();
   if (!roomCode) {
@@ -31,8 +48,9 @@ export async function POST(request: Request) {
   const game = await prisma.game.create({
     data: {
       roomCode,
+      timersDisabled: timersDisabled === true,
       players: {
-        create: [{ name: hostName.trim(), type: "HUMAN" }],
+        create: [{ name: cleanName, type: "HUMAN" }],
       },
     },
     include: { players: true },
@@ -43,22 +61,21 @@ export async function POST(request: Request) {
     data: { hostPlayerId: game.players[0].id },
   });
 
-  if (aiModelIds && Array.isArray(aiModelIds)) {
-    const validModels = aiModelIds.filter((id: string) =>
-      AI_MODELS.some((m) => m.id === id)
-    );
+  if (Array.isArray(aiModelIds)) {
+    const aiPlayers = aiModelIds
+      .map((id: string) => AI_MODELS.find((m) => m.id === id))
+      .filter((m) => m !== undefined)
+      .slice(0, MAX_PLAYERS - 1)
+      .map((model) => ({
+        gameId: game.id,
+        name: model.shortName,
+        type: "AI" as const,
+        modelId: model.id,
+      }));
 
-    await prisma.player.createMany({
-      data: validModels.map((modelId: string) => {
-        const model = AI_MODELS.find((m) => m.id === modelId)!;
-        return {
-          gameId: game.id,
-          name: model.shortName,
-          type: "AI" as const,
-          modelId,
-        };
-      }),
-    });
+    if (aiPlayers.length > 0) {
+      await prisma.player.createMany({ data: aiPlayers });
+    }
   }
 
   return NextResponse.json({
@@ -66,13 +83,4 @@ export async function POST(request: Request) {
     gameId: game.id,
     hostPlayerId: game.players[0].id,
   });
-}
-
-async function generateUniqueRoomCode(): Promise<string | null> {
-  for (let i = 0; i < 10; i++) {
-    const roomCode = generateRoomCode();
-    const existing = await prisma.game.findUnique({ where: { roomCode } });
-    if (!existing) return roomCode;
-  }
-  return null;
 }

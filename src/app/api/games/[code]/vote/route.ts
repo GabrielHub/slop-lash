@@ -31,13 +31,24 @@ export async function POST(
     );
   }
 
-  const existingVote = await prisma.vote.findFirst({
-    where: { promptId, voterId },
+  // Verify voter belongs to this game
+  const voter = await prisma.player.findFirst({
+    where: { id: voterId, gameId: game.id },
   });
-
-  if (existingVote) {
+  if (!voter) {
     return NextResponse.json(
-      { error: "Already voted on this prompt" },
+      { error: "Player not in this game" },
+      { status: 403 }
+    );
+  }
+
+  // Verify response belongs to this prompt
+  const response = await prisma.response.findFirst({
+    where: { id: responseId, promptId },
+  });
+  if (!response) {
+    return NextResponse.json(
+      { error: "Response does not belong to this prompt" },
       { status: 400 }
     );
   }
@@ -53,9 +64,30 @@ export async function POST(
     );
   }
 
-  await prisma.vote.create({
-    data: { promptId, voterId, responseId },
-  });
+  // Use transaction to prevent race conditions on duplicate votes
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existingVote = await tx.vote.findFirst({
+        where: { promptId, voterId },
+      });
+
+      if (existingVote) {
+        throw new Error("ALREADY_VOTED");
+      }
+
+      await tx.vote.create({
+        data: { promptId, voterId, responseId },
+      });
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "ALREADY_VOTED") {
+      return NextResponse.json(
+        { error: "Already voted on this prompt" },
+        { status: 400 }
+      );
+    }
+    throw e;
+  }
 
   const allIn = await checkAllVotesIn(game.id);
   if (allIn) {

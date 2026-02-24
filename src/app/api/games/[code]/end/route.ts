@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { startRound, MIN_PLAYERS } from "@/lib/game-logic";
+import { endGameEarly } from "@/lib/game-logic";
 
 export async function POST(
   request: Request,
@@ -9,37 +9,35 @@ export async function POST(
   const { code } = await params;
   const { playerId } = await request.json();
 
+  if (!playerId) {
+    return NextResponse.json(
+      { error: "playerId is required" },
+      { status: 400 }
+    );
+  }
+
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    include: { players: true },
   });
 
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  if (game.status !== "LOBBY") {
+  if (playerId !== game.hostPlayerId) {
     return NextResponse.json(
-      { error: "Game already started" },
-      { status: 400 }
-    );
-  }
-
-  if (!playerId || playerId !== game.hostPlayerId) {
-    return NextResponse.json(
-      { error: "Only the host can start the game" },
+      { error: "Only the host can end the game" },
       { status: 403 }
     );
   }
 
-  if (game.players.length < MIN_PLAYERS) {
+  if (game.status === "LOBBY" || game.status === "FINAL_RESULTS") {
     return NextResponse.json(
-      { error: `Need at least ${MIN_PLAYERS} players` },
+      { error: "Cannot end game in current state" },
       { status: 400 }
     );
   }
 
-  await startRound(game.id, 1);
-
+  await endGameEarly(game.id);
   return NextResponse.json({ success: true });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { checkAllResponsesIn, startVoting } from "@/lib/game-logic";
+import { sanitize } from "@/lib/sanitize";
 
 export async function POST(
   request: Request,
@@ -12,6 +13,14 @@ export async function POST(
   if (!playerId || !promptId || !text || typeof text !== "string") {
     return NextResponse.json(
       { error: "playerId, promptId, and text are required" },
+      { status: 400 }
+    );
+  }
+
+  const trimmed = sanitize(text, 200);
+  if (trimmed.length === 0) {
+    return NextResponse.json(
+      { error: "Response text cannot be empty" },
       { status: 400 }
     );
   }
@@ -31,20 +40,53 @@ export async function POST(
     );
   }
 
-  const existing = await prisma.response.findFirst({
-    where: { promptId, playerId },
+  // Verify player belongs to this game
+  const player = await prisma.player.findFirst({
+    where: { id: playerId, gameId: game.id },
   });
-
-  if (existing) {
+  if (!player) {
     return NextResponse.json(
-      { error: "Already responded to this prompt" },
-      { status: 400 }
+      { error: "Player not in this game" },
+      { status: 403 }
     );
   }
 
-  await prisma.response.create({
-    data: { promptId, playerId, text: text.trim() },
+  // Validate player is assigned to this prompt
+  const assignment = await prisma.promptAssignment.findUnique({
+    where: { promptId_playerId: { promptId, playerId } },
   });
+
+  if (!assignment) {
+    return NextResponse.json(
+      { error: "You are not assigned to this prompt" },
+      { status: 403 }
+    );
+  }
+
+  // Use transaction to prevent race conditions on duplicate submission
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.response.findFirst({
+        where: { promptId, playerId },
+      });
+
+      if (existing) {
+        throw new Error("ALREADY_RESPONDED");
+      }
+
+      await tx.response.create({
+        data: { promptId, playerId, text: trimmed },
+      });
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "ALREADY_RESPONDED") {
+      return NextResponse.json(
+        { error: "Already responded to this prompt" },
+        { status: 400 }
+      );
+    }
+    throw e;
+  }
 
   const allIn = await checkAllResponsesIn(game.id);
   if (allIn) {
