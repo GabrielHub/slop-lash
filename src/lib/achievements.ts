@@ -1,5 +1,6 @@
 import { filterCastVotes } from "./types";
 import type { GameState } from "./types";
+import { scorePrompt, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "./scoring";
 
 export interface Achievement {
   id: string;
@@ -63,6 +64,18 @@ const ACHIEVEMENTS: Record<string, Achievement> = {
     description: "Won a prompt while having the lowest score",
     icon: "\u{1F415}",
   },
+  hotStreak: {
+    id: "hotStreak",
+    name: "Hot Streak",
+    description: "Won 3+ prompts in a row",
+    icon: "\u{1F525}",
+  },
+  comeback: {
+    id: "comeback",
+    name: "Comeback",
+    description: "Beat a higher-scoring opponent",
+    icon: "\u{1F4AA}",
+  },
 };
 
 function pushForIds(
@@ -75,6 +88,32 @@ function pushForIds(
     const player = playerMap.get(id);
     if (player) {
       results.push({ playerId: id, playerName: player.name, achievement });
+    }
+  }
+}
+
+/** Apply scorePrompt result deltas to mutable player states. */
+function applyScoreResult(
+  result: ScorePromptResult,
+  responses: { id: string; playerId: string }[],
+  playerStates: Map<string, PlayerState>,
+  maxStreaks: Map<string, number>,
+): void {
+  for (const resp of responses) {
+    const pts = result.points[resp.id] ?? 0;
+    const state = playerStates.get(resp.playerId);
+    if (state) state.score += pts;
+  }
+  for (const [playerId, newHR] of Object.entries(result.hrUpdates)) {
+    const state = playerStates.get(playerId);
+    if (state) state.humorRating = newHR;
+  }
+  for (const [playerId, newStreak] of Object.entries(result.streakUpdates)) {
+    const state = playerStates.get(playerId);
+    if (state) {
+      state.winStreak = newStreak;
+      const prev = maxStreaks.get(playerId) ?? 0;
+      if (newStreak > prev) maxStreaks.set(playerId, newStreak);
     }
   }
 }
@@ -97,87 +136,110 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
     }
   }
 
-  // Per-prompt analysis: track votes received and running scores for underdog
+  // Per-prompt analysis: track votes received, running scores, and Comedy Heat states
   const totalVotesReceived = new Map<string, number>();
-  const runningScores = new Map<string, number>();
-  for (const p of game.players) {
-    totalVotesReceived.set(p.id, 0);
-    runningScores.set(p.id, 0);
-  }
+  const playerStates = new Map<string, PlayerState>(
+    game.players.map((p) => [p.id, { score: 0, humorRating: 1.0, winStreak: 0 }]),
+  );
+  // Track max streak per player for Hot Streak achievement
+  const maxStreaks = new Map<string, number>();
 
   const slopMasterIds = new Set<string>();
   const aiSlayerIds = new Set<string>();
   const clutchIds = new Set<string>();
   const sloppedIds = new Set<string>();
   const underdogIds = new Set<string>();
+  const hotStreakIds = new Set<string>();
+  const comebackIds = new Set<string>();
+
+  for (const p of game.players) {
+    totalVotesReceived.set(p.id, 0);
+    maxStreaks.set(p.id, 0);
+  }
 
   for (const round of game.rounds) {
     for (const prompt of round.prompts) {
-    const actualVotes = filterCastVotes(prompt.votes);
-    const totalVotes = actualVotes.length;
-    if (totalVotes === 0 || prompt.responses.length < 2) continue;
+      const actualVotes = filterCastVotes(prompt.votes);
+      const totalVotes = actualVotes.length;
+      const isForfeit = prompt.responses.some((r) => r.text === FORFEIT_MARKER);
+      if (totalVotes === 0 && !isForfeit) continue;
+      if (prompt.responses.length < 2) continue;
 
-    const voteCounts = prompt.responses.map((r) => ({
-      playerId: r.playerId,
-      playerType: r.player.type,
-      count: actualVotes.filter((v) => v.responseId === r.id).length,
-    }));
+      const voteCounts = prompt.responses.map((r) => ({
+        playerId: r.playerId,
+        playerType: r.player.type,
+        count: actualVotes.filter((v) => v.responseId === r.id).length,
+      }));
 
-    // Accumulate votes received
-    for (const vc of voteCounts) {
-      totalVotesReceived.set(
-        vc.playerId,
-        (totalVotesReceived.get(vc.playerId) ?? 0) + vc.count,
+      for (const vc of voteCounts) {
+        totalVotesReceived.set(
+          vc.playerId,
+          (totalVotesReceived.get(vc.playerId) ?? 0) + vc.count,
+        );
+      }
+
+      const sorted = [...voteCounts].sort((a, b) => b.count - a.count);
+      const winner = sorted[0];
+      const loser = sorted[sorted.length - 1];
+
+      // Slop Master (unanimous win) and Slopped (unanimously beaten)
+      if (totalVotes >= 2 && winner.count === totalVotes) {
+        slopMasterIds.add(winner.playerId);
+        if (loser.count === 0) sloppedIds.add(loser.playerId);
+      }
+
+      // Clutch: won by exactly 1 vote
+      if (sorted.length >= 2 && winner.count - sorted[1].count === 1) {
+        clutchIds.add(winner.playerId);
+      }
+
+      // AI Slayer: human beat AI in a head-to-head prompt
+      if (
+        prompt.responses.length === 2 &&
+        winner.count > loser.count &&
+        winner.playerType === "HUMAN" &&
+        loser.playerType === "AI"
+      ) {
+        aiSlayerIds.add(winner.playerId);
+      }
+
+      // Underdog: won a prompt while having the lowest running score
+      const scoresAtPrompt = [...playerStates.entries()].map(([id, s]) => [id, s.score] as const);
+      const minRunningScore = Math.min(...scoresAtPrompt.map(([, s]) => s));
+      const currentWinnerScore = playerStates.get(winner.playerId)?.score ?? 0;
+      if (
+        winner.count > loser.count &&
+        currentWinnerScore === minRunningScore &&
+        scoresAtPrompt.some(([id, s]) => id !== winner.playerId && s > minRunningScore)
+      ) {
+        underdogIds.add(winner.playerId);
+      }
+
+      // Use scorePrompt to update running scores/HR/streak (matches game-logic.ts)
+      const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+      const eligibleVoterCount = game.players.filter((p) => !respondentIds.has(p.id)).length;
+
+      const result = scorePrompt(
+        prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, text: r.text })),
+        prompt.votes.map((v) => ({ id: v.voter.id, type: v.voter.type, responseId: v.responseId })),
+        playerStates,
+        round.roundNumber,
+        eligibleVoterCount,
       );
-    }
 
-    const sorted = [...voteCounts].sort((a, b) => b.count - a.count);
-    const winner = sorted[0];
-    const loser = sorted[sorted.length - 1];
+      // Comeback: upset bonus triggered
+      for (const respId of result.upsetResponseIds) {
+        const resp = prompt.responses.find((r) => r.id === respId);
+        if (resp) comebackIds.add(resp.playerId);
+      }
 
-    // Slop Master (unanimous win) and Slopped (unanimously beaten)
-    if (totalVotes >= 2 && winner.count === totalVotes) {
-      slopMasterIds.add(winner.playerId);
-      if (loser.count === 0) sloppedIds.add(loser.playerId);
+      applyScoreResult(result, prompt.responses, playerStates, maxStreaks);
     }
+  }
 
-    // Clutch: won by exactly 1 vote
-    if (sorted.length >= 2 && winner.count - sorted[1].count === 1) {
-      clutchIds.add(winner.playerId);
-    }
-
-    // AI Slayer: human beat AI in a head-to-head prompt
-    if (
-      prompt.responses.length === 2 &&
-      winner.count > loser.count &&
-      winner.playerType === "HUMAN" &&
-      loser.playerType === "AI"
-    ) {
-      aiSlayerIds.add(winner.playerId);
-    }
-
-    // Underdog: won a prompt while having the lowest running score
-    const scoresAtPrompt = [...runningScores.entries()];
-    const minRunningScore = Math.min(...scoresAtPrompt.map(([, s]) => s));
-    const currentWinnerScore = runningScores.get(winner.playerId) ?? 0;
-    if (
-      winner.count > loser.count &&
-      currentWinnerScore === minRunningScore &&
-      scoresAtPrompt.some(([id, s]) => id !== winner.playerId && s > minRunningScore)
-    ) {
-      underdogIds.add(winner.playerId);
-    }
-
-    // Update running scores after this prompt (matches game-logic.ts scoring)
-    for (const vc of voteCounts) {
-      let points = vc.count * 100 * round.roundNumber;
-      if (totalVotes >= 2 && vc.count === totalVotes) points += 100 * round.roundNumber;
-      runningScores.set(
-        vc.playerId,
-        (runningScores.get(vc.playerId) ?? 0) + points,
-      );
-    }
-    }
+  // Hot Streak: max streak >= 3
+  for (const [playerId, streak] of maxStreaks) {
+    if (streak >= 3) hotStreakIds.add(playerId);
   }
 
   // Crowd Favorite: most total votes (no tie)
@@ -226,6 +288,8 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
   pushForIds(results, clutchIds, ACHIEVEMENTS.clutch, playerMap);
   pushForIds(results, sloppedIds, ACHIEVEMENTS.slopped, playerMap);
   pushForIds(results, underdogIds, ACHIEVEMENTS.underdog, playerMap);
+  pushForIds(results, hotStreakIds, ACHIEVEMENTS.hotStreak, playerMap);
+  pushForIds(results, comebackIds, ACHIEVEMENTS.comeback, playerMap);
 
   return results;
 }

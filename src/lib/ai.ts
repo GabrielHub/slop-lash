@@ -44,7 +44,9 @@ Weak answers: boring/predictable/safe, restating the prompt, generic filler, ove
 </criteria>` as const;
 
 /** Sentinel text stored for AI responses that failed to generate. */
-export const FORFEIT_TEXT = "[forfeit]" as const;
+import { FORFEIT_MARKER } from "./scoring";
+export { FORFEIT_MARKER as FORFEIT_TEXT } from "./scoring";
+const FORFEIT_TEXT = FORFEIT_MARKER;
 
 const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 

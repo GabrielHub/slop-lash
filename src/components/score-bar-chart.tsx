@@ -6,6 +6,7 @@ import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
 import { springGentle } from "@/lib/animations";
+import { HumorBadge } from "@/components/humor-badge";
 
 export function ScoreBarChart({ game }: { game: GameState }) {
   const sorted = [...game.players].sort((a, b) => b.score - a.score);
@@ -71,6 +72,8 @@ export function ScoreBarChart({ game }: { game: GameState }) {
             >
               {player.name}
             </span>
+
+            <HumorBadge humorRating={player.humorRating} />
 
             {/* Bar track */}
             <div className="flex-1 h-8 rounded-lg bg-edge/40 relative overflow-hidden">

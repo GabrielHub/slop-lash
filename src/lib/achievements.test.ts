@@ -23,9 +23,9 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
     aiCostUsd: 0,
     modelUsages: [],
     players: [
-      { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, lastSeen: "" },
-      { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, lastSeen: "" },
-      { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 200, lastSeen: "" },
+      { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+      { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+      { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 200, humorRating: 1.0, winStreak: 0, lastSeen: "" },
     ],
     rounds: [],
     ...overrides,
@@ -35,7 +35,7 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
 function makePrompt(
   id: string,
   responses: { id: string; playerId: string; text: string; playerType: "HUMAN" | "AI"; modelId: string | null }[],
-  votes: { responseId: string; voterId: string }[],
+  votes: { responseId: string; voterId: string; voterType?: "HUMAN" | "AI" }[],
   assignments?: { promptId: string; playerId: string }[],
 ) {
   return {
@@ -47,11 +47,14 @@ function makePrompt(
       promptId: id,
       playerId: r.playerId,
       text: r.text,
+      pointsEarned: 0,
       player: {
         id: r.playerId,
         name: r.playerId,
         type: r.playerType,
         modelId: r.modelId,
+        humorRating: 1.0,
+        winStreak: 0,
         lastSeen: "",
       },
     })),
@@ -60,6 +63,7 @@ function makePrompt(
       promptId: id,
       voterId: v.voterId,
       responseId: v.responseId,
+      voter: { id: v.voterId, type: v.voterType ?? ("HUMAN" as const) },
     })),
     assignments: assignments ?? responses.map((r) => ({ promptId: id, playerId: r.playerId })),
   };
@@ -69,8 +73,8 @@ describe("computeAchievements", () => {
   it("returns empty for a game with no rounds and zero scores", () => {
     const game = makeGame({
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     expect(computeAchievements(game)).toEqual([]);
@@ -79,8 +83,8 @@ describe("computeAchievements", () => {
   it("awards MVP to the player with highest score", () => {
     const game = makeGame({
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 500, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 500, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -92,8 +96,8 @@ describe("computeAchievements", () => {
   it("does not award MVP on tie", () => {
     const game = makeGame({
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -119,10 +123,10 @@ describe("computeAchievements", () => {
         )],
       }],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -148,10 +152,10 @@ describe("computeAchievements", () => {
         )],
       }],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -180,11 +184,11 @@ describe("computeAchievements", () => {
         )],
       }],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 100, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 100, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -213,11 +217,11 @@ describe("computeAchievements", () => {
         )],
       }],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -250,9 +254,9 @@ describe("computeAchievements", () => {
         ],
       }],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -277,8 +281,8 @@ describe("computeAchievements", () => {
         )],
       }],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, lastSeen: "" },
+        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
+        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);

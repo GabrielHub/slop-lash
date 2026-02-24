@@ -307,6 +307,16 @@ body::after {
   animation: blink-cursor 0.8s step-end infinite;
 }
 
+/* --- Heat Pulse (Comedy Heat badge) --- */
+@keyframes heat-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-heat-pulse {
+  animation: heat-pulse 2s ease-in-out infinite;
+}
+
 /* --- Reduced Motion --- */
 @media (prefers-reduced-motion: reduce) {
   body::after {
@@ -320,7 +330,8 @@ body::after {
   .animate-slop-drip,
   .animate-crown-shimmer,
   .animate-badge-shine,
-  .animate-blink-cursor {
+  .animate-blink-cursor,
+  .animate-heat-pulse {
     animation: none !important;
     opacity: 1 !important;
   }

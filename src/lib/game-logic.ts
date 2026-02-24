@@ -2,7 +2,7 @@ import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
 import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage, type RoundHistoryEntry } from "./ai";
 import { generateSpeechAudio } from "./tts";
-import { filterCastVotes } from "./types";
+import { scorePrompt, type PlayerState } from "./scoring";
 import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
 export { MAX_PLAYERS, MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
@@ -483,7 +483,12 @@ async function applyRoundScores(gameId: string): Promise<void> {
       where: { gameId },
       orderBy: { roundNumber: "desc" },
       include: {
-        prompts: { include: { responses: true, votes: true } },
+        prompts: {
+          include: {
+            responses: true,
+            votes: { include: { voter: { select: { id: true, type: true } } } },
+          },
+        },
       },
     }),
     prisma.player.findMany({ where: { gameId } }),
@@ -491,50 +496,70 @@ async function applyRoundScores(gameId: string): Promise<void> {
 
   if (!round) return;
 
-  const scoreUpdates: Record<string, number> = {};
+  // Build mutable player states — updated after each prompt
+  const playerStates = new Map<string, PlayerState>(
+    players.map((p) => [p.id, { score: p.score, humorRating: p.humorRating, winStreak: p.winStreak }]),
+  );
+
+  const scoreIncrements: Record<string, number> = {};
+  const responsePoints: { id: string; points: number }[] = [];
 
   for (const prompt of round.prompts) {
-    const hasForfeit = prompt.responses.some((r) => r.text === FORFEIT_TEXT);
+    const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+    const eligibleVoterCount = players.filter((p) => !respondentIds.has(p.id)).length;
 
-    if (hasForfeit) {
-      // Forfeited prompt: award the non-forfeited response full points (unanimous win equivalent)
-      const winner = prompt.responses.find((r) => r.text !== FORFEIT_TEXT);
-      if (!winner) continue; // both forfeited — no points for anyone
-      const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
-      const eligibleVoterCount = players.filter((p) => !respondentIds.has(p.id)).length;
-      const points = eligibleVoterCount * 100 * round.roundNumber
-        + (eligibleVoterCount >= 2 ? 100 * round.roundNumber : 0);
-      scoreUpdates[winner.playerId] = (scoreUpdates[winner.playerId] ?? 0) + points;
-      continue;
+    const result = scorePrompt(
+      prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, text: r.text })),
+      prompt.votes.map((v) => ({ id: v.voter.id, type: v.voter.type, responseId: v.responseId })),
+      playerStates,
+      round.roundNumber,
+      eligibleVoterCount,
+    );
+
+    // Accumulate score increments and track per-response points
+    for (const resp of prompt.responses) {
+      const pts = result.points[resp.id] ?? 0;
+      scoreIncrements[resp.playerId] = (scoreIncrements[resp.playerId] ?? 0) + pts;
+      if (pts > 0) responsePoints.push({ id: resp.id, points: pts });
+
+      // Keep running score in sync for subsequent scorePrompt calls
+      const state = playerStates.get(resp.playerId);
+      if (state) state.score += pts;
     }
 
-    // Normal scoring
-    const actualVotes = filterCastVotes(prompt.votes);
-    const totalVotes = actualVotes.length;
-
-    for (const response of prompt.responses) {
-      const voteCount = actualVotes.filter(
-        (v) => v.responseId === response.id
-      ).length;
-
-      let points = voteCount * 100 * round.roundNumber;
-      if (totalVotes >= 2 && voteCount === totalVotes) {
-        points += 100 * round.roundNumber;
-      }
-
-      scoreUpdates[response.playerId] =
-        (scoreUpdates[response.playerId] ?? 0) + points;
+    // Update local HR and streak for subsequent prompts in this round
+    for (const [playerId, newHR] of Object.entries(result.hrUpdates)) {
+      const state = playerStates.get(playerId);
+      if (state) state.humorRating = newHR;
+    }
+    for (const [playerId, newStreak] of Object.entries(result.streakUpdates)) {
+      const state = playerStates.get(playerId);
+      if (state) state.winStreak = newStreak;
     }
   }
 
-  await Promise.all(
-    Object.entries(scoreUpdates).map(([playerId, points]) =>
-      prisma.player.update({
+  // Batch DB updates
+  await Promise.all([
+    // Player score, HR, streak
+    ...Object.entries(scoreIncrements).map(([playerId, points]) => {
+      const state = playerStates.get(playerId)!;
+      return prisma.player.update({
         where: { id: playerId },
-        data: { score: { increment: points } },
-      })
-    )
-  );
+        data: {
+          score: { increment: points },
+          humorRating: state.humorRating,
+          winStreak: state.winStreak,
+        },
+      });
+    }),
+    // Response pointsEarned
+    ...responsePoints.map(({ id, points }) =>
+      prisma.response.update({
+        where: { id },
+        data: { pointsEarned: points },
+      }),
+    ),
+  ]);
 }
 
 /** Atomically transition VOTING to ROUND_RESULTS and apply scores. */

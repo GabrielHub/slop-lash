@@ -577,6 +577,11 @@ export function Results({
                                   <p className="text-xs text-ink-dim/80 tabular-nums">
                                     {voteCount} vote{voteCount !== 1 ? "s" : ""}
                                   </p>
+                                  {resp.pointsEarned > 0 && (
+                                    <span className="text-[10px] font-mono font-bold text-ink-dim/60 tabular-nums">
+                                      +{resp.pointsEarned.toLocaleString()}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>

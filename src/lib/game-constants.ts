@@ -8,3 +8,7 @@ export const HOST_STALE_MS = 15_000;
 
 /** Cache tag used by unstable_cache / revalidateTag for the leaderboard data. */
 export const LEADERBOARD_TAG = "leaderboard";
+
+/** Humor Rating badge thresholds. */
+export const HR_HOT_THRESHOLD = 1.3;
+export const HR_COLD_THRESHOLD = 0.7;

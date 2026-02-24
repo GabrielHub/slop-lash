@@ -6,6 +6,7 @@ import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
 import { staggerContainer, fadeInUp, popIn } from "@/lib/animations";
+import { HumorBadge } from "@/components/humor-badge";
 
 export function PlayerList({
   players,
@@ -58,6 +59,7 @@ export function PlayerList({
                     AI
                   </span>
                 )}
+                <HumorBadge humorRating={player.humorRating} />
               </div>
               {showScores && (
                 <motion.span

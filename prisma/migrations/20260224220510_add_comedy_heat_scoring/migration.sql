@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Player" ADD COLUMN     "humorRating" DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+ADD COLUMN     "winStreak" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "Response" ADD COLUMN     "pointsEarned" INTEGER NOT NULL DEFAULT 0;

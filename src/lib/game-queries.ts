@@ -3,14 +3,26 @@
  * Used by the game polling route and recap route.
  */
 
+const responsePlayerSelect = {
+  id: true,
+  name: true,
+  type: true,
+  modelId: true,
+  humorRating: true,
+  winStreak: true,
+  lastSeen: true,
+} as const;
+
 export const roundsInclude = {
   prompts: {
     omit: { ttsAudio: true },
     include: {
       responses: {
-        include: { player: { select: { id: true, name: true, type: true, modelId: true, lastSeen: true } } },
+        include: { player: { select: responsePlayerSelect } },
       },
-      votes: true,
+      votes: {
+        include: { voter: { select: { id: true, type: true } } },
+      },
       assignments: { select: { promptId: true, playerId: true } },
     },
   },

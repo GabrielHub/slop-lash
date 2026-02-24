@@ -17,6 +17,8 @@ export interface GamePlayer {
   type: PlayerType;
   modelId: string | null;
   score: number;
+  humorRating: number;
+  winStreak: number;
   lastSeen: string;
 }
 
@@ -25,6 +27,7 @@ export interface GameResponse {
   promptId: string;
   playerId: string;
   text: string;
+  pointsEarned: number;
   player: Omit<GamePlayer, "score">;
 }
 
@@ -33,6 +36,7 @@ export interface GameVote {
   promptId: string;
   voterId: string;
   responseId: string | null;
+  voter: { id: string; type: PlayerType };
 }
 
 /** A vote with a non-null responseId (the voter picked a response). */

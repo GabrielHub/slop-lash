@@ -79,6 +79,8 @@ model Player {
   type        PlayerType         @default(HUMAN)
   modelId     String?
   score       Int                @default(0)
+  humorRating Float              @default(1.0)
+  winStreak   Int                @default(0)
   lastSeen    DateTime           @default(now())
   responses   Response[]
   votes       Vote[]
@@ -129,8 +131,9 @@ model Response {
   prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
   playerId String
   player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  text     String
-  votes    Vote[]
+  text         String
+  pointsEarned Int    @default(0)
+  votes        Vote[]
 
   @@unique([promptId, playerId])
   @@index([promptId])
