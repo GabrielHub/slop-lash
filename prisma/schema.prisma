@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GameStatus {
+  LOBBY
+  WRITING
+  VOTING
+  ROUND_RESULTS
+  FINAL_RESULTS
+}
+
+enum PlayerType {
+  HUMAN
+  AI
+}
+
+model Game {
+  id           String     @id @default(cuid())
+  roomCode     String     @unique
+  status       GameStatus @default(LOBBY)
+  currentRound Int        @default(0)
+  totalRounds  Int        @default(3)
+  hostPlayerId String?
+  createdAt    DateTime   @default(now())
+  players      Player[]
+  rounds       Round[]
+}
+
+model Player {
+  id        String     @id @default(cuid())
+  gameId    String
+  game      Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name      String
+  type      PlayerType @default(HUMAN)
+  modelId   String?
+  score     Int        @default(0)
+  responses Response[]
+  votes     Vote[]
+
+  @@index([gameId])
+}
+
+model Round {
+  id          String   @id @default(cuid())
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  roundNumber Int
+  prompts     Prompt[]
+
+  @@unique([gameId, roundNumber])
+  @@index([gameId])
+}
+
+model Prompt {
+  id        String     @id @default(cuid())
+  roundId   String
+  round     Round      @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  text      String
+  responses Response[]
+  votes     Vote[]
+
+  @@index([roundId])
+}
+
+model Response {
+  id       String @id @default(cuid())
+  promptId String
+  prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  text     String
+  votes    Vote[]
+
+  @@unique([promptId, playerId])
+  @@index([promptId])
+  @@index([playerId])
+}
+
+model Vote {
+  id         String   @id @default(cuid())
+  promptId   String
+  prompt     Prompt   @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  voterId    String
+  voter      Player   @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([promptId, voterId])
+  @@index([promptId])
+  @@index([voterId])
+  @@index([responseId])
+}

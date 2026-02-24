@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+/* ============================================
+   SLOP-LASH THEME: "ELECTRIC PUNCH"
+   A bold, game-show-inspired design system.
+   Vermillion + Teal + Gold on warm neutrals.
+   ============================================ */
+
+/* --- Light Mode (Default) --- */
+:root {
+  --bg: #FAF7F2;
+  --surface: #FFFFFF;
+  --raised: #F0ECE5;
+  --ink: #1A1625;
+  --ink-dim: #7C7494;
+  --punch: #E8422F;
+  --punch-hover: #D13A28;
+  --teal: #0EA392;
+  --teal-hover: #0C8B7D;
+  --teal-soft: #E6F7F5;
+  --gold: #D99B00;
+  --gold-soft: #FFF8E6;
+  --edge: #DDD7CD;
+  --edge-strong: #C5BFB4;
+  --win: #16A34A;
+  --win-soft: #E8F5EC;
+  --fail: #DC2626;
+  --fail-soft: #FEE8E8;
+  --vs-bg: #F0ECE5;
+  --human-badge: #3B82F6;
+  --human-badge-soft: #EBF2FF;
+  --ai-badge: #8B5CF6;
+  --ai-badge-soft: #F0EBFF;
+  --shadow-card: 0 1px 3px rgba(26, 22, 37, 0.06), 0 1px 2px rgba(26, 22, 37, 0.04);
+}
+
+/* --- Dark Mode --- */
+[data-theme="dark"] {
+  --bg: #0E0C15;
+  --surface: #1A1726;
+  --raised: #262236;
+  --ink: #F0EBE3;
+  --ink-dim: #9B93AD;
+  --punch: #FF5647;
+  --punch-hover: #FF6E62;
+  --teal: #2DD4B8;
+  --teal-hover: #5DDFC8;
+  --teal-soft: #0E2420;
+  --gold: #FFD644;
+  --gold-soft: #2A2310;
+  --edge: #302C3F;
+  --edge-strong: #4A4462;
+  --win: #34D399;
+  --win-soft: #0E2A1E;
+  --fail: #F87171;
+  --fail-soft: #2A1010;
+  --vs-bg: #262236;
+  --human-badge: #60A5FA;
+  --human-badge-soft: #1A2540;
+  --ai-badge: #A78BFA;
+  --ai-badge-soft: #1F1640;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E0C15;
+    --surface: #1A1726;
+    --raised: #262236;
+    --ink: #F0EBE3;
+    --ink-dim: #9B93AD;
+    --punch: #FF5647;
+    --punch-hover: #FF6E62;
+    --teal: #2DD4B8;
+    --teal-hover: #5DDFC8;
+    --teal-soft: #0E2420;
+    --gold: #FFD644;
+    --gold-soft: #2A2310;
+    --edge: #302C3F;
+    --edge-strong: #4A4462;
+    --win: #34D399;
+    --win-soft: #0E2A1E;
+    --fail: #F87171;
+    --fail-soft: #2A1010;
+    --vs-bg: #262236;
+    --human-badge: #60A5FA;
+    --human-badge-soft: #1A2540;
+    --ai-badge: #A78BFA;
+    --ai-badge-soft: #1F1640;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* --- Tailwind v4 Theme Integration --- */
+@theme inline {
+  --color-base: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-punch: var(--punch);
+  --color-punch-hover: var(--punch-hover);
+  --color-teal: var(--teal);
+  --color-teal-hover: var(--teal-hover);
+  --color-teal-soft: var(--teal-soft);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
+  --color-win: var(--win);
+  --color-win-soft: var(--win-soft);
+  --color-fail: var(--fail);
+  --color-fail-soft: var(--fail-soft);
+  --color-vs: var(--vs-bg);
+  --color-human: var(--human-badge);
+  --color-human-soft: var(--human-badge-soft);
+  --color-ai: var(--ai-badge);
+  --color-ai-soft: var(--ai-badge-soft);
+
+  --font-display: var(--font-urbanist);
+  --font-sans: var(--font-outfit);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* --- Base Styles --- */
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* --- Focus & Selection --- */
+*:focus-visible {
+  outline: 2px solid var(--punch);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--punch);
+  color: #ffffff;
+}
+
+/* --- Animation Keyframes --- */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-urgent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes bar-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out both;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out both;
+}
+
+.animate-float-in {
+  animation: float-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-pulse-urgent {
+  animation: pulse-urgent 1s ease-in-out infinite;
+}
+
+/* Stagger delays */
+.delay-1 { animation-delay: 60ms; }
+.delay-2 { animation-delay: 120ms; }
+.delay-3 { animation-delay: 180ms; }
+.delay-4 { animation-delay: 240ms; }
+.delay-5 { animation-delay: 300ms; }
+.delay-6 { animation-delay: 360ms; }
+.delay-7 { animation-delay: 420ms; }
+.delay-8 { animation-delay: 480ms; }
+
+/* --- Noise Texture --- */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* --- Reduced Motion --- */
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    display: none;
+  }
+
+  .animate-fade-in-up,
+  .animate-scale-in,
+  .animate-float-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
