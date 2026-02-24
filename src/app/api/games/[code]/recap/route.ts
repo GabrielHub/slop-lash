@@ -1,18 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-
-const roundsInclude = {
-  prompts: {
-    omit: { ttsAudio: true },
-    include: {
-      responses: {
-        include: { player: { select: { id: true, name: true, type: true, modelId: true, lastSeen: true } } },
-      },
-      votes: true,
-      assignments: { select: { promptId: true, playerId: true } },
-    },
-  },
-} as const;
+import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
 
 export async function GET(
   _request: Request,
@@ -31,10 +19,7 @@ export async function GET(
         orderBy: { roundNumber: "asc" as const },
         include: roundsInclude,
       },
-      modelUsages: {
-        select: { modelId: true, inputTokens: true, outputTokens: true, costUsd: true },
-        orderBy: { costUsd: "desc" as const },
-      },
+      modelUsages: modelUsagesInclude,
     },
   });
 
@@ -49,5 +34,8 @@ export async function GET(
     );
   }
 
-  return NextResponse.json(game);
+  // Final results are immutable — cache aggressively
+  return NextResponse.json(game, {
+    headers: { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" },
+  });
 }

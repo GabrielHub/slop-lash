@@ -12,6 +12,17 @@ export interface AiUsage {
   costUsd: number;
 }
 
+/**
+ * System prompts extracted as constants so that AI providers can leverage
+ * prompt caching (Anthropic, Google, OpenAI all cache repeated prefixes).
+ * Keeping these byte-identical across calls maximizes cache hit rates.
+ */
+const JOKE_SYSTEM_PROMPT =
+  "You are a Quiplash player. Write a short, unexpected, funny answer to each prompt. Only output the joke — nothing else. Keep it under 80 characters. No quotes, no explanation." as const;
+
+const VOTE_SYSTEM_PROMPT =
+  "You are a Quiplash judge. Pick the funnier answer: A or B." as const;
+
 const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 function extractUsage(modelId: string, usage: { inputTokens?: number; outputTokens?: number }): AiUsage {
@@ -48,8 +59,7 @@ export async function generateJoke(
     const providerOptions = getLowReasoningProviderOptions(modelId);
     const result = await generateText({
       model: gateway(modelId),
-      system:
-        "You are a Quiplash player. Write a short, unexpected, funny answer to each prompt. Only output the joke — nothing else. Keep it under 80 characters. No quotes, no explanation.",
+      system: JOKE_SYSTEM_PROMPT,
       prompt: promptText,
       providerOptions,
     });
@@ -87,7 +97,7 @@ export async function aiVote(
     const providerOptions = getLowReasoningProviderOptions(modelId);
     const result = await generateText({
       model: gateway(modelId),
-      system: "You are a Quiplash judge. Pick the funnier answer: A or B.",
+      system: VOTE_SYSTEM_PROMPT,
       output: Output.choice({ options: ["A", "B"] as const }),
       prompt: `Prompt: "${promptText}"\n\nA: "${first}"\nB: "${second}"`,
       providerOptions,

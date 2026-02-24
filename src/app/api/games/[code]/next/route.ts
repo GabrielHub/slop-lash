@@ -1,5 +1,7 @@
 import { NextResponse, after } from "next/server";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
+import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, preGenerateTtsAudio, HOST_STALE_MS } from "@/lib/game-logic";
 
 export async function POST(
@@ -41,6 +43,9 @@ export async function POST(
     const newRoundStarted = await advanceGame(game.id);
     if (newRoundStarted) {
       after(() => generateAiResponses(game.id));
+    } else {
+      // Game finished (no new round) — invalidate leaderboard cache
+      revalidateTag(LEADERBOARD_TAG, { expire: 0 });
     }
     return NextResponse.json({ success: true });
   }

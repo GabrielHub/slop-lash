@@ -1,19 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { checkAndEnforceDeadline, generateAiVotes, preGenerateTtsAudio, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
-
-const roundsInclude = {
-  prompts: {
-    omit: { ttsAudio: true },
-    include: {
-      responses: {
-        include: { player: { select: { id: true, name: true, type: true, modelId: true, lastSeen: true } } },
-      },
-      votes: true,
-      assignments: { select: { promptId: true, playerId: true } },
-    },
-  },
-} as const;
+import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
 
 const gameInclude = {
   players: {
@@ -24,10 +12,7 @@ const gameInclude = {
     take: 1,
     include: roundsInclude,
   },
-  modelUsages: {
-    select: { modelId: true, inputTokens: true, outputTokens: true, costUsd: true },
-    orderBy: { costUsd: "desc" as const },
-  },
+  modelUsages: modelUsagesInclude,
 } as const;
 
 function findGame(roomCode: string, { allRounds = false } = {}) {
@@ -117,19 +102,28 @@ export async function GET(
   if (advancedTo || hostPromoted) {
     const fresh = await findGame(roomCode);
     stripUnrevealedVotes(fresh);
-    return NextResponse.json(fresh);
+    return NextResponse.json(fresh, {
+      headers: { ETag: `"${fresh?.version}"` },
+    });
   }
 
   // Smart polling: skip full response if version unchanged
-  if (clientVersion && Number(clientVersion) === game.version) {
-    return NextResponse.json({ changed: false });
+  // Supports both ?v= query param and standard HTTP If-None-Match header
+  const etag = `"${game.version}"`;
+  const versionUnchanged =
+    (clientVersion && Number(clientVersion) === game.version) ||
+    request.headers.get("if-none-match") === etag;
+
+  if (versionUnchanged) {
+    return new Response(null, { status: 304, headers: { ETag: etag } });
   }
 
   // Return all rounds for FINAL_RESULTS (needed for best-prompts carousel)
   if (game.status === "FINAL_RESULTS") {
-    return NextResponse.json(await findGame(roomCode, { allRounds: true }));
+    const data = await findGame(roomCode, { allRounds: true });
+    return NextResponse.json(data, { headers: { ETag: etag } });
   }
 
   stripUnrevealedVotes(game);
-  return NextResponse.json(game);
+  return NextResponse.json(game, { headers: { ETag: etag } });
 }

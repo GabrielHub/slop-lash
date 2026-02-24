@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
+import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { AI_MODELS } from "@/lib/models";
-
-export const dynamic = "force-dynamic";
-
-let cache: { data: object; timestamp: number } | null = null;
-const TTL = 30_000;
 
 function contestantKey(player: { type: string; modelId: string | null }): string {
   return player.type === "HUMAN" ? "HUMAN" : (player.modelId ?? "HUMAN");
@@ -46,28 +43,27 @@ interface BestResponse {
   totalVotes: number;
 }
 
-export async function GET() {
-  if (cache && Date.now() - cache.timestamp < TTL) {
-    return NextResponse.json(cache.data);
-  }
+const emptyData = {
+  leaderboard: [],
+  headToHead: [],
+  bestResponses: [],
+  modelUsage: [] as { modelId: string; modelName: string; modelShortName: string; inputTokens: number; outputTokens: number; costUsd: number }[],
+  stats: { totalGames: 0, totalPrompts: 0, totalVotes: 0, totalTokens: 0, totalCost: 0 },
+};
 
-  const emptyData = {
-    leaderboard: [],
-    headToHead: [],
-    bestResponses: [],
-    modelUsage: [] as { modelId: string; modelName: string; modelShortName: string; inputTokens: number; outputTokens: number; costUsd: number }[],
-    stats: { totalGames: 0, totalPrompts: 0, totalVotes: 0, totalTokens: 0, totalCost: 0 },
-  };
-
-  try {
+/**
+ * Cached leaderboard computation. Persists across deployments on Vercel.
+ * Revalidated via revalidateTag("leaderboard") when games finish,
+ * plus a 60-second TTL as a safety net.
+ */
+const getLeaderboardData = unstable_cache(
+  async () => {
     // Quick check: if no completed games, return empty data immediately
     const totalGames = await prisma.game.count({ where: { status: "FINAL_RESULTS" } });
     if (totalGames === 0) {
-      cache = { data: emptyData, timestamp: Date.now() };
-      return NextResponse.json(emptyData);
+      return emptyData;
     }
 
-    // Fetch all prompts from completed games with responses and vote counts
     // Aggregate token usage per model across completed games
     const modelUsageRaw = await prisma.gameModelUsage.groupBy({
       by: ["modelId"],
@@ -294,7 +290,7 @@ export async function GET() {
       .sort((a, b) => b.votePct - a.votePct || b.voteCount - a.voteCount)
       .slice(0, 5);
 
-    const responseData = {
+    return {
       leaderboard,
       headToHead,
       bestResponses: topResponses,
@@ -307,13 +303,17 @@ export async function GET() {
         totalCost,
       },
     };
+  },
+  [LEADERBOARD_TAG],
+  { revalidate: 60, tags: [LEADERBOARD_TAG] }
+);
 
-    cache = { data: responseData, timestamp: Date.now() };
-
-    return NextResponse.json(responseData);
+export async function GET() {
+  try {
+    const data = await getLeaderboardData();
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Leaderboard fetch error:", error);
-    // Return empty data instead of an error so the client can show the empty state
     return NextResponse.json(emptyData);
   }
 }

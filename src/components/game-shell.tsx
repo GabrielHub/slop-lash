@@ -46,24 +46,30 @@ function useGamePoller(code: string, playerId: string | null) {
           if (versionRef.current !== null) params.set("v", String(versionRef.current));
           const qs = params.toString();
           const url = `/api/games/${code}${qs ? `?${qs}` : ""}`;
-          const res = await fetch(url);
-          if (!cancelled) {
-            if (!res.ok) {
-              if (res.status === 404) {
-                setError("Game not found");
-                return; // Stop polling on 404 only
-              }
-              // Retry on transient errors (500, etc.)
-              await new Promise((resolve) => setTimeout(resolve, 2000));
-              continue;
-            }
-            const data = await res.json();
-            if (data.changed !== false) {
-              setGameState(data);
-              versionRef.current = data.version ?? null;
-              statusRef.current = data.status ?? null;
-            }
+          const headers: HeadersInit = {};
+          if (versionRef.current !== null) {
+            headers["If-None-Match"] = `"${versionRef.current}"`;
           }
+          const res = await fetch(url, { headers });
+          if (cancelled) continue;
+
+          // 304 Not Modified -- nothing changed, poll again
+          if (res.status === 304) continue;
+
+          if (!res.ok) {
+            if (res.status === 404) {
+              setError("Game not found");
+              return; // Stop polling on 404 only
+            }
+            // Retry on transient errors (500, etc.)
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            continue;
+          }
+
+          const data = await res.json();
+          setGameState(data);
+          versionRef.current = data.version ?? null;
+          statusRef.current = data.status ?? null;
         } catch {
           // Silently retry on network errors
         }

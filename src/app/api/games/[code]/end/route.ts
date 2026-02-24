@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
+import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { endGameEarly } from "@/lib/game-logic";
 
 export async function POST(
@@ -39,5 +41,6 @@ export async function POST(
   }
 
   await endGameEarly(game.id);
+  revalidateTag(LEADERBOARD_TAG, { expire: 0 });
   return NextResponse.json({ success: true });
 }
