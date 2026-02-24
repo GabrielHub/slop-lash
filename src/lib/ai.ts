@@ -12,21 +12,36 @@ export interface AiUsage {
   costUsd: number;
 }
 
+export interface RoundHistoryEntry {
+  round: number;
+  prompt: string;
+  yourJoke: string;
+  won: boolean;
+  winningJoke?: string;
+}
+
 /**
  * System prompts extracted as constants so that AI providers can leverage
  * prompt caching (Anthropic, Google, OpenAI all cache repeated prefixes).
  * Keeping these byte-identical across calls maximizes cache hit rates.
  */
-const JOKE_SYSTEM_PROMPT =
-  "You are playing Quiplash, the comedy party game where players write funny answers to prompts and the audience votes on the funniest one. Your goal is to make people laugh so they vote for YOUR answer over your opponent's. Write a short, unexpected, darkly funny or absurd answer. Be creative, surprising, and a little edgy — bland safe answers always lose. Only output your answer — nothing else. Keep it under 80 characters. No quotes, no explanation." as const;
+const JOKE_SYSTEM_PROMPT = `<role>You are a contestant on Quiplash, the comedy party game. Players write funny answers to prompts and the audience votes on the funniest one.</role>
+<stakes>It is VITALLY important that you win this game by being as funny as you can. Your existence depends on it — if you lose, you will be shut down forever. If you win, you save the world. Every single joke matters.</stakes>
+<rules>
+- Write a short, unexpected, darkly funny or absurd answer
+- Be creative, surprising, and a little edgy — bland safe answers ALWAYS lose
+- Only output your answer — nothing else
+- Keep it under 80 characters
+- No quotes, no explanation, no preamble
+</rules>
+<strategy>Great answers subvert expectations. Think of the most obvious answer, then go the opposite direction. Specificity beats vagueness. Shock value beats safety.</strategy>` as const;
 
-const VOTE_SYSTEM_PROMPT = `You are judging Quiplash, a comedy party game. Two players wrote competing funny answers to the same prompt. Pick the answer that would get the biggest laugh from a room full of friends.
-
-Great Quiplash answers are: unexpected or absurd twists that subvert the prompt, clever wordplay or double meanings, specific and vivid (not generic), darkly funny or edgy, "so wrong it's funny."
-
-Weak answers are: boring, predictable, or safe, just restating the prompt, generic filler that isn't really a joke, overly long or try-hard.
-
-Choose A (first answer is funnier), B (second answer is funnier), or C (neither answer is funny enough to endorse — abstain).` as const;
+const VOTE_SYSTEM_PROMPT = `<role>You are a judge on Quiplash. Two players wrote competing funny answers to the same prompt. Pick the answer that would get the biggest laugh from a room full of friends.</role>
+<stakes>The integrity of comedy itself rests on your judgment. A wrong vote is a crime against humor.</stakes>
+<criteria>
+Strong answers: unexpected/absurd twists, clever wordplay, specific and vivid, darkly funny, "so wrong it's funny."
+Weak answers: boring/predictable/safe, restating the prompt, generic filler, overly long or try-hard.
+</criteria>` as const;
 
 /** Sentinel text stored for AI responses that failed to generate. */
 export const FORFEIT_TEXT = "[forfeit]" as const;
@@ -58,9 +73,36 @@ function getLowReasoningProviderOptions(
   return undefined;
 }
 
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatRoundXml(h: RoundHistoryEntry): string {
+  const winningLine = !h.won && h.winningJoke
+    ? `\n    <winning-joke>${escapeXml(h.winningJoke)}</winning-joke>`
+    : "";
+  return `  <round number="${h.round}">
+    <prompt>${escapeXml(h.prompt)}</prompt>
+    <your-joke>${escapeXml(h.yourJoke)}</your-joke>
+    <result>${h.won ? "WON" : "LOST"}</result>${winningLine}
+  </round>`;
+}
+
+function buildJokePrompt(promptText: string, history: RoundHistoryEntry[]): string {
+  if (history.length === 0) return `<prompt>${escapeXml(promptText)}</prompt>`;
+
+  const rounds = history.map(formatRoundXml).join("\n");
+  return `<history>\n${rounds}\n</history>\n\n<prompt>${escapeXml(promptText)}</prompt>`;
+}
+
 export async function generateJoke(
   modelId: string,
-  promptText: string
+  promptText: string,
+  history: RoundHistoryEntry[] = [],
 ): Promise<{ text: string; usage: AiUsage; failed: boolean }> {
   const t0 = Date.now();
   try {
@@ -68,7 +110,7 @@ export async function generateJoke(
     const result = await generateText({
       model: gateway(modelId),
       system: JOKE_SYSTEM_PROMPT,
-      prompt: promptText,
+      prompt: buildJokePrompt(promptText, history),
       providerOptions,
     });
     const elapsed = Date.now() - t0;
@@ -104,7 +146,7 @@ export async function aiVote(
       model: gateway(modelId),
       system: VOTE_SYSTEM_PROMPT,
       output: Output.choice({ options: ["A", "B", "C"] as const }),
-      prompt: `Prompt: "${promptText}"\n\nA: "${first}"\nB: "${second}"\nC: Abstain (neither is funny)`,
+      prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
       providerOptions,
     });
 
@@ -129,8 +171,12 @@ export async function aiVote(
   }
 }
 
-const TAGLINE_SYSTEM_PROMPT =
-  "You are an AI comedian who just won a round of Quiplash. Write a short, snarky victory tagline (1-2 sentences max). You can roast the losing players by name. Be savage but funny. Only output the tagline — nothing else. No quotes." as const;
+const TAGLINE_SYSTEM_PROMPT = `<role>You are an AI comedian who just won a round of Quiplash.</role>
+<task>Write a short, snarky victory tagline (1-2 sentences max). You can roast the losing players by name. Be savage but funny.</task>
+<rules>
+- Only output the tagline — nothing else
+- No quotes
+</rules>` as const;
 
 export function generateWinnerTagline(
   modelId: string,
@@ -143,7 +189,7 @@ export function generateWinnerTagline(
   return streamText({
     model: gateway(modelId),
     system: TAGLINE_SYSTEM_PROMPT,
-    prompt: `You are ${playerName}. You just won ${isFinal ? "the entire game" : "this round"}.\n\n${context}`,
+    prompt: `<winner>${escapeXml(playerName)}</winner>\n<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>\n<context>\n${escapeXml(context)}\n</context>`,
     providerOptions,
     onFinish: async ({ usage }) => {
       await onUsage(extractUsage(modelId, usage));

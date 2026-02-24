@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
-import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage } from "./ai";
+import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage, type RoundHistoryEntry } from "./ai";
 import { generateSpeechAudio } from "./tts";
 import { filterCastVotes } from "./types";
 import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
@@ -16,6 +16,62 @@ function getAiPlayers<T extends { id: string; type: string; modelId: string | nu
   return players.filter(
     (p): p is T & { modelId: string } => p.type === "AI" && p.modelId !== null,
   );
+}
+
+/** Shape returned by the previous-rounds query for building AI history. */
+type PreviousRound = {
+  roundNumber: number;
+  prompts: {
+    text: string;
+    responses: { id: string; playerId: string; text: string }[];
+    votes: { responseId: string | null }[];
+  }[];
+};
+
+/**
+ * Build a chronological history of a player's past prompts, jokes, and results.
+ * Used to give AI players context about their performance in previous rounds.
+ */
+export function buildPlayerHistory(
+  playerId: string,
+  previousRounds: PreviousRound[],
+): RoundHistoryEntry[] {
+  const entries: RoundHistoryEntry[] = [];
+
+  for (const round of previousRounds) {
+    for (const prompt of round.prompts) {
+      const playerResponse = prompt.responses.find((r) => r.playerId === playerId);
+      if (!playerResponse) continue;
+
+      const opponent = prompt.responses.find((r) => r.playerId !== playerId);
+      const playerForfeited = playerResponse.text === FORFEIT_TEXT;
+      const opponentForfeited = opponent?.text === FORFEIT_TEXT;
+
+      let won: boolean;
+      if (playerForfeited) {
+        won = false;
+      } else if (opponentForfeited) {
+        won = true;
+      } else {
+        const castVotes = prompt.votes.filter((v) => v.responseId != null);
+        const playerVotes = castVotes.filter((v) => v.responseId === playerResponse.id).length;
+        const opponentVotes = opponent
+          ? castVotes.filter((v) => v.responseId === opponent.id).length
+          : 0;
+        won = playerVotes > opponentVotes;
+      }
+
+      entries.push({
+        round: round.roundNumber,
+        prompt: prompt.text,
+        yourJoke: playerResponse.text,
+        won,
+        winningJoke: !won && opponent && !opponentForfeited ? opponent.text : undefined,
+      });
+    }
+  }
+
+  return entries;
 }
 
 async function collectUsages(
@@ -181,6 +237,15 @@ export async function generateAiResponses(gameId: string): Promise<void> {
 
   if (!round) return;
 
+  // Fetch previous rounds for AI history (skip on round 1)
+  const previousRounds = round.roundNumber > 1
+    ? await prisma.round.findMany({
+        where: { gameId, roundNumber: { lt: round.roundNumber } },
+        orderBy: { roundNumber: "asc" },
+        include: { prompts: { include: { responses: true, votes: true } } },
+      })
+    : [];
+
   const aiPlayers = getAiPlayers(players);
   console.log(`[generateAiResponses] Starting ${aiPlayers.length} AI players × ${round.prompts.length} prompts for game ${gameId}`);
 
@@ -189,7 +254,8 @@ export async function generateAiResponses(gameId: string): Promise<void> {
       .map((a) => aiPlayers.find((p) => p.id === a.playerId))
       .filter((p) => p != null)
       .map(async (player) => {
-        const { text, usage } = await generateJoke(player.modelId, prompt.text);
+        const history = buildPlayerHistory(player.id, previousRounds);
+        const { text, usage } = await generateJoke(player.modelId, prompt.text, history);
         await prisma.response.create({
           data: { promptId: prompt.id, playerId: player.id, text },
         });
