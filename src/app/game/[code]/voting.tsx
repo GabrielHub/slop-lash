@@ -100,6 +100,7 @@ export function Voting({
   isSpectator?: boolean;
 }) {
   const [voted, setVoted] = useState<Set<string>>(new Set());
+  const [abstained, setAbstained] = useState<Set<string>>(new Set());
   const [voting, setVoting] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [error, setError] = useState("");
@@ -139,6 +140,17 @@ export function Voting({
     );
   }, [currentPrompt, playerId, voted]);
 
+  // Check if the player explicitly abstained on the current prompt (survives reconnect)
+  const hasAbstainedCurrent = useMemo(() => {
+    if (!currentPrompt || !playerId) return false;
+    return (
+      abstained.has(currentPrompt.id) ||
+      currentPrompt.votes.some(
+        (v) => v.voterId === playerId && v.responseId == null && v.failReason == null
+      )
+    );
+  }, [currentPrompt, playerId, abstained]);
+
   // TTS: play when votingPromptIndex changes (not during reveal)
   const { playPromptTts, currentPromptId } = useTts({
     code,
@@ -159,10 +171,12 @@ export function Voting({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.votingPromptIndex, isRevealing]);
 
-  async function castVote(promptId: string, responseId: string) {
+  async function castVote(promptId: string, responseId: string | null) {
     if (!playerId) return;
     setVoting(true);
     setError("");
+
+    const isAbstain = responseId === null;
 
     try {
       const res = await fetch(`/api/games/${code}/vote`, {
@@ -173,11 +187,15 @@ export function Voting({
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Failed to vote");
+        setError(data.error || (isAbstain ? "Failed to pass" : "Failed to vote"));
         return;
       }
 
-      playSound("vote-cast");
+      if (isAbstain) {
+        setAbstained((prev) => new Set(prev).add(promptId));
+      } else {
+        playSound("vote-cast");
+      }
       setVoted((prev) => new Set(prev).add(promptId));
     } catch {
       setError("Something went wrong");
@@ -301,9 +319,9 @@ export function Voting({
                 />
               ) : hasVotedCurrent ? (
                 <PassiveView
-                  label="Vote locked in!"
+                  label={hasAbstainedCurrent ? "Passed" : "Vote locked in!"}
                   sublabel="Waiting for others..."
-                  color="teal"
+                  color={hasAbstainedCurrent ? "dim" : "teal"}
                   prompt={currentPrompt}
                   playerId={playerId}
                   code={code}
@@ -505,7 +523,7 @@ function VoteView({
 }: {
   prompt: GamePrompt;
   voting: boolean;
-  onVote: (promptId: string, responseId: string) => void;
+  onVote: (promptId: string, responseId: string | null) => void;
   playerId: string | null;
   code: string;
   playerNames: Map<string, string>;
@@ -574,6 +592,17 @@ function VoteView({
         </motion.button>
         <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={playerId} code={code} playerNames={playerNames} />
       </div>
+
+      {/* Pass button — spans full width below the grid */}
+      <div className="col-span-1 lg:col-span-3 flex justify-center pt-2">
+        <button
+          onClick={() => onVote(prompt.id, null)}
+          disabled={voting}
+          className="text-sm text-ink-dim/60 hover:text-ink-dim transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Pass
+        </button>
+      </div>
     </div>
   );
 }
@@ -590,7 +619,7 @@ function PassiveView({
 }: {
   label: string;
   sublabel: string;
-  color: "gold" | "teal";
+  color: "gold" | "teal" | "dim";
   prompt: GamePrompt;
   playerId: string | null;
   code: string;
@@ -599,6 +628,7 @@ function PassiveView({
   const styles = {
     gold: "bg-gold/20 border-gold/40 text-ink",
     teal: "bg-teal/20 border-teal/40 text-teal",
+    dim: "bg-surface/60 border-edge text-ink-dim",
   };
 
   return (

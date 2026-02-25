@@ -10,9 +10,9 @@ export async function POST(
   const { code } = await params;
   const { voterId, promptId, responseId } = await request.json();
 
-  if (!voterId || !promptId || !responseId) {
+  if (!voterId || !promptId) {
     return NextResponse.json(
-      { error: "voterId, promptId, and responseId are required" },
+      { error: "voterId and promptId are required" },
       { status: 400 }
     );
   }
@@ -70,15 +70,17 @@ export async function POST(
     );
   }
 
-  // Verify response belongs to this prompt
-  const response = await prisma.response.findFirst({
-    where: { id: responseId, promptId },
-  });
-  if (!response) {
-    return NextResponse.json(
-      { error: "Response does not belong to this prompt" },
-      { status: 400 }
-    );
+  // Verify response belongs to this prompt (skip for abstain votes)
+  if (responseId) {
+    const response = await prisma.response.findFirst({
+      where: { id: responseId, promptId },
+    });
+    if (!response) {
+      return NextResponse.json(
+        { error: "Response does not belong to this prompt" },
+        { status: 400 }
+      );
+    }
   }
 
   // Use transaction to prevent race conditions on self-vote and duplicate votes
