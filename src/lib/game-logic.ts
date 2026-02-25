@@ -2,7 +2,7 @@ import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
 import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage, type RoundHistoryEntry } from "./ai";
 import { generateSpeechAudio } from "./tts";
-import { scorePrompt, type PlayerState } from "./scoring";
+import { scorePrompt, applyScoreResult, type PlayerState } from "./scoring";
 import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
 export { MAX_PLAYERS, MAX_SPECTATORS, MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
@@ -543,38 +543,38 @@ async function applyRoundScores(gameId: string): Promise<void> {
   const scoreIncrements: Record<string, number> = {};
   const responsePoints: { id: string; points: number }[] = [];
 
+  // Build a player type lookup once (stable across prompts)
+  const playerTypeMap = new Map(players.map((p) => [p.id, p.type as import("./types").PlayerType]));
+
   for (const prompt of round.prompts) {
     const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
     const eligibleVoterCount = players.filter((p) => !respondentIds.has(p.id)).length;
 
     const result = scorePrompt(
-      prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, text: r.text })),
+      prompt.responses.map((r) => ({
+        id: r.id,
+        playerId: r.playerId,
+        playerType: playerTypeMap.get(r.playerId) ?? "HUMAN",
+        text: r.text,
+      })),
       prompt.votes.map((v) => ({ id: v.voter.id, type: v.voter.type, responseId: v.responseId })),
       playerStates,
       round.roundNumber,
       eligibleVoterCount,
     );
 
-    // Accumulate score increments and track per-response points
+    // Accumulate score increments for DB writes
     for (const resp of prompt.responses) {
       const pts = result.points[resp.id] ?? 0;
       scoreIncrements[resp.playerId] = (scoreIncrements[resp.playerId] ?? 0) + pts;
-      if (pts > 0) responsePoints.push({ id: resp.id, points: pts });
-
-      // Keep running score in sync for subsequent scorePrompt calls
-      const state = playerStates.get(resp.playerId);
-      if (state) state.score += pts;
+      responsePoints.push({ id: resp.id, points: pts });
+    }
+    for (const [playerId, penalty] of Object.entries(result.penalties)) {
+      scoreIncrements[playerId] = (scoreIncrements[playerId] ?? 0) + penalty;
     }
 
-    // Update local HR and streak for subsequent prompts in this round
-    for (const [playerId, newHR] of Object.entries(result.hrUpdates)) {
-      const state = playerStates.get(playerId);
-      if (state) state.humorRating = newHR;
-    }
-    for (const [playerId, newStreak] of Object.entries(result.streakUpdates)) {
-      const state = playerStates.get(playerId);
-      if (state) state.winStreak = newStreak;
-    }
+    // Update running player states for subsequent prompts
+    applyScoreResult(result, prompt.responses, playerStates);
   }
 
   // Batch DB updates
@@ -787,6 +787,29 @@ export async function endGameEarly(gameId: string): Promise<void> {
 
   if (game.status === "WRITING") {
     await fillPlaceholderResponses(gameId);
+  }
+
+  if (game.status === "VOTING") {
+    // Guard against in-flight AI responses that haven't finished yet
+    await fillPlaceholderResponses(gameId);
+    // Record non-voters as abstentions so penalty logic works correctly
+    const votablePrompts = await getVotablePrompts(gameId);
+    const allPlayers = await prisma.player.findMany({
+      where: { gameId, type: { not: "SPECTATOR" } },
+    });
+    for (const prompt of votablePrompts) {
+      const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+      const existingVoterIds = new Set(prompt.votes.map((v) => v.voterId));
+      const missing = allPlayers.filter(
+        (p) => !respondentIds.has(p.id) && !existingVoterIds.has(p.id),
+      );
+      if (missing.length > 0) {
+        await prisma.vote.createMany({
+          data: missing.map((p) => ({ promptId: prompt.id, voterId: p.id })),
+          skipDuplicates: true,
+        });
+      }
+    }
   }
 
   if (game.status === "WRITING" || game.status === "VOTING") {

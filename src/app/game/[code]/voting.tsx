@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes, filterErrorVotes } from "@/lib/types";
-import { FORFEIT_MARKER } from "@/lib/scoring";
+import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "@/lib/scoring";
 import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/lib/game-constants";
 import { Timer } from "@/components/timer";
 import { ErrorBanner } from "@/components/error-banner";
@@ -125,6 +125,39 @@ export function Voting({
   const isRevealing = game.votingRevealing;
   const totalPrompts = votablePrompts.length;
 
+  // Client-side scoring for revealed prompts — powers points display + running scoreboard
+  const { promptScores, runningScores } = useMemo(() => {
+    const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
+    const states = new Map<string, PlayerState>(
+      activePlayers.map((p) => [p.id, { score: p.score, humorRating: p.humorRating, winStreak: p.winStreak }]),
+    );
+    const scores = new Map<string, ScorePromptResult>();
+    const revealedCount = isRevealing ? game.votingPromptIndex + 1 : game.votingPromptIndex;
+
+    for (let i = 0; i < revealedCount; i++) {
+      const prompt = votablePrompts[i];
+      if (!prompt || prompt.responses.length < 2) continue;
+
+      const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+      const eligibleVoterCount = activePlayers.filter((p) => !respondentIds.has(p.id)).length;
+
+      const result = scorePrompt(
+        prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, playerType: r.player.type, text: r.text })),
+        prompt.votes.map((v) => ({ id: v.voter.id, type: v.voter.type, responseId: v.responseId })),
+        states,
+        game.currentRound,
+        eligibleVoterCount,
+      );
+
+      scores.set(prompt.id, result);
+      applyScoreResult(result, prompt.responses, states);
+    }
+
+    return { promptScores: scores, runningScores: states };
+  }, [votablePrompts, game.votingPromptIndex, isRevealing, game.players, game.currentRound]);
+
+  const currentPromptScore = currentPrompt ? promptScores.get(currentPrompt.id) : undefined;
+
   // Check if this player is a respondent for the current prompt
   const isRespondent = useMemo(() => {
     if (!currentPrompt || !playerId) return false;
@@ -237,122 +270,136 @@ export function Voting({
         totalPrompts={totalPrompts}
         currentPromptId={currentPromptId}
         playerNames={playerNames}
+        scoreResult={currentPromptScore}
+        runningScores={runningScores}
       />
     );
   }
 
   return (
     <main className="min-h-svh flex flex-col items-center px-4 sm:px-6 py-8 pt-16 sm:pt-20">
-      <motion.div
-        className="w-full max-w-lg lg:max-w-5xl"
-        variants={fadeInUp}
-        initial="hidden"
-        animate="visible"
-      >
-        {/* Progress + timer row — compact on mobile */}
-        <div className="flex items-center gap-3 mb-4 sm:mb-6">
-          <div className="flex-1 min-w-0">
-            {!game.timersDisabled && (
-              <Timer
-                deadline={game.phaseDeadline}
-                total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
-              />
-            )}
-          </div>
-          {isHost && (
-            <motion.button
-              onClick={skipTimer}
-              disabled={skipping}
-              className="shrink-0 px-4 py-2 text-xs sm:text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              {...buttonTap}
-            >
-              {getVotingSkipText(skipping, isRevealing, game.timersDisabled)}
-            </motion.button>
-          )}
-        </div>
-
-        {/* Progress dots */}
-        <div className="mb-5 sm:mb-8">
-          <ProgressDots
-            total={totalPrompts}
-            current={game.votingPromptIndex}
-            revealing={isRevealing}
-          />
-        </div>
-
-        {/* Main content */}
-        <AnimatePresence mode="wait">
-          {currentPrompt ? (
-            <motion.div
-              key={`${game.votingPromptIndex}-${isRevealing}`}
-              initial={{ opacity: 0, y: 20, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -16, scale: 0.97, transition: { duration: 0.2 } }}
-              transition={springDefault}
-            >
-              {/* Prompt text — big and centered */}
-              <div className="text-center mb-6 sm:mb-8">
-                <p className="font-display font-bold text-lg sm:text-2xl lg:text-3xl text-gold leading-snug inline-flex items-center justify-center gap-2 flex-wrap">
-                  {currentPromptId === currentPrompt.id && <TtsIndicator />}
-                  <span>{currentPrompt.text}</span>
-                  {currentPromptId === currentPrompt.id && (
-                    <TtsIndicator mirror />
-                  )}
-                </p>
-              </div>
-
-              {isRevealing ? (
-                <RevealView
-                  prompt={currentPrompt}
-                  players={game.players}
-                  playerNames={playerNames}
-                />
-              ) : isRespondent ? (
-                <PassiveView
-                  label="You wrote one of these!"
-                  sublabel="Waiting for others to vote..."
-                  color="gold"
-                  prompt={currentPrompt}
-                  playerId={playerId}
-                  code={code}
-                  playerNames={playerNames}
-                />
-              ) : hasVotedCurrent ? (
-                <PassiveView
-                  label={hasAbstainedCurrent ? "Passed" : "Vote locked in!"}
-                  sublabel="Waiting for others..."
-                  color={hasAbstainedCurrent ? "dim" : "teal"}
-                  prompt={currentPrompt}
-                  playerId={playerId}
-                  code={code}
-                  playerNames={playerNames}
-                />
-              ) : (
-                <VoteView
-                  prompt={currentPrompt}
-                  voting={voting}
-                  onVote={castVote}
-                  playerId={playerId}
-                  code={code}
-                  playerNames={playerNames}
+      <div className="w-full max-w-lg lg:max-w-5xl lg:grid lg:grid-cols-[1fr_220px] lg:gap-6">
+        <motion.div
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+        >
+          {/* Progress + timer row — compact on mobile */}
+          <div className="flex items-center gap-3 mb-4 sm:mb-6">
+            <div className="flex-1 min-w-0">
+              {!game.timersDisabled && (
+                <Timer
+                  deadline={game.phaseDeadline}
+                  total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
                 />
               )}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="processing"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-16"
-            >
-              <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
-              <p className="text-ink-dim text-sm">Processing results...</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+            {isHost && (
+              <motion.button
+                onClick={skipTimer}
+                disabled={skipping}
+                className="shrink-0 px-4 py-2 text-xs sm:text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                {...buttonTap}
+              >
+                {getVotingSkipText(skipping, isRevealing, game.timersDisabled)}
+              </motion.button>
+            )}
+          </div>
 
-        <ErrorBanner error={error} className="mt-4" />
-      </motion.div>
+          {/* Progress dots */}
+          <div className="mb-5 sm:mb-8">
+            <ProgressDots
+              total={totalPrompts}
+              current={game.votingPromptIndex}
+              revealing={isRevealing}
+            />
+          </div>
+
+          {/* Main content */}
+          <AnimatePresence mode="wait">
+            {currentPrompt ? (
+              <motion.div
+                key={`${game.votingPromptIndex}-${isRevealing}`}
+                initial={{ opacity: 0, y: 20, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -16, scale: 0.97, transition: { duration: 0.2 } }}
+                transition={springDefault}
+              >
+                {/* Prompt text — big and centered */}
+                <div className="text-center mb-6 sm:mb-8">
+                  <p className="font-display font-bold text-lg sm:text-2xl lg:text-3xl text-gold leading-snug inline-flex items-center justify-center gap-2 flex-wrap">
+                    {currentPromptId === currentPrompt.id && <TtsIndicator />}
+                    <span>{currentPrompt.text}</span>
+                    {currentPromptId === currentPrompt.id && (
+                      <TtsIndicator mirror />
+                    )}
+                  </p>
+                </div>
+
+                {isRevealing ? (
+                  <RevealView
+                    prompt={currentPrompt}
+                    players={game.players}
+                    playerNames={playerNames}
+                    scoreResult={currentPromptScore}
+                  />
+                ) : isRespondent ? (
+                  <PassiveView
+                    label="You wrote one of these!"
+                    sublabel="Waiting for others to vote..."
+                    color="gold"
+                    prompt={currentPrompt}
+                    playerId={playerId}
+                    code={code}
+                    playerNames={playerNames}
+                  />
+                ) : hasVotedCurrent ? (
+                  <PassiveView
+                    label={hasAbstainedCurrent ? "Passed" : "Vote locked in!"}
+                    sublabel="Waiting for others..."
+                    color={hasAbstainedCurrent ? "dim" : "teal"}
+                    prompt={currentPrompt}
+                    playerId={playerId}
+                    code={code}
+                    playerNames={playerNames}
+                  />
+                ) : (
+                  <VoteView
+                    prompt={currentPrompt}
+                    voting={voting}
+                    onVote={castVote}
+                    playerId={playerId}
+                    code={code}
+                    playerNames={playerNames}
+                  />
+                )}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="processing"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center py-16"
+              >
+                <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
+                <p className="text-ink-dim text-sm">Processing results...</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <ErrorBanner error={error} className="mt-4" />
+        </motion.div>
+
+        {/* Desktop running scoreboard */}
+        <motion.div
+          className="hidden lg:block sticky top-20 self-start"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={springDefault}
+        >
+          <VotingScoreboard players={game.players} runningScores={runningScores} />
+        </motion.div>
+      </div>
     </main>
   );
 }
@@ -368,6 +415,8 @@ function HostDisplay({
   totalPrompts,
   currentPromptId,
   playerNames,
+  scoreResult,
+  runningScores,
 }: {
   game: GameState;
   currentPrompt: GamePrompt | null;
@@ -375,6 +424,8 @@ function HostDisplay({
   totalPrompts: number;
   currentPromptId: string | null;
   playerNames: Map<string, string>;
+  scoreResult?: ScorePromptResult;
+  runningScores: Map<string, PlayerState>;
 }) {
   return (
     <main className="min-h-svh flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-12 pt-20">
@@ -438,6 +489,7 @@ function HostDisplay({
                   players={game.players}
                   playerNames={playerNames}
                   isHostDisplay
+                  scoreResult={scoreResult}
                 />
               ) : (
                 <HostVotingView prompt={currentPrompt} playerNames={playerNames} />
@@ -455,6 +507,16 @@ function HostDisplay({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Running scoreboard — compact strip for host display */}
+        <motion.div
+          className="mt-8"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...springDefault, delay: 0.2 }}
+        >
+          <VotingScoreboard players={game.players} runningScores={runningScores} horizontal />
+        </motion.div>
       </div>
     </main>
   );
@@ -822,6 +884,7 @@ function RevealResponseCard({
   slideFrom,
   isLoser,
   aiBeatsHuman,
+  pointsEarned,
 }: {
   response: GamePrompt["responses"][0];
   votes: { voterId: string }[];
@@ -834,6 +897,7 @@ function RevealResponseCard({
   slideFrom: "left" | "right";
   isLoser: boolean;
   aiBeatsHuman: boolean;
+  pointsEarned?: number;
 }) {
   const textSize = isHostDisplay ? "text-lg sm:text-2xl lg:text-3xl" : "text-base sm:text-lg";
   const authorSize = isHostDisplay ? "text-sm sm:text-base" : "text-sm";
@@ -944,6 +1008,22 @@ function RevealResponseCard({
             <p className={`${voteCountSize} text-ink-dim/60 tabular-nums`}>
               {votes.length} vote{votes.length !== 1 ? "s" : ""}
             </p>
+            {pointsEarned != null && (
+              <motion.p
+                className={`font-mono font-black tabular-nums ${
+                  pointsEarned < 0
+                    ? "text-punch"
+                    : isWinner
+                      ? "text-gold"
+                      : "text-ink-dim/50"
+                } ${isHostDisplay ? "text-lg sm:text-xl mt-1" : "text-sm mt-0.5"}`}
+                initial={{ opacity: 0, scale: 0.3, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ ...springBouncy, delay: 1.0 }}
+              >
+                {pointsEarned >= 0 ? `+${pointsEarned.toLocaleString()}` : pointsEarned.toLocaleString()}
+              </motion.p>
+            )}
           </motion.div>
         </div>
       </div>
@@ -957,11 +1037,13 @@ function RevealView({
   players,
   playerNames,
   isHostDisplay = false,
+  scoreResult,
 }: {
   prompt: GamePrompt;
   players: GamePlayer[];
   playerNames: Map<string, string>;
   isHostDisplay?: boolean;
+  scoreResult?: ScorePromptResult;
 }) {
   const respA = prompt.responses[0];
   const respB = prompt.responses[1];
@@ -975,9 +1057,15 @@ function RevealView({
   const pctA = totalVotes > 0 ? Math.round((votesA.length / totalVotes) * 100) : 0;
   const pctB = totalVotes > 0 ? Math.round((votesB.length / totalVotes) * 100) : 0;
 
-  const winnerIsA = votesA.length > votesB.length;
-  const winnerIsB = votesB.length > votesA.length;
-  const isTie = votesA.length === votesB.length && totalVotes > 0;
+  // When score data is available, determine winner by points (matches results page);
+  // otherwise fall back to raw vote count (before scoring is computed)
+  const ptsA = scoreResult?.points[respA.id] ?? 0;
+  const ptsB = scoreResult?.points[respB.id] ?? 0;
+  const winnerIsA = scoreResult ? ptsA > ptsB : votesA.length > votesB.length;
+  const winnerIsB = scoreResult ? ptsB > ptsA : votesB.length > votesA.length;
+  const isTie = scoreResult
+    ? ptsA === ptsB && totalVotes > 0
+    : votesA.length === votesB.length && totalVotes > 0;
   const isUnanimous = totalVotes >= 2 && (votesA.length === totalVotes || votesB.length === totalVotes);
 
   // Detect AI beats human
@@ -1042,6 +1130,14 @@ function RevealView({
 
   if (!respA || !respB) return null;
 
+  // Compute per-response points (vote points + any penalty on the respondent)
+  const pointsA = scoreResult
+    ? (scoreResult.points[respA.id] ?? 0) + (scoreResult.penalties[respA.playerId] ?? 0)
+    : undefined;
+  const pointsB = scoreResult
+    ? (scoreResult.points[respB.id] ?? 0) + (scoreResult.penalties[respB.playerId] ?? 0)
+    : undefined;
+
   const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
 
   const abstainVoterIds = new Set(
@@ -1077,6 +1173,7 @@ function RevealView({
           slideFrom="left"
           isLoser={winnerIsB}
           aiBeatsHuman={aiBeatsHuman}
+          pointsEarned={pointsA}
         />
 
         {/* VS divider */}
@@ -1107,6 +1204,7 @@ function RevealView({
           slideFrom="right"
           isLoser={winnerIsA}
           aiBeatsHuman={aiBeatsHuman}
+          pointsEarned={pointsB}
         />
       </div>
 
@@ -1232,6 +1330,153 @@ function RevealView({
           Didn&apos;t vote: {didntVote.map((p) => p.name).join(", ")}
         </motion.p>
       )}
+    </div>
+  );
+}
+
+/** Running scoreboard during voting — shows scores updating live as reveals happen. */
+function VotingScoreboard({
+  players,
+  runningScores,
+  horizontal = false,
+}: {
+  players: GamePlayer[];
+  runningScores: Map<string, PlayerState>;
+  horizontal?: boolean;
+}) {
+  const sorted = players
+    .filter((p) => p.type !== "SPECTATOR")
+    .map((p) => ({
+      player: p,
+      score: runningScores.get(p.id)?.score ?? p.score,
+      delta: (runningScores.get(p.id)?.score ?? p.score) - p.score,
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  if (horizontal) {
+    return (
+      <div className="flex items-center justify-center gap-4 flex-wrap px-4 py-3 rounded-xl bg-surface/60 backdrop-blur-sm border border-edge">
+        <span className="text-xs font-medium text-ink-dim/50 uppercase tracking-wider shrink-0">
+          Scores
+        </span>
+        {sorted.map(({ player, score, delta }) => {
+          const model = player.modelId ? getModelByModelId(player.modelId) : null;
+          return (
+            <motion.div
+              key={player.id}
+              className="flex items-center gap-1.5"
+              layout
+            >
+              {model ? (
+                <ModelIcon model={model} size={16} className="shrink-0" />
+              ) : (
+                <span
+                  className="w-4 h-4 flex items-center justify-center rounded-sm text-[10px] font-bold shrink-0"
+                  style={{
+                    color: getPlayerColor(player.name),
+                    backgroundColor: `${getPlayerColor(player.name)}20`,
+                  }}
+                >
+                  {player.name[0]?.toUpperCase() ?? "?"}
+                </span>
+              )}
+              <span className="text-xs font-medium text-ink truncate max-w-[5rem]">
+                {player.name}
+              </span>
+              <div className="flex items-center gap-1">
+                {delta !== 0 && (
+                  <motion.span
+                    key={delta}
+                    className={`text-[10px] font-mono font-bold tabular-nums ${
+                      delta > 0 ? "text-teal/70" : "text-punch/70"
+                    }`}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={springBouncy}
+                  >
+                    {delta > 0 ? "+" : ""}{delta.toLocaleString()}
+                  </motion.span>
+                )}
+                <motion.span
+                  key={score}
+                  className="font-mono font-bold text-gold text-xs tabular-nums"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={springBouncy}
+                >
+                  {score.toLocaleString()}
+                </motion.span>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h3 className="text-xs font-medium text-ink-dim/50 uppercase tracking-wider mb-3">
+        Scores
+      </h3>
+      <div className="space-y-1.5">
+        {sorted.map(({ player, score, delta }, i) => {
+          const model = player.modelId ? getModelByModelId(player.modelId) : null;
+          return (
+            <motion.div
+              key={player.id}
+              className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface/60 backdrop-blur-sm border border-edge"
+              layout
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ ...springDefault, delay: i * 0.04 }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {model ? (
+                  <ModelIcon model={model} size={18} className="shrink-0" />
+                ) : (
+                  <span
+                    className="w-[18px] h-[18px] flex items-center justify-center rounded-sm text-xs font-bold shrink-0"
+                    style={{
+                      color: getPlayerColor(player.name),
+                      backgroundColor: `${getPlayerColor(player.name)}20`,
+                    }}
+                  >
+                    {player.name[0]?.toUpperCase() ?? "?"}
+                  </span>
+                )}
+                <span className="text-sm font-medium text-ink truncate">
+                  {player.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {delta !== 0 && (
+                  <motion.span
+                    key={delta}
+                    className={`text-[11px] font-mono font-bold tabular-nums ${
+                      delta > 0 ? "text-teal/70" : "text-punch/70"
+                    }`}
+                    initial={{ opacity: 0, y: -6, scale: 0.5 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={springBouncy}
+                  >
+                    {delta > 0 ? "+" : ""}{delta.toLocaleString()}
+                  </motion.span>
+                )}
+                <motion.span
+                  key={score}
+                  className="font-mono font-bold text-gold text-sm tabular-nums"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={springBouncy}
+                >
+                  {score.toLocaleString()}
+                </motion.span>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
     </div>
   );
 }

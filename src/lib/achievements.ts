@@ -1,6 +1,6 @@
 import { filterCastVotes } from "./types";
 import type { GameState } from "./types";
-import { scorePrompt, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "./scoring";
+import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState } from "./scoring";
 
 export interface Achievement {
   id: string;
@@ -92,29 +92,17 @@ function pushForIds(
   }
 }
 
-/** Apply scorePrompt result deltas to mutable player states. */
-function applyScoreResult(
-  result: ScorePromptResult,
+/** Apply scorePrompt result deltas and track max streaks for Hot Streak achievement. */
+function applyScoreResultWithStreaks(
+  result: import("./scoring").ScorePromptResult,
   responses: { id: string; playerId: string }[],
   playerStates: Map<string, PlayerState>,
   maxStreaks: Map<string, number>,
 ): void {
-  for (const resp of responses) {
-    const pts = result.points[resp.id] ?? 0;
-    const state = playerStates.get(resp.playerId);
-    if (state) state.score += pts;
-  }
-  for (const [playerId, newHR] of Object.entries(result.hrUpdates)) {
-    const state = playerStates.get(playerId);
-    if (state) state.humorRating = newHR;
-  }
+  applyScoreResult(result, responses, playerStates);
   for (const [playerId, newStreak] of Object.entries(result.streakUpdates)) {
-    const state = playerStates.get(playerId);
-    if (state) {
-      state.winStreak = newStreak;
-      const prev = maxStreaks.get(playerId) ?? 0;
-      if (newStreak > prev) maxStreaks.set(playerId, newStreak);
-    }
+    const prev = maxStreaks.get(playerId) ?? 0;
+    if (newStreak > prev) maxStreaks.set(playerId, newStreak);
   }
 }
 
@@ -220,7 +208,7 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
       const eligibleVoterCount = game.players.filter((p) => !respondentIds.has(p.id)).length;
 
       const result = scorePrompt(
-        prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, text: r.text })),
+        prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, playerType: r.player.type, text: r.text })),
         prompt.votes.map((v) => ({ id: v.voter.id, type: v.voter.type, responseId: v.responseId })),
         playerStates,
         round.roundNumber,
@@ -233,7 +221,7 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
         if (resp) comebackIds.add(resp.playerId);
       }
 
-      applyScoreResult(result, prompt.responses, playerStates, maxStreaks);
+      applyScoreResultWithStreaks(result, prompt.responses, playerStates, maxStreaks);
     }
   }
 

@@ -17,6 +17,8 @@ const HR_FLOOR = 0.5;
 const FLAWLESS_BONUS = 0.25;
 const UPSET_PCT = 0.10;
 const UPSET_CAP_PER_ROUND = 500;
+const ABSTAIN_AI_PENALTY_PER_HUMAN = 20;
+const ABSTAIN_HUMAN_PENALTY = 10;
 
 export const FORFEIT_MARKER = "[forfeit]";
 
@@ -52,6 +54,7 @@ export interface PlayerState {
 export interface PromptResponse {
   id: string;
   playerId: string;
+  playerType: PlayerType;
   text: string;
 }
 
@@ -67,16 +70,46 @@ export interface ScorePromptResult {
   streakUpdates: Record<string, number>;
   /** Set of response IDs that triggered an upset bonus */
   upsetResponseIds: Set<string>;
+  /** Penalty amounts keyed by player ID (negative values) */
+  penalties: Record<string, number>;
 }
 
 // --------------- Helpers ---------------
+
+/**
+ * Apply a ScorePromptResult's deltas to mutable player states.
+ * Used by game-logic.ts, achievements.ts, and client-side scoring in voting.tsx.
+ */
+export function applyScoreResult(
+  result: ScorePromptResult,
+  responses: { id: string; playerId: string }[],
+  playerStates: Map<string, PlayerState>,
+): void {
+  for (const resp of responses) {
+    const pts = result.points[resp.id] ?? 0;
+    const state = playerStates.get(resp.playerId);
+    if (state) state.score += pts;
+  }
+  for (const [playerId, penalty] of Object.entries(result.penalties)) {
+    const state = playerStates.get(playerId);
+    if (state) state.score += penalty;
+  }
+  for (const [playerId, newHR] of Object.entries(result.hrUpdates)) {
+    const state = playerStates.get(playerId);
+    if (state) state.humorRating = newHR;
+  }
+  for (const [playerId, newStreak] of Object.entries(result.streakUpdates)) {
+    const state = playerStates.get(playerId);
+    if (state) state.winStreak = newStreak;
+  }
+}
 
 function emptyResult(responses: PromptResponse[]): ScorePromptResult {
   const points: Record<string, number> = {};
   for (const r of responses) {
     points[r.id] = 0;
   }
-  return { points, hrUpdates: {}, streakUpdates: {}, upsetResponseIds: new Set() };
+  return { points, hrUpdates: {}, streakUpdates: {}, upsetResponseIds: new Set(), penalties: {} };
 }
 
 function clampHR(value: number): number {
@@ -176,6 +209,27 @@ export function scorePrompt(
 
   if (winner && loser) {
     applyWinLoss(result, winner.response.playerId, loser.response.playerId, playerStates);
+  }
+
+  // Abstain penalties: check if ALL human voters abstained
+  const humanVoters = voters.filter((v) => v.type === "HUMAN");
+  const allHumansAbstained = humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
+
+  if (allHumansAbstained) {
+    const bothAI = responses.every((r) => r.playerType === "AI");
+    if (bothAI) {
+      // Penalize both AI respondents
+      const penalty = -ABSTAIN_AI_PENALTY_PER_HUMAN * humanVoters.length * roundMult;
+      for (const r of responses) {
+        result.penalties[r.playerId] = penalty;
+      }
+    } else {
+      // At least one human respondent — penalize each abstaining human voter
+      const penalty = -ABSTAIN_HUMAN_PENALTY * roundMult;
+      for (const v of humanVoters) {
+        result.penalties[v.id] = penalty;
+      }
+    }
   }
 
   return result;

@@ -16,6 +16,7 @@ import {
   BestPromptsCarousel,
   extractBestPrompts,
 } from "@/components/best-prompts-carousel";
+import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
 import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
 import { computeAchievements } from "@/lib/achievements";
 import {
@@ -41,6 +42,10 @@ export interface PromptOutcome {
   totalVotes: number;
   isUnanimous: boolean;
   aiBeatsHuman: boolean;
+  /** Response ID of the points-based winner (null if tie) */
+  winnerResponseId: string | null;
+  /** True when all human voters abstained */
+  allPassed: boolean;
 }
 
 export function analyzePromptOutcome(
@@ -48,8 +53,18 @@ export function analyzePromptOutcome(
 ): PromptOutcome {
   const castVotes = filterCastVotes(prompt.votes);
   const totalVotes = castVotes.length;
-  if (totalVotes === 0) return { totalVotes: 0, isUnanimous: false, aiBeatsHuman: false };
 
+  // Points-based winner determination
+  const byPoints = [...prompt.responses].sort(
+    (a, b) => b.pointsEarned - a.pointsEarned,
+  );
+  const pointsTie =
+    byPoints.length >= 2 && byPoints[0].pointsEarned === byPoints[1].pointsEarned;
+  const winnerResponseId = !pointsTie && byPoints.length > 0
+    ? byPoints[0].id
+    : null;
+
+  // Unanimous still based on votes (for stamps)
   const voteCounts = prompt.responses
     .map((r) => ({
       resp: r,
@@ -59,14 +74,28 @@ export function analyzePromptOutcome(
 
   const top = voteCounts[0];
   const bottom = voteCounts[1];
-  const isUnanimous = top.count === totalVotes;
-  const hasWinner = top.count > (bottom?.count ?? 0);
+  const isUnanimous = totalVotes >= 2 && top?.count === totalVotes;
+  const hasVoteWinner = top?.count > (bottom?.count ?? 0);
   const aiBeatsHuman =
-    hasWinner &&
+    hasVoteWinner &&
     top.resp.player.type === "AI" &&
     bottom?.resp.player.type === "HUMAN";
 
-  return { totalVotes, isUnanimous, aiBeatsHuman };
+  // Check if all human voters abstained
+  const humanVoters = prompt.votes.filter((v) => v.voter.type === "HUMAN");
+  const allPassed = humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
+
+  return { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed };
+}
+
+export function getPromptCardBorder(outcome: PromptOutcome): { border: string; shadow: string } {
+  if (outcome.isUnanimous) {
+    return { border: "border-punch", shadow: "0 0 20px rgba(255, 86, 71, 0.15)" };
+  }
+  if (outcome.allPassed) {
+    return { border: "border-ink-dim/30", shadow: "var(--shadow-card)" };
+  }
+  return { border: "border-edge", shadow: "var(--shadow-card)" };
 }
 
 function getBadgeColor(id: string) {
@@ -518,20 +547,15 @@ export function Results({
               {/* Grid of prompt cards on desktop */}
               <div className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
                 {currentRound.prompts.filter((p) => !p.responses.some((r) => r.text === FORFEIT_MARKER)).map((prompt, promptIdx) => {
-                  const { totalVotes, isUnanimous, aiBeatsHuman } =
-                    analyzePromptOutcome(prompt);
+                  const outcome = analyzePromptOutcome(prompt);
+                  const { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } = outcome;
+                  const cardStyle = getPromptCardBorder(outcome);
 
                   return (
                     <motion.div
                       key={prompt.id}
-                      className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${
-                        isUnanimous ? "border-punch" : "border-edge"
-                      }`}
-                      style={{
-                        boxShadow: isUnanimous
-                          ? "0 0 20px rgba(255, 86, 71, 0.15)"
-                          : "var(--shadow-card)",
-                      }}
+                      className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${cardStyle.border}`}
+                      style={{ boxShadow: cardStyle.shadow }}
                       variants={floatIn}
                     >
                       <p className="font-display font-semibold text-base text-gold mb-4">
@@ -546,8 +570,8 @@ export function Results({
                             totalVotes > 0
                               ? Math.round((voteCount / totalVotes) * 100)
                               : 0;
-                          const isWinner =
-                            totalVotes > 0 && voteCount > totalVotes - voteCount;
+                          const isWinner = winnerResponseId === resp.id;
+                          const pts = resp.pointsEarned;
                           const respModel =
                             resp.player.type === "AI" && resp.player.modelId
                               ? getModelByModelId(resp.player.modelId)
@@ -607,19 +631,14 @@ export function Results({
                                 <div className="text-right shrink-0">
                                   <span
                                     className={`font-mono font-bold text-base tabular-nums ${
-                                      isWinner ? "text-gold" : "text-ink-dim"
+                                      pts < 0 ? "text-punch" : isWinner ? "text-gold" : "text-ink-dim"
                                     }`}
                                   >
-                                    {pct}%
+                                    {pts < 0 ? pts.toLocaleString() : `+${pts.toLocaleString()}`}
                                   </span>
                                   <p className="text-xs text-ink-dim/80 tabular-nums">
-                                    {voteCount} vote{voteCount !== 1 ? "s" : ""}
+                                    {voteCount} vote{voteCount !== 1 ? "s" : ""} ({pct}%)
                                   </p>
-                                  {resp.pointsEarned > 0 && (
-                                    <span className="text-[10px] font-mono font-bold text-ink-dim/60 tabular-nums">
-                                      +{resp.pointsEarned.toLocaleString()}
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                             </div>
@@ -627,70 +646,12 @@ export function Results({
                         })}
                       </div>
 
-                      {/* SLOPPED! stamp — unanimous AI win */}
-                      {isUnanimous && aiBeatsHuman && (
-                        <motion.div
-                          className="mt-4 flex justify-center"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: 0.8 + promptIdx * 0.2 }}
-                        >
-                          <div
-                            className="animate-stamp-slam inline-flex flex-col items-center gap-0.5 px-5 py-2 rounded-lg border-2 border-punch bg-punch/15"
-                            style={{
-                              boxShadow: "0 0 20px rgba(255, 86, 71, 0.2)",
-                              textShadow: "0 0 12px rgba(255, 86, 71, 0.3)",
-                            }}
-                          >
-                            <span className="font-display font-black text-lg tracking-[0.15em] uppercase text-punch">
-                              SLOPPED!
-                            </span>
-                            <span className="text-[10px] font-bold text-punch/60 uppercase tracking-wider">
-                              Lost to the machine
-                            </span>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* FLAWLESS! stamp — unanimous non-AI win */}
-                      {isUnanimous && !aiBeatsHuman && (
-                        <motion.div
-                          className="mt-4 flex justify-center"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: 0.8 + promptIdx * 0.2 }}
-                        >
-                          <div
-                            className="animate-stamp-slam inline-flex items-center gap-1.5 px-5 py-2 rounded-lg border-2 border-teal bg-teal/15"
-                            style={{
-                              boxShadow: "0 0 20px rgba(45, 212, 184, 0.2)",
-                              textShadow: "0 0 12px rgba(45, 212, 184, 0.3)",
-                            }}
-                          >
-                            <span className="font-display font-black text-lg tracking-[0.15em] uppercase text-teal">
-                              FLAWLESS!
-                            </span>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* Lost to the slop — non-unanimous AI win */}
-                      {aiBeatsHuman && !isUnanimous && (
-                        <motion.div
-                          className="mt-4 flex justify-center"
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.9 + promptIdx * 0.2 }}
-                        >
-                          <div className="animate-slop-drip inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg border-2 border-punch/30 bg-gradient-to-b from-punch/10 to-punch/5"
-                            style={{ boxShadow: "0 4px 12px rgba(255, 86, 71, 0.1)" }}
-                          >
-                            <span className="font-display font-bold text-sm text-punch uppercase tracking-wider">
-                              Lost to the slop
-                            </span>
-                          </div>
-                        </motion.div>
-                      )}
+                      <PromptOutcomeStamp
+                        isUnanimous={isUnanimous}
+                        aiBeatsHuman={aiBeatsHuman}
+                        allPassed={allPassed}
+                        delay={0.8 + promptIdx * 0.2}
+                      />
                     </motion.div>
                   );
                 })}

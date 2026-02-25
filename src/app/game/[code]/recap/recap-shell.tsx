@@ -5,8 +5,9 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { GameState, filterCastVotes } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
-import { analyzePromptOutcome } from "@/app/game/[code]/results";
+import { analyzePromptOutcome, getPromptCardBorder } from "@/app/game/[code]/results";
 import { ModelIcon } from "@/components/model-icon";
+import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
 import { ScoreBarChart } from "@/components/score-bar-chart";
 import {
   BestPromptsCarousel,
@@ -233,20 +234,15 @@ export function RecapShell({ code }: { code: string }) {
                 animate="visible"
               >
                 {round.prompts.map((prompt, promptIdx) => {
-                  const { totalVotes, isUnanimous, aiBeatsHuman } =
-                    analyzePromptOutcome(prompt);
+                  const outcome = analyzePromptOutcome(prompt);
+                  const { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } = outcome;
+                  const cardStyle = getPromptCardBorder(outcome);
 
                   return (
                     <motion.div
                       key={prompt.id}
-                      className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${
-                        isUnanimous ? "border-punch" : "border-edge"
-                      }`}
-                      style={{
-                        boxShadow: isUnanimous
-                          ? "0 0 20px rgba(255, 86, 71, 0.15)"
-                          : "var(--shadow-card)",
-                      }}
+                      className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${cardStyle.border}`}
+                      style={{ boxShadow: cardStyle.shadow }}
                       variants={floatIn}
                     >
                       <p className="font-display font-semibold text-sm text-gold mb-4">
@@ -261,9 +257,8 @@ export function RecapShell({ code }: { code: string }) {
                             totalVotes > 0
                               ? Math.round((voteCount / totalVotes) * 100)
                               : 0;
-                          const isWinner =
-                            totalVotes > 0 &&
-                            voteCount > totalVotes - voteCount;
+                          const isWinner = winnerResponseId === resp.id;
+                          const pts = resp.pointsEarned;
                           const respModel =
                             resp.player.type === "AI" && resp.player.modelId
                               ? getModelByModelId(resp.player.modelId)
@@ -326,14 +321,14 @@ export function RecapShell({ code }: { code: string }) {
                                 <div className="text-right shrink-0">
                                   <span
                                     className={`font-mono font-bold text-sm tabular-nums ${
-                                      isWinner ? "text-gold" : "text-ink-dim"
+                                      pts < 0 ? "text-punch" : isWinner ? "text-gold" : "text-ink-dim"
                                     }`}
                                   >
-                                    {pct}%
+                                    {pts < 0 ? pts.toLocaleString() : `+${pts.toLocaleString()}`}
                                   </span>
                                   <p className="text-[11px] text-ink-dim/60 tabular-nums">
                                     {voteCount} vote
-                                    {voteCount !== 1 ? "s" : ""}
+                                    {voteCount !== 1 ? "s" : ""} ({pct}%)
                                   </p>
                                 </div>
                               </div>
@@ -342,70 +337,12 @@ export function RecapShell({ code }: { code: string }) {
                         })}
                       </div>
 
-                      {/* SLOPPED! stamp — unanimous AI win */}
-                      {isUnanimous && aiBeatsHuman && (
-                        <motion.div
-                          className="mt-4 flex justify-center"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: 0.8 + promptIdx * 0.2 }}
-                        >
-                          <div
-                            className="animate-stamp-slam inline-flex flex-col items-center gap-0.5 px-5 py-2 rounded-lg border-2 border-punch bg-punch/15"
-                            style={{
-                              boxShadow: "0 0 20px rgba(255, 86, 71, 0.2)",
-                              textShadow: "0 0 12px rgba(255, 86, 71, 0.3)",
-                            }}
-                          >
-                            <span className="font-display font-black text-lg tracking-[0.15em] uppercase text-punch">
-                              SLOPPED!
-                            </span>
-                            <span className="text-[10px] font-bold text-punch/60 uppercase tracking-wider">
-                              Lost to the machine
-                            </span>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* FLAWLESS! stamp — unanimous non-AI win */}
-                      {isUnanimous && !aiBeatsHuman && (
-                        <motion.div
-                          className="mt-4 flex justify-center"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: 0.8 + promptIdx * 0.2 }}
-                        >
-                          <div
-                            className="animate-stamp-slam inline-flex items-center gap-1.5 px-5 py-2 rounded-lg border-2 border-teal bg-teal/15"
-                            style={{
-                              boxShadow: "0 0 20px rgba(45, 212, 184, 0.2)",
-                              textShadow: "0 0 12px rgba(45, 212, 184, 0.3)",
-                            }}
-                          >
-                            <span className="font-display font-black text-lg tracking-[0.15em] uppercase text-teal">
-                              FLAWLESS!
-                            </span>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {/* Lost to the slop — non-unanimous AI win */}
-                      {aiBeatsHuman && !isUnanimous && (
-                        <motion.div
-                          className="mt-4 flex justify-center"
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.9 + promptIdx * 0.2 }}
-                        >
-                          <div className="animate-slop-drip inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg border-2 border-punch/30 bg-gradient-to-b from-punch/10 to-punch/5"
-                            style={{ boxShadow: "0 4px 12px rgba(255, 86, 71, 0.1)" }}
-                          >
-                            <span className="font-display font-bold text-sm text-punch uppercase tracking-wider">
-                              Lost to the slop
-                            </span>
-                          </div>
-                        </motion.div>
-                      )}
+                      <PromptOutcomeStamp
+                        isUnanimous={isUnanimous}
+                        aiBeatsHuman={aiBeatsHuman}
+                        allPassed={allPassed}
+                        delay={0.8 + promptIdx * 0.2}
+                      />
                     </motion.div>
                   );
                 })}

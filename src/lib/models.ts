@@ -19,7 +19,7 @@ export const AI_MODELS: AIModel[] = [
   { id: "openai/gpt-5.2-chat", name: "GPT-5.2 Chat", shortName: "GPT", provider: "OpenAI", icon: "/icons/openai-light.svg", iconDark: "/icons/openai-dark.svg", inputPer1M: 1.75, outputPer1M: 14.00 },
   { id: "moonshotai/kimi-k2.5", name: "Kimi K2.5", shortName: "Kimi", provider: "Moonshot AI", icon: "/icons/moonshot-light.svg", iconDark: "/icons/moonshot-dark.svg", inputPer1M: 1.00, outputPer1M: 3.20 },
   { id: "xiaomi/mimo-v2-flash", name: "MiMo V2 Flash", shortName: "MiMo", provider: "Xiaomi", icon: "/icons/xiaomimimo-light.svg", iconDark: "/icons/xiaomimimo-dark.svg", inputPer1M: 0.10, outputPer1M: 0.30 },
-  { id: "xai/grok-4.1-fast-reasoning", name: "Grok 4.1 Fast", shortName: "Grok", provider: "xAI", icon: "/icons/grok-light.svg", iconDark: "/icons/grok-dark.svg", inputPer1M: 1.25, outputPer1M: 10.00 },
+  { id: "xai/grok-4.1-fast-non-reasoning", name: "Grok 4.1 Fast", shortName: "Grok", provider: "xAI", icon: "/icons/grok-light.svg", iconDark: "/icons/grok-dark.svg", inputPer1M: 1.25, outputPer1M: 10.00 },
   { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", shortName: "Claude", provider: "Anthropic", icon: "/icons/claude-color.svg", inputPer1M: 3.00, outputPer1M: 15.00 },
 ];
 
