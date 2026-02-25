@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "pnpm lint && pnpm typecheck",
+    "check:theme-colors": "node scripts/check-theme-colors.mjs",
     "prepare": "husky"
   },
   "dependencies": {
