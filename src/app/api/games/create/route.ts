@@ -4,10 +4,10 @@ import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
 import { AI_MODELS } from "@/lib/models";
 import { sanitize } from "@/lib/sanitize";
-import type { TtsMode, TtsVoice } from "@/lib/types";
+import type { TtsMode } from "@/lib/types";
+import { VOICE_NAMES } from "@/lib/voices";
 
 const VALID_TTS_MODES: TtsMode[] = ["OFF", "AI_VOICE", "BROWSER_VOICE"];
-const VALID_TTS_VOICES: TtsVoice[] = ["MALE", "FEMALE"];
 
 export async function POST(request: Request) {
   const { hostName, aiModelIds, hostSecret, timersDisabled, ttsMode, ttsVoice } = await request.json();
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       roomCode,
       timersDisabled: timersDisabled === true,
       ttsMode: VALID_TTS_MODES.includes(ttsMode) ? ttsMode : "OFF",
-      ttsVoice: VALID_TTS_VOICES.includes(ttsVoice) ? ttsVoice : "MALE",
+      ttsVoice: ttsVoice === "RANDOM" || VOICE_NAMES.includes(ttsVoice) ? ttsVoice : "RANDOM",
       players: {
         create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
       },

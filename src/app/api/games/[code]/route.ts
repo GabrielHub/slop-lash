@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAndEnforceDeadline, generateAiVotes, preGenerateTtsAudio, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
+import { checkAndEnforceDeadline, generateAiVotes, generateTtsForCurrentPrompt, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
 import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
 
 const gameInclude = {
@@ -51,9 +51,7 @@ function stripUnrevealedVotes(game: any): void {
 
     if (isFuture || isCurrentUnrevealed) {
       votable[i].votes = [];
-    }
-    // Strip reactions from unrevealed prompts (match vote stripping)
-    if (isFuture || isCurrentUnrevealed) {
+      // Strip reactions from unrevealed prompts (match vote stripping)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const resp of votable[i].responses as any[]) {
         resp.reactions = [];
@@ -101,12 +99,14 @@ export async function GET(
   // Check and enforce deadline (auto-advance if expired)
   const advancedTo = await checkAndEnforceDeadline(game.id);
 
-  // If deadline advanced WRITING→VOTING, generate AI votes + TTS in background
+  // If deadline advanced to a voting phase, generate AI votes + TTS in background
   if (advancedTo === "VOTING") {
     after(() => Promise.all([
       generateAiVotes(game.id),
-      preGenerateTtsAudio(game.id),
+      generateTtsForCurrentPrompt(game.id),
     ]));
+  } else if (advancedTo === "VOTING_SUBPHASE") {
+    after(() => generateTtsForCurrentPrompt(game.id));
   }
 
   if (advancedTo || hostPromoted) {

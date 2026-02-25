@@ -18,7 +18,7 @@ AI models generate responses and vote just like human players.
 The host can enable text-to-speech during game creation:
 
 - **Off** — No voice readout (default)
-- **AI Voice** — Multi-speaker Gemini TTS with game-show energy (host voice reads the prompt, two player voices read the responses). Choose between male and female voice presets. Falls back to browser voice if Gemini is unavailable.
+- **AI Voice** — Gemini TTS with game-show narrator energy. Pick from 30 voices or go random. Falls back to browser voice if Gemini is unavailable.
 - **Browser Voice** — Uses the browser's built-in Web Speech API with distinct pitches for prompt vs responses.
 
 ## AI Models
@@ -41,7 +41,7 @@ AI players are served through the Vercel AI Gateway and include:
 - **Styling:** Tailwind CSS 4
 - **Database:** Neon PostgreSQL + Prisma ORM
 - **AI:** Vercel AI SDK + AI Gateway
-- **TTS:** Google Gemini multi-speaker TTS + Web Speech API fallback
+- **TTS:** Google Gemini TTS + Web Speech API fallback
 
 ## Getting Started
 

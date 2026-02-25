@@ -9,7 +9,8 @@ export type PlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
 export type TtsMode = "OFF" | "AI_VOICE" | "BROWSER_VOICE";
 
-export type TtsVoice = "MALE" | "FEMALE";
+/** A Gemini voice name (e.g. "Puck", "Zephyr") or "RANDOM". */
+export type TtsVoice = string;
 
 export interface GamePlayer {
   id: string;
@@ -36,6 +37,7 @@ export interface GameResponse {
   playerId: string;
   text: string;
   pointsEarned: number;
+  failReason: string | null;
   reactions: GameReaction[];
   player: Omit<GamePlayer, "score">;
 }
@@ -45,6 +47,7 @@ export interface GameVote {
   promptId: string;
   voterId: string;
   responseId: string | null;
+  failReason: string | null;
   voter: { id: string; type: PlayerType };
 }
 
@@ -56,9 +59,14 @@ export function filterCastVotes(votes: GameVote[]): CastVote[] {
   return votes.filter((v): v is CastVote => v.responseId != null);
 }
 
-/** Filter to only abstain votes (null responseId). */
+/** Filter to only deliberate abstain votes (null responseId, no error). */
 export function filterAbstainVotes(votes: GameVote[]): GameVote[] {
-  return votes.filter((v) => v.responseId == null);
+  return votes.filter((v) => v.responseId == null && v.failReason == null);
+}
+
+/** Filter to only error votes (AI crashed — has a failReason). */
+export function filterErrorVotes(votes: GameVote[]): GameVote[] {
+  return votes.filter((v) => v.failReason != null);
 }
 
 export interface PromptAssignmentInfo {

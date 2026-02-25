@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { AI_MODELS, type AIModel } from "@/lib/models";
-import type { TtsMode, TtsVoice } from "@/lib/types";
+import type { TtsMode } from "@/lib/types";
+import { GEMINI_VOICES } from "@/lib/voices";
 import { ModelIcon } from "@/components/model-icon";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/game-constants";
 import { ErrorBanner } from "@/components/error-banner";
@@ -45,7 +46,8 @@ export default function HostPage() {
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
-  const [ttsVoice, setTtsVoice] = useState<TtsVoice>("MALE");
+  const [ttsVoice, setTtsVoice] = useState("RANDOM");
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -177,8 +179,13 @@ export default function HostPage() {
 
             {/* Name */}
             <div className="mb-8">
-              <label className="block text-sm font-medium text-ink-dim mb-2">
+              <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
                 Your Name
+                {hostName.length >= 15 && (
+                  <span className={`text-xs tabular-nums ${hostName.length >= 20 ? "text-punch" : "text-ink-dim/50"}`}>
+                    {hostName.length}/{20}
+                  </span>
+                )}
               </label>
               <input
                 type="text"
@@ -322,30 +329,141 @@ export default function HostPage() {
                   </motion.button>
                 ))}
               </div>
-              {ttsMode === "AI_VOICE" && (
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  {(
-                    [
-                      { value: "MALE", label: "Male" },
-                      { value: "FEMALE", label: "Female" },
-                    ] as const
-                  ).map((opt) => (
-                    <motion.button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setTtsVoice(opt.value)}
-                      className={`py-2 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
-                        ttsVoice === opt.value
-                          ? "bg-punch/15 backdrop-blur-sm border-punch text-punch"
-                          : "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                      }`}
-                      {...buttonTap}
-                    >
-                      {opt.label}
-                    </motion.button>
-                  ))}
-                </div>
-              )}
+
+              {/* Voice picker (AI Voice only) */}
+              <AnimatePresence>
+                {ttsMode === "AI_VOICE" && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-3">
+                      {/* Random default + expand toggle */}
+                      <div className="flex gap-2">
+                        <motion.button
+                          type="button"
+                          onClick={() => {
+                            setTtsVoice("RANDOM");
+                            setVoicePickerOpen(false);
+                          }}
+                          className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
+                            ttsVoice === "RANDOM"
+                              ? "bg-punch/15 border-punch text-punch"
+                              : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                          }`}
+                          {...buttonTap}
+                        >
+                          <span className="inline-flex items-center gap-1.5">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="16 3 21 3 21 8" />
+                              <line x1="4" y1="20" x2="21" y2="3" />
+                              <polyline points="21 16 21 21 16 21" />
+                              <line x1="15" y1="15" x2="21" y2="21" />
+                              <line x1="4" y1="4" x2="9" y2="9" />
+                            </svg>
+                            Random
+                          </span>
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          onClick={() => setVoicePickerOpen((v) => !v)}
+                          className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold transition-colors cursor-pointer ${
+                            ttsVoice !== "RANDOM"
+                              ? "bg-punch/15 border-punch text-punch"
+                              : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                          }`}
+                          {...buttonTap}
+                        >
+                          <span className="inline-flex items-center gap-1.5">
+                            {ttsVoice !== "RANDOM" ? ttsVoice : "Pick Voice"}
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="transition-transform duration-200"
+                              style={{ transform: voicePickerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </span>
+                        </motion.button>
+                      </div>
+
+                      {/* Expandable voice list */}
+                      <AnimatePresence>
+                        {voicePickerOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
+                              {(["female", "male"] as const).map((gender) => (
+                                <div key={gender}>
+                                  <div className="sticky top-0 z-10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-ink-dim bg-raised border-b border-edge">
+                                    {gender}
+                                  </div>
+                                  {GEMINI_VOICES.filter((v) => v.gender === gender).map((voice) => {
+                                    const selected = ttsVoice === voice.name;
+                                    return (
+                                      <button
+                                        key={voice.name}
+                                        type="button"
+                                        onClick={() => {
+                                          setTtsVoice(voice.name);
+                                          setVoicePickerOpen(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors cursor-pointer border-b border-edge/40 last:border-b-0 ${
+                                          selected
+                                            ? "bg-punch/10"
+                                            : "hover:bg-raised/60"
+                                        }`}
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className={`font-semibold text-sm ${selected ? "text-punch" : "text-ink"}`}>
+                                              {voice.name}
+                                            </span>
+                                            <span className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
+                                              selected
+                                                ? "bg-punch/15 text-punch"
+                                                : "bg-raised text-ink-dim"
+                                            }`}>
+                                              {voice.trait}
+                                            </span>
+                                          </div>
+                                          <p className={`text-xs mt-0.5 leading-snug ${selected ? "text-punch/70" : "text-ink-dim"}`}>
+                                            {voice.description}
+                                          </p>
+                                        </div>
+                                        {selected && (
+                                          <svg className="shrink-0 text-punch" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="20 6 9 17 4 12" />
+                                          </svg>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <ErrorBanner error={error} />

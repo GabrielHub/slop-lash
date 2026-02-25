@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { GameState, filterCastVotes } from "@/lib/types";
+import { GameState, GamePrompt, filterCastVotes } from "@/lib/types";
+import { FORFEIT_MARKER } from "@/lib/scoring";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { PlayerList } from "@/components/player-list";
@@ -516,7 +517,7 @@ export function Results({
             >
               {/* Grid of prompt cards on desktop */}
               <div className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
-                {currentRound.prompts.map((prompt, promptIdx) => {
+                {currentRound.prompts.filter((p) => !p.responses.some((r) => r.text === FORFEIT_MARKER)).map((prompt, promptIdx) => {
                   const { totalVotes, isUnanimous, aiBeatsHuman } =
                     analyzePromptOutcome(prompt);
 
@@ -694,11 +695,70 @@ export function Results({
                   );
                 })}
               </div>
+
+              {/* Forfeited matchups — AI crashed, opponent auto-wins */}
+              <ForfeitedMatchups prompts={currentRound.prompts} players={game.players} />
             </motion.div>
           )}
 
         </div>
       </div>
     </main>
+  );
+}
+
+/** Show forfeited matchups where an AI crashed and the opponent auto-won. */
+function ForfeitedMatchups({
+  prompts,
+  players,
+}: {
+  prompts: GamePrompt[];
+  players: GameState["players"];
+}) {
+  const forfeited = prompts.filter((p) =>
+    p.responses.some((r) => r.text === FORFEIT_MARKER),
+  );
+  if (forfeited.length === 0) return null;
+
+  return (
+    <div className="mt-5">
+      <p className="text-xs font-medium text-ink-dim/50 uppercase tracking-wider mb-3">
+        Forfeited Matchups
+      </p>
+      <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-3">
+        {forfeited.map((prompt) => {
+          const crashed = prompt.responses.find((r) => r.text === FORFEIT_MARKER);
+          const survivor = prompt.responses.find((r) => r.text !== FORFEIT_MARKER);
+          const crashedPlayer = players.find((p) => p.id === crashed?.playerId);
+          const crashedModel =
+            crashedPlayer?.type === "AI" && crashedPlayer.modelId
+              ? getModelByModelId(crashedPlayer.modelId)
+              : null;
+
+          return (
+            <motion.div
+              key={prompt.id}
+              className="p-4 rounded-xl bg-surface/40 border border-edge/50 opacity-60"
+              variants={fadeInUp}
+            >
+              <p className="font-display font-semibold text-sm text-gold/70 mb-2">
+                {prompt.text}
+              </p>
+              {survivor && (
+                <p className="text-sm text-ink-dim mb-2">
+                  <span className="text-ink">{survivor.text}</span>
+                  {" "}
+                  <span className="text-ink-dim/60">&mdash; {survivor.player.name} (auto-win)</span>
+                </p>
+              )}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-punch/10 border border-punch/20 text-xs text-punch/80">
+                {crashedModel && <ModelIcon model={crashedModel} size={14} />}
+                <span>{crashedPlayer?.name ?? "Unknown"} crashed</span>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

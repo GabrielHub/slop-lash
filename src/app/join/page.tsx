@@ -8,6 +8,12 @@ import { ErrorBanner } from "@/components/error-banner";
 import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
+function getJoinButtonText(loading: boolean, spectator: boolean): string {
+  if (loading) return "Joining...";
+  if (spectator) return "Watch Game";
+  return "Join Game";
+}
+
 export default function JoinPage() {
   const router = useRouter();
   const { triggerElement } = usePixelDissolve();
@@ -100,8 +106,13 @@ export default function JoinPage() {
         >
           {/* Name */}
           <div className="mb-6">
-            <label className="block text-sm font-medium text-ink-dim mb-2">
+            <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
               Your Name
+              {name.length >= 15 && (
+                <span className={`text-xs tabular-nums ${name.length >= 20 ? "text-punch" : "text-ink-dim/50"}`}>
+                  {name.length}/{20}
+                </span>
+              )}
             </label>
             <input
               type="text"
@@ -168,11 +179,7 @@ export default function JoinPage() {
             onClick={(e) => triggerElement(e.currentTarget)}
             {...buttonTapPrimary}
           >
-            {loading
-              ? "Joining..."
-              : spectator
-                ? "Watch Game"
-                : "Join Game"}
+            {getJoinButtonText(loading, spectator)}
           </motion.button>
         </form>
       </motion.div>

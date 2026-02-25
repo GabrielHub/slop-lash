@@ -17,6 +17,16 @@ import {
 import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
+/** Inline character counter that appears as input approaches the limit. */
+function CharCount({ length, max, threshold, show }: { length: number; max: number; threshold: number; show: boolean }) {
+  if (!show || length < threshold) return null;
+  return (
+    <span className={`text-xs tabular-nums shrink-0 pt-0.5 ${length >= max ? "text-punch" : "text-ink-dim/50"}`}>
+      {length}/{max}
+    </span>
+  );
+}
+
 function getSkipButtonText(
   skipping: boolean,
   timersDisabled: boolean,
@@ -253,9 +263,12 @@ export function Writing({
                     variants={floatIn}
                     layout
                   >
-                    <p className="font-display font-semibold text-base sm:text-lg mb-3 leading-snug text-ink">
-                      {prompt.text}
-                    </p>
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <p className="font-display font-semibold text-base sm:text-lg leading-snug text-ink">
+                        {prompt.text}
+                      </p>
+                      <CharCount length={responses[prompt.id]?.length ?? 0} max={100} threshold={80} show={!isDone} />
+                    </div>
                     <AnimatePresence mode="wait">
                       {isDone ? (
                         <motion.div

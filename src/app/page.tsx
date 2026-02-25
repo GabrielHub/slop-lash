@@ -217,12 +217,12 @@ export default function Home() {
         {/* Prompt showcase card */}
         <motion.div className="mb-10 mx-auto max-w-sm" variants={fadeInUp}>
           <div className="relative bg-surface/40 backdrop-blur-md border border-edge/60 rounded-2xl px-6 py-5 shadow-[0_0_24px_-4px_rgba(0,0,0,0.15)]">
-            <div className="min-h-14 flex items-center justify-center">
+            <div className="h-14 flex items-center justify-center">
               <AnimatePresence mode="wait">
                 {currentPrompt && (
                   <motion.p
                     key={currentPrompt}
-                    className="text-ink font-display font-bold text-lg leading-snug"
+                    className="text-ink font-display font-bold text-lg leading-snug line-clamp-2 text-center"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}

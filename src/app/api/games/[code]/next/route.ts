@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
 import { LEADERBOARD_TAG } from "@/lib/game-constants";
-import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, preGenerateTtsAudio, HOST_STALE_MS } from "@/lib/game-logic";
+import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, generateTtsForCurrentPrompt, HOST_STALE_MS } from "@/lib/game-logic";
 
 export async function POST(
   request: Request,
@@ -68,8 +68,10 @@ export async function POST(
     if (advancedTo === "VOTING") {
       after(() => Promise.all([
         generateAiVotes(game.id),
-        preGenerateTtsAudio(game.id),
+        generateTtsForCurrentPrompt(game.id),
       ]));
+    } else if (advancedTo === "VOTING_SUBPHASE") {
+      after(() => generateTtsForCurrentPrompt(game.id));
     }
     return NextResponse.json({ success: true });
   }

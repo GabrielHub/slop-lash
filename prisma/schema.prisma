@@ -27,11 +27,6 @@ enum TtsMode {
   BROWSER_VOICE
 }
 
-enum TtsVoice {
-  MALE
-  FEMALE
-}
-
 model Game {
   id              String     @id @default(cuid())
   roomCode        String     @unique
@@ -42,7 +37,7 @@ model Game {
   phaseDeadline   DateTime?
   timersDisabled  Boolean    @default(false)
   ttsMode         TtsMode    @default(OFF)
-  ttsVoice        TtsVoice   @default(MALE)
+  ttsVoice        String     @default("RANDOM")
   votingPromptIndex Int       @default(0)
   votingRevealing   Boolean   @default(false)
   nextGameCode    String?
@@ -138,6 +133,7 @@ model Response {
   player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
   text         String
   pointsEarned Int    @default(0)
+  failReason   String?
   votes        Vote[]
   reactions    Reaction[]
 
@@ -154,6 +150,7 @@ model Vote {
   voter      Player    @relation(fields: [voterId], references: [id], onDelete: Cascade)
   responseId String?
   response   Response? @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  failReason String?
 
   @@unique([promptId, voterId])
   @@index([promptId])

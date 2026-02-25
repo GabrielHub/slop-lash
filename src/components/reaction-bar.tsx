@@ -18,12 +18,16 @@ interface ReactionBarProps {
   code: string;
   disabled?: boolean;
   size?: "sm" | "lg";
+  /** Map of playerId → player name, used for hover tooltips. */
+  playerNames?: Map<string, string>;
 }
 
 interface AggregatedReaction {
   emoji: ReactionEmoji;
   count: number;
   reacted: boolean;
+  /** Names of players who reacted with this emoji. */
+  names: string[];
 }
 
 interface PickerProps {
@@ -76,18 +80,22 @@ function activeClasses(accent: Accent): string {
 function aggregate(
   reactions: GameReaction[],
   playerId: string | null,
+  playerNames?: Map<string, string>,
 ): AggregatedReaction[] {
   const map = new Map<string, AggregatedReaction>();
   for (const r of reactions) {
+    const name = playerNames?.get(r.playerId) ?? r.playerId;
     const existing = map.get(r.emoji);
     if (existing) {
       existing.count++;
+      existing.names.push(name);
       if (r.playerId === playerId) existing.reacted = true;
     } else {
       map.set(r.emoji, {
         emoji: r.emoji as ReactionEmoji,
         count: 1,
         reacted: r.playerId === playerId,
+        names: [name],
       });
     }
   }
@@ -125,6 +133,112 @@ const SIZE_CLASSES = {
   },
 } as const;
 
+/** Tooltip showing who reacted with a particular emoji. */
+function NamesTooltip({ names, emoji }: { names: string[]; emoji: ReactionEmoji }) {
+  return (
+    <motion.div
+      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none"
+      initial={{ opacity: 0, y: 4, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.92 }}
+      transition={{ duration: 0.15 }}
+    >
+      <div
+        className="px-2.5 py-1.5 rounded-lg bg-raised/95 backdrop-blur-xl border border-edge whitespace-nowrap"
+        style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}
+      >
+        <p className="text-[11px] text-ink-dim leading-snug text-center">
+          <span className="mr-1">{REACTION_EMOJIS[emoji]}</span>
+          {names.join(", ")}
+        </p>
+      </div>
+      {/* Arrow */}
+      <div className="flex justify-center -mt-px">
+        <div className="w-2 h-2 bg-raised/95 border-r border-b border-edge rotate-45 -translate-y-1" />
+      </div>
+    </motion.div>
+  );
+}
+
+function ReactionChip({
+  r,
+  sizeClasses,
+  canInteract,
+  isPending,
+  hasNames,
+  isMobile,
+  onToggle,
+}: {
+  r: AggregatedReaction;
+  sizeClasses: (typeof SIZE_CLASSES)[keyof typeof SIZE_CLASSES];
+  canInteract: boolean;
+  isPending: boolean;
+  hasNames: boolean;
+  isMobile: boolean;
+  onToggle: () => void;
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const accent = EMOJI_ACCENT[r.emoji];
+
+  const handleClick = useCallback(() => {
+    if (canInteract) {
+      onToggle();
+    }
+    // On mobile, show names tooltip on tap (for both interactive and disabled)
+    if (isMobile && hasNames) {
+      setShowTooltip(true);
+      clearTimeout(tooltipTimeout.current);
+      tooltipTimeout.current = setTimeout(() => setShowTooltip(false), 2000);
+    }
+  }, [canInteract, isMobile, hasNames, onToggle]);
+
+  return (
+    <motion.div
+      className="relative"
+      onMouseEnter={!isMobile && hasNames ? () => setShowTooltip(true) : undefined}
+      onMouseLeave={!isMobile ? () => setShowTooltip(false) : undefined}
+      layout
+    >
+      <AnimatePresence>
+        {showTooltip && r.names.length > 0 && (
+          <NamesTooltip names={r.names} emoji={r.emoji} />
+        )}
+      </AnimatePresence>
+      <motion.button
+        type="button"
+        onClick={handleClick}
+        className={`inline-flex items-center ${sizeClasses.chip} rounded-lg border transition-all cursor-pointer ${
+          r.reacted
+            ? activeClasses(accent)
+            : "bg-surface/40 border-edge backdrop-blur-sm text-ink-dim hover:border-edge-strong"
+        } ${isPending ? "opacity-50" : ""}`}
+        style={
+          r.reacted ? { boxShadow: glowShadow(accent) } : undefined
+        }
+        initial={{ opacity: 0, scale: 0.5, rotate: -12 }}
+        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+        exit={{ opacity: 0, scale: 0.5, rotate: 12 }}
+        transition={springBouncy}
+        whileTap={{ scale: 0.82 }}
+      >
+        <span className={sizeClasses.emoji}>
+          {REACTION_EMOJIS[r.emoji]}
+        </span>
+        <motion.span
+          key={r.count}
+          className={`${sizeClasses.count} font-mono tabular-nums ${r.reacted ? "text-ink" : "text-ink-dim"}`}
+          initial={{ scale: 1.4 }}
+          animate={{ scale: 1 }}
+          transition={springBouncy}
+        >
+          {r.count}
+        </motion.span>
+      </motion.button>
+    </motion.div>
+  );
+}
+
 export function ReactionBar({
   responseId,
   reactions,
@@ -132,6 +246,7 @@ export function ReactionBar({
   code,
   disabled = false,
   size = "sm",
+  playerNames,
 }: ReactionBarProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<Set<string>>(new Set());
@@ -139,9 +254,10 @@ export function ReactionBar({
   pendingRef.current = pending;
   const isMobile = useIsMobile();
 
-  const aggregated = aggregate(reactions, playerId);
+  const aggregated = aggregate(reactions, playerId, playerNames);
   const sizeClasses = SIZE_CLASSES[size];
   const canInteract = !disabled && !!playerId;
+  const hasNames = !!playerNames && playerNames.size > 0;
 
   const toggle = useCallback(
     async (emoji: string) => {
@@ -177,84 +293,66 @@ export function ReactionBar({
   const Picker = isMobile ? MobileSheet : DesktopPopover;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 relative">
-      <AnimatePresence>
-        {aggregated.map((r) => {
-          const accent = EMOJI_ACCENT[r.emoji];
-          return (
-            <motion.button
-              key={r.emoji}
-              type="button"
-              disabled={!canInteract}
-              onClick={() => toggle(r.emoji)}
-              className={`inline-flex items-center ${sizeClasses.chip} rounded-lg border transition-all cursor-pointer disabled:cursor-default ${
-                r.reacted
-                  ? activeClasses(accent)
-                  : "bg-surface/40 border-edge backdrop-blur-sm text-ink-dim hover:border-edge-strong"
-              } ${pending.has(r.emoji) ? "opacity-50" : ""}`}
-              style={
-                r.reacted ? { boxShadow: glowShadow(accent) } : undefined
-              }
-              initial={{ opacity: 0, scale: 0.5, rotate: -12 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              exit={{ opacity: 0, scale: 0.5, rotate: 12 }}
-              transition={springBouncy}
-              whileTap={canInteract ? { scale: 0.82 } : undefined}
-              layout
-            >
-              <span className={sizeClasses.emoji}>
-                {REACTION_EMOJIS[r.emoji]}
-              </span>
-              <motion.span
-                key={r.count}
-                className={`${sizeClasses.count} font-mono tabular-nums ${r.reacted ? "text-ink" : "text-ink-dim"}`}
-                initial={{ scale: 1.4 }}
-                animate={{ scale: 1 }}
-                transition={springBouncy}
-              >
-                {r.count}
-              </motion.span>
-            </motion.button>
-          );
-        })}
-      </AnimatePresence>
-
-      {canInteract && (
-        <div className="relative">
-          <motion.button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className={`${sizeClasses.btn} rounded-lg border border-dashed border-edge text-ink-dim/40 hover:text-ink-dim hover:border-edge-strong flex items-center justify-center transition-colors cursor-pointer`}
-            animate={{ rotate: open ? 45 : 0 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.8 }}
-            transition={springDefault}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </motion.button>
-
+    <>
+      {/* Reaction chips + add button — inline row at the bottom */}
+      {(aggregated.length > 0 || canInteract) && (
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-3">
           <AnimatePresence>
-            {open && (
-              <Picker
-                aggregated={aggregated}
-                onPick={handlePick}
-                onClose={closePicker}
+            {aggregated.map((r) => (
+              <ReactionChip
+                key={r.emoji}
+                r={r}
+                sizeClasses={sizeClasses}
+                canInteract={canInteract}
+                isPending={pending.has(r.emoji)}
+                hasNames={hasNames}
+                isMobile={isMobile}
+                onToggle={() => toggle(r.emoji)}
               />
-            )}
+            ))}
           </AnimatePresence>
+
+          {canInteract && (
+            <div className="relative">
+              <motion.button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen((v) => !v);
+                }}
+                className={`${sizeClasses.btn} rounded-lg border border-dashed border-edge text-ink-dim/40 hover:text-ink-dim hover:border-edge-strong flex items-center justify-center transition-colors cursor-pointer`}
+                animate={{ rotate: open ? 45 : 0 }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.8 }}
+                transition={springDefault}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </motion.button>
+
+              <AnimatePresence>
+                {open && (
+                  <Picker
+                    aggregated={aggregated}
+                    onPick={handlePick}
+                    onClose={closePicker}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

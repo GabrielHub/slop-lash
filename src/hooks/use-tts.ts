@@ -39,6 +39,8 @@ interface UseTtsOptions {
   code: string;
   ttsMode: TtsMode;
   prompts: GamePrompt[];
+  /** The prompt ID to pre-fetch audio for (typically the current voting prompt). */
+  activePromptId?: string;
 }
 
 interface UseTtsReturn {
@@ -48,7 +50,7 @@ interface UseTtsReturn {
   stop: () => void;
 }
 
-export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn {
+export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions): UseTtsReturn {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPromptId, setCurrentPromptId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,37 +58,37 @@ export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn 
   const fetchingRef = useRef(new Set<string>());
   const mountedRef = useRef(true);
 
-  // Pre-fetch audio for all prompts in AI_VOICE mode
+  // Pre-fetch audio for the active prompt only (server generates just-in-time per sub-phase)
   useEffect(() => {
-    if (ttsMode !== "AI_VOICE" || prompts.length === 0) return;
+    if (ttsMode !== "AI_VOICE" || !activePromptId) return;
+    if (cacheRef.current.has(activePromptId) || fetchingRef.current.has(activePromptId)) return;
 
-    const toFetch = prompts.filter(
-      (p) => !cacheRef.current.has(p.id) && !fetchingRef.current.has(p.id),
-    );
-
-    for (const prompt of toFetch) {
-      fetchingRef.current.add(prompt.id);
-      fetch(`/api/games/${code}/speech`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ promptId: prompt.id }),
-      })
-        .then(async (res) => {
-          if (res.ok) {
-            const data = await res.json();
-            if (data.audio) {
-              cacheRef.current.set(prompt.id, data.audio);
-            }
+    fetchingRef.current.add(activePromptId);
+    const promptId = activePromptId;
+    fetch(`/api/games/${code}/speech`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ promptId }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.audio) {
+            cacheRef.current.set(promptId, data.audio);
           }
-        })
-        .catch(() => {
-          // Silently fail — browser voice fallback will handle it
-        })
-        .finally(() => {
-          fetchingRef.current.delete(prompt.id);
-        });
-    }
-  }, [ttsMode, prompts, code]);
+        } else {
+          // Mark as failed so we don't retry on every render
+          cacheRef.current.set(promptId, "");
+        }
+      })
+      .catch(() => {
+        // Mark as failed so we don't retry on every render
+        cacheRef.current.set(promptId, "");
+      })
+      .finally(() => {
+        fetchingRef.current.delete(promptId);
+      });
+  }, [ttsMode, activePromptId, code]);
 
   function cancelAllPlayback() {
     if (audioRef.current) {
@@ -175,6 +177,9 @@ export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn 
 
   const fetchAiVoice = useCallback(
     async (promptId: string): Promise<string | null> => {
+      // Already failed previously — don't retry
+      if (cacheRef.current.get(promptId) === "") return null;
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8_000);
 
@@ -187,14 +192,21 @@ export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn 
         });
         clearTimeout(timer);
 
-        if (!res.ok) return null;
+        if (!res.ok) {
+          cacheRef.current.set(promptId, "");
+          return null;
+        }
         const data = await res.json();
-        if (!data.audio) return null;
+        if (!data.audio) {
+          cacheRef.current.set(promptId, "");
+          return null;
+        }
 
         cacheRef.current.set(promptId, data.audio);
         return data.audio;
       } catch {
         clearTimeout(timer);
+        cacheRef.current.set(promptId, "");
         return null;
       }
     },
@@ -215,7 +227,14 @@ export function useTts({ code, ttsMode, prompts }: UseTtsOptions): UseTtsReturn 
 
       try {
         if (ttsMode === "AI_VOICE") {
-          const audio = cacheRef.current.get(promptId) ?? await fetchAiVoice(promptId);
+          const cached = cacheRef.current.get(promptId);
+          // Three states: string with content = cached audio, "" = previously failed, undefined = not yet fetched
+          let audio: string | null = null;
+          if (cached) {
+            audio = cached;
+          } else if (cached === undefined) {
+            audio = await fetchAiVoice(promptId);
+          }
           if (audio) {
             await playBase64Audio(audio, audioRef);
           } else {

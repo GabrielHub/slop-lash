@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes } from "@/lib/types";
+import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes, filterErrorVotes } from "@/lib/types";
+import { FORFEIT_MARKER } from "@/lib/scoring";
 import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/lib/game-constants";
 import { Timer } from "@/components/timer";
 import { ErrorBanner } from "@/components/error-banner";
@@ -105,11 +106,17 @@ export function Voting({
 
   const currentRound = game.rounds[0];
 
-  // Compute votable prompts sorted by id (matching server ordering)
+  const playerNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of game.players) map.set(p.id, p.name);
+    return map;
+  }, [game.players]);
+
+  // Compute votable prompts sorted by id (matching server getVotablePrompts ordering)
   const votablePrompts = useMemo(() => {
     if (!currentRound) return [];
     return [...currentRound.prompts]
-      .filter((p) => p.responses.length >= 2)
+      .filter((p) => p.responses.length >= 2 && !p.responses.some((r) => r.text === FORFEIT_MARKER))
       .sort((a, b) => a.id.localeCompare(b.id));
   }, [currentRound]);
 
@@ -137,6 +144,7 @@ export function Voting({
     code,
     ttsMode: game.ttsMode,
     prompts: votablePrompts,
+    activePromptId: currentPrompt?.id,
   });
 
   const prevIndexRef = useRef<number | null>(null);
@@ -210,6 +218,7 @@ export function Voting({
         isRevealing={isRevealing}
         totalPrompts={totalPrompts}
         currentPromptId={currentPromptId}
+        playerNames={playerNames}
       />
     );
   }
@@ -278,31 +287,28 @@ export function Voting({
                 <RevealView
                   prompt={currentPrompt}
                   players={game.players}
+                  playerNames={playerNames}
                 />
               ) : isRespondent ? (
-                <>
-                  {isHost && <HostVotingView prompt={currentPrompt} />}
-                  <PassiveView
-                    label="You wrote one of these!"
-                    sublabel="Waiting for others to vote..."
-                    color="gold"
-                    prompt={currentPrompt}
-                    playerId={playerId}
-                    code={code}
-                  />
-                </>
+                <PassiveView
+                  label="You wrote one of these!"
+                  sublabel="Waiting for others to vote..."
+                  color="gold"
+                  prompt={currentPrompt}
+                  playerId={playerId}
+                  code={code}
+                  playerNames={playerNames}
+                />
               ) : hasVotedCurrent ? (
-                <>
-                  {isHost && <HostVotingView prompt={currentPrompt} />}
-                  <PassiveView
-                    label="Vote locked in!"
-                    sublabel="Waiting for others..."
-                    color="teal"
-                    prompt={currentPrompt}
-                    playerId={playerId}
-                    code={code}
-                  />
-                </>
+                <PassiveView
+                  label="Vote locked in!"
+                  sublabel="Waiting for others..."
+                  color="teal"
+                  prompt={currentPrompt}
+                  playerId={playerId}
+                  code={code}
+                  playerNames={playerNames}
+                />
               ) : (
                 <VoteView
                   prompt={currentPrompt}
@@ -310,6 +316,7 @@ export function Voting({
                   onVote={castVote}
                   playerId={playerId}
                   code={code}
+                  playerNames={playerNames}
                 />
               )}
             </motion.div>
@@ -342,12 +349,14 @@ function HostDisplay({
   isRevealing,
   totalPrompts,
   currentPromptId,
+  playerNames,
 }: {
   game: GameState;
   currentPrompt: GamePrompt | null;
   isRevealing: boolean;
   totalPrompts: number;
   currentPromptId: string | null;
+  playerNames: Map<string, string>;
 }) {
   return (
     <main className="min-h-svh flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-12 pt-20">
@@ -409,10 +418,11 @@ function HostDisplay({
                 <RevealView
                   prompt={currentPrompt}
                   players={game.players}
+                  playerNames={playerNames}
                   isHostDisplay
                 />
               ) : (
-                <HostVotingView prompt={currentPrompt} />
+                <HostVotingView prompt={currentPrompt} playerNames={playerNames} />
               )}
             </motion.div>
           ) : (
@@ -433,27 +443,25 @@ function HostDisplay({
 }
 
 /** Host display during voting — shows the two answers without vote buttons. */
-function HostVotingView({ prompt }: { prompt: GamePrompt }) {
+function HostVotingView({ prompt, playerNames }: { prompt: GamePrompt; playerNames: Map<string, string> }) {
   if (prompt.responses.length < 2) return null;
   const [respA, respB] = prompt.responses;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-4 lg:gap-0">
       {/* Response A */}
-      <div className="flex flex-col gap-2">
-        <motion.div
-          className="p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
-          style={{ boxShadow: "var(--shadow-card)" }}
-          initial={{ opacity: 0, x: -40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ type: "spring", stiffness: 350, damping: 30 }}
-        >
-          <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
-            {respA.text}
-          </p>
-        </motion.div>
-        <ReactionBar responseId={respA.id} reactions={respA.reactions} playerId={null} code="" disabled size="lg" />
-      </div>
+      <motion.div
+        className="relative p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+        style={{ boxShadow: "var(--shadow-card)" }}
+        initial={{ opacity: 0, x: -40 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ type: "spring", stiffness: 350, damping: 30 }}
+      >
+        <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
+          {respA.text}
+        </p>
+        <ReactionBar responseId={respA.id} reactions={respA.reactions} playerId={null} code="" disabled size="lg" playerNames={playerNames} />
+      </motion.div>
 
       {/* VS divider */}
       <motion.div
@@ -470,20 +478,18 @@ function HostVotingView({ prompt }: { prompt: GamePrompt }) {
       </motion.div>
 
       {/* Response B */}
-      <div className="flex flex-col gap-2">
-        <motion.div
-          className="p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
-          style={{ boxShadow: "var(--shadow-card)" }}
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ type: "spring", stiffness: 350, damping: 30 }}
-        >
-          <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
-            {respB.text}
-          </p>
-        </motion.div>
-        <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={null} code="" disabled size="lg" />
-      </div>
+      <motion.div
+        className="relative p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+        style={{ boxShadow: "var(--shadow-card)" }}
+        initial={{ opacity: 0, x: 40 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ type: "spring", stiffness: 350, damping: 30 }}
+      >
+        <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
+          {respB.text}
+        </p>
+        <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={null} code="" disabled size="lg" playerNames={playerNames} />
+      </motion.div>
     </div>
   );
 }
@@ -495,12 +501,14 @@ function VoteView({
   onVote,
   playerId,
   code,
+  playerNames,
 }: {
   prompt: GamePrompt;
   voting: boolean;
   onVote: (promptId: string, responseId: string) => void;
   playerId: string | null;
   code: string;
+  playerNames: Map<string, string>;
 }) {
   const [respA, respB] = prompt.responses;
   const { triggerElement } = usePixelDissolve();
@@ -508,7 +516,7 @@ function VoteView({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-3 lg:gap-0">
       {/* Response A */}
-      <div className="flex flex-col gap-2">
+      <div className="relative">
         <motion.button
           onClick={(e) => {
             triggerElement(e.currentTarget);
@@ -527,7 +535,7 @@ function VoteView({
             {respA.text}
           </p>
         </motion.button>
-        <ReactionBar responseId={respA.id} reactions={respA.reactions} playerId={playerId} code={code} />
+        <ReactionBar responseId={respA.id} reactions={respA.reactions} playerId={playerId} code={code} playerNames={playerNames} />
       </div>
 
       {/* VS divider */}
@@ -545,7 +553,7 @@ function VoteView({
       </motion.div>
 
       {/* Response B */}
-      <div className="flex flex-col gap-2">
+      <div className="relative">
         <motion.button
           onClick={(e) => {
             triggerElement(e.currentTarget);
@@ -564,7 +572,7 @@ function VoteView({
             {respB.text}
           </p>
         </motion.button>
-        <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={playerId} code={code} />
+        <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={playerId} code={code} playerNames={playerNames} />
       </div>
     </div>
   );
@@ -578,6 +586,7 @@ function PassiveView({
   prompt,
   playerId,
   code,
+  playerNames,
 }: {
   label: string;
   sublabel: string;
@@ -585,6 +594,7 @@ function PassiveView({
   prompt: GamePrompt;
   playerId: string | null;
   code: string;
+  playerNames: Map<string, string>;
 }) {
   const styles = {
     gold: "bg-gold/20 border-gold/40 text-ink",
@@ -605,20 +615,19 @@ function PassiveView({
                   <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
                 </div>
               )}
-              <div className="flex flex-col gap-2">
-                <div
-                  className="p-4 sm:p-5 rounded-2xl bg-surface/60 border border-edge"
-                  style={{ boxShadow: "var(--shadow-card)" }}
-                >
-                  <p className="text-base sm:text-lg leading-snug text-ink-dim">
-                    {resp.text}
-                  </p>
-                </div>
+              <div
+                className="relative p-4 sm:p-5 rounded-2xl bg-surface/60 border border-edge"
+                style={{ boxShadow: "var(--shadow-card)" }}
+              >
+                <p className="text-base sm:text-lg leading-snug text-ink-dim">
+                  {resp.text}
+                </p>
                 <ReactionBar
                   responseId={resp.id}
                   reactions={resp.reactions}
                   playerId={playerId}
                   code={code}
+                  playerNames={playerNames}
                 />
               </div>
             </React.Fragment>
@@ -719,6 +728,41 @@ function VoterChip({
   );
 }
 
+/** Row of voter chips with a label (e.g. "Crashed:", "Abstained:"). */
+function VoterStatusRow({
+  label,
+  players,
+  chipSize,
+  textSize,
+  className,
+  labelClassName,
+}: {
+  label: string;
+  players: GamePlayer[];
+  chipSize: "sm" | "lg";
+  textSize: string;
+  className: string;
+  labelClassName: string;
+}) {
+  return (
+    <motion.div
+      className="flex justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 1.0 }}
+    >
+      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${className} ${textSize}`}>
+        <span className={`${labelClassName} font-medium`}>{label}</span>
+        <div className="flex flex-wrap gap-1">
+          {players.map((p) => (
+            <VoterChip key={p.id} player={p} size={chipSize} />
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function getRevealCardStyle(isWinner: boolean, isTie: boolean, isSlopped: boolean): { border: string; shadow: string } {
   if (isWinner) {
     return {
@@ -744,6 +788,7 @@ function RevealResponseCard({
   isTie,
   isHostDisplay,
   players,
+  playerNames,
   slideFrom,
   isLoser,
   aiBeatsHuman,
@@ -755,6 +800,7 @@ function RevealResponseCard({
   isTie: boolean;
   isHostDisplay: boolean;
   players: GamePlayer[];
+  playerNames: Map<string, string>;
   slideFrom: "left" | "right";
   isLoser: boolean;
   aiBeatsHuman: boolean;
@@ -845,14 +891,7 @@ function RevealResponseCard({
             )}
             {/* Reactions */}
             {response.reactions.length > 0 && (
-              <motion.div
-                className="mt-2"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.9 }}
-              >
-                <ReactionBar responseId={response.id} reactions={response.reactions} playerId={null} code="" disabled size={isHostDisplay ? "lg" : "sm"} />
-              </motion.div>
+              <ReactionBar responseId={response.id} reactions={response.reactions} playerId={null} code="" disabled size={isHostDisplay ? "lg" : "sm"} playerNames={playerNames} />
             )}
           </div>
 
@@ -886,10 +925,12 @@ function RevealResponseCard({
 function RevealView({
   prompt,
   players,
+  playerNames,
   isHostDisplay = false,
 }: {
   prompt: GamePrompt;
   players: GamePlayer[];
+  playerNames: Map<string, string>;
   isHostDisplay?: boolean;
 }) {
   const respA = prompt.responses[0];
@@ -978,6 +1019,12 @@ function RevealView({
   );
   const abstainedVoters = players.filter((p) => abstainVoterIds.has(p.id));
 
+  // AI voters that crashed (API error, unsupported structured output, etc.)
+  const errorVoterIds = new Set(
+    filterErrorVotes(prompt.votes).map((v) => v.voterId),
+  );
+  const crashedVoters = players.filter((p) => errorVoterIds.has(p.id));
+
   // Players who never voted at all (disconnected, etc.)
   const allVoterIds = new Set(prompt.votes.map((v) => v.voterId));
   const didntVote = players.filter(
@@ -996,6 +1043,7 @@ function RevealView({
           isTie={isTie}
           isHostDisplay={isHostDisplay}
           players={players}
+          playerNames={playerNames}
           slideFrom="left"
           isLoser={winnerIsB}
           aiBeatsHuman={aiBeatsHuman}
@@ -1025,6 +1073,7 @@ function RevealView({
           isTie={isTie}
           isHostDisplay={isHostDisplay}
           players={players}
+          playerNames={playerNames}
           slideFrom="right"
           isLoser={winnerIsA}
           aiBeatsHuman={aiBeatsHuman}
@@ -1116,29 +1165,28 @@ function RevealView({
         </motion.div>
       )}
 
-      {/* Abstained voters — explicitly chose not to vote */}
+      {/* Crashed voters — AI errors */}
+      {crashedVoters.length > 0 && (
+        <VoterStatusRow
+          label="Crashed:"
+          players={crashedVoters}
+          chipSize={isHostDisplay ? "lg" : "sm"}
+          textSize={isHostDisplay ? "text-sm" : "text-xs"}
+          className="border-punch/30 bg-punch/5"
+          labelClassName="text-punch/70"
+        />
+      )}
+
+      {/* Abstained voters */}
       {abstainedVoters.length > 0 && (
-        <motion.div
-          className="flex justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.0 }}
-        >
-          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-edge bg-surface/50 ${
-            isHostDisplay ? "text-sm" : "text-xs"
-          }`}>
-            <span className="text-ink-dim/50 font-medium">Abstained:</span>
-            <div className="flex flex-wrap gap-1">
-              {abstainedVoters.map((p) => (
-                <VoterChip
-                  key={p.id}
-                  player={p}
-                  size={isHostDisplay ? "lg" : "sm"}
-                />
-              ))}
-            </div>
-          </div>
-        </motion.div>
+        <VoterStatusRow
+          label="Abstained:"
+          players={abstainedVoters}
+          chipSize={isHostDisplay ? "lg" : "sm"}
+          textSize={isHostDisplay ? "text-sm" : "text-xs"}
+          className="border-edge bg-surface/50"
+          labelClassName="text-ink-dim/50"
+        />
       )}
 
       {/* Didn't vote — no vote record at all */}

@@ -253,9 +253,9 @@ export async function generateAiResponses(gameId: string): Promise<void> {
       .filter((p) => p != null)
       .map(async (player) => {
         const history = buildPlayerHistory(player.id, previousRounds);
-        const { text, usage } = await generateJoke(player.modelId, prompt.text, history);
+        const { text, usage, failReason } = await generateJoke(player.modelId, prompt.text, history);
         await prisma.response.create({
-          data: { promptId: prompt.id, playerId: player.id, text },
+          data: { promptId: prompt.id, playerId: player.id, text, failReason },
         });
         return usage;
       }),
@@ -270,7 +270,10 @@ export async function generateAiResponses(gameId: string): Promise<void> {
   if (allIn) {
     const claimed = await startVoting(gameId);
     if (claimed) {
-      await generateAiVotes(gameId);
+      await Promise.all([
+        generateAiVotes(gameId),
+        generateTtsForCurrentPrompt(gameId),
+      ]);
     }
   }
 }
@@ -478,7 +481,7 @@ export async function generateAiVotes(gameId: string): Promise<void> {
     return aiPlayers
       .filter((p) => !respondentIds.has(p.id))
       .map(async (aiPlayer): Promise<AiUsage> => {
-        const { choice, reactionsA, reactionsB, usage } = await aiVote(
+        const { choice, reactionsA, reactionsB, usage, failReason } = await aiVote(
           aiPlayer.modelId,
           prompt.text,
           respA.text,
@@ -486,7 +489,7 @@ export async function generateAiVotes(gameId: string): Promise<void> {
         );
         const choiceMap: Record<string, string> = { A: respA.id, B: respB.id };
         await prisma.vote.create({
-          data: { promptId: prompt.id, voterId: aiPlayer.id, responseId: choiceMap[choice] },
+          data: { promptId: prompt.id, voterId: aiPlayer.id, responseId: choiceMap[choice] ?? null, failReason },
         });
 
         // Create AI reaction records
@@ -785,38 +788,29 @@ export async function endGameEarly(gameId: string): Promise<void> {
 }
 
 /**
- * Pre-generate TTS audio for all prompts in the current round (run in background).
- * Skips prompts that already have cached audio or fewer than 2 responses.
+ * Generate TTS audio for a single prompt by voting index (run in background).
+ * Called just-in-time when each voting sub-phase starts, so we only generate
+ * one TTS request at a time instead of blasting all prompts at once.
  */
-export async function preGenerateTtsAudio(gameId: string): Promise<void> {
+export async function generateTtsForCurrentPrompt(gameId: string): Promise<void> {
   const game = await prisma.game.findUnique({ where: { id: gameId } });
-  if (!game || game.ttsMode !== "AI_VOICE") return;
+  if (!game || game.ttsMode !== "AI_VOICE" || game.status !== "VOTING") return;
 
-  const round = await prisma.round.findFirst({
-    where: { gameId, roundNumber: game.currentRound },
-    include: {
-      prompts: {
-        where: { ttsAudio: null },
-        include: { responses: { orderBy: { id: "asc" }, take: 2 } },
-      },
-    },
-  });
-  if (!round) return;
+  const votablePrompts = await getVotablePrompts(gameId);
+  const prompt = votablePrompts[game.votingPromptIndex];
+  if (!prompt || prompt.responses.length < 2) return;
 
-  const eligible = round.prompts.filter((p) => p.responses.length >= 2);
+  // Already cached — nothing to do
+  if (prompt.ttsAudio) return;
 
-  await Promise.all(
-    eligible.map(async (prompt) => {
-      const [a, b] = prompt.responses;
-      const audio = await generateSpeechAudio(prompt.text, a.text, b.text, game.ttsVoice);
-      if (audio) {
-        await prisma.prompt.updateMany({
-          where: { id: prompt.id, ttsAudio: null },
-          data: { ttsAudio: audio.toString("base64") },
-        });
-      }
-    }),
-  );
+  const [a, b] = [...prompt.responses].sort((x, y) => x.id.localeCompare(y.id));
+  const audio = await generateSpeechAudio(prompt.text, a.text, b.text, game.ttsVoice);
+  if (audio) {
+    await prisma.prompt.updateMany({
+      where: { id: prompt.id, ttsAudio: null },
+      data: { ttsAudio: audio.toString("base64") },
+    });
+  }
 }
 
 /**

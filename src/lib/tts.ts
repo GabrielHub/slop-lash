@@ -1,51 +1,58 @@
 /**
- * Server-side Gemini multi-speaker TTS for Quiplash-style readouts.
+ * Server-side Gemini single-speaker TTS for Quiplash-style readouts.
  *
- * Two voice presets:
- *   MALE:   Host=Puck, Player 1=Charon, Player 2=Fenrir
- *   FEMALE: Host=Aoede, Player 1=Kore, Player 2=Zephyr
+ * One narrator voice reads the prompt, then both player answers —
+ * just like real Quiplash.
  */
 
 import { GoogleGenAI } from "@google/genai";
-import type { TtsVoice } from "./types";
+import { pickRandomVoice, VOICE_NAMES } from "./voices";
 
-const TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 15_000;
 const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
-function speakerConfig(speaker: string, voiceName: string) {
-  return { speaker, voiceConfig: { prebuiltVoiceConfig: { voiceName } } };
+/** Resolve a voice setting to a concrete voice name. */
+function resolveVoice(voice: string): string {
+  if (voice === "RANDOM" || !VOICE_NAMES.includes(voice)) {
+    return pickRandomVoice();
+  }
+  return voice;
 }
-
-const VOICE_PRESETS: Record<TtsVoice, ReturnType<typeof speakerConfig>[]> = {
-  MALE: [
-    speakerConfig("Host", "Puck"),
-    speakerConfig("Player 1", "Charon"),
-    speakerConfig("Player 2", "Fenrir"),
-  ],
-  FEMALE: [
-    speakerConfig("Host", "Aoede"),
-    speakerConfig("Player 1", "Kore"),
-    speakerConfig("Player 2", "Zephyr"),
-  ],
-};
 
 /** Replace madlib blanks with an ellipsis for a natural spoken pause. */
 export function prepareTtsText(text: string): string {
   return text.replace(/_+/g, "...");
 }
 
-/** Build a multi-speaker script with game-show host instructions. */
-export function buildMultiSpeakerScript(
+/**
+ * System instruction for the TTS model — voice direction following
+ * Google's recommended structure (audio profile, scene, director's notes).
+ */
+const TTS_SYSTEM_INSTRUCTION = [
+  "You are the narrator of a live comedy game show called Sloplash.",
+  "",
+  "Scene: A brightly lit studio stage in front of a rowdy live audience.",
+  "The vibe is late-night improv meets party game — irreverent, fast, and funny.",
+  "",
+  "Director's notes:",
+  "- Big, charismatic game-show MC energy. Vocal smile throughout.",
+  "- Punchy, projected delivery like you're addressing a studio audience.",
+  "- Build anticipation on the prompt, then read each answer with comedic timing.",
+  "- Think comedy roast host — sharp, playful, always on the edge of cracking up.",
+  "- Commit to reading ridiculous answers with a straight face for maximum comedy.",
+].join("\n");
+
+/** Build the narrator script for a prompt + two answers. */
+export function buildScript(
   prompt: string,
   responseA: string,
   responseB: string,
 ): string {
   return [
-    "Read this like a Quiplash game show. The Host announces the prompt with energy. Player 1 and Player 2 each deliver their punchline.",
-    "",
-    `Host: ${prepareTtsText(prompt)}`,
-    `Player 1: ${prepareTtsText(responseA)}`,
-    `Player 2: ${prepareTtsText(responseB)}`,
+    prepareTtsText(prompt),
+    prepareTtsText(responseA),
+    "Or...",
+    prepareTtsText(responseB),
   ].join("\n");
 }
 
@@ -77,15 +84,42 @@ export function pcmToWav(pcmData: Buffer): Buffer {
   return Buffer.concat([header, pcmData]);
 }
 
+const TTS_MAX_RETRIES = 3;
+const TTS_BASE_DELAY_MS = 1_000;
+
+interface TtsErrorInfo {
+  message: string;
+  retryable: boolean;
+  retryDelayMs?: number;
+}
+
+/** Extract useful error details for logging and retry decisions. */
+function describeTtsError(err: unknown): TtsErrorInfo {
+  if (!(err instanceof Error)) return { message: String(err), retryable: false };
+  if (err.name === "AbortError") return { message: "timed out", retryable: false };
+
+  const status = "status" in err ? (err as { status: number }).status : undefined;
+  const body = "responseBody" in err ? String((err as { responseBody: unknown }).responseBody).slice(0, 200) : undefined;
+  const parts = [`${err.name}: ${err.message}`];
+  if (status) parts.push(`status=${status}`);
+  if (body) parts.push(`body=${body}`);
+
+  const retryable = status === 500 || status === 503 || status === 429;
+  // Gemini 429 responses include retryDelay -- use 11s as default for rate limits
+  const retryDelayMs = status === 429 ? 11_000 : undefined;
+  return { message: parts.join(", "), retryable, retryDelayMs };
+}
+
 /**
- * Call Gemini TTS to generate a multi-speaker WAV for a prompt + two responses.
- * Returns a WAV Buffer on success, or null if the call fails or times out.
+ * Call Gemini TTS to generate a single-speaker WAV for a prompt + two responses.
+ * Retries up to 3 times with exponential backoff for transient server errors.
+ * Returns a WAV Buffer on success, or null if all attempts fail or time out.
  */
 export async function generateSpeechAudio(
   prompt: string,
   responseA: string,
   responseB: string,
-  voice: TtsVoice = "MALE",
+  voice: string = "RANDOM",
 ): Promise<Buffer | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -93,43 +127,60 @@ export async function generateSpeechAudio(
     return null;
   }
 
+  const voiceName = resolveVoice(voice);
   const ai = new GoogleGenAI({ apiKey });
-  const script = buildMultiSpeakerScript(prompt, responseA, responseB);
+  const script = buildScript(prompt, responseA, responseB);
 
-  try {
+  console.log(`[TTS] Starting: model=${TTS_MODEL}, voice=${voiceName}, scriptLen=${script.length}`);
+
+  for (let attempt = 1; attempt <= TTS_MAX_RETRIES; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    const response = await ai.models.generateContent({
-      model: TTS_MODEL,
-      contents: [{ parts: [{ text: script }] }],
-      config: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          multiSpeakerVoiceConfig: {
-            speakerVoiceConfigs: VOICE_PRESETS[voice],
+    try {
+      const response = await ai.models.generateContent({
+        model: TTS_MODEL,
+        contents: [{ parts: [{ text: script }] }],
+        config: {
+          systemInstruction: TTS_SYSTEM_INSTRUCTION,
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
           },
+          abortSignal: controller.signal,
         },
-        abortSignal: controller.signal,
-      },
-    });
+      });
 
-    clearTimeout(timer);
+      clearTimeout(timer);
 
-    const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!data) {
-      console.error("[TTS] No audio data in Gemini response");
+      const candidate = response.candidates?.[0];
+      const data = candidate?.content?.parts?.[0]?.inlineData?.data;
+      if (!data) {
+        const finishReason = candidate?.finishReason;
+        const partTypes = candidate?.content?.parts?.map((p) => Object.keys(p).join(",")).join("; ");
+        console.error(`[TTS] No audio data in response. finishReason=${finishReason}, parts=[${partTypes ?? "none"}]`);
+        return null;
+      }
+
+      const pcm = Buffer.from(data, "base64");
+      console.log(`[TTS] OK: ${pcm.length} bytes PCM (attempt ${attempt})`);
+      return pcmToWav(pcm);
+    } catch (err) {
+      clearTimeout(timer);
+      const { message, retryable, retryDelayMs } = describeTtsError(err);
+
+      if (retryable && attempt < TTS_MAX_RETRIES) {
+        const delay = retryDelayMs ?? TTS_BASE_DELAY_MS * 2 ** (attempt - 1);
+        console.warn(`[TTS] ${message} (attempt ${attempt}/${TTS_MAX_RETRIES}), retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      console.error(`[TTS] FAILED (attempt ${attempt}/${TTS_MAX_RETRIES}): ${message}`);
       return null;
     }
-
-    const pcm = Buffer.from(data, "base64");
-    return pcmToWav(pcm);
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      console.warn("[TTS] Gemini TTS timed out after", TIMEOUT_MS, "ms");
-    } else {
-      console.error("[TTS] Gemini TTS error:", err);
-    }
-    return null;
   }
+
+  return null;
 }

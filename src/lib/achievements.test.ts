@@ -48,6 +48,7 @@ function makePrompt(
       playerId: r.playerId,
       text: r.text,
       pointsEarned: 0,
+      failReason: null,
       reactions: [],
       player: {
         id: r.playerId,
@@ -65,6 +66,7 @@ function makePrompt(
       promptId: id,
       voterId: v.voterId,
       responseId: v.responseId,
+      failReason: null,
       voter: { id: v.voterId, type: v.voterType ?? ("HUMAN" as const) },
     })),
     assignments: assignments ?? responses.map((r) => ({ promptId: id, playerId: r.playerId })),

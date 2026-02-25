@@ -651,18 +651,14 @@ const PROMPT_BANK: string[] = [
   "Az orvos legrosszabb mondata a műtét közepén: '______'", // The worst thing for a doctor to say mid-surgery: '______' (Hungarian)
   "Ang pinakamasamang bagay na isulat sa isang sympathy card", // The worst thing to write in a sympathy card (Filipino/Tagalog)
   "पायलट ने उड़ान भरने से पहले जो सबसे बुरी बात कही: '______'", // The worst thing a pilot said before takeoff: '______' (Hindi)
-  "택시 기사에게 절대 하면 안 되는 말: '______'",          // What you should never say to a taxi driver: '______' (Korean)
   "Kötü bir süper kahraman ismi: ______",                // A bad superhero name: ______ (Turkish)
   "Pahin asia, jonka voi kuulla hammaslääkäriltä: '______'", // The worst thing to hear from your dentist: '______' (Finnish)
   "Nejhorší věc, kterou říct na prvním rande",            // The worst thing to say on a first date (Czech)
   "Det verste å rope under en begravelse",               // The worst thing to shout during a funeral (Norwegian)
   "ရေခဲမုန့်အရသာ အဆိုးဆုံးအမည်: ______",               // The worst ice cream flavor name: ______ (Burmese)
   "Perkara paling teruk untuk ditulis pada kad hari jadi", // The worst thing to write on a birthday card (Malay)
-  "Värsta saken att skrika på ett flygplan: '______'",   // The worst thing to shout on a plane: '______' (Swedish)
   "בדיחה שלעולם לא כדאי לספר בראיון עבודה",              // A joke you should never tell at a job interview (Hebrew)
   "Το χειρότερο πράγμα να πεις σε κηδεία: '______'",    // The worst thing to say at a funeral: '______' (Greek)
-  "人生最悪のタイミングで鳴る着信音: ______",                // The worst ringtone to go off at the worst time: ______ (Japanese)
-  "机场安检时口袋里最不该有的东西: ______",                  // The worst thing to have in your pocket at airport security: ______ (Chinese)
 ];
 
 function cryptoRandInt(max: number): number {

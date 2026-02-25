@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAllResponsesIn, startVoting, generateAiVotes, preGenerateTtsAudio } from "@/lib/game-logic";
+import { checkAllResponsesIn, startVoting, generateAiVotes, generateTtsForCurrentPrompt } from "@/lib/game-logic";
 import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -113,7 +113,7 @@ export async function POST(
       if (claimed) {
         await Promise.all([
           generateAiVotes(game.id),
-          preGenerateTtsAudio(game.id),
+          generateTtsForCurrentPrompt(game.id),
         ]);
       }
     }
