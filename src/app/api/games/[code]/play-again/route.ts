@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
+import { selectUniqueModelsByProvider } from "@/lib/models";
 
 export async function POST(
   request: Request,
@@ -74,8 +75,12 @@ export async function POST(
     );
   }
 
-  // Create new game with same AI players + host
-  const aiPlayers = game.players.filter((p) => p.type === "AI");
+  // Re-validate AI lineup against current model catalog and provider uniqueness rules.
+  const aiPlayers = selectUniqueModelsByProvider(
+    game.players
+      .filter((p) => p.type === "AI" && p.modelId)
+      .map((p) => p.modelId as string)
+  );
 
   const newGame = await prisma.game.create({
     data: {
@@ -86,10 +91,10 @@ export async function POST(
       players: {
         create: [
           { name: hostPlayer.name, type: "HUMAN" },
-          ...aiPlayers.map((ai) => ({
-            name: ai.name,
+          ...aiPlayers.map((model) => ({
+            name: model.shortName,
             type: "AI" as const,
-            modelId: ai.modelId,
+            modelId: model.id,
           })),
         ],
       },

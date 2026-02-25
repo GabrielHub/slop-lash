@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
-import { AI_MODELS } from "@/lib/models";
+import { selectUniqueModelsByProvider } from "@/lib/models";
 import { sanitize } from "@/lib/sanitize";
 import { parseJsonBody } from "@/lib/http";
 import type { TtsMode } from "@/lib/types";
@@ -88,10 +88,10 @@ export async function POST(request: Request) {
   });
 
   if (Array.isArray(aiModelIds)) {
-    const aiPlayers = aiModelIds
+    const aiPlayers = selectUniqueModelsByProvider(
+      aiModelIds
       .filter((id): id is string => typeof id === "string")
-      .map((id) => AI_MODELS.find((m) => m.id === id))
-      .filter((m) => m !== undefined)
+    )
       .slice(0, MAX_PLAYERS - 1)
       .map((model) => ({
         gameId: game.id,

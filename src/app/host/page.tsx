@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import { AI_MODELS, type AIModel } from "@/lib/models";
+import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
 import type { TtsMode } from "@/lib/types";
 import { GEMINI_VOICES } from "@/lib/voices";
 import { ModelIcon } from "@/components/model-icon";
@@ -21,7 +21,7 @@ function PlayerCountHint({ selectedCount }: { selectedCount: number }) {
 
   if (total % 2 !== 0) {
     return (
-      <p className="text-xs text-amber-400/80 mb-3">
+      <p className="text-xs text-gold/85 mb-3">
         1 more player needs to join for even teams
       </p>
     );
@@ -64,14 +64,24 @@ export default function HostPage() {
   }
 
   function toggleModel(modelId: string) {
+    const targetModel = getModelByModelId(modelId);
+    if (!targetModel) return;
+
     setSelectedModels((prev) => {
       if (prev.includes(modelId)) {
         return prev.filter((id) => id !== modelId);
       }
-      if (prev.length >= maxAiPlayers) {
+
+      // Only one model per provider: selecting another variant swaps it in.
+      const withoutSameProvider = prev.filter((id) => {
+        const model = getModelByModelId(id);
+        return model?.provider !== targetModel.provider;
+      });
+
+      if (withoutSameProvider.length >= maxAiPlayers) {
         return prev;
       }
-      return [...prev, modelId];
+      return [...withoutSameProvider, modelId];
     });
   }
 
@@ -217,7 +227,14 @@ export default function HostPage() {
             <div className="grid grid-cols-1 gap-2">
               {AI_MODELS.map((model) => {
                 const selected = selectedModels.includes(model.id);
-                const atLimit = selectedModels.length >= maxAiPlayers && !selected;
+                const replacesSameProvider = !selected && selectedModels.some((id) => {
+                  const selectedModel = getModelByModelId(id);
+                  return selectedModel?.provider === model.provider;
+                });
+                const atLimit =
+                  selectedModels.length >= maxAiPlayers &&
+                  !selected &&
+                  !replacesSameProvider;
 
                 let stateClass: string;
                 if (selected) {
@@ -286,7 +303,7 @@ export default function HostPage() {
                   className={`relative w-10 h-6 rounded-full transition-colors ${timersDisabled ? "bg-punch" : "bg-edge-strong"}`}
                 >
                   <div
-                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${timersDisabled ? "translate-x-[18px]" : "translate-x-0.5"}`}
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-surface border border-edge/50 transition-transform ${timersDisabled ? "translate-x-[18px]" : "translate-x-0.5"}`}
                   />
                 </div>
                 <div>

@@ -2,10 +2,30 @@ import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import { LEADERBOARD_TAG } from "@/lib/game-constants";
-import { AI_MODELS } from "@/lib/models";
+import {
+  getLeaderboardModelNames,
+  getModelByModelId,
+} from "@/lib/models";
 
 function contestantKey(player: { type: string; modelId: string | null }): string {
   return player.type === "HUMAN" ? "HUMAN" : (player.modelId ?? "HUMAN");
+}
+
+function createContestantEntry(key: string, modelId: string): ContestantStats {
+  const { name, shortName } = getLeaderboardModelNames(modelId);
+  return {
+    key,
+    name,
+    shortName,
+    type: "AI",
+    modelId,
+    totalVotes: 0,
+    totalResponses: 0,
+    matchupsWon: 0,
+    matchupsPlayed: 0,
+    winRate: 0,
+    voteShare: 0,
+  };
 }
 
 interface ContestantStats {
@@ -72,16 +92,17 @@ const getLeaderboardData = unstable_cache(
     });
 
     const modelUsage = modelUsageRaw
-      .map((row) => {
-        const model = AI_MODELS.find((m) => m.id === row.modelId);
-        return {
+      .flatMap((row) => {
+        const model = getModelByModelId(row.modelId);
+        if (!model) return [];
+        return [{
           modelId: row.modelId,
-          modelName: model?.name ?? row.modelId,
-          modelShortName: model?.shortName ?? row.modelId,
+          modelName: model.name,
+          modelShortName: model.shortName,
           inputTokens: row._sum.inputTokens ?? 0,
           outputTokens: row._sum.outputTokens ?? 0,
           costUsd: row._sum.costUsd ?? 0,
-        };
+        }];
       })
       .sort((a, b) => b.costUsd - a.costUsd);
 
@@ -145,23 +166,6 @@ const getLeaderboardData = unstable_cache(
       voteShare: 0,
     });
 
-    // Initialize AI model entries
-    for (const model of AI_MODELS) {
-      statsMap.set(model.id, {
-        key: model.id,
-        name: model.name,
-        shortName: model.shortName,
-        type: "AI",
-        modelId: model.id,
-        totalVotes: 0,
-        totalResponses: 0,
-        matchupsWon: 0,
-        matchupsPlayed: 0,
-        winRate: 0,
-        voteShare: 0,
-      });
-    }
-
     // Head-to-head tracking
     const h2hMap = new Map<
       string,
@@ -175,11 +179,14 @@ const getLeaderboardData = unstable_cache(
     for (const prompt of prompts) {
       for (const resp of prompt.responses) {
         const key = contestantKey(resp.player);
-        const entry = statsMap.get(key);
-        if (entry) {
-          entry.totalVotes += resp._count.votes;
-          entry.totalResponses += 1;
+        let entry = statsMap.get(key);
+        if (!entry && resp.player.type === "AI" && resp.player.modelId) {
+          entry = createContestantEntry(key, resp.player.modelId);
+          statsMap.set(key, entry);
         }
+        if (!entry) continue;
+        entry.totalVotes += resp._count.votes;
+        entry.totalResponses += 1;
       }
 
       // Matchup calculations (only for prompts with exactly 2 responses and votes)
@@ -193,8 +200,16 @@ const getLeaderboardData = unstable_cache(
         const bKey = contestantKey(b.player);
 
         // Track matchups played
-        const aEntry = statsMap.get(aKey);
-        const bEntry = statsMap.get(bKey);
+        let aEntry = statsMap.get(aKey);
+        if (!aEntry && a.player.type === "AI" && a.player.modelId) {
+          aEntry = createContestantEntry(aKey, a.player.modelId);
+          statsMap.set(aKey, aEntry);
+        }
+        let bEntry = statsMap.get(bKey);
+        if (!bEntry && b.player.type === "AI" && b.player.modelId) {
+          bEntry = createContestantEntry(bKey, b.player.modelId);
+          statsMap.set(bKey, bEntry);
+        }
         if (aEntry) aEntry.matchupsPlayed += 1;
         if (bEntry) bEntry.matchupsPlayed += 1;
 
@@ -271,7 +286,7 @@ const getLeaderboardData = unstable_cache(
     // Build head-to-head list
     const headToHead: HeadToHead[] = [];
     for (const [modelId, record] of h2hMap) {
-      const model = AI_MODELS.find((m) => m.id === modelId);
+      const model = getModelByModelId(modelId);
       if (!model) continue;
       headToHead.push({
         modelId,
