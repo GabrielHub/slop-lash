@@ -99,6 +99,11 @@ const PROMPT_BANK: string[] = [
   "The worst thing to discover your kid drew in art class and titled 'My Family'",
   "A terrible thing to be doing when the earthquake drill turns out to be real",
   "The worst thing to say after someone finishes singing happy birthday to you",
+  "The worst thing to say when someone hands you their phone to show baby pictures",
+  "A terrible thing to yell while parallel parking on a crowded street",
+  "The least helpful thing to say when the guest of honor walks in early to their surprise party",
+  "The worst thing to whisper right before a group photo at a wedding",
+  "A terrible thing to say while helping someone move a couch up stairs",
 
   // ==========================================================================
   // NAMING & CREATING — name a product, band, word, slogan, etc.
@@ -143,6 +148,11 @@ const PROMPT_BANK: string[] = [
   "Name a TED Talk that would get the speaker escorted offstage",
   "A terrible name for a service dog",
   "Name a new Gatorade flavor for people going through a breakup",
+  "Come up with a name for a meal-kit service for people who only own one pan",
+  "A terrible title for a mindfulness podcast hosted by a very angry man",
+  "Name a frozen dinner for people going through a midlife crisis",
+  "A rejected slogan for a luxury bunker community",
+  "Name a cruise excursion nobody should book while sober",
 
   // ==========================================================================
   // HIDDEN TRUTHS & SECRET LIVES — what X really thinks, does, or is hiding.
@@ -180,6 +190,10 @@ const PROMPT_BANK: string[] = [
   "What the Roomba would say in its own therapy session",
   "What your emotional support animal secretly judges you for",
   "The real reason your WiFi goes out every time you're about to win an argument online",
+  "What your smoke detector is really trying to tell you at 2 AM",
+  "What ducks are gossiping about at the park pond",
+  "The real reason your package says 'out for delivery' all day",
+  "What the hotel ice machine has witnessed that changed it forever",
 
   // ==========================================================================
   // CORPORATE HELL & MODERN LIFE — workplace nightmares, tech horror,
@@ -200,6 +214,10 @@ const PROMPT_BANK: string[] = [
   "The worst possible theme for a company holiday party",
   "The most unsettling thing to write on a whiteboard and leave in a conference room",
   "The most alarming thing to find in the company fridge with your name on it",
+  "The worst thing to say immediately after 'Let's circle back' in a meeting",
+  "A passive-aggressive title for a calendar invite",
+  "The most alarming thing to hear from IT right after they take your laptop",
+  "The worst thing to write in the team birthday card for your manager",
 
   // Technology nightmares
   "The most alarming thing in someone's browser history",
@@ -216,6 +234,10 @@ const PROMPT_BANK: string[] = [
   "The most unhinged thing someone used ChatGPT for",
   "The AI-generated image that should never have been created",
   "The worst thing for your screen time report to reveal",
+  "The worst push notification to get while you're on a first date",
+  "The most suspicious thing an AI meeting transcript could label you as",
+  "A terrible thing for your robot vacuum to map and save forever",
+  "The worst thing to accidentally AirDrop to everyone on a flight",
 
   // Products & services
   "A product that would instantly bomb on Shark Tank",
@@ -236,6 +258,10 @@ const PROMPT_BANK: string[] = [
   "The worst voicemail to accidentally leave on your ex's phone",
   "The worst thing to realize when your Ozempic prescription runs out",
   "The most unhinged thing to do because the WiFi went down for 10 minutes",
+  "The worst thing to discover your HOA president does for fun",
+  "A terrible thing to say while touring an apartment you can't afford",
+  "The least reassuring text message to get from your contractor",
+  "The most unhinged purchase to defend with 'It's an investment'",
 
   // ==========================================================================
   // HISTORY, POP CULTURE & CELEBRITIES — rewrites of famous events,
@@ -485,6 +511,16 @@ const PROMPT_BANK: string[] = [
   "The worst country to accidentally declare war on",
   "The worst thing to engrave on a trophy",
   "The worst icebreaker on the first day of prison",
+  "The weirdest thing to hear your neighbor scream through the wall: '______'",
+  "Step 1: ______. Step 2: ______. Step 3: HR gets involved",
+  "According to my doctor, I need less ______ and more ______",
+  "Little-known fact: ______ is technically illegal in one county",
+  "My apology video would begin with: '______'",
+  "The wedding DJ's final warning: 'If I see one more person ______'",
+  "The sign your Airbnb is haunted: ______",
+  "My phone battery dies fastest when I'm ______",
+  "The worst thing to hear your GPS say out loud: '______'",
+  "The neighborhood Facebook group is furious about ______ again",
 
   // Authority & formality bombs — serious frame + absurd fill
   "The FDA just approved ______ as a food group",
@@ -549,6 +585,10 @@ const PROMPT_BANK: string[] = [
   "The 'understandable, have a great day' response to ______",
   "Ight imma head out, but only because ______",
   "The 'they don't know I ______' guy at the party",
+  "The 'starter pack' nobody wants: ______ starter pack",
+  "No thoughts, head empty, just ______",
+  "Me rewatching the same 12-second clip because ______",
+  "The comment section civil war started when someone said ______",
 
   // 2025-2026 memes & comedy culture
   "We got ______ before GTA 6",
@@ -577,6 +617,9 @@ const PROMPT_BANK: string[] = [
   "A controversial take that would get you immediately kicked out of a group chat: ______",
   "Caught in 4K doing ______",
   "The one thing AI should absolutely never be trusted with: ______",
+  "POV: the group project leader just typed 'quick sync?'",
+  "The most cursed thing to see under a 'recipe in bio' post: ______",
+  "______. That's not a red flag, that's a full parade.",
 
   // ==========================================================================
   // NBA MEMES — basketball-specific prompts for the true hoopers.
@@ -662,9 +705,19 @@ const PROMPT_BANK: string[] = [
 ];
 
 function cryptoRandInt(max: number): number {
+  if (!Number.isInteger(max) || max <= 0) {
+    throw new RangeError("max must be a positive integer");
+  }
+
+  // Rejection sampling avoids modulo bias when max does not divide 2^32.
+  const limit = Math.floor(0x1_0000_0000 / max) * max;
   const array = new Uint32Array(1);
-  crypto.getRandomValues(array);
-  return array[0] % max;
+  while (true) {
+    crypto.getRandomValues(array);
+    if (array[0] < limit) {
+      return array[0] % max;
+    }
+  }
 }
 
 function shuffle<T>(array: T[]): T[] {
@@ -676,10 +729,94 @@ function shuffle<T>(array: T[]): T[] {
   return result;
 }
 
+const SOFT_DEDUPE_STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "to", "of", "in", "on", "at", "for", "from",
+  "with", "by", "into", "out", "up", "down", "over", "under", "after", "before",
+  "during", "while", "when", "what", "why", "how", "that", "this", "these", "those",
+  "is", "are", "was", "were", "be", "being", "been", "do", "does", "did", "just",
+  "you", "your", "yours", "me", "my", "we", "our", "they", "their", "someone",
+  "something", "somebody", "anyone", "anything", "person", "people",
+  "worst", "best", "most", "least", "real", "really", "actual", "actually",
+  "thing", "things", "way", "reason", "part", "line", "message", "name", "title",
+  "say", "saying", "said", "hear", "hear", "find", "finding", "discover", "discovering",
+  "would", "should", "could", "can", "never", "ever", "always", "again",
+  "get", "gets", "got", "make", "makes", "made", "put", "write", "writes", "wrote",
+  "bad", "terrible", "funny", "unhinged", "alarming", "suspicious", "concerning",
+  "prompt", "prompts",
+]);
+
+function promptTokens(prompt: string): Set<string> {
+  const normalized = prompt
+    .toLowerCase()
+    .replace(/_{2,}/g, " ")
+    .replace(/['"!?.,:;()[\]{}\-–—/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const tokens = new Set<string>();
+  for (const raw of normalized.split(" ")) {
+    const token = raw.trim();
+    if (!token) continue;
+    if (token.length <= 2) continue;
+    if (/^\d+$/.test(token)) continue;
+    if (SOFT_DEDUPE_STOPWORDS.has(token)) continue;
+    tokens.add(token);
+  }
+  return tokens;
+}
+
+function isSoftDuplicate(candidate: Set<string>, other: Set<string>): boolean {
+  if (candidate.size === 0 || other.size === 0) return false;
+
+  let intersection = 0;
+  for (const t of candidate) {
+    if (other.has(t)) intersection++;
+  }
+
+  if (intersection < 2) return false;
+
+  const similarity = intersection / (candidate.size + other.size - intersection);
+  return similarity >= 0.5 || (intersection >= 3 && similarity >= 0.34);
+}
+
 export function getRandomPrompts(
   count: number,
   exclude: Set<string> = new Set(),
 ): string[] {
+  if (count <= 0) return [];
+
   const available = PROMPT_BANK.filter((p) => !exclude.has(p));
-  return shuffle(available).slice(0, count);
+  const shuffled = shuffle(available);
+
+  // Soft dedupe against already used prompts and already-selected prompts to
+  // reduce "same vibe" repeats (same topic/frame, different wording).
+  const recentTokenSets = Array.from(exclude, promptTokens);
+  const selected: string[] = [];
+  const selectedTokenSets: Set<string>[] = [];
+  const deferred: string[] = [];
+
+  for (const prompt of shuffled) {
+    if (selected.length >= count) break;
+
+    const tokens = promptTokens(prompt);
+    const clashesWithRecent = recentTokenSets.some((t) => isSoftDuplicate(tokens, t));
+    const clashesWithSelected = selectedTokenSets.some((t) => isSoftDuplicate(tokens, t));
+
+    if (clashesWithRecent || clashesWithSelected) {
+      deferred.push(prompt);
+      continue;
+    }
+
+    selected.push(prompt);
+    selectedTokenSets.push(tokens);
+  }
+
+  if (selected.length < count) {
+    for (const prompt of deferred) {
+      selected.push(prompt);
+      if (selected.length >= count) break;
+    }
+  }
+
+  return selected;
 }
