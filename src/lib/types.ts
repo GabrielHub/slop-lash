@@ -23,12 +23,20 @@ export interface GamePlayer {
   lastSeen: string;
 }
 
+export interface GameReaction {
+  id: string;
+  responseId: string;
+  playerId: string;
+  emoji: string;
+}
+
 export interface GameResponse {
   id: string;
   promptId: string;
   playerId: string;
   text: string;
   pointsEarned: number;
+  reactions: GameReaction[];
   player: Omit<GamePlayer, "score">;
 }
 

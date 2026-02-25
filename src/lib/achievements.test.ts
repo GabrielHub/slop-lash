@@ -48,6 +48,7 @@ function makePrompt(
       playerId: r.playerId,
       text: r.text,
       pointsEarned: 0,
+      reactions: [],
       player: {
         id: r.playerId,
         name: r.playerId,

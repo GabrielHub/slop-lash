@@ -478,7 +478,7 @@ export async function generateAiVotes(gameId: string): Promise<void> {
     return aiPlayers
       .filter((p) => !respondentIds.has(p.id))
       .map(async (aiPlayer): Promise<AiUsage> => {
-        const { choice, usage } = await aiVote(
+        const { choice, reactionsA, reactionsB, usage } = await aiVote(
           aiPlayer.modelId,
           prompt.text,
           respA.text,
@@ -488,6 +488,16 @@ export async function generateAiVotes(gameId: string): Promise<void> {
         await prisma.vote.create({
           data: { promptId: prompt.id, voterId: aiPlayer.id, responseId: choiceMap[choice] },
         });
+
+        // Create AI reaction records
+        const reactionData = [
+          ...reactionsA.map((emoji) => ({ responseId: respA.id, playerId: aiPlayer.id, emoji })),
+          ...reactionsB.map((emoji) => ({ responseId: respB.id, playerId: aiPlayer.id, emoji })),
+        ];
+        if (reactionData.length > 0) {
+          await prisma.reaction.createMany({ data: reactionData, skipDuplicates: true });
+        }
+
         return usage;
       });
   });

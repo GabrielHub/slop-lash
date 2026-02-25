@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes } from "@/lib/types";
 import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/lib/game-constants";
@@ -20,6 +20,7 @@ import { useTts } from "@/hooks/use-tts";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
+import { ReactionBar } from "@/components/reaction-bar";
 
 function getVotingSkipText(skipping: boolean, revealing: boolean, timersDisabled: boolean): string {
   if (skipping) return "Skipping...";
@@ -285,6 +286,9 @@ export function Voting({
                     label="You wrote one of these!"
                     sublabel="Waiting for others to vote..."
                     color="gold"
+                    prompt={currentPrompt}
+                    playerId={playerId}
+                    code={code}
                   />
                 </>
               ) : hasVotedCurrent ? (
@@ -294,6 +298,9 @@ export function Voting({
                     label="Vote locked in!"
                     sublabel="Waiting for others..."
                     color="teal"
+                    prompt={currentPrompt}
+                    playerId={playerId}
+                    code={code}
                   />
                 </>
               ) : (
@@ -301,6 +308,8 @@ export function Voting({
                   prompt={currentPrompt}
                   voting={voting}
                   onVote={castVote}
+                  playerId={playerId}
+                  code={code}
                 />
               )}
             </motion.div>
@@ -431,17 +440,20 @@ function HostVotingView({ prompt }: { prompt: GamePrompt }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-4 lg:gap-0">
       {/* Response A */}
-      <motion.div
-        className="p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
-        style={{ boxShadow: "var(--shadow-card)" }}
-        initial={{ opacity: 0, x: -40 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ type: "spring", stiffness: 350, damping: 30 }}
-      >
-        <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
-          {respA.text}
-        </p>
-      </motion.div>
+      <div className="flex flex-col gap-2">
+        <motion.div
+          className="p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+          style={{ boxShadow: "var(--shadow-card)" }}
+          initial={{ opacity: 0, x: -40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+        >
+          <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
+            {respA.text}
+          </p>
+        </motion.div>
+        <ReactionBar responseId={respA.id} reactions={respA.reactions} playerId={null} code="" disabled size="lg" />
+      </div>
 
       {/* VS divider */}
       <motion.div
@@ -458,17 +470,20 @@ function HostVotingView({ prompt }: { prompt: GamePrompt }) {
       </motion.div>
 
       {/* Response B */}
-      <motion.div
-        className="p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
-        style={{ boxShadow: "var(--shadow-card)" }}
-        initial={{ opacity: 0, x: 40 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ type: "spring", stiffness: 350, damping: 30 }}
-      >
-        <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
-          {respB.text}
-        </p>
-      </motion.div>
+      <div className="flex flex-col gap-2">
+        <motion.div
+          className="p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+          style={{ boxShadow: "var(--shadow-card)" }}
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+        >
+          <p className="text-lg sm:text-2xl lg:text-3xl leading-snug text-ink font-medium">
+            {respB.text}
+          </p>
+        </motion.div>
+        <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={null} code="" disabled size="lg" />
+      </div>
     </div>
   );
 }
@@ -478,10 +493,14 @@ function VoteView({
   prompt,
   voting,
   onVote,
+  playerId,
+  code,
 }: {
-  prompt: { id: string; responses: { id: string; text: string; playerId: string }[] };
+  prompt: GamePrompt;
   voting: boolean;
   onVote: (promptId: string, responseId: string) => void;
+  playerId: string | null;
+  code: string;
 }) {
   const [respA, respB] = prompt.responses;
   const { triggerElement } = usePixelDissolve();
@@ -489,24 +508,27 @@ function VoteView({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-3 lg:gap-0">
       {/* Response A */}
-      <motion.button
-        onClick={(e) => {
-          triggerElement(e.currentTarget);
-          onVote(prompt.id, respA.id);
-        }}
-        disabled={voting}
-        className="w-full p-5 sm:p-6 lg:p-8 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge text-left transition-all hover:border-teal hover:bg-teal-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group"
-        style={{ boxShadow: "var(--shadow-card)" }}
-        initial={{ opacity: 0, x: -30 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-        whileHover={{ scale: 1.015, y: -2 }}
-        whileTap={{ scale: 0.97 }}
-      >
-        <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink group-hover:text-teal transition-colors">
-          {respA.text}
-        </p>
-      </motion.button>
+      <div className="flex flex-col gap-2">
+        <motion.button
+          onClick={(e) => {
+            triggerElement(e.currentTarget);
+            onVote(prompt.id, respA.id);
+          }}
+          disabled={voting}
+          className="w-full p-5 sm:p-6 lg:p-8 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge text-left transition-all hover:border-teal hover:bg-teal-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group"
+          style={{ boxShadow: "var(--shadow-card)" }}
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          whileHover={{ scale: 1.015, y: -2 }}
+          whileTap={{ scale: 0.97 }}
+        >
+          <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink group-hover:text-teal transition-colors">
+            {respA.text}
+          </p>
+        </motion.button>
+        <ReactionBar responseId={respA.id} reactions={respA.reactions} playerId={playerId} code={code} />
+      </div>
 
       {/* VS divider */}
       <motion.div
@@ -523,37 +545,46 @@ function VoteView({
       </motion.div>
 
       {/* Response B */}
-      <motion.button
-        onClick={(e) => {
-          triggerElement(e.currentTarget);
-          onVote(prompt.id, respB.id);
-        }}
-        disabled={voting}
-        className="w-full p-5 sm:p-6 lg:p-8 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge text-left transition-all hover:border-punch hover:bg-fail-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group"
-        style={{ boxShadow: "var(--shadow-card)" }}
-        initial={{ opacity: 0, x: 30 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-        whileHover={{ scale: 1.015, y: -2 }}
-        whileTap={{ scale: 0.97 }}
-      >
-        <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink group-hover:text-punch transition-colors">
-          {respB.text}
-        </p>
-      </motion.button>
+      <div className="flex flex-col gap-2">
+        <motion.button
+          onClick={(e) => {
+            triggerElement(e.currentTarget);
+            onVote(prompt.id, respB.id);
+          }}
+          disabled={voting}
+          className="w-full p-5 sm:p-6 lg:p-8 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge text-left transition-all hover:border-punch hover:bg-fail-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group"
+          style={{ boxShadow: "var(--shadow-card)" }}
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          whileHover={{ scale: 1.015, y: -2 }}
+          whileTap={{ scale: 0.97 }}
+        >
+          <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink group-hover:text-punch transition-colors">
+            {respB.text}
+          </p>
+        </motion.button>
+        <ReactionBar responseId={respB.id} reactions={respB.reactions} playerId={playerId} code={code} />
+      </div>
     </div>
   );
 }
 
-/** Passive state — respondent or already-voted. */
+/** Passive state -- respondent or already-voted. Shows responses with interactive reaction bars. */
 function PassiveView({
   label,
   sublabel,
   color,
+  prompt,
+  playerId,
+  code,
 }: {
   label: string;
   sublabel: string;
   color: "gold" | "teal";
+  prompt: GamePrompt;
+  playerId: string | null;
+  code: string;
 }) {
   const styles = {
     gold: "bg-gold/20 border-gold/40 text-ink",
@@ -561,24 +592,60 @@ function PassiveView({
   };
 
   return (
-    <motion.div
-      className="text-center py-10 sm:py-14"
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={springDefault}
-    >
-      <div className={`inline-flex items-center gap-2 px-5 py-3 rounded-full border ${styles[color]}`}>
-        {color === "teal" && (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        )}
-        <span className="font-display font-bold text-sm sm:text-base">
-          {label}
-        </span>
-      </div>
-      <p className="text-ink-dim text-sm mt-3">{sublabel}</p>
-    </motion.div>
+    <div className="space-y-4">
+      {/* Response cards with reactions */}
+      {prompt.responses.length >= 2 && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-3 lg:gap-0">
+          {prompt.responses.map((resp, i) => (
+            <React.Fragment key={resp.id}>
+              {i === 1 && (
+                <div className="flex lg:flex-col items-center justify-center gap-3 lg:px-6 py-1">
+                  <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
+                  <span className="font-display font-black text-xs lg:text-lg text-ink-dim/40 tracking-[0.3em]">VS</span>
+                  <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <div
+                  className="p-4 sm:p-5 rounded-2xl bg-surface/60 border border-edge"
+                  style={{ boxShadow: "var(--shadow-card)" }}
+                >
+                  <p className="text-base sm:text-lg leading-snug text-ink-dim">
+                    {resp.text}
+                  </p>
+                </div>
+                <ReactionBar
+                  responseId={resp.id}
+                  reactions={resp.reactions}
+                  playerId={playerId}
+                  code={code}
+                />
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      {/* Status badge */}
+      <motion.div
+        className="text-center py-4 sm:py-6"
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={springDefault}
+      >
+        <div className={`inline-flex items-center gap-2 px-5 py-3 rounded-full border ${styles[color]}`}>
+          {color === "teal" && (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+          <span className="font-display font-bold text-sm sm:text-base">
+            {label}
+          </span>
+        </div>
+        <p className="text-ink-dim text-sm mt-3">{sublabel}</p>
+      </motion.div>
+    </div>
   );
 }
 
@@ -774,6 +841,17 @@ function RevealResponseCard({
                     />
                   );
                 })}
+              </motion.div>
+            )}
+            {/* Reactions */}
+            {response.reactions.length > 0 && (
+              <motion.div
+                className="mt-2"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9 }}
+              >
+                <ReactionBar responseId={response.id} reactions={response.reactions} playerId={null} code="" disabled size={isHostDisplay ? "lg" : "sm"} />
               </motion.div>
             )}
           </div>

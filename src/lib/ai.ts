@@ -1,5 +1,7 @@
 import { generateText, streamText, Output, createGateway } from "ai";
+import { z } from "zod";
 import { calculateCostUsd } from "./models";
+import { REACTION_EMOJI_KEYS, type ReactionEmoji } from "./reactions";
 
 const gateway = createGateway({
   apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
@@ -41,7 +43,14 @@ const VOTE_SYSTEM_PROMPT = `<role>You are a judge on Quiplash. Two players wrote
 <criteria>
 Strong answers: unexpected/absurd twists, clever wordplay, specific and vivid, darkly funny, "so wrong it's funny."
 Weak answers: boring/predictable/safe, restating the prompt, generic filler, overly long or try-hard.
-</criteria>` as const;
+</criteria>
+<reactions>
+Also react to each answer with 0-2 emoji reactions expressing how you feel. Available emojis:
+laugh (😂) = hilarious, fire (🔥) = hot take, skull (💀) = dead/dark humor, clap (👏) = well crafted,
+puke (🤮) = gross/terrible, sleep (😴) = boring, eyes (👀) = sus/spicy, hundred (💯) = perfect,
+target (🎯) = on point, clown (🤡) = ridiculous/dumb.
+Pick reactions that match your genuine gut feeling about each answer. Don't react to every answer — only when you actually feel something.
+</reactions>` as const;
 
 /** Sentinel text stored for AI responses that failed to generate. */
 import { FORFEIT_MARKER } from "./scoring";
@@ -130,12 +139,25 @@ export async function generateJoke(
   }
 }
 
+const voteSchema = z.object({
+  vote: z.enum(["A", "B", "C"]),
+  reactions_a: z.array(z.enum(REACTION_EMOJI_KEYS)).max(2).default([]),
+  reactions_b: z.array(z.enum(REACTION_EMOJI_KEYS)).max(2).default([]),
+});
+
+export interface AiVoteResult {
+  choice: "A" | "B" | "ABSTAIN";
+  reactionsA: ReactionEmoji[];
+  reactionsB: ReactionEmoji[];
+  usage: AiUsage;
+}
+
 export async function aiVote(
   modelId: string,
   promptText: string,
   responseA: string,
   responseB: string
-): Promise<{ choice: "A" | "B" | "ABSTAIN"; usage: AiUsage }> {
+): Promise<AiVoteResult> {
   const t0 = Date.now();
   try {
     // Randomize order to prevent position bias
@@ -147,29 +169,37 @@ export async function aiVote(
     const result = await generateText({
       model: gateway(modelId),
       system: VOTE_SYSTEM_PROMPT,
-      output: Output.choice({ options: ["A", "B", "C"] as const }),
+      output: Output.object({ schema: voteSchema }),
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
       providerOptions,
     });
 
     const elapsed = Date.now() - t0;
-    const rawChoice = result.output ?? "C";
+    const output = result.output;
 
-    if (rawChoice === "C") {
-      console.log(`[aiVote] ${modelId} ABSTAINED in ${elapsed}ms`);
-      return { choice: "ABSTAIN", usage: extractUsage(modelId, result.usage) };
+    if (!output || output.vote === "C") {
+      if (!output) {
+        console.warn(`[aiVote] ${modelId} returned null output in ${elapsed}ms (structured output may not be supported)`);
+      } else {
+        console.log(`[aiVote] ${modelId} ABSTAINED in ${elapsed}ms`);
+      }
+      return { choice: "ABSTAIN", reactionsA: [], reactionsB: [], usage: extractUsage(modelId, result.usage) };
     }
 
-    // Map back to original A/B positions when order was swapped
+    // Map vote and reactions back to original A/B positions when order was swapped
+    const rawChoice = output.vote;
     const flipped = rawChoice === "A" ? "B" : "A";
     const choice: "A" | "B" = showAFirst ? rawChoice : flipped;
-    console.log(`[aiVote] ${modelId} chose ${choice} in ${elapsed}ms`);
-    return { choice, usage: extractUsage(modelId, result.usage) };
+    const reactionsA = (showAFirst ? output.reactions_a : output.reactions_b) ?? [];
+    const reactionsB = (showAFirst ? output.reactions_b : output.reactions_a) ?? [];
+
+    console.log(`[aiVote] ${modelId} chose ${choice} in ${elapsed}ms (reactions: A=${reactionsA.join(",")}, B=${reactionsB.join(",")})`);
+    return { choice, reactionsA, reactionsB, usage: extractUsage(modelId, result.usage) };
   } catch (err) {
     const elapsed = Date.now() - t0;
     console.error(`[aiVote] ${modelId} FAILED in ${elapsed}ms:`, err);
     // On error, abstain rather than casting a random vote
-    return { choice: "ABSTAIN", usage: { ...ZERO_USAGE, modelId } };
+    return { choice: "ABSTAIN", reactionsA: [], reactionsB: [], usage: { ...ZERO_USAGE, modelId } };
   }
 }
 

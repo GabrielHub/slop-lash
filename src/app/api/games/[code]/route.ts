@@ -46,8 +46,18 @@ function stripUnrevealedVotes(game: any): void {
     .sort((a: any, b: any) => a.id.localeCompare(b.id));
 
   for (let i = 0; i < votable.length; i++) {
-    if (i > game.votingPromptIndex || (i === game.votingPromptIndex && !game.votingRevealing)) {
+    const isFuture = i > game.votingPromptIndex;
+    const isCurrentUnrevealed = i === game.votingPromptIndex && !game.votingRevealing;
+
+    if (isFuture || isCurrentUnrevealed) {
       votable[i].votes = [];
+    }
+    // Strip reactions from unrevealed prompts (match vote stripping)
+    if (isFuture || isCurrentUnrevealed) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const resp of votable[i].responses as any[]) {
+        resp.reactions = [];
+      }
     }
   }
 }

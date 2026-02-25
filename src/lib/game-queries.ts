@@ -18,7 +18,10 @@ export const roundsInclude = {
     omit: { ttsAudio: true },
     include: {
       responses: {
-        include: { player: { select: responsePlayerSelect } },
+        include: {
+          player: { select: responsePlayerSelect },
+          reactions: true,
+        },
       },
       votes: {
         include: { voter: { select: { id: true, type: true } } },

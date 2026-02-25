@@ -88,6 +88,7 @@ model Player {
   responses   Response[]
   votes       Vote[]
   assignments PromptAssignment[]
+  reactions   Reaction[]
 
   @@unique([gameId, rejoinToken])
   @@index([gameId])
@@ -138,6 +139,7 @@ model Response {
   text         String
   pointsEarned Int    @default(0)
   votes        Vote[]
+  reactions    Reaction[]
 
   @@unique([promptId, playerId])
   @@index([promptId])
@@ -156,5 +158,17 @@ model Vote {
   @@unique([promptId, voterId])
   @@index([promptId])
   @@index([voterId])
+  @@index([responseId])
+}
+
+model Reaction {
+  id         String   @id @default(cuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  emoji      String
+
+  @@unique([responseId, playerId, emoji])
   @@index([responseId])
 }
