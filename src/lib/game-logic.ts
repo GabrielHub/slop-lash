@@ -611,6 +611,13 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
   if (claim.count === 0) return;
 
   await applyRoundScores(gameId);
+
+  // Bump version again so pollers see the updated scores
+  // (a poller arriving between the status change and score application would see 0s)
+  await prisma.game.update({
+    where: { id: gameId },
+    data: { version: { increment: 1 } },
+  });
 }
 
 /**

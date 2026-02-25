@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { Lobby } from "@/app/game/[code]/lobby";
@@ -51,7 +52,7 @@ function useGamePoller(code: string, playerId: string | null) {
           if (versionRef.current !== null) {
             headers["If-None-Match"] = `"${versionRef.current}"`;
           }
-          const res = await fetch(url, { headers });
+          const res = await fetch(url, { headers, cache: "no-store" });
           if (cancelled) continue;
 
           // 304 Not Modified -- nothing changed, poll again
@@ -340,9 +341,9 @@ export function GameShell({ code }: { code: string }) {
   const gameHeader = (
     <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
-        <span className="font-display font-bold text-xs text-punch tracking-tight">
+        <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
           SLOP-LASH
-        </span>
+        </Link>
         <span className="text-edge-strong">|</span>
         <span className="font-mono font-bold text-xs tracking-widest text-ink-dim">
           {gameState.roomCode}

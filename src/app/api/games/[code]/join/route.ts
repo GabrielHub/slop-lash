@@ -5,6 +5,9 @@ import { MAX_PLAYERS } from "@/lib/game-logic";
 import { MAX_SPECTATORS } from "@/lib/game-constants";
 import { sanitize } from "@/lib/sanitize";
 
+/** A player is considered stale (reclaimable) after 30 seconds of inactivity. */
+const STALE_THRESHOLD_MS = 30_000;
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
@@ -58,15 +61,57 @@ export async function POST(
     }
   }
 
-  // Case-insensitive duplicate name check
-  const duplicate = game.players.some(
+  // Case-insensitive duplicate name check — allow reclaiming stale players
+  const existingPlayer = game.players.find(
     (p) => p.name.toLowerCase() === cleanName.toLowerCase()
   );
-  if (duplicate) {
-    return NextResponse.json(
-      { error: "That name is already taken" },
-      { status: 400 }
-    );
+  if (existingPlayer) {
+    const isStale = Date.now() - new Date(existingPlayer.lastSeen).getTime() > STALE_THRESHOLD_MS;
+
+    // Non-spectator reclaim only allowed during LOBBY (mirrors the new-join guard)
+    const canReclaim = isStale && (existingPlayer.type === "SPECTATOR" || game.status === "LOBBY");
+
+    if (!canReclaim) {
+      return NextResponse.json(
+        { error: "That name is already taken" },
+        { status: 400 }
+      );
+    }
+
+    // Reclaim the stale player slot — use optimistic lock on lastSeen to prevent
+    // concurrent reclaims from hijacking a player that just came back online
+    const newToken = randomBytes(12).toString("base64url");
+    const claimed = await prisma.player.updateMany({
+      where: {
+        id: existingPlayer.id,
+        lastSeen: existingPlayer.lastSeen, // optimistic lock
+      },
+      data: {
+        rejoinToken: newToken,
+        lastSeen: new Date(),
+        type: isSpectator ? "SPECTATOR" : existingPlayer.type,
+      },
+    });
+
+    if (claimed.count === 0) {
+      // Another request reclaimed or the original player came back online
+      return NextResponse.json(
+        { error: "That name is already taken" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.game.update({
+      where: { id: game.id },
+      data: { version: { increment: 1 } },
+    });
+
+    return NextResponse.json({
+      playerId: existingPlayer.id,
+      gameId: game.id,
+      playerType: isSpectator ? "SPECTATOR" : existingPlayer.type,
+      rejoinToken: newToken,
+    });
   }
 
   // Use a transaction to prevent race conditions

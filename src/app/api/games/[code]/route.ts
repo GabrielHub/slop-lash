@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db";
 import { checkAndEnforceDeadline, generateAiVotes, generateTtsForCurrentPrompt, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
 import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
 
+const CACHE_HEADERS = {
+  "Cache-Control": "private, no-store, no-cache, must-revalidate",
+} as const;
+
 const gameInclude = {
   players: {
     orderBy: { score: "desc" as const },
@@ -73,7 +77,7 @@ export async function GET(
   const game = await findGame(roomCode);
 
   if (!game) {
-    return NextResponse.json({ error: "Game not found" }, { status: 404 });
+    return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
 
   // Heartbeat: update lastSeen for the polling player (non-blocking)
@@ -113,7 +117,7 @@ export async function GET(
     const fresh = await findGame(roomCode);
     stripUnrevealedVotes(fresh);
     return NextResponse.json(fresh, {
-      headers: { ETag: `"${fresh?.version}"` },
+      headers: { ...CACHE_HEADERS, ETag: `"${fresh?.version}"` },
     });
   }
 
@@ -125,15 +129,15 @@ export async function GET(
     request.headers.get("if-none-match") === etag;
 
   if (versionUnchanged) {
-    return new Response(null, { status: 304, headers: { ETag: etag } });
+    return new Response(null, { status: 304, headers: { ...CACHE_HEADERS, ETag: etag } });
   }
 
   // Return all rounds for FINAL_RESULTS (needed for best-prompts carousel)
   if (game.status === "FINAL_RESULTS") {
     const data = await findGame(roomCode, { allRounds: true });
-    return NextResponse.json(data, { headers: { ETag: etag } });
+    return NextResponse.json(data, { headers: { ...CACHE_HEADERS, ETag: etag } });
   }
 
   stripUnrevealedVotes(game);
-  return NextResponse.json(game, { headers: { ETag: etag } });
+  return NextResponse.json(game, { headers: { ...CACHE_HEADERS, ETag: etag } });
 }
