@@ -2,6 +2,9 @@ import { prisma } from "@/lib/db";
 import { generateWinnerTagline, FORFEIT_TEXT } from "@/lib/ai";
 import { accumulateUsage } from "@/lib/game-logic";
 
+/** Sentinel stored while the first caller is generating the tagline. */
+const GENERATING = "__generating__";
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ code: string }> },
@@ -14,9 +17,9 @@ export async function GET(
   const game = await prisma.game.findUnique({
     where: { roomCode },
     include: {
-      players: { orderBy: { score: "desc" as const } },
+      players: { orderBy: { score: "desc" } },
       rounds: {
-        orderBy: { roundNumber: isFinal ? "asc" as const : "desc" as const },
+        orderBy: { roundNumber: isFinal ? "asc" : "desc" },
         ...(!isFinal ? { take: 1 } : {}),
         include: {
           prompts: {
@@ -46,6 +49,23 @@ export async function GET(
     return new Response(null, { status: 204 });
   }
 
+  // Return cached tagline if already generated
+  if (game.winnerTagline && game.winnerTagline !== GENERATING) {
+    return new Response(game.winnerTagline);
+  }
+
+  // Atomically claim generation so only one caller generates
+  const claimed = await prisma.game.updateMany({
+    where: { id: game.id, winnerTagline: null },
+    data: { winnerTagline: GENERATING },
+  });
+
+  if (claimed.count === 0) {
+    // Another caller is generating — let the client retry on its polling cycle
+    return new Response(null, { status: 204 });
+  }
+
+  // We claimed it — generate the tagline
   const scoreBoard = game.players
     .map((p, i) => `${i + 1}. ${p.name} (${p.type}) — ${p.score} pts`)
     .join("\n");
@@ -61,16 +81,36 @@ export async function GET(
 
   const context = `Scores:\n${scoreBoard}\n\nYour jokes this ${isFinal ? "game" : "round"}:\n${aiJokes || "(none)"}`;
 
-  const gameId = game.id;
-  const result = generateWinnerTagline(
-    leader.modelId,
-    leader.name,
-    isFinal,
-    context,
-    async (usage) => {
-      await accumulateUsage(gameId, [usage]);
-    },
-  );
+  try {
+    const result = generateWinnerTagline(
+      leader.modelId,
+      leader.name,
+      isFinal,
+      context,
+      async (usage) => {
+        await accumulateUsage(game.id, [usage]);
+      },
+    );
 
-  return result.toTextStreamResponse();
+    const text = await result.text;
+
+    // Store the generated tagline for all other clients
+    await prisma.game.update({
+      where: { id: game.id },
+      data: { winnerTagline: text },
+    });
+
+    return new Response(text);
+  } catch {
+    // Generation failed — reset so another caller can retry
+    try {
+      await prisma.game.update({
+        where: { id: game.id },
+        data: { winnerTagline: null },
+      });
+    } catch (resetErr) {
+      console.error("[tagline] Failed to reset GENERATING sentinel:", resetErr);
+    }
+    return new Response(null, { status: 204 });
+  }
 }

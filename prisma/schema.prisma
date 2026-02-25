@@ -41,6 +41,7 @@ model Game {
   votingPromptIndex Int       @default(0)
   votingRevealing   Boolean   @default(false)
   nextGameCode    String?
+  winnerTagline   String?
   aiInputTokens   Int        @default(0)
   aiOutputTokens  Int        @default(0)
   aiCostUsd       Float      @default(0)

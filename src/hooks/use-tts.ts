@@ -2,36 +2,39 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TtsMode, GamePrompt } from "@/lib/types";
-import { isMuted } from "@/lib/sounds";
+import { isMuted, getVolume, getAudioContext } from "@/lib/sounds";
 
 /** Replace madlib blanks with a spoken pause. Mirrors server-side prepareTtsText. */
 function prepareTtsText(text: string): string {
   return text.replace(/_+/g, "...");
 }
 
-/** Decode a base64 WAV string and play it via the Web Audio API. */
-function playBase64Audio(
+/** Decode a base64 WAV string and play it through the shared Web Audio master gain. */
+async function playBase64Audio(
   base64: string,
-  audioRef: React.RefObject<HTMLAudioElement | null>,
+  audioRef: React.RefObject<AudioBufferSourceNode | null>,
 ): Promise<void> {
+  const { ctx, gain } = getAudioContext();
+  const bytes = atob(base64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+
+  // Copy the buffer — decodeAudioData detaches the original ArrayBuffer
+  const buffer = await ctx.decodeAudioData(arr.buffer.slice(0) as ArrayBuffer).catch(() => null);
+  if (!buffer) return;
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(gain);
+  audioRef.current = source;
+
   return new Promise<void>((resolve) => {
-    const bytes = atob(base64);
-    const arr = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-    const blob = new Blob([arr], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
-
-    const audio = new Audio(url);
-    audioRef.current = audio;
-
-    function cleanup() {
-      URL.revokeObjectURL(url);
+    source.onended = () => {
+      source.disconnect();
+      if (audioRef.current === source) audioRef.current = null;
       resolve();
-    }
-
-    audio.onended = cleanup;
-    audio.onerror = cleanup;
-    audio.play().catch(cleanup);
+    };
+    source.start();
   });
 }
 
@@ -53,7 +56,7 @@ interface UseTtsReturn {
 export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions): UseTtsReturn {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPromptId, setCurrentPromptId] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<AudioBufferSourceNode | null>(null);
   const cacheRef = useRef(new Map<string, string>());
   const fetchingRef = useRef(new Set<string>());
   const mountedRef = useRef(true);
@@ -92,7 +95,11 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
 
   function cancelAllPlayback() {
     if (audioRef.current) {
-      audioRef.current.pause();
+      try {
+        audioRef.current.stop();
+      } catch {
+        // Already stopped
+      }
       audioRef.current = null;
     }
     if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -156,13 +163,14 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
           const effectiveDelay = index === 1 ? Math.max(delay, 100) : delay;
 
           setTimeout(() => {
-            if (!mountedRef.current) {
+            if (!mountedRef.current || isMuted()) {
               resolve();
               return;
             }
             const utt = new SpeechSynthesisUtterance(text);
             utt.pitch = pitch;
             utt.rate = 1.0;
+            utt.volume = getVolume();
             utt.onend = () => speakNext();
             utt.onerror = () => speakNext();
             window.speechSynthesis.speak(utt);
@@ -180,17 +188,13 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
       // Already failed previously — don't retry
       if (cacheRef.current.get(promptId) === "") return null;
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8_000);
-
       try {
         const res = await fetch(`/api/games/${code}/speech`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ promptId }),
-          signal: controller.signal,
+          signal: AbortSignal.timeout(8_000),
         });
-        clearTimeout(timer);
 
         if (!res.ok) {
           cacheRef.current.set(promptId, "");
@@ -205,7 +209,6 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
         cacheRef.current.set(promptId, data.audio);
         return data.audio;
       } catch {
-        clearTimeout(timer);
         cacheRef.current.set(promptId, "");
         return null;
       }
@@ -228,13 +231,8 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
       try {
         if (ttsMode === "AI_VOICE") {
           const cached = cacheRef.current.get(promptId);
-          // Three states: string with content = cached audio, "" = previously failed, undefined = not yet fetched
-          let audio: string | null = null;
-          if (cached) {
-            audio = cached;
-          } else if (cached === undefined) {
-            audio = await fetchAiVoice(promptId);
-          }
+          // Cache states: undefined = not fetched, "" = previously failed, non-empty = audio data
+          const audio = cached || (cached === undefined ? await fetchAiVoice(promptId) : null);
           if (audio) {
             await playBase64Audio(audio, audioRef);
           } else {

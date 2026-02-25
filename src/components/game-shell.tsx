@@ -10,7 +10,7 @@ import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
 import { Results } from "@/app/game/[code]/results";
 import { phaseTransition, fadeInUp } from "@/lib/animations";
-import { playSound, preloadSounds, subscribeMute, isMuted, toggleMute } from "@/lib/sounds";
+import { playSound, preloadSounds, subscribeAudio, isMuted, toggleMute, getVolume, setVolume } from "@/lib/sounds";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -100,7 +100,8 @@ export function GameShell({ code }: { code: string }) {
   const [endingGame, setEndingGame] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const rejoinAttempted = useRef(false);
-  const soundsMuted = useSyncExternalStore(subscribeMute, isMuted, () => false);
+  const soundsMuted = useSyncExternalStore(subscribeAudio, isMuted, () => false);
+  const soundsVolume = useSyncExternalStore(subscribeAudio, getVolume, () => 0.5);
 
   // Session recovery: detect disconnected player and attempt rejoin
   useEffect(() => {
@@ -338,6 +339,35 @@ export function GameShell({ code }: { code: string }) {
     }
   }
 
+  function volumeIcon(): React.ReactNode {
+    const svgProps = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+
+    if (soundsMuted) {
+      return (
+        <svg {...svgProps}>
+          <path d="M11 5L6 9H2v6h4l5 4V5z" />
+          <line x1="23" y1="9" x2="17" y2="15" />
+          <line x1="17" y1="9" x2="23" y2="15" />
+        </svg>
+      );
+    }
+    if (soundsVolume < 0.5) {
+      return (
+        <svg {...svgProps}>
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+        </svg>
+      );
+    }
+    return (
+      <svg {...svgProps}>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      </svg>
+    );
+  }
+
   const gameHeader = (
     <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
@@ -350,25 +380,25 @@ export function GameShell({ code }: { code: string }) {
         </span>
       </div>
       <div className="flex items-center gap-3 pr-14">
-        <button
-          onClick={toggleMute}
-          aria-label={soundsMuted ? "Unmute sounds" : "Mute sounds"}
-          className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
-        >
-          {soundsMuted ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 5L6 9H2v6h4l5 4V5z" />
-              <line x1="23" y1="9" x2="17" y2="15" />
-              <line x1="17" y1="9" x2="23" y2="15" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-            </svg>
-          )}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={toggleMute}
+            aria-label={soundsMuted ? "Unmute sounds" : "Mute sounds"}
+            className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
+          >
+            {volumeIcon()}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={soundsMuted ? 0 : soundsVolume}
+            onChange={(e) => setVolume(parseFloat(e.target.value))}
+            aria-label="Volume"
+            className="volume-slider hidden sm:block w-16 h-4 cursor-pointer"
+          />
+        </div>
         {canEndGame && (
           <button
             onClick={handleEndGame}

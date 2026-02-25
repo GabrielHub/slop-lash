@@ -606,7 +606,7 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
   // Atomic guard: only one caller can claim VOTING→ROUND_RESULTS
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: "VOTING" },
-    data: { status: "ROUND_RESULTS", phaseDeadline: null, version: { increment: 1 } },
+    data: { status: "ROUND_RESULTS", phaseDeadline: null, winnerTagline: null, version: { increment: 1 } },
   });
   if (claim.count === 0) return;
 
@@ -702,7 +702,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
   if (game.currentRound >= game.totalRounds) {
     await prisma.game.update({
       where: { id: gameId },
-      data: { status: "FINAL_RESULTS", version: { increment: 1 } },
+      data: { status: "FINAL_RESULTS", winnerTagline: null, version: { increment: 1 } },
     });
     return false;
   }
@@ -781,7 +781,7 @@ export async function endGameEarly(gameId: string): Promise<void> {
   // Atomically claim the transition to FINAL_RESULTS
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: game.status },
-    data: { status: "FINAL_RESULTS", phaseDeadline: null, version: { increment: 1 } },
+    data: { status: "FINAL_RESULTS", phaseDeadline: null, winnerTagline: null, version: { increment: 1 } },
   });
   if (claim.count === 0) return;
 

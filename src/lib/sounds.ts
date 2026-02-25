@@ -10,17 +10,64 @@ const SOUND_MAP = {
 
 export type SoundName = keyof typeof SOUND_MAP;
 
-const audioCache = new Map<SoundName, HTMLAudioElement>();
+// --- Web Audio API state ---
+let audioContext: AudioContext | null = null;
+let masterGain: GainNode | null = null;
+const bufferCache = new Map<SoundName, AudioBuffer>();
 
-let preloaded = false;
+/** Returns the shared AudioContext + master GainNode (creates lazily). */
+export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
+  if (!audioContext) {
+    audioContext = new AudioContext();
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = muted ? 0 : volume;
+    masterGain.connect(audioContext.destination);
+  }
+  if (audioContext.state === "suspended") {
+    void audioContext.resume();
+  }
+  return { ctx: audioContext, gain: masterGain! };
+}
 
-// --- Mute state ---
+// --- Volume & mute state ---
+let volume =
+  typeof window !== "undefined"
+    ? parseFloat(localStorage.getItem("soundsVolume") ?? "0.5")
+    : 0.5;
+
 let muted =
   typeof window !== "undefined"
     ? localStorage.getItem("soundsMuted") === "true"
     : false;
 
-const muteListeners = new Set<() => void>();
+const audioListeners = new Set<() => void>();
+
+/** Sync the master gain node and notify subscribers. */
+function syncGainAndNotify(): void {
+  if (masterGain) {
+    masterGain.gain.value = muted ? 0 : volume;
+  }
+  audioListeners.forEach((cb) => cb());
+}
+
+export function getVolume(): number {
+  return volume;
+}
+
+export function setVolume(v: number): void {
+  volume = Math.max(0, Math.min(1, v));
+  if (typeof window !== "undefined") {
+    localStorage.setItem("soundsVolume", String(volume));
+  }
+  // Dragging up from 0 while muted → auto-unmute
+  if (volume > 0 && muted) {
+    muted = false;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("soundsMuted", "false");
+    }
+  }
+  syncGainAndNotify();
+}
 
 export function isMuted(): boolean {
   return muted;
@@ -28,17 +75,28 @@ export function isMuted(): boolean {
 
 export function toggleMute(): boolean {
   muted = !muted;
+  // Unmuting while volume is 0 → restore to a sane default
+  if (!muted && volume === 0) {
+    volume = 0.5;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("soundsVolume", "0.5");
+    }
+  }
   if (typeof window !== "undefined") {
     localStorage.setItem("soundsMuted", String(muted));
   }
-  muteListeners.forEach((cb) => cb());
+  // Cancel any in-progress browser TTS when muting
+  if (muted && typeof window !== "undefined" && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  syncGainAndNotify();
   return muted;
 }
 
-export function subscribeMute(cb: () => void): () => void {
-  muteListeners.add(cb);
+export function subscribeAudio(cb: () => void): () => void {
+  audioListeners.add(cb);
   return () => {
-    muteListeners.delete(cb);
+    audioListeners.delete(cb);
   };
 }
 
@@ -47,32 +105,50 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function preloadSounds() {
+let preloaded = false;
+
+export function preloadSounds(): void {
   if (preloaded || typeof window === "undefined") return;
   preloaded = true;
 
+  const { ctx } = getAudioContext();
+
   for (const [name, path] of Object.entries(SOUND_MAP)) {
-    const audio = new Audio(path);
-    audio.preload = "auto";
-    audioCache.set(name as SoundName, audio);
+    fetch(path)
+      .then((res) => res.arrayBuffer())
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((audioBuffer) => {
+        bufferCache.set(name as SoundName, audioBuffer);
+      })
+      .catch(() => {});
   }
 }
 
-export function playSound(name: SoundName) {
+export function playSound(name: SoundName): void {
   if (typeof window === "undefined" || muted || prefersReducedMotion()) return;
 
-  if (!preloaded) preloadSounds();
+  const { ctx, gain } = getAudioContext();
 
-  let audio = audioCache.get(name);
-  if (audio) {
-    // Reset to start so rapid replays work
-    audio.currentTime = 0;
+  const buffer = bufferCache.get(name);
+  if (buffer) {
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(gain);
+    source.start();
   } else {
-    audio = new Audio(SOUND_MAP[name]);
-    audioCache.set(name, audio);
+    // Fallback: fetch and decode on the fly
+    fetch(SOUND_MAP[name])
+      .then((res) => res.arrayBuffer())
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((audioBuffer) => {
+        bufferCache.set(name, audioBuffer);
+        if (!muted) {
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(gain);
+          source.start();
+        }
+      })
+      .catch(() => {});
   }
-
-  audio.play().catch(() => {
-    // Browser blocked autoplay — silently ignore
-  });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useSyncExternalStore } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -34,6 +34,7 @@ interface PickerProps {
   aggregated: AggregatedReaction[];
   onPick: (key: ReactionEmoji) => void;
   onClose: () => void;
+  anchorRef: React.RefObject<HTMLDivElement | null>;
 }
 
 type Accent = "gold" | "punch" | "teal" | "dim";
@@ -198,7 +199,6 @@ function ReactionChip({
       className="relative"
       onMouseEnter={!isMobile && hasNames ? () => setShowTooltip(true) : undefined}
       onMouseLeave={!isMobile ? () => setShowTooltip(false) : undefined}
-      layout
     >
       <AnimatePresence>
         {showTooltip && r.names.length > 0 && (
@@ -252,9 +252,16 @@ export function ReactionBar({
   const [pending, setPending] = useState<Set<string>>(new Set());
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
+  const anchorRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
-  const aggregated = aggregate(reactions, playerId, playerNames);
+  // Optimistic local reactions so clicks feel instant
+  const [optimistic, setOptimistic] = useState<GameReaction[]>(reactions);
+  useEffect(() => {
+    setOptimistic(reactions);
+  }, [reactions]);
+
+  const aggregated = aggregate(optimistic, playerId, playerNames);
   const sizeClasses = SIZE_CLASSES[size];
   const canInteract = !disabled && !!playerId;
   const hasNames = !!playerNames && playerNames.size > 0;
@@ -263,6 +270,21 @@ export function ReactionBar({
     async (emoji: string) => {
       if (disabled || !playerId || pendingRef.current.has(emoji)) return;
       setPending((prev) => new Set(prev).add(emoji));
+
+      // Optimistic update
+      setOptimistic((prev) => {
+        const idx = prev.findIndex(
+          (r) => r.emoji === emoji && r.playerId === playerId,
+        );
+        if (idx >= 0) {
+          return prev.filter((_, i) => i !== idx);
+        }
+        return [
+          ...prev,
+          { id: `optimistic-${emoji}`, responseId, playerId, emoji },
+        ];
+      });
+
       try {
         await fetch(`/api/games/${code}/react`, {
           method: "POST",
@@ -313,7 +335,7 @@ export function ReactionBar({
           </AnimatePresence>
 
           {canInteract && (
-            <div className="relative">
+            <div className="relative" ref={anchorRef}>
               <motion.button
                 type="button"
                 onClick={(e) => {
@@ -345,6 +367,7 @@ export function ReactionBar({
                     aggregated={aggregated}
                     onPick={handlePick}
                     onClose={closePicker}
+                    anchorRef={anchorRef}
                   />
                 )}
               </AnimatePresence>
@@ -356,16 +379,36 @@ export function ReactionBar({
   );
 }
 
-function DesktopPopover({ aggregated, onPick, onClose }: PickerProps) {
-  return (
+function DesktopPopover({ aggregated, onPick, onClose, anchorRef }: PickerProps) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+
+    function update() {
+      const rect = el!.getBoundingClientRect();
+      setPos({ top: rect.top - 8, left: rect.left });
+    }
+
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [anchorRef]);
+
+  return createPortal(
     <>
-      {createPortal(
-        <div className="fixed inset-0 z-40" onClick={onClose} />,
-        document.body,
-      )}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
       <motion.div
-        className="absolute bottom-full left-0 mb-2.5 z-50 p-2 rounded-xl bg-raised/90 backdrop-blur-xl border border-edge"
+        className="fixed z-50 p-2 rounded-xl bg-raised/90 backdrop-blur-xl border border-edge"
         style={{
+          top: pos?.top ?? 0,
+          left: pos?.left ?? 0,
+          transform: "translateY(-100%)",
           boxShadow:
             "0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)",
         }}
@@ -405,7 +448,8 @@ function DesktopPopover({ aggregated, onPick, onClose }: PickerProps) {
           })}
         </div>
       </motion.div>
-    </>
+    </>,
+    document.body,
   );
 }
 
