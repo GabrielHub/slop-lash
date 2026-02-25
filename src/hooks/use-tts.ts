@@ -59,39 +59,8 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
   const audioRef = useRef<AudioBufferSourceNode | null>(null);
   const cacheRef = useRef(new Map<string, string>());
   const fetchingRef = useRef(new Set<string>());
+  const inflightFetchesRef = useRef(new Map<string, Promise<string | null>>());
   const mountedRef = useRef(true);
-
-  // Pre-fetch audio for the active prompt only (server generates just-in-time per sub-phase)
-  useEffect(() => {
-    if (ttsMode !== "AI_VOICE" || !activePromptId) return;
-    if (cacheRef.current.has(activePromptId) || fetchingRef.current.has(activePromptId)) return;
-
-    fetchingRef.current.add(activePromptId);
-    const promptId = activePromptId;
-    fetch(`/api/games/${code}/speech`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ promptId }),
-    })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          if (data.audio) {
-            cacheRef.current.set(promptId, data.audio);
-          }
-        } else {
-          // Mark as failed so we don't retry on every render
-          cacheRef.current.set(promptId, "");
-        }
-      })
-      .catch(() => {
-        // Mark as failed so we don't retry on every render
-        cacheRef.current.set(promptId, "");
-      })
-      .finally(() => {
-        fetchingRef.current.delete(promptId);
-      });
-  }, [ttsMode, activePromptId, code]);
 
   function cancelAllPlayback() {
     if (audioRef.current) {
@@ -187,34 +156,55 @@ export function useTts({ code, ttsMode, prompts, activePromptId }: UseTtsOptions
     async (promptId: string): Promise<string | null> => {
       // Already failed previously — don't retry
       if (cacheRef.current.get(promptId) === "") return null;
+      const cached = cacheRef.current.get(promptId);
+      if (cached) return cached;
 
-      try {
-        const res = await fetch(`/api/games/${code}/speech`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ promptId }),
-          signal: AbortSignal.timeout(8_000),
-        });
+      const inFlight = inflightFetchesRef.current.get(promptId);
+      if (inFlight) return inFlight;
 
-        if (!res.ok) {
+      const request = (async () => {
+        fetchingRef.current.add(promptId);
+        try {
+          const res = await fetch(`/api/games/${code}/speech`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ promptId }),
+            signal: AbortSignal.timeout(8_000),
+          });
+
+          if (!res.ok) {
+            cacheRef.current.set(promptId, "");
+            return null;
+          }
+          const data = await res.json();
+          if (!data.audio) {
+            cacheRef.current.set(promptId, "");
+            return null;
+          }
+
+          cacheRef.current.set(promptId, data.audio);
+          return data.audio as string;
+        } catch {
           cacheRef.current.set(promptId, "");
           return null;
+        } finally {
+          fetchingRef.current.delete(promptId);
+          inflightFetchesRef.current.delete(promptId);
         }
-        const data = await res.json();
-        if (!data.audio) {
-          cacheRef.current.set(promptId, "");
-          return null;
-        }
+      })();
 
-        cacheRef.current.set(promptId, data.audio);
-        return data.audio;
-      } catch {
-        cacheRef.current.set(promptId, "");
-        return null;
-      }
+      inflightFetchesRef.current.set(promptId, request);
+      return request;
     },
     [code],
   );
+
+  // Pre-fetch audio for the active prompt only (server generates just-in-time per sub-phase)
+  useEffect(() => {
+    if (ttsMode !== "AI_VOICE" || !activePromptId) return;
+    if (cacheRef.current.has(activePromptId) || fetchingRef.current.has(activePromptId)) return;
+    void fetchAiVoice(activePromptId);
+  }, [ttsMode, activePromptId, fetchAiVoice]);
 
   const playPromptTts = useCallback(
     async (promptId: string) => {

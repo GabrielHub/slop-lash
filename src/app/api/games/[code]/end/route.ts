@@ -3,15 +3,20 @@ import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
 import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { endGameEarly } from "@/lib/game-logic";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { playerId } = await request.json();
+  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { playerId } = body;
 
-  if (!playerId) {
+  if (!playerId || typeof playerId !== "string") {
     return NextResponse.json(
       { error: "playerId is required" },
       { status: 400 }

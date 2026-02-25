@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { MAX_PLAYERS } from "@/lib/game-logic";
 import { MAX_SPECTATORS } from "@/lib/game-constants";
 import { sanitize } from "@/lib/sanitize";
+import { parseJsonBody } from "@/lib/http";
 
 /** A player is considered stale (reclaimable) after 30 seconds of inactivity. */
 const STALE_THRESHOLD_MS = 30_000;
@@ -13,7 +14,11 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { name, spectator } = await request.json();
+  const body = await parseJsonBody<{ name?: unknown; spectator?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { name, spectator } = body;
   const isSpectator = spectator === true;
 
   if (!name || typeof name !== "string") {

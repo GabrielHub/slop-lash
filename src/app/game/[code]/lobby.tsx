@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { GameState } from "@/lib/types";
 import { PlayerList } from "@/components/player-list";
@@ -39,9 +39,17 @@ export function Lobby({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const startPendingRef = useRef(false);
   const { triggerElement } = usePixelDissolve();
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
   const spectators = game.players.filter((p) => p.type === "SPECTATOR");
+
+  useEffect(() => {
+    if (game.status !== "LOBBY") {
+      startPendingRef.current = false;
+      setStarting(false);
+    }
+  }, [game.status]);
 
   const handleKick = useCallback(
     async (targetPlayerId: string) => {
@@ -70,9 +78,12 @@ export function Lobby({
   }, [game.roomCode]);
 
   async function startGame() {
+    if (startPendingRef.current) return;
     const playerId = localStorage.getItem("playerId");
+    startPendingRef.current = true;
     setStarting(true);
     setError("");
+    let keepPending = false;
     try {
       const res = await fetch(`/api/games/${code}/start`, {
         method: "POST",
@@ -83,13 +94,17 @@ export function Lobby({
       if (!res.ok) {
         setError(data.error || "Failed to start");
       } else {
+        keepPending = true;
         playSound("game-start");
         onRefresh();
       }
     } catch {
       setError("Something went wrong");
     } finally {
-      setStarting(false);
+      if (!keepPending) {
+        startPendingRef.current = false;
+        setStarting(false);
+      }
     }
   }
 
@@ -181,8 +196,9 @@ export function Lobby({
         {isHost ? (
           <motion.button
             onClick={(e) => {
+              if (starting) return;
               triggerElement(e.currentTarget);
-              startGame();
+              void startGame();
             }}
             disabled={starting || activePlayers.length < MIN_PLAYERS}
             className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${

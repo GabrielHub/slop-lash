@@ -3,15 +3,22 @@ import { prisma } from "@/lib/db";
 import { checkAllResponsesIn, startVoting, generateAiVotes, generateTtsForCurrentPrompt } from "@/lib/game-logic";
 import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { playerId, promptId, text } = await request.json();
+  const body = await parseJsonBody<{ playerId?: unknown; promptId?: unknown; text?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { playerId, promptId, text } = body;
+  const validPlayerId = typeof playerId === "string" ? playerId : null;
+  const validPromptId = typeof promptId === "string" ? promptId : null;
 
-  if (!playerId || !promptId || !text || typeof text !== "string") {
+  if (!validPlayerId || !validPromptId || !text || typeof text !== "string") {
     return NextResponse.json(
       { error: "playerId, promptId, and text are required" },
       { status: 400 }
@@ -43,7 +50,7 @@ export async function POST(
 
   // Verify player belongs to this game
   const player = await prisma.player.findFirst({
-    where: { id: playerId, gameId: game.id },
+    where: { id: validPlayerId, gameId: game.id },
   });
   if (!player) {
     return NextResponse.json(
@@ -61,7 +68,7 @@ export async function POST(
   }
 
   // Per-player rate limit
-  if (!checkRateLimit(`respond:${playerId}`, 20, 60_000)) {
+  if (!checkRateLimit(`respond:${validPlayerId}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
       { status: 429 }
@@ -70,7 +77,7 @@ export async function POST(
 
   // Validate player is assigned to this prompt
   const assignment = await prisma.promptAssignment.findUnique({
-    where: { promptId_playerId: { promptId, playerId } },
+    where: { promptId_playerId: { promptId: validPromptId, playerId: validPlayerId } },
   });
 
   if (!assignment) {
@@ -84,7 +91,7 @@ export async function POST(
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.response.findFirst({
-        where: { promptId, playerId },
+        where: { promptId: validPromptId, playerId: validPlayerId },
       });
 
       if (existing) {
@@ -92,7 +99,7 @@ export async function POST(
       }
 
       await tx.response.create({
-        data: { promptId, playerId, text: trimmed },
+        data: { promptId: validPromptId, playerId: validPlayerId, text: trimmed },
       });
     });
   } catch (e) {

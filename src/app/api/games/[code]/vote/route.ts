@@ -2,15 +2,24 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { getVotablePrompts, checkAllVotesForCurrentPrompt, revealCurrentPrompt } from "@/lib/game-logic";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { voterId, promptId, responseId } = await request.json();
+  const body = await parseJsonBody<{ voterId?: unknown; promptId?: unknown; responseId?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { voterId, promptId, responseId } = body;
+  const validVoterId = typeof voterId === "string" ? voterId : null;
+  const validPromptId = typeof promptId === "string" ? promptId : null;
+  const validResponseId =
+    responseId == null ? null : typeof responseId === "string" ? responseId : undefined;
 
-  if (!voterId || !promptId) {
+  if (!validVoterId || !validPromptId || validResponseId === undefined) {
     return NextResponse.json(
       { error: "voterId and promptId are required" },
       { status: 400 }
@@ -44,7 +53,7 @@ export async function POST(
   const votablePrompts = await getVotablePrompts(game.id);
   const currentPrompt = votablePrompts[game.votingPromptIndex];
 
-  if (!currentPrompt || currentPrompt.id !== promptId) {
+  if (!currentPrompt || currentPrompt.id !== validPromptId) {
     return NextResponse.json(
       { error: "Not the current prompt" },
       { status: 400 }
@@ -53,7 +62,7 @@ export async function POST(
 
   // Verify voter belongs to this game
   const voter = await prisma.player.findFirst({
-    where: { id: voterId, gameId: game.id },
+    where: { id: validVoterId, gameId: game.id },
   });
   if (!voter) {
     return NextResponse.json(
@@ -63,7 +72,7 @@ export async function POST(
   }
 
   // Per-player rate limit
-  if (!checkRateLimit(`vote:${voterId}`, 20, 60_000)) {
+  if (!checkRateLimit(`vote:${validVoterId}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
       { status: 429 }
@@ -71,9 +80,9 @@ export async function POST(
   }
 
   // Verify response belongs to this prompt (skip for abstain votes)
-  if (responseId) {
+  if (validResponseId) {
     const response = await prisma.response.findFirst({
-      where: { id: responseId, promptId },
+      where: { id: validResponseId, promptId: validPromptId },
     });
     if (!response) {
       return NextResponse.json(
@@ -87,21 +96,21 @@ export async function POST(
   try {
     await prisma.$transaction(async (tx) => {
       const voterResponse = await tx.response.findFirst({
-        where: { promptId, playerId: voterId },
+        where: { promptId: validPromptId, playerId: validVoterId },
       });
       if (voterResponse) {
         throw new Error("RESPONDENT");
       }
 
       const existingVote = await tx.vote.findFirst({
-        where: { promptId, voterId },
+        where: { promptId: validPromptId, voterId: validVoterId },
       });
       if (existingVote) {
         throw new Error("ALREADY_VOTED");
       }
 
       await tx.vote.create({
-        data: { promptId, voterId, responseId },
+        data: { promptId: validPromptId, voterId: validVoterId, responseId: validResponseId },
       });
     });
   } catch (e) {

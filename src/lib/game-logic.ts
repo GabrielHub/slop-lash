@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
 import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage, type RoundHistoryEntry } from "./ai";
-import { generateSpeechAudio } from "./tts";
+import { generateSpeechAudioForPrompt } from "./tts";
 import { scorePrompt, applyScoreResult, type PlayerState } from "./scoring";
 import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
@@ -834,7 +834,7 @@ export async function generateTtsForCurrentPrompt(gameId: string): Promise<void>
   if (prompt.ttsAudio) return;
 
   const [a, b] = [...prompt.responses].sort((x, y) => x.id.localeCompare(y.id));
-  const audio = await generateSpeechAudio(prompt.text, a.text, b.text, game.ttsVoice);
+  const audio = await generateSpeechAudioForPrompt(prompt.id, prompt.text, a.text, b.text, game.ttsVoice);
   if (audio) {
     await prisma.prompt.updateMany({
       where: { id: prompt.id, ttsAudio: null },

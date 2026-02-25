@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { playerId, targetPlayerId } = await request.json();
+  const body = await parseJsonBody<{ playerId?: unknown; targetPlayerId?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { playerId, targetPlayerId } = body;
 
-  if (!playerId || !targetPlayerId) {
+  if (!playerId || typeof playerId !== "string" || !targetPlayerId || typeof targetPlayerId !== "string") {
     return NextResponse.json(
       { error: "playerId and targetPlayerId are required" },
       { status: 400 }

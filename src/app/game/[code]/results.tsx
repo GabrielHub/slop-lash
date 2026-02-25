@@ -157,9 +157,17 @@ export function Results({
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
   const { tagline, isStreaming, winner: taglineWinner } = useWinnerTagline(code, isFinal, game.players);
+  const advancePendingRef = useRef(false);
 
   const confettiFired = useRef(false);
   const sloppedFired = useRef(false);
+
+  useEffect(() => {
+    if (game.status !== "ROUND_RESULTS") {
+      advancePendingRef.current = false;
+      setAdvancing(false);
+    }
+  }, [game.status]);
 
   useEffect(() => {
     if (!isFinal || confettiFired.current) return;
@@ -239,9 +247,12 @@ export function Results({
   const achievements = isFinal ? computeAchievements(game) : [];
 
   async function nextRound() {
+    if (advancePendingRef.current) return;
+    advancePendingRef.current = true;
     playSound("round-transition");
     setAdvancing(true);
     setError("");
+    let keepPending = false;
     try {
       const res = await fetch(`/api/games/${code}/next`, {
         method: "POST",
@@ -251,11 +262,17 @@ export function Results({
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || "Failed to advance");
+        advancePendingRef.current = false;
+      } else {
+        keepPending = true;
       }
     } catch {
       setError("Something went wrong");
+      advancePendingRef.current = false;
     } finally {
-      setAdvancing(false);
+      if (!keepPending) {
+        setAdvancing(false);
+      }
     }
   }
 
@@ -514,8 +531,9 @@ export function Results({
             {isHost ? (
               <motion.button
                 onClick={(e) => {
+                  if (advancing) return;
                   triggerElement(e.currentTarget);
-                  nextRound();
+                  void nextRound();
                 }}
                 disabled={advancing}
                 className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"

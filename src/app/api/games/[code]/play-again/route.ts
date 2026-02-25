@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode } from "@/lib/game-logic";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { playerId } = await request.json();
+  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { playerId } = body;
 
-  if (!playerId) {
+  if (!playerId || typeof playerId !== "string") {
     return NextResponse.json(
       { error: "playerId is required" },
       { status: 400 }

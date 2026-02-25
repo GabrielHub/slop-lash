@@ -4,13 +4,25 @@ import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
 import { AI_MODELS } from "@/lib/models";
 import { sanitize } from "@/lib/sanitize";
+import { parseJsonBody } from "@/lib/http";
 import type { TtsMode } from "@/lib/types";
 import { VOICE_NAMES } from "@/lib/voices";
 
 const VALID_TTS_MODES: TtsMode[] = ["OFF", "AI_VOICE", "BROWSER_VOICE"];
 
 export async function POST(request: Request) {
-  const { hostName, aiModelIds, hostSecret, timersDisabled, ttsMode, ttsVoice } = await request.json();
+  const body = await parseJsonBody<{
+    hostName?: unknown;
+    aiModelIds?: unknown;
+    hostSecret?: unknown;
+    timersDisabled?: unknown;
+    ttsMode?: unknown;
+    ttsVoice?: unknown;
+  }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { hostName, aiModelIds, hostSecret, timersDisabled, ttsMode, ttsVoice } = body;
 
   const secret = process.env.HOST_SECRET;
   if (!secret || hostSecret !== secret) {
@@ -55,8 +67,14 @@ export async function POST(request: Request) {
     data: {
       roomCode,
       timersDisabled: timersDisabled === true,
-      ttsMode: VALID_TTS_MODES.includes(ttsMode) ? ttsMode : "OFF",
-      ttsVoice: ttsVoice === "RANDOM" || VOICE_NAMES.includes(ttsVoice) ? ttsVoice : "RANDOM",
+      ttsMode:
+        typeof ttsMode === "string" && VALID_TTS_MODES.includes(ttsMode as TtsMode)
+          ? (ttsMode as TtsMode)
+          : "OFF",
+      ttsVoice:
+        typeof ttsVoice === "string" && (ttsVoice === "RANDOM" || VOICE_NAMES.includes(ttsVoice))
+          ? ttsVoice
+          : "RANDOM",
       players: {
         create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
       },
@@ -71,7 +89,8 @@ export async function POST(request: Request) {
 
   if (Array.isArray(aiModelIds)) {
     const aiPlayers = aiModelIds
-      .map((id: string) => AI_MODELS.find((m) => m.id === id))
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => AI_MODELS.find((m) => m.id === id))
       .filter((m) => m !== undefined)
       .slice(0, MAX_PLAYERS - 1)
       .map((model) => ({

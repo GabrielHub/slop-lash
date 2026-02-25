@@ -24,6 +24,10 @@ export function prepareTtsText(text: string): string {
   return text.replace(/_+/g, "...");
 }
 
+// Best-effort per-process dedupe for concurrent requests generating the same prompt audio.
+// This prevents duplicate Gemini TTS calls when background generation and /speech requests race.
+const inFlightPromptTts = new Map<string, Promise<Buffer | null>>();
+
 /**
  * System instruction for the TTS model — voice direction following
  * Google's recommended structure (audio profile, scene, director's notes).
@@ -183,4 +187,24 @@ export async function generateSpeechAudio(
   }
 
   return null;
+}
+
+export function generateSpeechAudioForPrompt(
+  promptId: string,
+  prompt: string,
+  responseA: string,
+  responseB: string,
+  voice: string = "RANDOM",
+): Promise<Buffer | null> {
+  const existing = inFlightPromptTts.get(promptId);
+  if (existing) return existing;
+
+  const promise = generateSpeechAudio(prompt, responseA, responseB, voice).finally(() => {
+    if (inFlightPromptTts.get(promptId) === promise) {
+      inFlightPromptTts.delete(promptId);
+    }
+  });
+
+  inFlightPromptTts.set(promptId, promise);
+  return promise;
 }

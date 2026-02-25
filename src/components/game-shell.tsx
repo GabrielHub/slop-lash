@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore, startTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
@@ -39,9 +39,11 @@ function useGamePoller(code: string, playerId: string | null) {
     let cancelled = false;
     versionRef.current = null;
     statusRef.current = null;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     async function poll() {
       while (!cancelled) {
+        let delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
         try {
           const params = new URLSearchParams();
           if (playerId) params.set("playerId", playerId);
@@ -55,8 +57,12 @@ function useGamePoller(code: string, playerId: string | null) {
           const res = await fetch(url, { headers, cache: "no-store" });
           if (cancelled) continue;
 
-          // 304 Not Modified -- nothing changed, poll again
-          if (res.status === 304) continue;
+          // 304 Not Modified -- keep current cadence, but still wait before polling again
+          if (res.status === 304) {
+            delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
+            await sleep(delay);
+            continue;
+          }
 
           if (!res.ok) {
             if (res.status === 404) {
@@ -64,20 +70,25 @@ function useGamePoller(code: string, playerId: string | null) {
               return; // Stop polling on 404 only
             }
             // Retry on transient errors (500, etc.)
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            delay = 2000;
+            await sleep(delay);
             continue;
           }
 
           const data = await res.json();
-          setGameState(data);
+          startTransition(() => {
+            setGameState(data);
+          });
           versionRef.current = data.version ?? null;
           statusRef.current = data.status ?? null;
         } catch {
-          // Silently retry on network errors
+          // Silently retry on network errors, but avoid a tight retry loop.
+          await sleep(2000);
+          continue;
         }
         // Poll faster during active input phases for snappier feel
-        const delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
+        await sleep(delay);
       }
     }
 
@@ -87,7 +98,7 @@ function useGamePoller(code: string, playerId: string | null) {
     };
   }, [code, playerId, refreshKey]);
 
-  const refresh = () => setRefreshKey((k) => k + 1);
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   return { gameState, error, refresh };
 }

@@ -1,13 +1,28 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { startRound, generateAiResponses, MIN_PLAYERS } from "@/lib/game-logic";
+import { parseJsonBody } from "@/lib/http";
+
+function isPrismaCode(e: unknown, code: string): boolean {
+  return e != null && typeof e === "object" && "code" in e && (e as Record<string, unknown>).code === code;
+}
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { playerId } = await request.json();
+  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { playerId } = body;
+  if (!playerId || typeof playerId !== "string") {
+    return NextResponse.json(
+      { error: "playerId is required" },
+      { status: 400 }
+    );
+  }
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
@@ -25,7 +40,7 @@ export async function POST(
     );
   }
 
-  if (!playerId || playerId !== game.hostPlayerId) {
+  if (playerId !== game.hostPlayerId) {
     return NextResponse.json(
       { error: "Only the host can start the game" },
       { status: 403 }
@@ -41,10 +56,20 @@ export async function POST(
   }
 
   // Create round and set WRITING (fast DB work)
-  await startRound(game.id, 1);
+  let startedRound = false;
+  try {
+    await startRound(game.id, 1);
+    startedRound = true;
+  } catch (e) {
+    // Duplicate start clicks can race and lose on unique(roundNumber) creation.
+    // Treat the loser as success; pollers will observe the state change.
+    if (!isPrismaCode(e, "P2002")) throw e;
+  }
 
   // Generate AI responses in background (slow AI work)
-  after(() => generateAiResponses(game.id));
+  if (startedRound) {
+    after(() => generateAiResponses(game.id));
+  }
 
   return NextResponse.json({ success: true });
 }

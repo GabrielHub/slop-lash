@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateSpeechAudio } from "@/lib/tts";
+import { generateSpeechAudioForPrompt } from "@/lib/tts";
+import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> },
 ) {
   const { code } = await params;
-  const { promptId } = await request.json();
+  const body = await parseJsonBody<{ promptId?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { promptId } = body;
 
-  if (!promptId) {
+  if (!promptId || typeof promptId !== "string") {
     return NextResponse.json(
       { error: "promptId is required" },
       { status: 400 },
@@ -67,7 +72,7 @@ export async function POST(
   }
 
   const [respA, respB] = prompt.responses;
-  const audio = await generateSpeechAudio(prompt.text, respA.text, respB.text, game.ttsVoice);
+  const audio = await generateSpeechAudioForPrompt(promptId, prompt.text, respA.text, respB.text, game.ttsVoice);
 
   if (!audio) {
     return NextResponse.json(

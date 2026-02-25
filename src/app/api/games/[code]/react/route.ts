@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isValidReactionEmoji } from "@/lib/reactions";
+import { parseJsonBody } from "@/lib/http";
 
 function isPrismaCode(e: unknown, code: string): boolean {
   return e != null && typeof e === "object" && "code" in e && (e as Record<string, unknown>).code === code;
@@ -12,9 +13,15 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const { playerId, responseId, emoji } = await request.json();
+  const body = await parseJsonBody<{ playerId?: unknown; responseId?: unknown; emoji?: unknown }>(request);
+  if (!body) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { playerId, responseId, emoji } = body;
+  const validPlayerId = typeof playerId === "string" ? playerId : null;
+  const validResponseId = typeof responseId === "string" ? responseId : null;
 
-  if (!playerId || !responseId || !emoji) {
+  if (!validPlayerId || !validResponseId || !emoji || typeof emoji !== "string") {
     return NextResponse.json(
       { error: "playerId, responseId, and emoji are required" },
       { status: 400 }
@@ -26,7 +33,7 @@ export async function POST(
   }
 
   // Per-player rate limit (check early to avoid unnecessary DB work)
-  if (!checkRateLimit(`react:${playerId}`, 30, 60_000)) {
+  if (!checkRateLimit(`react:${validPlayerId}`, 30, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
       { status: 429 }
@@ -50,10 +57,10 @@ export async function POST(
 
   // Verify player and response belong to this game's current round (parallel)
   const [player, response] = await Promise.all([
-    prisma.player.findFirst({ where: { id: playerId, gameId: game.id } }),
+    prisma.player.findFirst({ where: { id: validPlayerId, gameId: game.id } }),
     prisma.response.findFirst({
       where: {
-        id: responseId,
+        id: validResponseId,
         prompt: { round: { gameId: game.id, roundNumber: game.currentRound } },
       },
     }),
@@ -68,7 +75,7 @@ export async function POST(
 
   // Toggle: delete if exists, create if not
   const existing = await prisma.reaction.findUnique({
-    where: { responseId_playerId_emoji: { responseId, playerId, emoji } },
+    where: { responseId_playerId_emoji: { responseId: validResponseId, playerId: validPlayerId, emoji } },
   });
 
   if (existing) {
@@ -80,7 +87,7 @@ export async function POST(
     }
   } else {
     try {
-      await prisma.reaction.create({ data: { responseId, playerId, emoji } });
+      await prisma.reaction.create({ data: { responseId: validResponseId, playerId: validPlayerId, emoji } });
     } catch (e) {
       // P2002: unique constraint race — treat as already exists (no-op)
       if (!isPrismaCode(e, "P2002")) throw e;
