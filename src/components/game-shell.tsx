@@ -59,7 +59,6 @@ function useGamePoller(code: string, playerId: string | null) {
 
           // 304 Not Modified -- keep current cadence, but still wait before polling again
           if (res.status === 304) {
-            delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
             await sleep(delay);
             continue;
           }
@@ -146,9 +145,8 @@ export function GameShell({ code }: { code: string }) {
 
   // Preload sounds on first user interaction
   useEffect(() => {
-    const handler = () => preloadSounds();
-    window.addEventListener("pointerdown", handler, { once: true });
-    return () => window.removeEventListener("pointerdown", handler);
+    window.addEventListener("pointerdown", preloadSounds, { once: true });
+    return () => window.removeEventListener("pointerdown", preloadSounds);
   }, []);
 
   // Play phase-transition sound when game status changes
@@ -176,7 +174,7 @@ export function GameShell({ code }: { code: string }) {
     }
     const idx = gameState.votingPromptIndex;
     if (prevVotingIndex.current != null && idx !== prevVotingIndex.current) {
-      playSound("phase-transition");
+      playSound("prompt-advance");
     }
     prevVotingIndex.current = idx;
   }, [gameState?.status, gameState?.votingPromptIndex]);

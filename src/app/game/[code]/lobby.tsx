@@ -51,6 +51,19 @@ export function Lobby({
     }
   }, [game.status]);
 
+  // Track player joins/leaves for SFX
+  const prevPlayerIds = useRef(new Set(game.players.map((p) => p.id)));
+  useEffect(() => {
+    const currentIds = new Set(game.players.map((p) => p.id));
+    const prev = prevPlayerIds.current;
+    const hasJoin = game.players.some((p) => !prev.has(p.id));
+    const hasLeave = [...prev].some((id) => !currentIds.has(id));
+    prevPlayerIds.current = currentIds;
+
+    if (hasJoin) playSound("player-join");
+    else if (hasLeave) playSound("player-leave");
+  }, [game.players]);
+
   const handleKick = useCallback(
     async (targetPlayerId: string) => {
       const playerId = localStorage.getItem("playerId");

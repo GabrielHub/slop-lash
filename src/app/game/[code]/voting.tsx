@@ -37,17 +37,20 @@ function getVotingSkipText(skipping: boolean, revealing: boolean, timersDisabled
   return "Skip Timer";
 }
 
+const TTS_BARS = [
+  { height: "h-3", delay: "" },
+  { height: "h-4", delay: "[animation-delay:150ms]" },
+  { height: "h-2.5", delay: "[animation-delay:300ms]" },
+] as const;
+
+const TTS_BARS_REVERSED = [...TTS_BARS].reverse();
+
 /** Animated equalizer bars shown next to a prompt while TTS is playing. */
 function TtsIndicator({ mirror = false }: { mirror?: boolean }) {
-  const bars = [
-    { height: "h-3", delay: "" },
-    { height: "h-4", delay: "[animation-delay:150ms]" },
-    { height: "h-2.5", delay: "[animation-delay:300ms]" },
-  ];
-  const ordered = mirror ? [...bars].reverse() : bars;
+  const bars = mirror ? TTS_BARS_REVERSED : TTS_BARS;
   return (
     <span className="inline-flex items-center gap-0.5 shrink-0">
-      {ordered.map((bar, i) => (
+      {bars.map((bar, i) => (
         <span
           key={i}
           className={`w-0.5 ${bar.height} bg-gold rounded-full animate-pulse ${bar.delay}`}
@@ -199,6 +202,15 @@ export function Voting({
     activePromptId: currentPrompt?.id,
   });
 
+  // Play vote-reveal sound when reveal phase starts
+  const prevRevealing = useRef(false);
+  useEffect(() => {
+    if (isRevealing && !prevRevealing.current) {
+      playSound("vote-reveal");
+    }
+    prevRevealing.current = isRevealing;
+  }, [isRevealing]);
+
   const prevIndexRef = useRef<number | null>(null);
   useEffect(() => {
     if (isRevealing) return;
@@ -208,8 +220,7 @@ export function Voting({
     if (currentPrompt && game.ttsMode !== "OFF") {
       playPromptTts(currentPrompt.id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.votingPromptIndex, isRevealing]);
+  }, [game.votingPromptIndex, isRevealing, currentPrompt, game.ttsMode, playPromptTts]);
 
   async function castVote(promptId: string, responseId: string | null) {
     if (!playerId) return;
@@ -446,7 +457,7 @@ export function Voting({
             </div>
             {currentPrompt && (
               <div
-              className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
+                className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
                 <VotingPromptStatusPanel
@@ -731,6 +742,21 @@ function VoteView({
   );
 }
 
+const PASSIVE_STATUS_STYLES = {
+  gold: {
+    chip: "border-gold/40 bg-gold/12 text-gold",
+    dot: "bg-gold",
+  },
+  teal: {
+    chip: "border-teal/45 bg-teal/12 text-teal",
+    dot: "bg-teal",
+  },
+  dim: {
+    chip: "border-edge-strong/60 bg-raised/70 text-ui-soft",
+    dot: "bg-edge-strong",
+  },
+} as const;
+
 /** Passive state -- respondent or already-voted. Shows responses with interactive reaction bars. */
 function PassiveView({
   sublabel,
@@ -747,21 +773,7 @@ function PassiveView({
   code: string;
   playerNames: Map<string, string>;
 }) {
-  const styles = {
-    gold: {
-      chip: "border-gold/40 bg-gold/12 text-gold",
-      dot: "bg-gold",
-    },
-    teal: {
-      chip: "border-teal/45 bg-teal/12 text-teal",
-      dot: "bg-teal",
-    },
-    dim: {
-      chip: "border-edge-strong/60 bg-raised/70 text-ui-soft",
-      dot: "bg-edge-strong",
-    },
-  };
-  const status = styles[color];
+  const status = PASSIVE_STATUS_STYLES[color];
 
   return (
     <div className="space-y-4 lg:space-y-5">
@@ -1157,9 +1169,14 @@ function RevealView({
 
     playSound("winner-reveal");
 
-    if (isSlopped) {
-      setTimeout(() => {
-        import("canvas-confetti").then(({ default: confetti }) => {
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    timers.push(setTimeout(() => {
+      if (cancelled) return;
+      import("canvas-confetti").then(({ default: confetti }) => {
+        if (cancelled) return;
+        if (isSlopped) {
           confetti({
             particleCount: 40,
             angle: 60,
@@ -1176,11 +1193,7 @@ function RevealView({
             colors: ["#FF5647", "#FF8A80", "#FF6E62"],
             startVelocity: 30,
           });
-        });
-      }, 800);
-    } else {
-      setTimeout(() => {
-        import("canvas-confetti").then(({ default: confetti }) => {
+        } else {
           confetti({
             particleCount: 60,
             spread: 80,
@@ -1188,7 +1201,8 @@ function RevealView({
             colors: ["#2DD4B8", "#FFD644", "#5DDFC8"],
             startVelocity: 28,
           });
-          setTimeout(() => {
+          timers.push(setTimeout(() => {
+            if (cancelled) return;
             confetti({
               particleCount: 30,
               spread: 50,
@@ -1196,10 +1210,15 @@ function RevealView({
               colors: ["#2DD4B8", "#FFD644"],
               startVelocity: 20,
             });
-          }, 300);
-        });
-      }, 800);
-    }
+          }, 300));
+        }
+      });
+    }, 800));
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
   }, [isUnanimous, isSlopped]);
 
   if (!respA || !respB) return null;
@@ -1434,41 +1453,41 @@ function VotingScoreboard({
           Scores
         </span>
         {sorted.map(({ player, score, delta }) => (
-            <motion.div
-              key={player.id}
-              className="flex items-center gap-1.5"
-              layout
-            >
-              <PlayerAvatar name={player.name} modelId={player.modelId} size={16} />
-              <span className="text-xs font-medium text-ink truncate max-w-[5rem]">
-                {player.name}
-              </span>
-              <div className="flex items-center gap-1">
-                {delta !== 0 && (
-                  <motion.span
-                    key={delta}
-                    className={`text-[10px] font-mono font-bold tabular-nums ${
-                      delta > 0 ? "text-teal/70" : "text-punch/70"
-                    }`}
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={springBouncy}
-                  >
-                    {formatSigned(delta)}
-                  </motion.span>
-                )}
+          <motion.div
+            key={player.id}
+            className="flex items-center gap-1.5"
+            layout
+          >
+            <PlayerAvatar name={player.name} modelId={player.modelId} size={16} />
+            <span className="text-xs font-medium text-ink truncate max-w-[5rem]">
+              {player.name}
+            </span>
+            <div className="flex items-center gap-1">
+              {delta !== 0 && (
                 <motion.span
-                  key={score}
-                  className="font-mono font-bold text-gold text-xs tabular-nums"
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                  key={delta}
+                  className={`text-[10px] font-mono font-bold tabular-nums ${
+                    delta > 0 ? "text-teal/70" : "text-punch/70"
+                  }`}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={springBouncy}
                 >
-                  {score.toLocaleString()}
+                  {formatSigned(delta)}
                 </motion.span>
-              </div>
-            </motion.div>
-          ))}
+              )}
+              <motion.span
+                key={score}
+                className="font-mono font-bold text-gold text-xs tabular-nums"
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={springBouncy}
+              >
+                {score.toLocaleString()}
+              </motion.span>
+            </div>
+          </motion.div>
+        ))}
       </div>
     );
   }
@@ -1480,55 +1499,55 @@ function VotingScoreboard({
       </h3>
       <div className="space-y-2">
         {sorted.map(({ player, score, delta }, i) => (
-            <motion.div
-              key={player.id}
-              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg bg-surface/70 backdrop-blur-sm border border-edge/90"
-              layout
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ ...springDefault, delay: i * 0.04 }}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className={`w-4 shrink-0 text-center font-mono text-[11px] ${
-                  i === 0 ? "text-gold" : "text-ui-faint"
-                }`}>
-                  {i + 1}
-                </span>
-                <PlayerAvatar name={player.name} modelId={player.modelId} size={18} />
-                <span className={`text-sm font-medium truncate ${
-                  i === 0 ? "text-ink" : "text-ui-soft"
-                }`}>
-                  {player.name}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {delta !== 0 && (
-                  <motion.span
-                    key={delta}
-                    className={`text-[11px] font-mono font-bold tabular-nums ${
-                      delta > 0 ? "text-teal/70" : "text-punch/70"
-                    }`}
-                    initial={{ opacity: 0, y: -6, scale: 0.5 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={springBouncy}
-                  >
-                    {formatSigned(delta)}
-                  </motion.span>
-                )}
+          <motion.div
+            key={player.id}
+            className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg bg-surface/70 backdrop-blur-sm border border-edge/90"
+            layout
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...springDefault, delay: i * 0.04 }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`w-4 shrink-0 text-center font-mono text-[11px] ${
+                i === 0 ? "text-gold" : "text-ui-faint"
+              }`}>
+                {i + 1}
+              </span>
+              <PlayerAvatar name={player.name} modelId={player.modelId} size={18} />
+              <span className={`text-sm font-medium truncate ${
+                i === 0 ? "text-ink" : "text-ui-soft"
+              }`}>
+                {player.name}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {delta !== 0 && (
                 <motion.span
-                  key={score}
-                  className={`font-mono font-bold text-sm tabular-nums ${
-                    i === 0 ? "text-gold" : "text-ink"
+                  key={delta}
+                  className={`text-[11px] font-mono font-bold tabular-nums ${
+                    delta > 0 ? "text-teal/70" : "text-punch/70"
                   }`}
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                  initial={{ opacity: 0, y: -6, scale: 0.5 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={springBouncy}
                 >
-                  {score.toLocaleString()}
+                  {formatSigned(delta)}
                 </motion.span>
-              </div>
-            </motion.div>
-          ))}
+              )}
+              <motion.span
+                key={score}
+                className={`font-mono font-bold text-sm tabular-nums ${
+                  i === 0 ? "text-gold" : "text-ink"
+                }`}
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={springBouncy}
+              >
+                {score.toLocaleString()}
+              </motion.span>
+            </div>
+          </motion.div>
+        ))}
       </div>
     </div>
   );

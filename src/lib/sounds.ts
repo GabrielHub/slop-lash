@@ -1,26 +1,88 @@
 const SOUND_MAP = {
-  "game-start": "/sfx/Short_2-second_game___2-1771908035837.mp3",
-  "phase-transition": "/sfx/Quick_0.5-second_who__1-1771908063128.mp3",
-  "submitted": "/sfx/Short_0.3-second_suc__1-1771908098119.mp3",
-  "vote-cast": "/sfx/Punchy_0.2-second_ta__3-1771908125774.mp3",
-  "winner-reveal": "/sfx/1.5-second_triumphan__3-1771908176203.mp3",
-  "celebration": "/sfx/big_celebration_fanf__2-1771908214520.mp3",
-  "round-transition": "/sfx/1-second_short_music__4-1771908237860.mp3",
+  "game-start": "/sfx/game-start.mp3",
+  "phase-transition": "/sfx/phase-transition.mp3",
+  "submitted": "/sfx/submitted.mp3",
+  "vote-cast": "/sfx/vote-cast.mp3",
+  "winner-reveal": "/sfx/winner-reveal.mp3",
+  "celebration": "/sfx/celebration.mp3",
+  "round-transition": "/sfx/round-transition.mp3",
+  "stamp-slam": "/sfx/stamp-slam.mp3",
+  "vote-reveal": "/sfx/vote-reveal.mp3",
+  "timer-warning": "/sfx/timer-warning.mp3",
+  "prompt-advance": "/sfx/prompt-advance.mp3",
+  "game-over": "/sfx/game-over.mp3",
+  "player-join": "/sfx/player-join.mp3",
+  "player-leave": "/sfx/player-leave.mp3",
 } as const;
 
 export type SoundName = keyof typeof SOUND_MAP;
+export const SOUND_NAMES = Object.keys(SOUND_MAP) as SoundName[];
+
+/** Fade-in duration in seconds to soften aggressive starts. */
+const DEFAULT_FADE_IN_S = 0.02;
+/** Fade-out duration in seconds to reduce abrupt tails. */
+const DEFAULT_FADE_OUT_S = 0.02;
 
 // --- Web Audio API state ---
 let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
+let compressor: DynamicsCompressorNode | null = null;
 const bufferCache = new Map<SoundName, AudioBuffer>();
+const inflightBufferLoads = new Map<SoundName, Promise<AudioBuffer>>();
+const lastPlayAtMs = new Map<SoundName, number>();
+let resumePromise: Promise<void> | null = null;
+
+const SOUND_COOLDOWN_MS: Partial<Record<SoundName, number>> = {
+  "vote-cast": 60,
+  "prompt-advance": 120,
+  "player-join": 200,
+  "player-leave": 200,
+  "submitted": 80,
+};
+
+// Per-sound trim multipliers (linear gain) to normalize AI-generated SFX.
+// 1.0 = unchanged, <1.0 quieter, >1.0 louder.
+const DEFAULT_SOUND_GAIN_MULTIPLIER: Partial<Record<SoundName, number>> = {
+  "celebration": 0.75,
+  "game-over": 0.8,
+  "winner-reveal": 0.85,
+  "phase-transition": 0.9,
+  "round-transition": 0.9,
+  "stamp-slam": 0.8,
+  "vote-reveal": 0.9,
+  "player-join": 0.85,
+  "player-leave": 0.85,
+};
+
+type SoundTuningStorage = {
+  fadeInS?: number;
+  fadeOutS?: number;
+  gains?: Partial<Record<SoundName, number>>;
+};
+
+const SOUND_TUNING_STORAGE_KEY = "soundsTuningV1";
+let fadeInS = DEFAULT_FADE_IN_S;
+let fadeOutS = DEFAULT_FADE_OUT_S;
+let soundGainMultiplier: Partial<Record<SoundName, number>> = { ...DEFAULT_SOUND_GAIN_MULTIPLIER };
 
 /** Returns the shared AudioContext + master GainNode (creates lazily). */
 export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
   if (!audioContext) {
     audioContext = new AudioContext();
+
+    // Compressor for volume normalization across all sounds
+    compressor = audioContext.createDynamicsCompressor();
+    compressor.threshold.value = -24;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 12;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+
     masterGain = audioContext.createGain();
     masterGain.gain.value = muted ? 0 : volume;
+
+    // Chain: ... → compressor → masterGain → destination
+    compressor.connect(masterGain);
     masterGain.connect(audioContext.destination);
   }
   if (audioContext.state === "suspended") {
@@ -30,10 +92,11 @@ export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
 }
 
 // --- Volume & mute state ---
-let volume =
-  typeof window !== "undefined"
-    ? parseFloat(localStorage.getItem("soundsVolume") ?? "0.5")
-    : 0.5;
+let volume = (() => {
+  if (typeof window === "undefined") return 0.5;
+  const parsed = parseFloat(localStorage.getItem("soundsVolume") ?? "");
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : 0.5;
+})();
 
 let muted =
   typeof window !== "undefined"
@@ -41,13 +104,54 @@ let muted =
     : false;
 
 const audioListeners = new Set<() => void>();
+let audioStateVersion = 0;
 
 /** Sync the master gain node and notify subscribers. */
 function syncGainAndNotify(): void {
+  audioStateVersion += 1;
   if (masterGain) {
     masterGain.gain.value = muted ? 0 : volume;
   }
   audioListeners.forEach((cb) => cb());
+}
+
+function persistSoundTuning(): void {
+  if (typeof window === "undefined") return;
+  const payload: SoundTuningStorage = {
+    fadeInS,
+    fadeOutS,
+    gains: soundGainMultiplier,
+  };
+  localStorage.setItem(SOUND_TUNING_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function loadSoundTuningFromStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(SOUND_TUNING_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as SoundTuningStorage;
+    if (typeof parsed.fadeInS === "number" && Number.isFinite(parsed.fadeInS)) {
+      fadeInS = Math.max(0, Math.min(0.5, parsed.fadeInS));
+    }
+    if (typeof parsed.fadeOutS === "number" && Number.isFinite(parsed.fadeOutS)) {
+      fadeOutS = Math.max(0, Math.min(0.5, parsed.fadeOutS));
+    }
+    if (parsed.gains && typeof parsed.gains === "object") {
+      for (const name of SOUND_NAMES) {
+        const value = parsed.gains[name];
+        if (typeof value === "number" && Number.isFinite(value)) {
+          soundGainMultiplier[name] = Math.max(0, Math.min(3, value));
+        }
+      }
+    }
+  } catch {
+    // Ignore malformed tuning storage
+  }
+}
+
+if (typeof window !== "undefined") {
+  loadSoundTuningFromStorage();
 }
 
 export function getVolume(): number {
@@ -100,6 +204,55 @@ export function subscribeAudio(cb: () => void): () => void {
   };
 }
 
+export function getAudioStateVersion(): number {
+  return audioStateVersion;
+}
+
+export function getFadeInSeconds(): number {
+  return fadeInS;
+}
+
+export function setFadeInSeconds(value: number): void {
+  fadeInS = Math.max(0, Math.min(0.5, value));
+  persistSoundTuning();
+  syncGainAndNotify();
+}
+
+export function getFadeOutSeconds(): number {
+  return fadeOutS;
+}
+
+export function setFadeOutSeconds(value: number): void {
+  fadeOutS = Math.max(0, Math.min(0.5, value));
+  persistSoundTuning();
+  syncGainAndNotify();
+}
+
+export function getSoundGainMultiplier(name: SoundName): number {
+  return soundGainMultiplier[name] ?? 1;
+}
+
+export function getDefaultSoundGainMultiplier(name: SoundName): number {
+  return DEFAULT_SOUND_GAIN_MULTIPLIER[name] ?? 1;
+}
+
+export function setSoundGainMultiplier(name: SoundName, value: number): void {
+  const next = Math.max(0, Math.min(3, value));
+  soundGainMultiplier = { ...soundGainMultiplier, [name]: next };
+  persistSoundTuning();
+  syncGainAndNotify();
+}
+
+export function resetSoundTuning(): void {
+  fadeInS = DEFAULT_FADE_IN_S;
+  fadeOutS = DEFAULT_FADE_OUT_S;
+  soundGainMultiplier = { ...DEFAULT_SOUND_GAIN_MULTIPLIER };
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(SOUND_TUNING_STORAGE_KEY);
+  }
+  syncGainAndNotify();
+}
+
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -111,44 +264,128 @@ export function preloadSounds(): void {
   if (preloaded || typeof window === "undefined") return;
   preloaded = true;
 
-  const { ctx } = getAudioContext();
+  getAudioContext();
 
-  for (const [name, path] of Object.entries(SOUND_MAP)) {
-    fetch(path)
-      .then((res) => res.arrayBuffer())
-      .then((buf) => ctx.decodeAudioData(buf))
-      .then((audioBuffer) => {
-        bufferCache.set(name as SoundName, audioBuffer);
-      })
-      .catch(() => {});
+  for (const name of Object.keys(SOUND_MAP) as SoundName[]) {
+    void loadSoundBuffer(name).catch(() => {});
   }
+}
+
+function shouldThrottleSound(name: SoundName): boolean {
+  const cooldownMs = SOUND_COOLDOWN_MS[name];
+  if (!cooldownMs) return false;
+
+  const now = performance.now();
+  const last = lastPlayAtMs.get(name) ?? -Infinity;
+  if (now - last < cooldownMs) return true;
+  lastPlayAtMs.set(name, now);
+  return false;
+}
+
+function ensureAudioContextRunning(ctx: AudioContext): Promise<void> {
+  if (ctx.state === "running") return Promise.resolve();
+  if (resumePromise) return resumePromise;
+
+  resumePromise = ctx
+    .resume()
+    .catch(() => {})
+    .finally(() => {
+      resumePromise = null;
+    });
+
+  return resumePromise;
+}
+
+function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
+  const cached = bufferCache.get(name);
+  if (cached) return Promise.resolve(cached);
+
+  const inflight = inflightBufferLoads.get(name);
+  if (inflight) return inflight;
+
+  const { ctx } = getAudioContext();
+  const request = fetch(SOUND_MAP[name])
+    .then((res) => {
+      if (!res.ok) throw new Error(`Failed to load sound: ${name}`);
+      return res.arrayBuffer();
+    })
+    .then((buf) => ctx.decodeAudioData(buf))
+    .then((audioBuffer) => {
+      bufferCache.set(name, audioBuffer);
+      return audioBuffer;
+    })
+    .finally(() => {
+      inflightBufferLoads.delete(name);
+    });
+
+  inflightBufferLoads.set(name, request);
+  return request;
 }
 
 export function playSound(name: SoundName): void {
   if (typeof window === "undefined" || muted || prefersReducedMotion()) return;
+  if (shouldThrottleSound(name)) return;
 
-  const { ctx, gain } = getAudioContext();
+  const { ctx } = getAudioContext();
 
-  const buffer = bufferCache.get(name);
-  if (buffer) {
+  function play(buffer: AudioBuffer): void {
+    const target = compressor ?? masterGain;
+    if (!target) return;
+
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(gain);
+    const soundGain = Math.max(0, soundGainMultiplier[name] ?? 1);
+    const localFadeInS = fadeInS;
+    const localFadeOutS = fadeOutS;
+
+    // Per-sound fade-in gain to soften aggressive starts
+    const fadeGain = ctx.createGain();
+    const startAt = ctx.currentTime;
+    const duration = buffer.duration;
+    const safeDuration = Math.max(0, duration - 0.001);
+    const effectiveFadeIn = Math.min(Math.max(0, localFadeInS), safeDuration);
+    const effectiveFadeOut = Math.min(
+      Math.max(0, localFadeOutS),
+      Math.max(0, safeDuration - effectiveFadeIn),
+    );
+    const endAt = startAt + duration;
+
+    fadeGain.gain.setValueAtTime(effectiveFadeIn > 0 ? 0 : soundGain, startAt);
+    if (effectiveFadeIn > 0) {
+      fadeGain.gain.linearRampToValueAtTime(soundGain, startAt + effectiveFadeIn);
+    }
+    if (effectiveFadeOut > 0) {
+      const fadeOutStartAt = Math.max(startAt, endAt - effectiveFadeOut);
+      fadeGain.gain.setValueAtTime(soundGain, fadeOutStartAt);
+      fadeGain.gain.linearRampToValueAtTime(0, endAt);
+    }
+
+    // Chain: source → fadeGain → compressor → masterGain → destination
+    source.connect(fadeGain);
+    fadeGain.connect(target);
+    source.onended = () => {
+      source.disconnect();
+      fadeGain.disconnect();
+    };
     source.start();
-  } else {
-    // Fallback: fetch and decode on the fly
-    fetch(SOUND_MAP[name])
-      .then((res) => res.arrayBuffer())
-      .then((buf) => ctx.decodeAudioData(buf))
-      .then((audioBuffer) => {
-        bufferCache.set(name, audioBuffer);
-        if (!muted) {
-          const source = ctx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(gain);
-          source.start();
-        }
-      })
-      .catch(() => {});
   }
+
+  function playWhenRunning(buffer: AudioBuffer): void {
+    if (ctx.state === "running") {
+      play(buffer);
+      return;
+    }
+
+    void ensureAudioContextRunning(ctx).then(() => {
+      if (!muted && ctx.state === "running") {
+        play(buffer);
+      }
+    });
+  }
+
+  void loadSoundBuffer(name)
+    .then((audioBuffer) => {
+      if (!muted) playWhenRunning(audioBuffer);
+    })
+    .catch(() => {});
 }

@@ -187,8 +187,10 @@ export function Results({
     confettiFired.current = true;
 
     const colors = ["#FF5647", "#2DD4B8", "#FFD644"];
+    const timers: ReturnType<typeof setTimeout>[] = [];
 
-    playSound("celebration");
+    playSound("game-over");
+    timers.push(setTimeout(() => playSound("celebration"), 2000));
 
     import("canvas-confetti").then(({ default: confetti }) => {
       confetti({
@@ -198,7 +200,7 @@ export function Results({
         colors,
       });
 
-      setTimeout(() => {
+      timers.push(setTimeout(() => {
         confetti({
           particleCount: 50,
           angle: 120,
@@ -206,8 +208,10 @@ export function Results({
           origin: { x: 0.75, y: 0.6 },
           colors,
         });
-      }, 200);
+      }, 200));
     });
+
+    return () => timers.forEach(clearTimeout);
   }, [isFinal]);
 
   const currentRound = game.rounds[0];
@@ -216,27 +220,29 @@ export function Results({
   useEffect(() => {
     if (isFinal || sloppedFired.current || !currentRound) return;
     const hasUnanimous = currentRound.prompts.some((prompt) => {
-      const actual = filterCastVotes(prompt.votes);
-      if (actual.length === 0) return false;
+      const castVotes = filterCastVotes(prompt.votes);
+      if (castVotes.length < 2) return false;
       return prompt.responses.some(
-        (r) => actual.filter((v) => v.responseId === r.id).length === actual.length
+        (r) => castVotes.every((v) => v.responseId === r.id)
       );
     });
-    if (hasUnanimous) {
-      sloppedFired.current = true;
-      playSound("winner-reveal");
-      setTimeout(() => {
-        import("canvas-confetti").then(({ default: confetti }) => {
-          confetti({
-            particleCount: 50,
-            spread: 90,
-            origin: { y: 0.5 },
-            colors: ["#FF5647", "#FF8A80", "#FFD644"],
-            startVelocity: 25,
-          });
+    if (!hasUnanimous) return;
+
+    sloppedFired.current = true;
+    playSound("winner-reveal");
+    const timer = setTimeout(() => {
+      import("canvas-confetti").then(({ default: confetti }) => {
+        confetti({
+          particleCount: 50,
+          spread: 90,
+          origin: { y: 0.5 },
+          colors: ["#FF5647", "#FF8A80", "#FFD644"],
+          startVelocity: 25,
         });
-      }, 1200);
-    }
+      });
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [currentRound, isFinal]);
 
   const sortedPlayers = [...game.players].sort((a, b) => b.score - a.score);

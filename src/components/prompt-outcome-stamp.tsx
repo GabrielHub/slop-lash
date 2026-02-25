@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
+import { playSound } from "@/lib/sounds";
 
 interface PromptOutcomeStampProps {
   isUnanimous: boolean;
@@ -21,6 +23,21 @@ export function PromptOutcomeStamp({
   allPassed,
   delay,
 }: PromptOutcomeStampProps): React.ReactNode {
+  // Play stamp-slam sound for stamp variants (allPassed, SLOPPED!, FLAWLESS!)
+  const hasStamp = allPassed || isUnanimous;
+  const stampFired = useRef(false);
+  useEffect(() => {
+    if (!hasStamp) {
+      stampFired.current = false;
+      return;
+    }
+    if (stampFired.current) return;
+    stampFired.current = true;
+
+    const timer = setTimeout(() => playSound("stamp-slam"), delay * 1000);
+    return () => clearTimeout(timer);
+  }, [hasStamp, delay]);
+
   if (allPassed) {
     return (
       <motion.div
