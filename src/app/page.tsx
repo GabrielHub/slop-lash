@@ -216,7 +216,13 @@ export default function Home() {
 
         {/* Prompt showcase card */}
         <motion.div className="mb-10 mx-auto max-w-sm" variants={fadeInUp}>
-          <div className="relative bg-surface/40 backdrop-blur-md border border-edge/60 rounded-2xl px-6 py-5 shadow-[0_0_24px_-4px_rgba(0,0,0,0.15)]">
+          <div
+            className="relative bg-surface/40 backdrop-blur-md border border-edge/60 rounded-2xl px-6 py-5"
+            style={{
+              boxShadow:
+                "0 0 24px -4px color-mix(in srgb, var(--ink) 14%, transparent)",
+            }}
+          >
             <div className="h-14 flex items-center justify-center">
               <AnimatePresence mode="wait">
                 {currentPrompt && (
@@ -252,7 +258,11 @@ export default function Home() {
           </MotionLink>
           <MotionLink
             href="/join"
-            className="block bg-surface/40 backdrop-blur-md hover:bg-surface/60 text-ink font-display font-bold py-4 px-8 rounded-xl text-xl border-2 border-edge/60 hover:border-edge-strong transition-colors text-center sm:flex-1 shadow-[0_0_24px_-4px_rgba(0,0,0,0.15)]"
+            className="block bg-surface/40 backdrop-blur-md hover:bg-surface/60 text-ink font-display font-bold py-4 px-8 rounded-xl text-xl border-2 border-edge/60 hover:border-edge-strong transition-colors text-center sm:flex-1"
+            style={{
+              boxShadow:
+                "0 0 24px -4px color-mix(in srgb, var(--ink) 14%, transparent)",
+            }}
             {...buttonTapPrimary}
           >
             Join a Game

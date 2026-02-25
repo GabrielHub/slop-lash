@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import { AI_MODELS, getModelByModelId } from "@/lib/models";
+import { AI_MODELS } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
-import { getPlayerColor } from "@/lib/player-colors";
+import { PlayerAvatar } from "@/components/player-avatar";
 import {
   fadeInUp,
   floatIn,
@@ -94,7 +94,7 @@ function StatsBanner({
 
   return (
     <motion.div
-      className="grid grid-cols-3 gap-3 sm:gap-4 mb-10"
+      className="grid grid-cols-3 gap-3 sm:gap-4 mb-8"
       variants={staggerContainer}
       initial="hidden"
       animate="visible"
@@ -102,14 +102,15 @@ function StatsBanner({
       {items.map((item) => (
         <motion.div
           key={item.label}
-          className="text-center p-3 sm:p-4 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+          className="text-center p-3 sm:p-4 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge relative overflow-hidden"
           style={{ boxShadow: "var(--shadow-card)" }}
           variants={fadeInUp}
         >
-          <p className="font-mono font-bold text-2xl sm:text-3xl text-punch tabular-nums">
+          <div className="absolute inset-0 bg-gradient-to-br from-punch/[0.04] to-transparent pointer-events-none" />
+          <p className="font-mono font-bold text-2xl sm:text-3xl stat-number tabular-nums relative">
             {item.value.toLocaleString()}
           </p>
-          <p className="text-xs sm:text-sm text-ink-dim mt-1">
+          <p className="text-xs sm:text-sm text-ink-dim mt-1 relative">
             {item.label}
           </p>
         </motion.div>
@@ -142,10 +143,6 @@ function LeaderboardChart({
       {entries.map((entry, idx) => {
         const pct = (entry.totalVotes / maxVotes) * 100;
         const isTop = idx === 0;
-        const model =
-          entry.type === "AI" && entry.modelId
-            ? getModelByModelId(entry.modelId)
-            : null;
 
         return (
           <motion.div
@@ -168,21 +165,11 @@ function LeaderboardChart({
               </span>
 
               {/* Icon */}
-              <div className="shrink-0">
-                {model ? (
-                  <ModelIcon model={model} size={26} />
-                ) : (
-                  <span
-                    className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-sm font-bold"
-                    style={{
-                      color: getPlayerColor(entry.name),
-                      backgroundColor: `${getPlayerColor(entry.name)}20`,
-                    }}
-                  >
-                    {entry.shortName[0]?.toUpperCase() ?? "?"}
-                  </span>
-                )}
-              </div>
+              <PlayerAvatar
+                name={entry.shortName}
+                modelId={entry.type === "AI" ? entry.modelId : null}
+                size={26}
+              />
 
               {/* Name */}
               <span
@@ -196,9 +183,7 @@ function LeaderboardChart({
               {/* Bar track */}
               <div className="flex-1 h-9 rounded-lg bg-edge/40 relative overflow-hidden">
                 <motion.div
-                  className={`absolute inset-y-0 left-0 rounded-lg ${
-                    isTop ? "bg-gold/80" : "bg-teal/40"
-                  }`}
+                  className="absolute inset-y-0 left-0 rounded-lg"
                   initial={{ width: "0%" }}
                   animate={{ width: `${Math.max(pct, 4)}%` }}
                   transition={{
@@ -207,8 +192,14 @@ function LeaderboardChart({
                   }}
                   style={
                     isTop
-                      ? { boxShadow: "0 0 12px var(--gold)" }
-                      : undefined
+                      ? {
+                          background: "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 70%, var(--punch) 30%) 100%)",
+                          boxShadow: "0 0 14px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 20%, transparent) inset",
+                        }
+                      : {
+                          background: "linear-gradient(90deg, var(--teal) 30%, color-mix(in srgb, var(--teal) 50%, transparent) 100%)",
+                          opacity: 0.45,
+                        }
                   }
                 />
               </div>
@@ -227,14 +218,14 @@ function LeaderboardChart({
             </div>
 
             {/* Stat chips (below bar, subtle) */}
-            <div className="flex gap-4 ml-[62px] sm:ml-[78px] mt-1.5">
-              <span className="text-xs text-ink-dim/70 tabular-nums font-mono">
+            <div className="flex gap-4 pl-10 sm:pl-[72px] mt-1.5">
+              <span className="text-xs text-ink-dim tabular-nums font-mono">
                 {entry.winRate}% win
               </span>
-              <span className="text-xs text-ink-dim/70 tabular-nums font-mono">
+              <span className="text-xs text-ink-dim tabular-nums font-mono">
                 {entry.totalResponses} resp
               </span>
-              <span className="text-xs text-ink-dim/70 tabular-nums font-mono">
+              <span className="text-xs text-ink-dim tabular-nums font-mono">
                 {entry.voteShare}% share
               </span>
             </div>
@@ -258,7 +249,7 @@ function HeadToHeadSection({
 
   return (
     <motion.div
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3"
+      className="grid grid-cols-1 sm:grid-cols-2 gap-3"
       variants={staggerContainerSlow}
       initial="hidden"
       animate="visible"
@@ -365,10 +356,6 @@ function HallOfFame({
   if (responses.length === 0) return null;
 
   const item = responses[current];
-  const model =
-    item.playerType === "AI" && item.modelId
-      ? getModelByModelId(item.modelId)
-      : null;
 
   return (
     <div className="relative">
@@ -400,7 +387,7 @@ function HallOfFame({
         <AnimatePresence mode="wait">
           <motion.div
             key={current}
-            className="p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+            className="relative p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
             style={{ boxShadow: "var(--shadow-card)" }}
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
@@ -409,43 +396,31 @@ function HallOfFame({
           >
             {/* Rank badge */}
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gold bg-gold-soft px-2 py-0.5 rounded-md">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gold bg-gold-soft px-2 py-0.5 rounded-md border border-gold/15">
                 #{current + 1} All Time
               </span>
-              <span className="font-mono font-bold text-sm text-gold tabular-nums">
+              <span className="font-mono font-bold text-sm text-gold tabular-nums" style={{ textShadow: "0 0 10px rgba(255, 214, 68, 0.2)" }}>
                 {item.votePct}%
               </span>
             </div>
 
             {/* Prompt */}
-            <p className="font-display font-semibold text-sm text-gold mb-3 leading-snug">
+            <p className="text-xs text-ink-dim mb-2 leading-snug">
               {item.promptText}
             </p>
 
             {/* Response */}
-            <p className="text-ink font-semibold text-sm sm:text-base leading-snug mb-3">
+            <p className="text-base sm:text-lg font-semibold text-ink leading-snug mb-3">
               &ldquo;{item.responseText}&rdquo;
             </p>
 
             {/* Attribution */}
             <div className="flex items-center gap-1.5">
-              {model ? (
-                <ModelIcon
-                  model={model}
-                  size={16}
-                  className="shrink-0"
-                />
-              ) : (
-                <span
-                  className="w-4 h-4 flex items-center justify-center rounded-sm text-[10px] font-bold shrink-0"
-                  style={{
-                    color: getPlayerColor(item.playerName),
-                    backgroundColor: `${getPlayerColor(item.playerName)}20`,
-                  }}
-                >
-                  {item.playerName[0]?.toUpperCase() ?? "?"}
-                </span>
-              )}
+              <PlayerAvatar
+                name={item.playerName}
+                modelId={item.playerType === "AI" ? item.modelId : null}
+                size={16}
+              />
               <span className="text-xs text-ink-dim truncate">
                 {item.playerName}
               </span>
@@ -555,9 +530,9 @@ function ModelUsageSection({
       })}
 
       {/* Total row */}
-      <div className="flex items-center gap-3 pt-2 mt-1 border-t border-edge/40">
+      <div className="flex items-center gap-3 pt-2 mt-1 border-t border-edge">
         <span className="font-bold text-sm text-ink flex-1">Total</span>
-        <span className="font-mono text-xs font-bold tabular-nums text-ink shrink-0">
+        <span className="font-mono text-sm font-bold tabular-nums text-ink shrink-0">
           {totalTokens.toLocaleString()} tok
         </span>
         <span className="font-mono text-sm font-bold tabular-nums text-teal shrink-0">
@@ -697,7 +672,7 @@ export default function LeaderboardPage() {
         </motion.div>
 
         {/* Title */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <motion.h1
             className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-2 title-glow"
             initial={{ opacity: 0, scale: 0.9, y: 10 }}
@@ -752,69 +727,69 @@ export default function LeaderboardPage() {
             {/* Stats Banner */}
             <StatsBanner stats={data.stats} />
 
-            {/* Desktop: two-column layout — Rankings left, H2H + Hall of Fame right */}
-            <div className="lg:grid lg:grid-cols-[3fr_2fr] lg:gap-10">
-              {/* Leaderboard (left column on desktop) */}
-              <motion.div
-                className="mb-10 lg:mb-0"
-                variants={fadeInUp}
-                initial="hidden"
-                animate="visible"
-              >
-                <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-gold" />
-                  Rankings
-                </h2>
-                <LeaderboardChart entries={data.leaderboard} />
-              </motion.div>
+            {/* Rankings — full width in card panel */}
+            <motion.div
+              className="mb-8 rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-5 lg:p-6"
+              variants={fadeInUp}
+              initial="hidden"
+              animate="visible"
+            >
+              <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                <span className="w-1.5 h-1.5 rounded-full bg-gold" style={{ boxShadow: "0 0 6px var(--gold)" }} />
+                Rankings
+              </h2>
+              <LeaderboardChart entries={data.leaderboard} />
+            </motion.div>
 
-              {/* Right column on desktop: H2H + Hall of Fame stacked */}
+            {/* Secondary content — 2-col grid on desktop */}
+            <div className="lg:grid lg:grid-cols-2 lg:gap-8">
+              {/* Left column: H2H */}
               <div>
-                {/* Head-to-Head */}
                 {data.headToHead.length > 0 && (
                   <motion.div
-                    className="mb-10"
+                    className="mb-8"
                     variants={fadeInUp}
                     initial="hidden"
                     animate="visible"
                     transition={{ delay: 0.15 }}
                   >
-                    <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal" />
+                    <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal" style={{ boxShadow: "0 0 6px var(--teal)" }} />
                       Human vs AI
                     </h2>
                     <HeadToHeadSection matchups={data.headToHead} />
                   </motion.div>
                 )}
+              </div>
 
-                {/* Hall of Fame */}
+              {/* Right column: Hall of Fame + AI Cost stacked */}
+              <div>
                 {data.bestResponses.length > 0 && (
                   <motion.div
-                    className="mb-10"
+                    className="mb-8"
                     variants={fadeInUp}
                     initial="hidden"
                     animate="visible"
                     transition={{ delay: 0.3 }}
                   >
-                    <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-punch" />
+                    <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <span className="w-1.5 h-1.5 rounded-full bg-punch" style={{ boxShadow: "0 0 6px var(--punch)" }} />
                       Hall of Fame
                     </h2>
                     <HallOfFame responses={data.bestResponses} />
                   </motion.div>
                 )}
 
-                {/* AI Cost Breakdown */}
                 {data.modelUsage && data.modelUsage.length > 0 && (
                   <motion.div
-                    className="mb-10"
+                    className="mb-8"
                     variants={fadeInUp}
                     initial="hidden"
                     animate="visible"
                     transition={{ delay: 0.45 }}
                   >
-                    <h2 className="text-sm font-medium text-ink-dim mb-3 flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal" />
+                    <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal" style={{ boxShadow: "0 0 6px var(--teal)" }} />
                       AI Cost
                     </h2>
                     <ModelUsageSection

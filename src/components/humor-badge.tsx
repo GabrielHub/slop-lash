@@ -47,7 +47,7 @@ export function HumorBadge({ humorRating }: HumorBadgeProps) {
         className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md cursor-pointer select-none ${
           isHot
             ? "bg-punch/15 text-punch animate-heat-pulse"
-            : "bg-blue-500/15 text-blue-400"
+            : "bg-human-soft text-human"
         }`}
       >
         {emoji} {label}

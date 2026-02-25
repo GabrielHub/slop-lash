@@ -2,10 +2,8 @@
 
 import { motion } from "motion/react";
 import { GameState } from "@/lib/types";
-import { getModelByModelId } from "@/lib/models";
-import { ModelIcon } from "@/components/model-icon";
-import { getPlayerColor } from "@/lib/player-colors";
 import { springGentle } from "@/lib/animations";
+import { PlayerAvatar } from "@/components/player-avatar";
 import { HumorBadge } from "@/components/humor-badge";
 
 export function ScoreBarChart({ game }: { game: GameState }) {
@@ -25,9 +23,6 @@ export function ScoreBarChart({ game }: { game: GameState }) {
       {sorted.map((player, idx) => {
         const pct = (player.score / maxScore) * 100;
         const isWinner = idx === 0;
-        const model = player.modelId
-          ? getModelByModelId(player.modelId)
-          : null;
 
         return (
           <motion.div
@@ -43,26 +38,13 @@ export function ScoreBarChart({ game }: { game: GameState }) {
               className={`w-6 text-center font-mono font-bold text-base shrink-0 ${
                 isWinner ? "text-gold" : "text-ink-dim"
               }`}
+              style={isWinner ? { textShadow: "0 0 8px rgba(255, 214, 68, 0.3)" } : undefined}
             >
               {idx + 1}
             </span>
 
             {/* Icon */}
-            <div className="shrink-0">
-              {model ? (
-                <ModelIcon model={model} size={24} />
-              ) : (
-                <span
-                  className="w-6 h-6 flex items-center justify-center rounded-sm text-sm font-bold"
-                  style={{
-                    color: getPlayerColor(player.name),
-                    backgroundColor: `${getPlayerColor(player.name)}20`,
-                  }}
-                >
-                  {player.name[0]?.toUpperCase() ?? "?"}
-                </span>
-              )}
-            </div>
+            <PlayerAvatar name={player.name} modelId={player.modelId} size={24} />
 
             {/* Name */}
             <span
@@ -78,18 +60,20 @@ export function ScoreBarChart({ game }: { game: GameState }) {
             {/* Bar track */}
             <div className="flex-1 h-8 rounded-lg bg-edge/40 relative overflow-hidden">
               <motion.div
-                className={`absolute inset-y-0 left-0 rounded-lg ${
-                  isWinner
-                    ? "bg-gold/80"
-                    : "bg-teal/40"
-                }`}
+                className="absolute inset-y-0 left-0 rounded-lg"
                 initial={{ width: "0%" }}
                 animate={{ width: `${Math.max(pct, 4)}%` }}
                 transition={{ ...springGentle, delay: 0.2 + idx * 0.1 }}
                 style={
                   isWinner
-                    ? { boxShadow: "0 0 12px var(--gold)" }
-                    : undefined
+                    ? {
+                        background: "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 70%, var(--punch) 30%) 100%)",
+                        boxShadow: "0 0 14px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 20%, transparent) inset",
+                      }
+                    : {
+                        background: "linear-gradient(90deg, var(--teal) 30%, color-mix(in srgb, var(--teal) 50%, transparent) 100%)",
+                        opacity: 0.45,
+                      }
                 }
               />
             </div>

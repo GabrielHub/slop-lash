@@ -146,7 +146,10 @@ function NamesTooltip({ names, emoji }: { names: string[]; emoji: ReactionEmoji 
     >
       <div
         className="px-2.5 py-1.5 rounded-lg bg-raised/95 backdrop-blur-xl border border-edge whitespace-nowrap"
-        style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}
+        style={{
+          boxShadow:
+            "0 4px 16px color-mix(in srgb, var(--ink) 12%, transparent)",
+        }}
       >
         <p className="text-[11px] text-ink-dim leading-snug text-center">
           <span className="mr-1">{REACTION_EMOJIS[emoji]}</span>
@@ -410,7 +413,7 @@ function DesktopPopover({ aggregated, onPick, onClose, anchorRef }: PickerProps)
           left: pos?.left ?? 0,
           transform: "translateY(-100%)",
           boxShadow:
-            "0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)",
+            "0 8px 32px color-mix(in srgb, var(--ink) 12%, transparent), 0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent)",
         }}
         initial={{ opacity: 0, scale: 0.85, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -457,7 +460,11 @@ function MobileSheet({ aggregated, onPick, onClose }: PickerProps) {
   return createPortal(
     <>
       <motion.div
-        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+        className="fixed inset-0 z-40 backdrop-blur-[2px]"
+        style={{
+          background:
+            "color-mix(in srgb, var(--ink) 22%, transparent)",
+        }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -473,7 +480,10 @@ function MobileSheet({ aggregated, onPick, onClose }: PickerProps) {
       >
         <div
           className="bg-raised/95 backdrop-blur-xl rounded-t-2xl border border-b-0 border-edge overflow-hidden pb-[env(safe-area-inset-bottom,12px)]"
-          style={{ boxShadow: "0 -4px 24px rgba(0,0,0,0.1)" }}
+          style={{
+            boxShadow:
+              "0 -4px 24px color-mix(in srgb, var(--ink) 10%, transparent)",
+          }}
         >
           <div className="flex justify-center pt-3 pb-2">
             <div className="w-8 h-1 rounded-full bg-edge-strong/60" />

@@ -45,8 +45,8 @@ export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) 
     return (
       <div className="w-full">
         <div className="flex items-baseline justify-between mb-2">
-          <span className="text-sm font-medium text-ink-dim">Timer</span>
-          <span className="font-mono font-bold text-lg text-ink-dim/50">OFF</span>
+          <span className="text-sm font-medium text-ui-muted">Timer</span>
+          <span className="font-mono font-bold text-lg text-ui-faint">OFF</span>
         </div>
         <div className="h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border border-edge">
           <div className="h-full rounded-full bg-ink-dim/20 w-full" />
@@ -60,21 +60,36 @@ export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) 
   const urgency = getUrgency(pct);
 
   const urgencyStyles = {
-    urgent: { bar: "bg-fail", text: "text-fail animate-pulse-urgent" },
-    warning: { bar: "bg-gold", text: "text-gold" },
-    normal: { bar: "bg-teal", text: "text-teal" },
+    urgent: {
+      bar: "timer-bar-urgent",
+      text: "text-fail animate-pulse-urgent",
+      track: "border-fail/20",
+      glow: "0 0 10px color-mix(in srgb, var(--fail) 30%, transparent)",
+    },
+    warning: {
+      bar: "timer-bar-warning",
+      text: "text-gold",
+      track: "border-gold/15",
+      glow: "0 0 8px color-mix(in srgb, var(--gold) 20%, transparent)",
+    },
+    normal: {
+      bar: "timer-bar-normal",
+      text: "text-teal",
+      track: "border-edge",
+      glow: "none",
+    },
   } as const;
 
-  const { bar, text } = urgencyStyles[urgency];
+  const style = urgencyStyles[urgency];
 
   return (
     <div className="w-full">
       <div className="flex items-baseline justify-between mb-2">
-        <span className="text-sm font-medium text-ink-dim">Time remaining</span>
+        <span className="text-sm font-medium text-ui-muted">Time remaining</span>
         <AnimatePresence mode="wait">
           <motion.span
             key={urgency}
-            className={`font-mono font-bold text-lg tabular-nums ${text}`}
+            className={`font-mono font-bold text-xl tabular-nums ${style.text}`}
             variants={popIn}
             initial="hidden"
             animate="visible"
@@ -84,10 +99,10 @@ export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) 
           </motion.span>
         </AnimatePresence>
       </div>
-      <div className="h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border border-edge">
+      <div className={`h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border transition-colors duration-500 ${style.track}`}>
         <div
-          className={`h-full rounded-full transition-all duration-1000 ease-linear ${bar}`}
-          style={{ width: `${pct}%` }}
+          className={`h-full rounded-full transition-all duration-1000 ease-linear ${style.bar}`}
+          style={{ width: `${pct}%`, boxShadow: style.glow }}
         />
       </div>
     </div>

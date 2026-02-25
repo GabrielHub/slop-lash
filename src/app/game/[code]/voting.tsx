@@ -9,7 +9,6 @@ import { Timer } from "@/components/timer";
 import { ErrorBanner } from "@/components/error-banner";
 import {
   fadeInUp,
-  scaleIn,
   springDefault,
   springBouncy,
   springGentle,
@@ -21,7 +20,15 @@ import { useTts } from "@/hooks/use-tts";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
+import { PlayerAvatar } from "@/components/player-avatar";
 import { ReactionBar } from "@/components/reaction-bar";
+import { VsDivider } from "@/components/vs-divider";
+import { CrownIcon, SlopIcon } from "@/components/icons";
+
+/** Format a number with a leading "+" for positive values. */
+function formatSigned(n: number): string {
+  return n >= 0 ? `+${n.toLocaleString()}` : n.toLocaleString();
+}
 
 function getVotingSkipText(skipping: boolean, revealing: boolean, timersDisabled: boolean): string {
   if (skipping) return "Skipping...";
@@ -278,36 +285,61 @@ export function Voting({
 
   return (
     <main className="min-h-svh flex flex-col items-center px-4 sm:px-6 py-8 pt-16 sm:pt-20">
-      <div className="w-full max-w-lg lg:max-w-5xl lg:grid lg:grid-cols-[1fr_220px] lg:gap-6">
+      <div className="w-full max-w-lg lg:max-w-none xl:max-w-[1240px] lg:grid lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] lg:gap-8 xl:gap-10">
         <motion.div
           variants={fadeInUp}
           initial="hidden"
           animate="visible"
+          className="min-w-0"
         >
-          {/* Progress + timer row — compact on mobile */}
-          <div className="flex items-center gap-3 mb-4 sm:mb-6">
-            <div className="flex-1 min-w-0">
-              {!game.timersDisabled && (
-                <Timer
-                  deadline={game.phaseDeadline}
-                  total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
-                />
+          {/* Top controls */}
+          <div className="mb-4 sm:mb-6 lg:mb-7">
+            {/* Mobile progress dots */}
+            <div className="mb-3 lg:hidden">
+              <ProgressDots
+                total={totalPrompts}
+                current={game.votingPromptIndex}
+                revealing={isRevealing}
+              />
+            </div>
+
+            <div className="flex items-end gap-3 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-4">
+              {/* Desktop label */}
+              <div className="hidden lg:block">
+                <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-ink">
+                  Judges Voting
+                </p>
+                <p className="mt-1 text-xs font-mono text-ui-soft">
+                  Prompt {Math.min(game.votingPromptIndex + 1, Math.max(totalPrompts, 1))}/{Math.max(totalPrompts, 1)}
+                </p>
+              </div>
+
+              {/* Timer — takes remaining space */}
+              <div className="min-w-0 flex-1">
+                {!game.timersDisabled && (
+                  <Timer
+                    deadline={game.phaseDeadline}
+                    total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
+                  />
+                )}
+              </div>
+
+              {/* Host skip/next — inline with timer */}
+              {isHost && (
+                <motion.button
+                  onClick={skipTimer}
+                  disabled={skipping}
+                  className="shrink-0 h-9 px-4 text-xs sm:text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  {...buttonTap}
+                >
+                  {getVotingSkipText(skipping, isRevealing, game.timersDisabled)}
+                </motion.button>
               )}
             </div>
-            {isHost && (
-              <motion.button
-                onClick={skipTimer}
-                disabled={skipping}
-                className="shrink-0 px-4 py-2 text-xs sm:text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                {...buttonTap}
-              >
-                {getVotingSkipText(skipping, isRevealing, game.timersDisabled)}
-              </motion.button>
-            )}
           </div>
 
-          {/* Progress dots */}
-          <div className="mb-5 sm:mb-8">
+          {/* Desktop progress dots */}
+          <div className="hidden lg:flex mb-6 justify-center">
             <ProgressDots
               total={totalPrompts}
               current={game.votingPromptIndex}
@@ -324,10 +356,19 @@ export function Voting({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -16, scale: 0.97, transition: { duration: 0.2 } }}
                 transition={springDefault}
+                className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 sm:p-5 lg:p-7 xl:p-8"
+                style={{ boxShadow: "var(--shadow-card)" }}
               >
                 {/* Prompt text — big and centered */}
-                <div className="text-center mb-6 sm:mb-8">
-                  <p className="font-display font-bold text-lg sm:text-2xl lg:text-3xl text-gold leading-snug inline-flex items-center justify-center gap-2 flex-wrap">
+                <div className="mb-6 sm:mb-8 lg:mb-10 lg:text-left">
+                  <div className="hidden lg:flex justify-start mb-3">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-edge/80 bg-raised/60 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.2em] text-ui-soft">
+                      {isRevealing ? "Reveal" : "Vote"}
+                      <span className="text-edge-strong">•</span>
+                      Prompt {Math.min(game.votingPromptIndex + 1, Math.max(totalPrompts, 1))}
+                    </span>
+                  </div>
+                  <p className="mx-auto lg:mx-0 max-w-4xl font-display font-bold text-lg sm:text-2xl lg:text-3xl xl:text-[2.15rem] text-gold leading-tight inline-flex items-center justify-center lg:justify-start gap-2 flex-wrap text-center lg:text-left">
                     {currentPromptId === currentPrompt.id && <TtsIndicator />}
                     <span>{currentPrompt.text}</span>
                     {currentPromptId === currentPrompt.id && (
@@ -345,8 +386,7 @@ export function Voting({
                   />
                 ) : isRespondent ? (
                   <PassiveView
-                    label="You wrote one of these!"
-                    sublabel="Waiting for others to vote..."
+                    sublabel="You wrote one of these!"
                     color="gold"
                     prompt={currentPrompt}
                     playerId={playerId}
@@ -355,7 +395,6 @@ export function Voting({
                   />
                 ) : hasVotedCurrent ? (
                   <PassiveView
-                    label={hasAbstainedCurrent ? "Passed" : "Vote locked in!"}
                     sublabel="Waiting for others..."
                     color={hasAbstainedCurrent ? "dim" : "teal"}
                     prompt={currentPrompt}
@@ -379,7 +418,8 @@ export function Voting({
                 key="processing"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-16"
+                className="text-center py-16 rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm"
+                style={{ boxShadow: "var(--shadow-card)" }}
               >
                 <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
                 <p className="text-ink-dim text-sm">Processing results...</p>
@@ -387,7 +427,7 @@ export function Voting({
             )}
           </AnimatePresence>
 
-          <ErrorBanner error={error} className="mt-4" />
+          <ErrorBanner error={error} className="mt-4 lg:mt-5" />
         </motion.div>
 
         {/* Desktop running scoreboard */}
@@ -397,7 +437,28 @@ export function Voting({
           animate={{ opacity: 1, x: 0 }}
           transition={springDefault}
         >
-          <VotingScoreboard players={game.players} runningScores={runningScores} />
+          <div className="space-y-4">
+            <div
+              className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
+              style={{ boxShadow: "var(--shadow-card)" }}
+            >
+              <VotingScoreboard players={game.players} runningScores={runningScores} />
+            </div>
+            {currentPrompt && (
+              <div
+              className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
+                style={{ boxShadow: "var(--shadow-card)" }}
+              >
+                <VotingPromptStatusPanel
+                  prompt={currentPrompt}
+                  players={game.players}
+                  promptIndex={game.votingPromptIndex}
+                  totalPrompts={totalPrompts}
+                  isRevealing={isRevealing}
+                />
+              </div>
+            )}
+          </div>
         </motion.div>
       </div>
     </main>
@@ -475,8 +536,14 @@ function HostDisplay({
               transition={{ type: "spring", stiffness: 350, damping: 28 }}
             >
               {/* The prompt — BIG */}
-              <div className="text-center mb-10">
-                <p className="font-display font-extrabold text-2xl sm:text-4xl lg:text-5xl text-gold leading-tight inline-flex items-center justify-center gap-3 flex-wrap">
+              <div className="mb-10 lg:text-left">
+                <div className="hidden lg:flex items-center gap-2 mb-3">
+                  <span className={`h-1.5 w-1.5 rounded-full ${isRevealing ? "bg-gold" : "bg-punch"}`} />
+                  <span className="text-[11px] uppercase tracking-[0.24em] text-ui-faint">
+                    {isRevealing ? "Reveal Stage" : "Voting Stage"}
+                  </span>
+                </div>
+                <p className="font-display font-extrabold text-2xl sm:text-4xl lg:text-5xl text-gold leading-tight inline-flex items-center justify-center lg:justify-start gap-3 flex-wrap text-center lg:text-left">
                   {currentPromptId === currentPrompt.id && <TtsIndicator />}
                   <span>{currentPrompt.text}</span>
                   {currentPromptId === currentPrompt.id && <TtsIndicator mirror />}
@@ -531,7 +598,7 @@ function HostVotingView({ prompt, playerNames }: { prompt: GamePrompt; playerNam
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-4 lg:gap-0">
       {/* Response A */}
       <motion.div
-        className="relative p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+        className="relative p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/88 backdrop-blur-md border-2 border-edge"
         style={{ boxShadow: "var(--shadow-card)" }}
         initial={{ opacity: 0, x: -40 }}
         animate={{ opacity: 1, x: 0 }}
@@ -559,7 +626,7 @@ function HostVotingView({ prompt, playerNames }: { prompt: GamePrompt; playerNam
 
       {/* Response B */}
       <motion.div
-        className="relative p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+        className="relative p-6 sm:p-8 lg:p-10 rounded-2xl bg-surface/88 backdrop-blur-md border-2 border-edge"
         style={{ boxShadow: "var(--shadow-card)" }}
         initial={{ opacity: 0, x: 40 }}
         animate={{ opacity: 1, x: 0 }}
@@ -594,7 +661,7 @@ function VoteView({
   const { triggerElement } = usePixelDissolve();
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-3 lg:gap-0">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] items-stretch gap-3 lg:gap-4">
       {/* Response A */}
       <div className="relative">
         <motion.button
@@ -603,7 +670,7 @@ function VoteView({
             onVote(prompt.id, respA.id);
           }}
           disabled={voting}
-          className="w-full p-5 sm:p-6 lg:p-8 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge text-left transition-all hover:border-teal hover:bg-teal-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group"
+          className="w-full min-h-[148px] lg:min-h-[210px] p-5 sm:p-6 lg:p-7 rounded-2xl bg-surface/92 backdrop-blur-md border-2 border-edge/90 text-left transition-all hover:border-teal hover:bg-teal-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group flex flex-col justify-between"
           style={{ boxShadow: "var(--shadow-card)" }}
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
@@ -611,7 +678,10 @@ function VoteView({
           whileHover={{ scale: 1.015, y: -2 }}
           whileTap={{ scale: 0.97 }}
         >
-          <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink group-hover:text-teal transition-colors">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-ui-soft group-hover:text-teal transition-colors mb-3">
+            Option A
+          </p>
+          <p className="text-base sm:text-lg lg:text-[1.45rem] leading-snug text-ink group-hover:text-teal transition-colors">
             {respA.text}
           </p>
         </motion.button>
@@ -619,18 +689,7 @@ function VoteView({
       </div>
 
       {/* VS divider */}
-      <motion.div
-        className="flex lg:flex-col items-center justify-center gap-3 lg:px-6 py-1"
-        variants={scaleIn}
-        initial="hidden"
-        animate="visible"
-      >
-        <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
-        <span className="font-display font-black text-xs lg:text-lg text-ink-dim/40 tracking-[0.3em]">
-          VS
-        </span>
-        <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
-      </motion.div>
+      <VsDivider animated />
 
       {/* Response B */}
       <div className="relative">
@@ -640,7 +699,7 @@ function VoteView({
             onVote(prompt.id, respB.id);
           }}
           disabled={voting}
-          className="w-full p-5 sm:p-6 lg:p-8 rounded-2xl bg-surface/80 backdrop-blur-md border-2 border-edge text-left transition-all hover:border-punch hover:bg-fail-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group"
+          className="w-full min-h-[148px] lg:min-h-[210px] p-5 sm:p-6 lg:p-7 rounded-2xl bg-surface/92 backdrop-blur-md border-2 border-edge/90 text-left transition-all hover:border-punch hover:bg-fail-soft active:scale-[0.97] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed group flex flex-col justify-between"
           style={{ boxShadow: "var(--shadow-card)" }}
           initial={{ opacity: 0, x: 30 }}
           animate={{ opacity: 1, x: 0 }}
@@ -648,7 +707,10 @@ function VoteView({
           whileHover={{ scale: 1.015, y: -2 }}
           whileTap={{ scale: 0.97 }}
         >
-          <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink group-hover:text-punch transition-colors">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-ui-soft group-hover:text-punch transition-colors mb-3">
+            Option B
+          </p>
+          <p className="text-base sm:text-lg lg:text-[1.45rem] leading-snug text-ink group-hover:text-punch transition-colors">
             {respB.text}
           </p>
         </motion.button>
@@ -660,7 +722,7 @@ function VoteView({
         <button
           onClick={() => onVote(prompt.id, null)}
           disabled={voting}
-          className="text-sm text-ink-dim/60 hover:text-ink-dim transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="text-sm text-ui-soft hover:text-ink transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Pass
         </button>
@@ -671,7 +733,6 @@ function VoteView({
 
 /** Passive state -- respondent or already-voted. Shows responses with interactive reaction bars. */
 function PassiveView({
-  label,
   sublabel,
   color,
   prompt,
@@ -679,7 +740,6 @@ function PassiveView({
   code,
   playerNames,
 }: {
-  label: string;
   sublabel: string;
   color: "gold" | "teal" | "dim";
   prompt: GamePrompt;
@@ -688,32 +748,41 @@ function PassiveView({
   playerNames: Map<string, string>;
 }) {
   const styles = {
-    gold: "bg-gold/20 border-gold/40 text-ink",
-    teal: "bg-teal/20 border-teal/40 text-teal",
-    dim: "bg-surface/60 border-edge text-ink-dim",
+    gold: {
+      chip: "border-gold/40 bg-gold/12 text-gold",
+      dot: "bg-gold",
+    },
+    teal: {
+      chip: "border-teal/45 bg-teal/12 text-teal",
+      dot: "bg-teal",
+    },
+    dim: {
+      chip: "border-edge-strong/60 bg-raised/70 text-ui-soft",
+      dot: "bg-edge-strong",
+    },
   };
+  const status = styles[color];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:space-y-5">
       {/* Response cards with reactions */}
       {prompt.responses.length >= 2 && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-3 lg:gap-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] items-stretch gap-3 lg:gap-4">
           {prompt.responses.map((resp, i) => (
             <React.Fragment key={resp.id}>
-              {i === 1 && (
-                <div className="flex lg:flex-col items-center justify-center gap-3 lg:px-6 py-1">
-                  <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
-                  <span className="font-display font-black text-xs lg:text-lg text-ink-dim/40 tracking-[0.3em]">VS</span>
-                  <div className="h-px lg:h-auto lg:w-px flex-1 bg-edge" />
-                </div>
-              )}
+              {i === 1 && <VsDivider />}
               <div
-                className="relative p-4 sm:p-5 rounded-2xl bg-surface/60 border border-edge"
+                className="relative min-h-[132px] lg:min-h-[178px] p-4 sm:p-5 lg:p-6 rounded-2xl bg-surface/84 border border-edge/90 flex flex-col justify-between"
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
-                <p className="text-base sm:text-lg leading-snug text-ink-dim">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-ui-soft mb-2">
+                    {i === 0 ? "Option A" : "Option B"}
+                  </p>
+                  <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink">
                   {resp.text}
-                </p>
+                  </p>
+                </div>
                 <ReactionBar
                   responseId={resp.id}
                   reactions={resp.reactions}
@@ -734,17 +803,28 @@ function PassiveView({
         animate={{ opacity: 1, scale: 1 }}
         transition={springDefault}
       >
-        <div className={`inline-flex items-center gap-2 px-5 py-3 rounded-full border ${styles[color]}`}>
-          {color === "teal" && (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          )}
-          <span className="font-display font-bold text-sm sm:text-base">
-            {label}
-          </span>
+        <div
+          className="mx-auto w-full max-w-md rounded-2xl border border-edge/90 bg-surface/88 backdrop-blur-sm px-4 sm:px-5 py-4 sm:py-5"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 ${status.chip}`}>
+              {color === "teal" ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <span className={`h-2 w-2 rounded-full ${status.dot}`} aria-hidden="true" />
+              )}
+              <span className="text-[11px] font-mono font-bold uppercase tracking-[0.18em]">
+                {color === "gold" ? "Respondent" : color === "teal" ? "Vote Locked" : "Passed"}
+              </span>
+            </div>
+            <p className="text-sm text-ink-dim">
+              {sublabel}
+            </p>
+          </div>
         </div>
-        <p className="text-ink-dim text-sm mt-3">{sublabel}</p>
       </motion.div>
     </div>
   );
@@ -764,23 +844,6 @@ function StampWrapper({ delay, children }: { delay: number; children: React.Reac
   );
 }
 
-/** SVG crown icon for winner badges. */
-function CrownIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.14-3.47-6.22c-.42-.75-1.64-.75-2.06 0L7.01 9.72l-4.23-1.14c-.8-.22-1.63.26-1.84 1.06-.11.4-.02.82.24 1.13L5.5 15.5h13l4.32-4.73c.26-.31.35-.73.25-1.13z" />
-    </svg>
-  );
-}
-
-/** SVG skull/robot icon for "Lost to the slop". */
-function SlopIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M12 2C6.48 2 2 6.48 2 12v4c0 1.1.9 2 2 2h1v-2c0-.55.45-1 1-1s1 .45 1 1v2h2v-2c0-.55.45-1 1-1s1 .45 1 1v2h2v-2c0-.55.45-1 1-1s1 .45 1 1v2h2v-2c0-.55.45-1 1-1s1 .45 1 1v2h1c1.1 0 2-.9 2-2v-4c0-5.52-4.48-10-10-10zM8.5 14c-.83 0-1.5-.67-1.5-1.5S7.67 11 8.5 11s1.5.67 1.5 1.5S9.33 14 8.5 14zm7 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
-    </svg>
-  );
-}
 
 /** Small avatar chip for a voter — model icon for AI, colored initial for humans. */
 function VoterChip({
@@ -858,17 +921,42 @@ function VoterStatusRow({
 function getRevealCardStyle(isWinner: boolean, isTie: boolean, isSlopped: boolean): { border: string; shadow: string } {
   if (isWinner) {
     return {
-      border: "border-teal bg-teal-soft",
-      shadow: "0 0 30px rgba(14, 163, 146, 0.2), 0 0 60px rgba(14, 163, 146, 0.05)",
+      border: "border-teal bg-teal-soft/90",
+      shadow: "0 0 18px rgba(14, 163, 146, 0.18), 0 0 36px rgba(14, 163, 146, 0.05)",
     };
   }
   if (isTie) {
-    return { border: "border-gold/40 bg-gold-soft", shadow: "var(--shadow-card)" };
+    return { border: "border-gold/50 bg-gold-soft/70", shadow: "var(--shadow-card)" };
   }
   if (isSlopped) {
-    return { border: "border-punch/30 bg-fail-soft/50", shadow: "0 0 20px rgba(255, 86, 71, 0.1)" };
+    return { border: "border-punch/35 bg-fail-soft/45", shadow: "0 0 14px rgba(255, 86, 71, 0.08)" };
   }
-  return { border: "border-edge bg-surface/60", shadow: "var(--shadow-card)" };
+  return { border: "border-edge bg-surface/70", shadow: "var(--shadow-card)" };
+}
+
+function getAccentBarColor(isWinner: boolean, isTie: boolean, isSlopped: boolean): string {
+  if (isWinner) return "bg-teal";
+  if (isTie) return "bg-gold/70";
+  if (isSlopped) return "bg-punch/60";
+  return "bg-edge";
+}
+
+function getVoteFillBg(isWinner: boolean, isSlopped: boolean): string {
+  if (isWinner) return "bg-teal/8";
+  if (isSlopped) return "bg-punch/5";
+  return "bg-ink/[0.02]";
+}
+
+function getScorePctColor(isWinner: boolean, isTie: boolean): string {
+  if (isWinner) return "text-teal";
+  if (isTie) return "text-gold";
+  return "text-ink-dim/40";
+}
+
+function getPointsColor(pointsEarned: number, isWinner: boolean): string {
+  if (pointsEarned < 0) return "text-punch";
+  if (isWinner) return "text-gold";
+  return "text-ink-dim/50";
 }
 
 /** Single response card used in the reveal view. */
@@ -899,11 +987,11 @@ function RevealResponseCard({
   aiBeatsHuman: boolean;
   pointsEarned?: number;
 }) {
-  const textSize = isHostDisplay ? "text-lg sm:text-2xl lg:text-3xl" : "text-base sm:text-lg";
+  const textSize = isHostDisplay ? "text-lg sm:text-2xl lg:text-3xl" : "text-base sm:text-lg lg:text-[1.35rem]";
   const authorSize = isHostDisplay ? "text-sm sm:text-base" : "text-sm";
-  const pctSize = isHostDisplay ? "text-3xl sm:text-5xl lg:text-6xl" : "text-2xl sm:text-3xl";
+  const pctSize = isHostDisplay ? "text-3xl sm:text-5xl lg:text-6xl" : "text-2xl sm:text-3xl lg:text-4xl";
   const voteCountSize = isHostDisplay ? "text-sm sm:text-base" : "text-xs sm:text-sm";
-  const padding = isHostDisplay ? "p-6 sm:p-8 lg:p-10" : "p-4 sm:p-5";
+  const padding = isHostDisplay ? "p-6 sm:p-8 lg:p-10" : "p-4 sm:p-5 lg:p-6";
 
   const playerById = new Map(players.map((p) => [p.id, p]));
 
@@ -917,15 +1005,13 @@ function RevealResponseCard({
       animate={{ opacity: 1, x: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
+      <div
+        className={`absolute left-0 top-0 bottom-0 w-1.5 ${getAccentBarColor(isWinner, isTie, isLoser && aiBeatsHuman)}`}
+      />
+
       {/* Vote fill bar */}
       <motion.div
-        className={`absolute inset-0 ${
-          isWinner
-            ? "bg-teal/8"
-            : isLoser && aiBeatsHuman
-              ? "bg-punch/5"
-              : "bg-ink/[0.02]"
-        }`}
+        className={`absolute inset-0 ${getVoteFillBg(isWinner, isLoser && aiBeatsHuman)}`}
         initial={{ width: "0%" }}
         animate={{ width: `${pct}%` }}
         transition={{ ...springGentle, delay: 0.3 }}
@@ -995,13 +1081,7 @@ function RevealResponseCard({
             animate={{ opacity: 1, scale: 1 }}
             transition={{ ...springBouncy, delay: 0.4 }}
           >
-            <span className={`${pctSize} font-mono font-black tabular-nums ${
-              isWinner
-                ? "text-teal"
-                : isTie
-                  ? "text-gold"
-                  : "text-ink-dim/40"
-            }`}>
+            <span className={`${pctSize} font-mono font-black tabular-nums ${getScorePctColor(isWinner, isTie)}`}>
               {pct}
               <span className={isHostDisplay ? "text-lg sm:text-2xl" : "text-sm"}>%</span>
             </span>
@@ -1010,18 +1090,12 @@ function RevealResponseCard({
             </p>
             {pointsEarned != null && (
               <motion.p
-                className={`font-mono font-black tabular-nums ${
-                  pointsEarned < 0
-                    ? "text-punch"
-                    : isWinner
-                      ? "text-gold"
-                      : "text-ink-dim/50"
-                } ${isHostDisplay ? "text-lg sm:text-xl mt-1" : "text-sm mt-0.5"}`}
+                className={`font-mono font-black tabular-nums ${getPointsColor(pointsEarned, isWinner)} ${isHostDisplay ? "text-lg sm:text-xl mt-1" : "text-sm mt-0.5"}`}
                 initial={{ opacity: 0, scale: 0.3, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ ...springBouncy, delay: 1.0 }}
               >
-                {pointsEarned >= 0 ? `+${pointsEarned.toLocaleString()}` : pointsEarned.toLocaleString()}
+                {formatSigned(pointsEarned)}
               </motion.p>
             )}
           </motion.div>
@@ -1158,9 +1232,9 @@ function RevealView({
   );
 
   return (
-    <div className="space-y-4 sm:space-y-5 relative">
+    <div className="space-y-4 sm:space-y-5 lg:space-y-6 relative">
       {/* Side-by-side response cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr,auto,1fr] items-stretch gap-3 lg:gap-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)] items-stretch gap-3 lg:gap-4">
         <RevealResponseCard
           response={respA}
           votes={votesA}
@@ -1178,7 +1252,7 @@ function RevealView({
 
         {/* VS divider */}
         <motion.div
-          className="flex lg:flex-col items-center justify-center gap-3 lg:px-5"
+          className="flex lg:flex-col items-center justify-center gap-3"
           initial={{ opacity: 0, scale: 0.5 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
@@ -1356,30 +1430,16 @@ function VotingScoreboard({
   if (horizontal) {
     return (
       <div className="flex items-center justify-center gap-4 flex-wrap px-4 py-3 rounded-xl bg-surface/60 backdrop-blur-sm border border-edge">
-        <span className="text-xs font-medium text-ink-dim/50 uppercase tracking-wider shrink-0">
+        <span className="text-xs font-medium text-ui-soft uppercase tracking-wider shrink-0">
           Scores
         </span>
-        {sorted.map(({ player, score, delta }) => {
-          const model = player.modelId ? getModelByModelId(player.modelId) : null;
-          return (
+        {sorted.map(({ player, score, delta }) => (
             <motion.div
               key={player.id}
               className="flex items-center gap-1.5"
               layout
             >
-              {model ? (
-                <ModelIcon model={model} size={16} className="shrink-0" />
-              ) : (
-                <span
-                  className="w-4 h-4 flex items-center justify-center rounded-sm text-[10px] font-bold shrink-0"
-                  style={{
-                    color: getPlayerColor(player.name),
-                    backgroundColor: `${getPlayerColor(player.name)}20`,
-                  }}
-                >
-                  {player.name[0]?.toUpperCase() ?? "?"}
-                </span>
-              )}
+              <PlayerAvatar name={player.name} modelId={player.modelId} size={16} />
               <span className="text-xs font-medium text-ink truncate max-w-[5rem]">
                 {player.name}
               </span>
@@ -1394,7 +1454,7 @@ function VotingScoreboard({
                     animate={{ opacity: 1, y: 0 }}
                     transition={springBouncy}
                   >
-                    {delta > 0 ? "+" : ""}{delta.toLocaleString()}
+                    {formatSigned(delta)}
                   </motion.span>
                 )}
                 <motion.span
@@ -1408,44 +1468,36 @@ function VotingScoreboard({
                 </motion.span>
               </div>
             </motion.div>
-          );
-        })}
+          ))}
       </div>
     );
   }
 
   return (
     <div>
-      <h3 className="text-xs font-medium text-ink-dim/50 uppercase tracking-wider mb-3">
-        Scores
+      <h3 className="text-[11px] font-medium text-ui-soft uppercase tracking-[0.22em] mb-3">
+        Standings
       </h3>
-      <div className="space-y-1.5">
-        {sorted.map(({ player, score, delta }, i) => {
-          const model = player.modelId ? getModelByModelId(player.modelId) : null;
-          return (
+      <div className="space-y-2">
+        {sorted.map(({ player, score, delta }, i) => (
             <motion.div
               key={player.id}
-              className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface/60 backdrop-blur-sm border border-edge"
+              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg bg-surface/70 backdrop-blur-sm border border-edge/90"
               layout
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ ...springDefault, delay: i * 0.04 }}
             >
               <div className="flex items-center gap-2 min-w-0">
-                {model ? (
-                  <ModelIcon model={model} size={18} className="shrink-0" />
-                ) : (
-                  <span
-                    className="w-[18px] h-[18px] flex items-center justify-center rounded-sm text-xs font-bold shrink-0"
-                    style={{
-                      color: getPlayerColor(player.name),
-                      backgroundColor: `${getPlayerColor(player.name)}20`,
-                    }}
-                  >
-                    {player.name[0]?.toUpperCase() ?? "?"}
-                  </span>
-                )}
-                <span className="text-sm font-medium text-ink truncate">
+                <span className={`w-4 shrink-0 text-center font-mono text-[11px] ${
+                  i === 0 ? "text-gold" : "text-ui-faint"
+                }`}>
+                  {i + 1}
+                </span>
+                <PlayerAvatar name={player.name} modelId={player.modelId} size={18} />
+                <span className={`text-sm font-medium truncate ${
+                  i === 0 ? "text-ink" : "text-ui-soft"
+                }`}>
                   {player.name}
                 </span>
               </div>
@@ -1460,12 +1512,14 @@ function VotingScoreboard({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     transition={springBouncy}
                   >
-                    {delta > 0 ? "+" : ""}{delta.toLocaleString()}
+                    {formatSigned(delta)}
                   </motion.span>
                 )}
                 <motion.span
                   key={score}
-                  className="font-mono font-bold text-gold text-sm tabular-nums"
+                  className={`font-mono font-bold text-sm tabular-nums ${
+                    i === 0 ? "text-gold" : "text-ink"
+                  }`}
                   initial={{ opacity: 0, scale: 0.5 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={springBouncy}
@@ -1474,8 +1528,90 @@ function VotingScoreboard({
                 </motion.span>
               </div>
             </motion.div>
-          );
-        })}
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function VotingPromptStatusPanel({
+  prompt,
+  players,
+  promptIndex,
+  totalPrompts,
+  isRevealing,
+}: {
+  prompt: GamePrompt;
+  players: GamePlayer[];
+  promptIndex: number;
+  totalPrompts: number;
+  isRevealing: boolean;
+}) {
+  const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+  const castVotes = filterCastVotes(prompt.votes);
+  const abstainVotes = filterAbstainVotes(prompt.votes);
+  const errorVotes = filterErrorVotes(prompt.votes);
+  const allVoterIds = new Set(prompt.votes.map((v) => v.voterId));
+  const missingVoters = players.filter(
+    (p) => p.type !== "SPECTATOR" && !respondentIds.has(p.id) && !allVoterIds.has(p.id),
+  );
+  const respondents = players.filter((p) => respondentIds.has(p.id));
+
+  const rows = [
+    { label: "Cast", value: castVotes.length, tone: "text-ink" },
+    { label: "Abstain", value: abstainVotes.length, tone: "text-ui-muted" },
+    { label: "Errors", value: errorVotes.length, tone: "text-punch" },
+    { label: "Missing", value: missingVoters.length, tone: "text-ui-muted" },
+  ];
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-medium text-ink uppercase tracking-[0.22em]">
+          Prompt Status
+        </h3>
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em] ${
+          isRevealing
+            ? "border-gold/40 bg-gold/10 text-gold"
+            : "border-punch/40 bg-punch/10 text-punch"
+        }`}>
+          {isRevealing ? "Reveal" : "Voting"}
+        </span>
+      </div>
+
+      <p className="text-xs font-mono text-ui-soft mb-1">
+        Prompt {Math.min(promptIndex + 1, Math.max(totalPrompts, 1))}/{Math.max(totalPrompts, 1)}
+      </p>
+      <p className="text-sm leading-snug text-ink mb-4">
+        {prompt.text}
+      </p>
+
+      <div className="mb-4">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-ui-soft mb-2">
+          {isRevealing ? "Respondents" : "Responses"}
+        </p>
+        {isRevealing ? (
+          <div className="flex flex-wrap gap-1.5">
+            {respondents.map((p) => (
+              <span key={p.id} className="inline-flex items-center rounded-full border border-edge/90 px-2 py-1 text-xs text-ui-soft bg-surface/55">
+                {p.name}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-edge/80 bg-surface/50 px-3 py-2 text-sm text-ui-muted">
+            {prompt.responses.length} anonymous responses (authors revealed after voting)
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between rounded-lg border border-edge/80 bg-surface/55 px-3 py-2">
+            <span className="text-xs text-ui-muted">{row.label}</span>
+            <span className={`font-mono text-xs font-bold tabular-nums ${row.tone}`}>{row.value}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

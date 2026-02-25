@@ -18,6 +18,7 @@ import {
 } from "@/components/best-prompts-carousel";
 import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
 import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
+import { CrownIcon } from "@/components/icons";
 import { computeAchievements } from "@/lib/achievements";
 import {
   fadeInUp,
@@ -31,6 +32,16 @@ import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useWinnerTagline } from "@/hooks/use-winner-tagline";
 import { WinnerTagline } from "@/components/winner-tagline";
+
+function formatSigned(n: number): string {
+  return n >= 0 ? `+${n.toLocaleString()}` : n.toLocaleString();
+}
+
+function getPointsTextColor(pts: number, isWinner: boolean): string {
+  if (pts < 0) return "text-punch";
+  if (isWinner) return "text-gold";
+  return "text-ink-dim";
+}
 
 function getAdvanceButtonText(advancing: boolean, isLastRound: boolean): string {
   if (advancing) return "Starting...";
@@ -142,6 +153,7 @@ interface ResultsProps {
   playerId: string | null;
   code: string;
   isFinal: boolean;
+  onPlayAgainCreated?: (data: { roomCode: string; hostPlayerId: string }) => void;
 }
 
 export function Results({
@@ -150,6 +162,7 @@ export function Results({
   playerId,
   code,
   isFinal,
+  onPlayAgainCreated,
 }: ResultsProps) {
   const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
@@ -292,7 +305,14 @@ export function Results({
       }
       const data = await res.json();
       localStorage.setItem("playerId", data.hostPlayerId);
-      router.push(`/game/${data.roomCode}`);
+      if (onPlayAgainCreated) {
+        onPlayAgainCreated({
+          roomCode: data.roomCode,
+          hostPlayerId: data.hostPlayerId,
+        });
+      } else {
+        router.push(`/game/${data.roomCode}`);
+      }
     } catch {
       setError("Something went wrong");
     } finally {
@@ -308,7 +328,7 @@ export function Results({
           {/* Header */}
           <div className="text-center mb-10">
             <motion.h1
-              className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-3"
+              className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-3 title-glow"
               initial={{ opacity: 0, scale: 0.8, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
@@ -372,7 +392,7 @@ export function Results({
                   return (
                     <motion.div
                       key={`${a.playerId}-${a.achievement.id}`}
-                      className={`p-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 ${badgeColor.border} relative overflow-hidden`}
+                      className={`shimmer-sweep p-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 ${badgeColor.border} relative overflow-hidden`}
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{
@@ -385,10 +405,10 @@ export function Results({
                       {/* Subtle gradient overlay */}
                       <div className={`absolute inset-0 ${badgeColor.bg} opacity-30`} />
                       <div className="relative">
-                        <div className={`w-10 h-10 rounded-xl ${badgeColor.iconBg} flex items-center justify-center mb-2`}
+                        <div className={`w-11 h-11 rounded-xl ${badgeColor.iconBg} flex items-center justify-center mb-2.5`}
                           style={{ boxShadow: badgeColor.glow }}
                         >
-                          <span className="text-xl leading-none">{a.achievement.icon}</span>
+                          <span className="text-2xl leading-none">{a.achievement.icon}</span>
                         </div>
                         <p className={`font-display font-bold text-sm leading-tight ${badgeColor.text}`}>
                           {a.achievement.name}
@@ -630,7 +650,8 @@ export function Results({
                                     </span>
                                     {isWinner && (
                                       <motion.span
-                                        className="inline-flex items-center gap-0.5 text-xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gold/20 text-gold ml-1"
+                                        className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-gradient-to-r from-gold/25 to-gold/15 text-gold border border-gold/20 ml-1"
+                                        style={{ boxShadow: "0 0 8px rgba(255, 214, 68, 0.15)" }}
                                         variants={popIn}
                                         initial="hidden"
                                         animate="visible"
@@ -638,9 +659,7 @@ export function Results({
                                           delay: 0.6 + respIdx * 0.15,
                                         }}
                                       >
-                                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
-                                          <path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.14-3.47-6.22c-.42-.75-1.64-.75-2.06 0L7.01 9.72l-4.23-1.14c-.8-.22-1.63.26-1.84 1.06-.11.4-.02.82.24 1.13L5.5 15.5h13l4.32-4.73c.26-.31.35-.73.25-1.13z" />
-                                        </svg>
+                                        <CrownIcon className="w-3 h-3 animate-crown-shimmer" />
                                         Winner
                                       </motion.span>
                                     )}
@@ -648,11 +667,9 @@ export function Results({
                                 </div>
                                 <div className="text-right shrink-0">
                                   <span
-                                    className={`font-mono font-bold text-base tabular-nums ${
-                                      pts < 0 ? "text-punch" : isWinner ? "text-gold" : "text-ink-dim"
-                                    }`}
+                                    className={`font-mono font-bold text-base tabular-nums ${getPointsTextColor(pts, isWinner)}`}
                                   >
-                                    {pts < 0 ? pts.toLocaleString() : `+${pts.toLocaleString()}`}
+                                    {formatSigned(pts)}
                                   </span>
                                   <p className="text-xs text-ink-dim/80 tabular-nums">
                                     {voteCount} vote{voteCount !== 1 ? "s" : ""} ({pct}%)

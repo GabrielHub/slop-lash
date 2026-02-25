@@ -3,9 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState, filterCastVotes } from "@/lib/types";
-import { getModelByModelId } from "@/lib/models";
-import { ModelIcon } from "@/components/model-icon";
-import { getPlayerColor } from "@/lib/player-colors";
+import { PlayerAvatar } from "@/components/player-avatar";
 
 export interface BestPrompt {
   promptText: string;
@@ -79,10 +77,6 @@ export function BestPromptsCarousel({ prompts }: { prompts: BestPrompt[] }) {
   if (prompts.length === 0) return null;
 
   const item = prompts[current];
-  const model =
-    item.playerType === "AI" && item.playerModelId
-      ? getModelByModelId(item.playerModelId)
-      : null;
 
   return (
     <div className="relative">
@@ -111,7 +105,7 @@ export function BestPromptsCarousel({ prompts }: { prompts: BestPrompt[] }) {
         <AnimatePresence mode="wait">
           <motion.div
             key={current}
-            className="p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+            className="relative p-4 sm:p-5 rounded-xl bg-surface/88 backdrop-blur-md border-2 border-edge"
             style={{ boxShadow: "var(--shadow-card)" }}
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
@@ -119,39 +113,31 @@ export function BestPromptsCarousel({ prompts }: { prompts: BestPrompt[] }) {
             transition={{ duration: 0.25 }}
           >
             {/* Prompt text */}
-            <p className="font-display font-semibold text-base text-gold mb-3 leading-snug">
+            <p className="text-xs text-ink-dim mb-2 leading-snug">
               {item.promptText}
             </p>
 
             {/* Winning response */}
-            <p className="text-ink font-semibold text-base sm:text-lg leading-snug mb-3">
+            <p className="text-base sm:text-lg font-semibold text-ink leading-snug mb-4">
               &ldquo;{item.responseText}&rdquo;
             </p>
 
             {/* Attribution row */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 min-w-0">
-                {model ? (
-                  <ModelIcon model={model} size={18} className="shrink-0" />
-                ) : (
-                  <span
-                    className="w-[18px] h-[18px] flex items-center justify-center rounded-sm text-xs font-bold shrink-0"
-                    style={{
-                      color: getPlayerColor(item.playerName),
-                      backgroundColor: `${getPlayerColor(item.playerName)}20`,
-                    }}
-                  >
-                    {item.playerName[0]?.toUpperCase() ?? "?"}
-                  </span>
-                )}
-                <span className="text-sm text-ink-dim truncate">
+                <PlayerAvatar
+                  name={item.playerName}
+                  modelId={item.playerType === "AI" ? item.playerModelId : null}
+                  size={18}
+                />
+                <span className="text-sm text-ui-muted truncate">
                   {item.playerName}
                 </span>
-                <span className="text-xs text-ink-dim/70">
+                <span className="text-xs text-ui-soft">
                   &middot; Round {item.roundNumber}
                 </span>
               </div>
-              <span className="font-mono font-bold text-base text-gold tabular-nums shrink-0">
+              <span className="font-mono font-bold text-lg text-gold tabular-nums shrink-0" style={{ textShadow: "0 0 12px rgba(255, 214, 68, 0.2)" }}>
                 {item.votePct}%
               </span>
             </div>
