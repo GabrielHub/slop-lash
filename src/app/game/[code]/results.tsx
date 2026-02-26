@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { GameState, GamePrompt, filterCastVotes } from "@/lib/types";
 import { FORFEIT_MARKER } from "@/lib/scoring";
-import { HOST_STALE_MS } from "@/lib/game-constants";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { PlayerList } from "@/components/player-list";
@@ -154,7 +152,6 @@ interface ResultsProps {
   playerId: string | null;
   code: string;
   isFinal: boolean;
-  onPlayAgainCreated?: (data: { roomCode: string; hostPlayerId: string }) => void;
 }
 
 export function Results({
@@ -163,12 +160,8 @@ export function Results({
   playerId,
   code,
   isFinal,
-  onPlayAgainCreated,
 }: ResultsProps) {
-  const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
-  const [playingAgain, setPlayingAgain] = useState(false);
-  const [showRematchTakeover, setShowRematchTakeover] = useState(false);
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
   const { tagline, isStreaming, winner: taglineWinner } = useWinnerTagline(code, isFinal, game.players);
@@ -183,15 +176,6 @@ export function Results({
       setAdvancing(false);
     }
   }, [game.status]);
-
-  useEffect(() => {
-    if (!isFinal || isHost) {
-      setShowRematchTakeover(false);
-      return;
-    }
-    const timer = setTimeout(() => setShowRematchTakeover(true), HOST_STALE_MS + 10_000);
-    return () => clearTimeout(timer);
-  }, [isFinal, isHost, game.hostPlayerId]);
 
   useEffect(() => {
     if (!isFinal || confettiFired.current) return;
@@ -303,40 +287,6 @@ export function Results({
       if (!keepPending) {
         setAdvancing(false);
       }
-    }
-  }
-
-  async function playAgain() {
-    setPlayingAgain(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/games/${code}/play-again`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to create new game");
-        return;
-      }
-      const data = await res.json();
-      localStorage.setItem("playerId", data.hostPlayerId);
-      if (data.rejoinToken) {
-        localStorage.setItem("rejoinToken", data.rejoinToken);
-      }
-      if (onPlayAgainCreated) {
-        onPlayAgainCreated({
-          roomCode: data.roomCode,
-          hostPlayerId: data.hostPlayerId,
-        });
-      } else {
-        router.push(`/game/${data.roomCode}`);
-      }
-    } catch {
-      setError("Something went wrong");
-    } finally {
-      setPlayingAgain(false);
     }
   }
 
@@ -471,39 +421,34 @@ export function Results({
           {/* Actions */}
           <div className="lg:max-w-lg lg:mx-auto">
             {isHost && (
-              <motion.button
-                onClick={(e) => {
-                  triggerElement(e.currentTarget);
-                  playAgain();
-                }}
-                disabled={playingAgain}
-                className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
-                {...buttonTapPrimary}
-              >
-                {playingAgain ? "Creating..." : "Play Again"}
-              </motion.button>
+              <motion.div {...buttonTapPrimary}>
+                <Link
+                  href="/host"
+                  onClick={(e) => triggerElement(e.currentTarget)}
+                  className="block w-full text-center bg-punch/90 backdrop-blur-sm hover:bg-punch-hover text-white font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer"
+                >
+                  Play Again
+                </Link>
+              </motion.div>
             )}
 
             {!isHost && (
-              <div className="text-center py-4 space-y-3">
-                <PulsingDot>
-                  <span className="text-sm">
-                    Waiting for host to start a new game...
-                  </span>
-                </PulsingDot>
-                {showRematchTakeover && (
-                  <motion.button
-                    onClick={(e) => {
-                      triggerElement(e.currentTarget);
-                      void playAgain();
-                    }}
-                    disabled={playingAgain}
-                    className="w-full bg-surface/70 hover:bg-surface border border-edge text-ink font-medium py-3 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    {...buttonTapPrimary}
-                  >
-                    {playingAgain ? "Creating..." : "Start new game (host may be away)"}
-                  </motion.button>
-                )}
+              <motion.div {...buttonTapPrimary}>
+                <Link
+                  href="/join"
+                  onClick={(e) => triggerElement(e.currentTarget)}
+                  className="block w-full text-center bg-surface/70 hover:bg-surface border border-edge text-ink font-medium py-3 rounded-xl transition-colors cursor-pointer"
+                >
+                  Join Another Game
+                </Link>
+              </motion.div>
+            )}
+
+            {!isHost && (
+              <div className="text-center py-4">
+                <p className="text-sm text-ink-dim">
+                  You can join a new room whenever you&apos;re ready.
+                </p>
               </div>
             )}
 

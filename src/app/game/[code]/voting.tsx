@@ -666,9 +666,6 @@ function VoteView({
           whileHover={{ scale: 1.015, y: -2 }}
           whileTap={{ scale: 0.97 }}
         >
-          <p className="text-[11px] uppercase tracking-[0.2em] text-ui-soft group-hover:text-teal transition-colors mb-3">
-            Option A
-          </p>
           <p className="text-base sm:text-lg lg:text-[1.45rem] leading-snug text-ink group-hover:text-teal transition-colors">
             {respA.text}
           </p>
@@ -695,9 +692,6 @@ function VoteView({
           whileHover={{ scale: 1.015, y: -2 }}
           whileTap={{ scale: 0.97 }}
         >
-          <p className="text-[11px] uppercase tracking-[0.2em] text-ui-soft group-hover:text-punch transition-colors mb-3">
-            Option B
-          </p>
           <p className="text-base sm:text-lg lg:text-[1.45rem] leading-snug text-ink group-hover:text-punch transition-colors">
             {respB.text}
           </p>
@@ -765,9 +759,6 @@ function PassiveView({
                 style={{ boxShadow: "var(--shadow-card)" }}
               >
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-ui-soft mb-2">
-                    {i === 0 ? "Option A" : "Option B"}
-                  </p>
                   <p className="text-base sm:text-lg lg:text-xl leading-snug text-ink">
                   {resp.text}
                   </p>

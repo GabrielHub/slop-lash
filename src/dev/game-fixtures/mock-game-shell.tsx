@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Lobby } from "@/app/game/[code]/lobby";
 import { Writing } from "@/app/game/[code]/writing";
@@ -114,7 +113,6 @@ export function MockGameShell({
   previousSlug,
   nextSlug,
 }: MockGameShellProps) {
-  const router = useRouter();
   const [game, setGame] = useState<GameState>(() => cloneGame(scenario.game));
   const [playerId, setPlayerId] = useState<string | null>(scenario.playerId);
   const [actionLog, setActionLog] = useState<string[]>([]);
@@ -390,13 +388,6 @@ export function MockGameShell({
     setActionLog([]);
   }
 
-  function handlePlayAgainCreated() {
-    const next = withScenarioGame("lobby-host-ready");
-    if (!next) return;
-    setGame(next);
-    setPlayerId(next.hostPlayerId);
-  }
-
   return (
     <>
       <div className="fixed top-0 left-0 right-0 z-40 border-b border-edge bg-base/90 backdrop-blur-sm">
@@ -505,10 +496,6 @@ export function MockGameShell({
               playerId={playerId}
               code={mockCode}
               isFinal={game.status === "FINAL_RESULTS"}
-              onPlayAgainCreated={() => {
-                handlePlayAgainCreated();
-                router.push("/dev/ui/lobby-host-ready");
-              }}
             />
           )}
         </motion.div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore, startTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
@@ -29,11 +29,6 @@ function getPlayerId() {
   return localStorage.getItem("playerId");
 }
 
-function getPlayerName() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("playerName");
-}
-
 const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
@@ -42,8 +37,6 @@ const USER_IDLE_POLL_THRESHOLD_MS = 5 * 60_000;
 const POLL_LOBBY_MS = 4000;
 const POLL_ROUND_RESULTS_MS = 4000;
 const POLL_DEFAULT_MS = 3000;
-const POLL_FINAL_WAIT_FOR_REMATCH_MS = 10_000;
-const POLL_FINAL_IDLE_MS = 60_000;
 const HEARTBEAT_TOUCH_MS = 15_000;
 const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
 const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
@@ -171,12 +164,6 @@ function useGamePoller(code: string, playerId: string | null) {
       if (ACTIVE_PHASES.has(s)) return POLL_FAST_MS;
       if (s === "LOBBY") return POLL_LOBBY_MS;
       if (s === "ROUND_RESULTS") return POLL_ROUND_RESULTS_MS;
-      if (s === "FINAL_RESULTS") {
-        const game = gameStateRef.current;
-        const isHost = !!playerId && game?.hostPlayerId === playerId;
-        const hasNextGame = !!game?.nextGameCode;
-        return isHost || hasNextGame ? POLL_FINAL_IDLE_MS : POLL_FINAL_WAIT_FOR_REMATCH_MS;
-      }
       return POLL_DEFAULT_MS;
     }
 
@@ -260,6 +247,9 @@ function useGamePoller(code: string, playerId: string | null) {
 
           if (res.status === 304) {
             if (shouldTouch) lastTouchAtRef.current = Date.now();
+            if (statusRef.current === "FINAL_RESULTS") {
+              return;
+            }
             if (statusRef.current === "VOTING") {
               await syncVotingReactions();
             }
@@ -292,6 +282,9 @@ function useGamePoller(code: string, playerId: string | null) {
           });
           versionRef.current = data.version ?? null;
           statusRef.current = data.status ?? null;
+          if (data.status === "FINAL_RESULTS") {
+            return;
+          }
         } catch {
           await sleep(2000);
           continue;
@@ -335,7 +328,6 @@ function useGamePoller(code: string, playerId: string | null) {
 }
 
 export function GameShell({ code }: { code: string }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
   const { gameState, error, refresh } = useGamePoller(code, playerId);
@@ -416,55 +408,6 @@ export function GameShell({ code }: { code: string }) {
     }
     prevVotingIndex.current = idx;
   }, [gameState?.status, gameState?.votingPromptIndex]);
-
-  // Handle play-again redirect for non-host players
-  const handlePlayAgainRedirect = useCallback(
-    async (nextGameCode: string) => {
-      const playerName = getPlayerName();
-      if (!playerName) {
-        router.push("/join");
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/games/${nextGameCode}/join`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: playerName }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          localStorage.setItem("playerId", data.playerId);
-          if (data.rejoinToken) {
-            localStorage.setItem("rejoinToken", data.rejoinToken);
-          }
-          router.push(`/game/${nextGameCode}`);
-        } else {
-          // Name conflict or game full - redirect to join page
-          router.push("/join");
-        }
-      } catch {
-        router.push("/join");
-      }
-    },
-    [router]
-  );
-
-  useEffect(() => {
-    if (
-      gameState?.status === "FINAL_RESULTS" &&
-      gameState.nextGameCode &&
-      playerId && // Wait for hydration — playerId is null before localStorage is read
-      playerId !== gameState.hostPlayerId
-    ) {
-      // Small delay so non-host players can see the final results briefly
-      const timer = setTimeout(() => {
-        handlePlayAgainRedirect(gameState.nextGameCode!);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [gameState?.status, gameState?.nextGameCode, gameState?.hostPlayerId, playerId, handlePlayAgainRedirect]);
 
   // --- Live Narrator (hooks must be called before early returns) ---
   const isHost = playerId === gameState?.hostPlayerId;

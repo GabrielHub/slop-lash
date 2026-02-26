@@ -146,42 +146,50 @@ export async function generateAiResponses(gameId: string): Promise<void> {
 
 /**
  * Generate AI votes for the current round (slow, run in background).
- * Forfeited prompts (where an AI failed to generate a response) get auto-resolved:
- * all eligible voters' votes are pre-created for the non-forfeited response.
+ * Forfeited prompts are skipped (only votable prompts with 2+ valid responses).
+ * Bumps the game version only for votes on the currently-visible prompt so
+ * clients see live vote progress; future-prompt votes stay hidden.
  * After completion, checks if the current prompt can be revealed.
  */
 export async function generateAiVotes(gameId: string): Promise<void> {
   const startedAt = Date.now();
-  const [players, round] = await Promise.all([
+  const [game, players, round] = await Promise.all([
+    prisma.game.findUnique({ where: { id: gameId }, select: { votingPromptIndex: true } }),
     prisma.player.findMany({ where: { gameId }, select: { id: true, type: true, modelId: true, name: true } }),
     prisma.round.findFirst({
       where: { gameId },
       orderBy: { roundNumber: "desc" },
       select: {
         prompts: {
+          orderBy: { id: "asc" },
           select: {
             id: true,
             text: true,
-            responses: { select: { id: true, playerId: true, text: true } },
+            responses: {
+              orderBy: { id: "asc" },
+              select: { id: true, playerId: true, text: true },
+            },
           },
         },
       },
     }),
   ]);
 
-  if (!round) return;
+  if (!game || !round) return;
 
   const aiPlayers = getAiPlayers(players);
+  const votable = round.prompts.filter(
+    (p) => p.responses.length >= 2 && !p.responses.some((r) => r.text === FORFEIT_TEXT),
+  );
+  const currentPromptId = votable[game.votingPromptIndex]?.id ?? null;
+
   console.log(
-    `[generateAiVotes] Starting AI votes for game ${gameId}: ${aiPlayers.length} voters × ${round.prompts.length} prompts`,
+    `[generateAiVotes] Starting AI votes for game ${gameId}: ${aiPlayers.length} voters × ${votable.length} prompts`,
   );
 
-  const votePromises = round.prompts.flatMap((prompt) => {
-    if (prompt.responses.length < 2) return [];
-    if (prompt.responses.some((response) => response.text === FORFEIT_TEXT)) return [];
-
-    const [responseA, responseB] = [...prompt.responses].sort((a, b) => a.id.localeCompare(b.id));
-    const respondentIds = new Set(prompt.responses.map((response) => response.playerId));
+  const votePromises = votable.flatMap((prompt) => {
+    const [responseA, responseB] = prompt.responses;
+    const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
 
     return aiPlayers
       .filter((player) => !respondentIds.has(player.id))
@@ -192,15 +200,24 @@ export async function generateAiVotes(gameId: string): Promise<void> {
           responseA.text,
           responseB.text,
         );
-        const choiceMap: Record<string, string> = { A: responseA.id, B: responseB.id };
+
+        const responseId = choice === "A" ? responseA.id : choice === "B" ? responseB.id : null;
         await prisma.vote.create({
           data: {
             promptId: prompt.id,
             voterId: aiPlayer.id,
-            responseId: choiceMap[choice] ?? null,
+            responseId,
             failReason,
           },
         });
+
+        // Bump version only for the currently-visible prompt so pollers see live progress
+        if (prompt.id === currentPromptId) {
+          await prisma.game.update({
+            where: { id: gameId },
+            data: { version: { increment: 1 } },
+          });
+        }
 
         const reactionData = [
           ...reactionsA.map((emoji) => ({ responseId: responseA.id, playerId: aiPlayer.id, emoji })),
@@ -217,12 +234,6 @@ export async function generateAiVotes(gameId: string): Promise<void> {
 
   const usages = await collectUsages(votePromises);
   await accumulateUsage(gameId, usages);
-
-  // Bump version so pollers pick up the new votes
-  await prisma.game.update({
-    where: { id: gameId },
-    data: { version: { increment: 1 } },
-  });
 
   console.log(`[generateAiVotes] All AI votes done in ${Date.now() - startedAt}ms for game ${gameId}`);
 
