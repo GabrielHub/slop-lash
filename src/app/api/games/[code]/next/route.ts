@@ -5,21 +5,21 @@ import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, HOST_STALE_MS } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
+import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  const body = await parseJsonBody<{ playerId?: unknown; hostToken?: unknown }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { playerId } = body;
-
-  if (!playerId) {
+  const auth = readHostAuth(body);
+  if (!auth.playerId && !auth.hostToken) {
     return NextResponse.json(
-      { error: "playerId is required" },
+      { error: "playerId or hostToken is required" },
       { status: 400 }
     );
   }
@@ -30,6 +30,8 @@ export async function POST(
       id: true,
       status: true,
       hostPlayerId: true,
+      hostControlTokenHash: true,
+      hostControlLastSeen: true,
       players: {
         select: {
           id: true,
@@ -43,13 +45,22 @@ export async function POST(
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  const isHost = playerId === game.hostPlayerId;
+  const isHost = await isAuthorizedHostControl(game, auth);
 
   if (game.status === "ROUND_RESULTS") {
-    // Host can always advance; non-host can advance if host is stale
     if (!isHost) {
-      const host = game.players.find((p) => p.id === game.hostPlayerId);
-      if (host && Date.now() - new Date(host.lastSeen).getTime() <= HOST_STALE_MS) {
+      const host = game.hostPlayerId
+        ? game.players.find((p) => p.id === game.hostPlayerId)
+        : null;
+      const playerHostIsActive =
+        host != null &&
+        Date.now() - new Date(host.lastSeen).getTime() <= HOST_STALE_MS;
+      const displayHostIsActive =
+        !game.hostPlayerId &&
+        game.hostControlLastSeen != null &&
+        Date.now() - new Date(game.hostControlLastSeen).getTime() <= HOST_STALE_MS;
+
+      if (playerHostIsActive || displayHostIsActive) {
         return NextResponse.json(
           { error: "Only the host can advance" },
           { status: 403 }
@@ -60,7 +71,6 @@ export async function POST(
     if (newRoundStarted) {
       after(() => generateAiResponses(game.id));
     } else {
-      // Game finished (no new round) — invalidate leaderboard cache
       after(() => applyCompletedGameToLeaderboardAggregate(game.id));
       revalidateTag(LEADERBOARD_TAG, { expire: 0 });
     }
@@ -74,7 +84,6 @@ export async function POST(
         { status: 403 }
       );
     }
-    // Only clear deadline for WRITING; VOTING sub-phases manage their own deadlines
     if (game.status === "WRITING") {
       await prisma.game.update({
         where: { id: game.id },

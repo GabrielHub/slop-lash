@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { parseJsonBody } from "@/lib/http";
 import { VOICE_NAMES, pickRandomVoice } from "@/lib/voices";
 import { NARRATOR_MODEL } from "@/lib/narrator-events";
+import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 
 function resolveVoice(voice: string): string {
   if (voice === "RANDOM" || !VOICE_NAMES.includes(voice)) return pickRandomVoice();
@@ -15,16 +16,16 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> },
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  const body = await parseJsonBody<{ playerId?: unknown; hostToken?: unknown }>(request);
   if (!body) {
     console.warn("[narrator] Invalid JSON body");
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { playerId } = body;
-  if (!playerId || typeof playerId !== "string") {
-    console.warn("[narrator] Missing playerId");
-    return NextResponse.json({ error: "playerId is required" }, { status: 400 });
+  const auth = readHostAuth(body);
+  if (!auth.playerId && !auth.hostToken) {
+    console.warn("[narrator] Missing host auth");
+    return NextResponse.json({ error: "playerId or hostToken is required" }, { status: 400 });
   }
 
   const game = await prisma.game.findUnique({
@@ -35,7 +36,7 @@ export async function POST(
     console.warn("[narrator] Game not found:", code);
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
-  if (game.hostPlayerId !== playerId) {
+  if (!(await isAuthorizedHostControl(game, auth))) {
     console.warn("[narrator] Forbidden token request for non-host:", code);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -12,6 +12,7 @@ function noop() {}
 interface UseNarratorOptions {
   code: string;
   playerId: string | null;
+  hostToken?: string | null;
   isHost: boolean;
   ttsMode: string;
   gameStatus: GameStatus | undefined;
@@ -28,6 +29,7 @@ interface UseNarratorReturn {
 export function useNarrator({
   code,
   playerId,
+  hostToken = null,
   isHost,
   ttsMode,
   gameStatus,
@@ -51,9 +53,8 @@ export function useNarrator({
     setIsSpeaking(active);
   }, []);
 
-  // Connect once when game transitions away from LOBBY (host only, ttsMode ON)
   useEffect(() => {
-    if (!isHost || ttsMode !== "ON" || !playerId) return;
+    if (!isHost || ttsMode !== "ON" || (!playerId && !hostToken)) return;
     if (!gameStatus || gameStatus === "LOBBY" || gameStatus === "FINAL_RESULTS") return;
     if (connectedOnceRef.current) return;
     if (connectingRef.current || sessionRef.current) return;
@@ -82,7 +83,7 @@ export function useNarrator({
         const res = await fetch(`/api/games/${code}/narrator`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId }),
+          body: JSON.stringify({ playerId, hostToken }),
         });
         if (!res.ok) {
           resumeHandleRef.current = null;
@@ -164,7 +165,8 @@ export function useNarrator({
               if (resumeHandleRef.current && !gameEndedRef.current) {
                 const handle = resumeHandleRef.current;
                 setTimeout(() => {
-                  if (mountedRef.current && !sessionRef.current && !gameEndedRef.current) {
+                  if (mountedRef.current && !sessionRef.current && !gameEndedRef.current && !connectingRef.current) {
+                    connectingRef.current = true;
                     void connect(handle);
                   }
                 }, 500);
@@ -199,9 +201,8 @@ export function useNarrator({
       if (retryTimer) clearTimeout(retryTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameStatus, isHost, ttsMode, playerId, code]);
+  }, [gameStatus, isHost, ttsMode, playerId, hostToken, code]);
 
-  // Disconnect after a brief delay when game reaches FINAL_RESULTS
   useEffect(() => {
     if (gameStatus !== "FINAL_RESULTS") return;
     gameEndedRef.current = true;

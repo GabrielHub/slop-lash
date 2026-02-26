@@ -78,12 +78,14 @@ export function Voting({
   code,
   isHost,
   isSpectator = false,
+  forceStageView = false,
 }: {
   game: GameState;
   playerId: string | null;
   code: string;
   isHost: boolean;
   isSpectator?: boolean;
+  forceStageView?: boolean;
 }) {
   const [voted, setVoted] = useState<Set<string>>(new Set());
   const [abstained, setAbstained] = useState<Set<string>>(new Set());
@@ -99,7 +101,6 @@ export function Voting({
     return map;
   }, [game.players]);
 
-  // Compute votable prompts sorted by id (matching server getVotablePrompts ordering)
   const votablePrompts = useMemo(() => {
     if (!currentRound) return [];
     return [...currentRound.prompts]
@@ -111,7 +112,6 @@ export function Voting({
   const isRevealing = game.votingRevealing;
   const totalPrompts = votablePrompts.length;
 
-  // Client-side scoring for revealed prompts — powers points display + running scoreboard
   const { promptScores, runningScores } = useMemo(() => {
     const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
     const states = new Map<string, PlayerState>(
@@ -144,7 +144,6 @@ export function Voting({
 
   const currentPromptScore = currentPrompt ? promptScores.get(currentPrompt.id) : undefined;
 
-  // Per-matchup deltas for the standings — shows only the points from the last revealed prompt
   const lastMatchupDeltas = useMemo(() => {
     const deltas = new Map<string, number>();
     const revealedCount = isRevealing ? game.votingPromptIndex + 1 : game.votingPromptIndex;
@@ -162,13 +161,11 @@ export function Voting({
     return deltas;
   }, [votablePrompts, game.votingPromptIndex, isRevealing, promptScores]);
 
-  // Check if this player is a respondent for the current prompt
   const isRespondent = useMemo(() => {
     if (!currentPrompt || !playerId) return false;
     return currentPrompt.responses.some((r) => r.playerId === playerId);
   }, [currentPrompt, playerId]);
 
-  // Check if this player already voted on the current prompt
   const hasVotedCurrent = useMemo(() => {
     if (!currentPrompt || !playerId) return false;
     return (
@@ -177,18 +174,15 @@ export function Voting({
     );
   }, [currentPrompt, playerId, voted]);
 
-  // Check if the player explicitly abstained on the current prompt (survives reconnect)
   const hasAbstainedCurrent = useMemo(() => {
     if (!currentPrompt || !playerId) return false;
     if (abstained.has(currentPrompt.id)) return true;
-    // Only trust server vote data during reveal, when votes are unstripped
     if (!isRevealing) return false;
     return currentPrompt.votes.some(
       (v) => v.voterId === playerId && v.responseId == null && v.failReason == null
     );
   }, [currentPrompt, playerId, abstained, isRevealing]);
 
-  // Play vote-reveal sound when reveal phase starts
   const prevRevealing = useRef(false);
   useEffect(() => {
     if (isRevealing && !prevRevealing.current) {
@@ -231,13 +225,14 @@ export function Voting({
   }
 
   async function skipTimer() {
+    const hostToken = localStorage.getItem("hostControlToken");
     setSkipping(true);
     setError("");
     try {
       const res = await fetch(`/api/games/${code}/next`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, hostToken }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -252,9 +247,9 @@ export function Voting({
 
   const player = game.players.find((p) => p.id === playerId);
   const isAI = player?.type === "AI";
+  const showHostStageDisplay = forceStageView || ((isAI || !playerId) && !isSpectator);
 
-  // AI / unidentified view — gets the full host display (spectators get interactive voting below)
-  if ((isAI || !playerId) && !isSpectator) {
+  if (showHostStageDisplay) {
     return (
       <HostDisplay
         game={game}
@@ -265,6 +260,9 @@ export function Voting({
         scoreResult={currentPromptScore}
         runningScores={runningScores}
         lastMatchupDeltas={lastMatchupDeltas}
+        isHost={isHost}
+        onSkip={isHost ? skipTimer : undefined}
+        skipping={skipping}
       />
     );
   }
@@ -468,6 +466,9 @@ function HostDisplay({
   scoreResult,
   runningScores,
   lastMatchupDeltas,
+  isHost = false,
+  onSkip,
+  skipping = false,
 }: {
   game: GameState;
   currentPrompt: GamePrompt | null;
@@ -477,6 +478,9 @@ function HostDisplay({
   scoreResult?: ScorePromptResult;
   runningScores: Map<string, PlayerState>;
   lastMatchupDeltas: Map<string, number>;
+  isHost?: boolean;
+  onSkip?: () => void;
+  skipping?: boolean;
 }) {
   return (
     <main className="min-h-svh flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-12 pt-20">
@@ -504,6 +508,19 @@ function HostDisplay({
               deadline={game.phaseDeadline}
               total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
             />
+          </div>
+        )}
+
+        {isHost && onSkip && (
+          <div className="max-w-md mx-auto mb-6">
+            <motion.button
+              onClick={onSkip}
+              disabled={skipping}
+              className="w-full h-10 px-4 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              {...buttonTap}
+            >
+              {getVotingSkipText(skipping, isRevealing, game.timersDisabled)}
+            </motion.button>
           </div>
         )}
 

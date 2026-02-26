@@ -29,6 +29,11 @@ function getPlayerId() {
   return localStorage.getItem("playerId");
 }
 
+function getHostControlToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("hostControlToken");
+}
+
 const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
@@ -102,7 +107,12 @@ function mergeReactionSnapshot(
   return { ...game, rounds: nextRounds };
 }
 
-function useGamePoller(code: string, playerId: string | null) {
+function useGamePoller(
+  code: string,
+  playerId: string | null,
+  hostControlToken: string | null,
+  viewMode: "game" | "stage",
+) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -235,18 +245,27 @@ function useGamePoller(code: string, playerId: string | null) {
             !isUserIdleVisible() &&
             statusRef.current !== "FINAL_RESULTS" &&
             Date.now() - lastTouchAtRef.current >= getHeartbeatTouchInterval();
+          const shouldHostTouch =
+            !!hostControlToken &&
+            viewMode === "stage" &&
+            statusRef.current !== "FINAL_RESULTS" &&
+            Date.now() - lastTouchAtRef.current >= getHeartbeatTouchInterval();
           if (shouldTouch) params.set("touch", "1");
+          if (shouldHostTouch) params.set("hostTouch", "1");
           const qs = params.toString();
           const url = `/api/games/${code}${qs ? `?${qs}` : ""}`;
           const headers: HeadersInit = {};
           if (versionRef.current !== null) {
             headers["If-None-Match"] = `"${versionRef.current}"`;
           }
+          if (shouldHostTouch && hostControlToken) {
+            headers["x-host-control-token"] = hostControlToken;
+          }
           const res = await fetch(url, { headers, cache: "no-store" });
           if (cancelled) continue;
 
           if (res.status === 304) {
-            if (shouldTouch) lastTouchAtRef.current = Date.now();
+            if (shouldTouch || shouldHostTouch) lastTouchAtRef.current = Date.now();
             if (statusRef.current === "FINAL_RESULTS") {
               return;
             }
@@ -266,7 +285,7 @@ function useGamePoller(code: string, playerId: string | null) {
             continue;
           }
 
-          if (shouldTouch) lastTouchAtRef.current = Date.now();
+          if (shouldTouch || shouldHostTouch) lastTouchAtRef.current = Date.now();
 
           const data = (await res.json()) as GameState;
           if (data.status !== "VOTING") {
@@ -298,7 +317,7 @@ function useGamePoller(code: string, playerId: string | null) {
       cancelled = true;
       cancelHiddenWait?.();
     };
-  }, [code, playerId, refreshKey]);
+  }, [code, playerId, hostControlToken, viewMode, refreshKey]);
 
   useEffect(() => {
     const markInteraction = () => {
@@ -308,17 +327,10 @@ function useGamePoller(code: string, playerId: string | null) {
         setRefreshKey((k) => k + 1);
       }
     };
-    window.addEventListener("pointerdown", markInteraction, { passive: true });
-    window.addEventListener("keydown", markInteraction);
-    window.addEventListener("mousemove", markInteraction, { passive: true });
-    window.addEventListener("touchstart", markInteraction, { passive: true });
-    window.addEventListener("focus", markInteraction);
+    const events = ["pointerdown", "keydown", "mousemove", "touchstart", "focus"] as const;
+    for (const e of events) window.addEventListener(e, markInteraction, { passive: true });
     return () => {
-      window.removeEventListener("pointerdown", markInteraction);
-      window.removeEventListener("keydown", markInteraction);
-      window.removeEventListener("mousemove", markInteraction);
-      window.removeEventListener("touchstart", markInteraction);
-      window.removeEventListener("focus", markInteraction);
+      for (const e of events) window.removeEventListener(e, markInteraction);
     };
   }, []);
 
@@ -327,10 +339,17 @@ function useGamePoller(code: string, playerId: string | null) {
   return { gameState, error, refresh };
 }
 
-export function GameShell({ code }: { code: string }) {
+export function GameShell({
+  code,
+  viewMode = "game",
+}: {
+  code: string;
+  viewMode?: "game" | "stage";
+}) {
   const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const { gameState, error, refresh } = useGamePoller(code, playerId);
+  const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
+  const { gameState, error, refresh } = useGamePoller(code, playerId, hostControlToken, viewMode);
   const [endingGame, setEndingGame] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const rejoinAttempted = useRef(false);
@@ -347,10 +366,8 @@ export function GameShell({ code }: { code: string }) {
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [refresh]);
 
-  // Session recovery: detect disconnected player and attempt rejoin
   useEffect(() => {
     if (!gameState || rejoinAttempted.current) return;
-    // Only attempt if we have a playerId but it's not in the player list
     const inGame = gameState.players.some((p) => p.id === playerId);
     if (inGame || !playerId) return;
 
@@ -377,25 +394,21 @@ export function GameShell({ code }: { code: string }) {
       .finally(() => setReconnecting(false));
   }, [gameState, playerId, code, searchParams, refresh]);
 
-  // Preload sounds on first user interaction
   useEffect(() => {
     window.addEventListener("pointerdown", preloadSounds, { once: true });
     return () => window.removeEventListener("pointerdown", preloadSounds);
   }, []);
 
-  // Play phase-transition sound when game status changes
   const prevStatus = useRef(gameState?.status);
   useEffect(() => {
     const status = gameState?.status;
     if (!status || status === prevStatus.current) return;
     const prev = prevStatus.current;
     prevStatus.current = status;
-    // Skip on initial mount (prev is undefined) and LOBBY phase
     if (!prev || status === "LOBBY") return;
     playSound("phase-transition");
   }, [gameState?.status]);
 
-  // Play transition sound when votingPromptIndex changes within VOTING
   const prevVotingIndex = useRef(gameState?.votingPromptIndex);
   useEffect(() => {
     if (gameState?.status !== "VOTING") {
@@ -409,11 +422,13 @@ export function GameShell({ code }: { code: string }) {
     prevVotingIndex.current = idx;
   }, [gameState?.status, gameState?.votingPromptIndex]);
 
-  // --- Live Narrator (hooks must be called before early returns) ---
-  const isHost = playerId === gameState?.hostPlayerId;
+  const isHost =
+    playerId === gameState?.hostPlayerId ||
+    (viewMode === "stage" && !!hostControlToken && gameState?.hostPlayerId == null);
   const { narrate, isConnected: narratorConnected, isSpeaking: narratorSpeaking } = useNarrator({
     code,
     playerId,
+    hostToken: hostControlToken,
     isHost,
     ttsMode: gameState?.ttsMode ?? "OFF",
     gameStatus: gameState?.status,
@@ -424,20 +439,17 @@ export function GameShell({ code }: { code: string }) {
   const gameStateRef = useRef(gameState);
   gameStateRef.current = gameState;
 
-  // Fire deferred game_start when narrator connection becomes ready
   const prevNarratorConnected = useRef(false);
   useEffect(() => {
     if (!narratorConnected || prevNarratorConnected.current) return;
     prevNarratorConnected.current = true;
     const gs = gameStateRef.current;
     if (gs?.status === "WRITING") {
-      // Prevent the phase-transition effect below from emitting a duplicate game_start
       narratorPrevStatus.current = gs.status;
       narrate(buildGameStartEvent(gs));
     }
   }, [narratorConnected, narrate]);
 
-  // Narrate phase transitions
   const narratorPrevStatus = useRef(gameState?.status);
   useEffect(() => {
     const gs = gameStateRef.current;
@@ -466,7 +478,6 @@ export function GameShell({ code }: { code: string }) {
     }
   }, [gameState?.status, narratorConnected, narrate]);
 
-  // Narrate matchup and vote result changes within VOTING
   const narratorPrevIndex = useRef<number | undefined>(undefined);
   const narratorPrevRevealing = useRef<boolean | undefined>(undefined);
   useEffect(() => {
@@ -486,7 +497,6 @@ export function GameShell({ code }: { code: string }) {
     if (xml) narrate(xml);
   }, [gameState?.votingPromptIndex, gameState?.votingRevealing, narratorConnected, narrate]);
 
-  // Narrate hurry-up nudge at ~15s remaining in WRITING
   useEffect(() => {
     if (!narratorConnected || gameState?.status !== "WRITING" || !gameState.phaseDeadline) return;
     const deadline = new Date(gameState.phaseDeadline).getTime();
@@ -597,6 +607,7 @@ export function GameShell({ code }: { code: string }) {
 
   const currentPlayer = gameState.players.find((p) => p.id === playerId);
   const isSpectator = currentPlayer?.type === "SPECTATOR";
+  const forceStageView = viewMode === "stage";
 
   const canEndGame =
     isHost &&
@@ -605,14 +616,14 @@ export function GameShell({ code }: { code: string }) {
       gameState.status === "ROUND_RESULTS");
 
   async function handleEndGame() {
-    if (!playerId || !canEndGame) return;
+    if ((!playerId && !hostControlToken) || !canEndGame) return;
     if (!window.confirm("End the game early? Scores will be calculated for completed rounds.")) return;
     setEndingGame(true);
     try {
       await fetch(`/api/games/${code}/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, hostToken: hostControlToken }),
       });
     } finally {
       setEndingGame(false);
@@ -620,7 +631,7 @@ export function GameShell({ code }: { code: string }) {
   }
 
   function volumeIcon(): React.ReactNode {
-    const props = {
+    const svgProps = {
       width: 16, height: 16, viewBox: "0 0 24 24",
       fill: "none", stroke: "currentColor", strokeWidth: 2,
       strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
@@ -628,25 +639,18 @@ export function GameShell({ code }: { code: string }) {
 
     if (soundsMuted) {
       return (
-        <svg {...props}>
+        <svg {...svgProps}>
           <path d="M11 5L6 9H2v6h4l5 4V5z" />
           <line x1="23" y1="9" x2="17" y2="15" />
           <line x1="17" y1="9" x2="23" y2="15" />
         </svg>
       );
     }
-    if (soundsVolume < 0.5) {
-      return (
-        <svg {...props}>
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-        </svg>
-      );
-    }
+
     return (
-      <svg {...props}>
+      <svg {...svgProps}>
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+        {soundsVolume >= 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
         <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       </svg>
     );
@@ -742,10 +746,24 @@ export function GameShell({ code }: { code: string }) {
             />
           )}
           {gameState.status === "WRITING" && (
-            <Writing game={gameState} playerId={playerId} code={code} isHost={isHost} isSpectator={isSpectator} />
+            <Writing
+              game={gameState}
+              playerId={playerId}
+              code={code}
+              isHost={isHost}
+              isSpectator={isSpectator}
+              forceStageView={forceStageView}
+            />
           )}
           {gameState.status === "VOTING" && (
-            <Voting game={gameState} playerId={playerId} code={code} isHost={isHost} isSpectator={isSpectator} />
+            <Voting
+              game={gameState}
+              playerId={playerId}
+              code={code}
+              isHost={isHost}
+              isSpectator={isSpectator}
+              forceStageView={forceStageView}
+            />
           )}
           {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
             <Results

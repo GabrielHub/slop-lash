@@ -3,20 +3,21 @@ import { prisma } from "@/lib/db";
 import { startRound, generateAiResponses, MIN_PLAYERS } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
+import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  const body = await parseJsonBody<{ playerId?: unknown; hostToken?: unknown }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { playerId } = body;
-  if (!playerId || typeof playerId !== "string") {
+  const auth = readHostAuth(body);
+  if (!auth.playerId && !auth.hostToken) {
     return NextResponse.json(
-      { error: "playerId is required" },
+      { error: "playerId or hostToken is required" },
       { status: 400 }
     );
   }
@@ -27,6 +28,7 @@ export async function POST(
       id: true,
       status: true,
       hostPlayerId: true,
+      hostControlTokenHash: true,
       players: { select: { type: true } },
     },
   });
@@ -42,7 +44,7 @@ export async function POST(
     );
   }
 
-  if (playerId !== game.hostPlayerId) {
+  if (!(await isAuthorizedHostControl(game, auth))) {
     return NextResponse.json(
       { error: "Only the host can start the game" },
       { status: 403 }
@@ -57,18 +59,15 @@ export async function POST(
     );
   }
 
-  // Create round and set WRITING (fast DB work)
   let startedRound = false;
   try {
     await startRound(game.id, 1);
     startedRound = true;
   } catch (e) {
-    // Duplicate start clicks can race and lose on unique(roundNumber) creation.
-    // Treat the loser as success; pollers will observe the state change.
+    // Race-loser on unique(roundNumber) — treat as success
     if (!hasPrismaErrorCode(e, "P2002")) throw e;
   }
 
-  // Generate AI responses in background (slow AI work)
   if (startedRound) {
     after(() => generateAiResponses(game.id));
   }

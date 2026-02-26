@@ -43,12 +43,14 @@ export function Writing({
   code,
   isHost,
   isSpectator = false,
+  forceStageView = false,
 }: {
   game: GameState;
   playerId: string | null;
   code: string;
   isHost: boolean;
   isSpectator?: boolean;
+  forceStageView?: boolean;
 }) {
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState<Set<string>>(new Set());
@@ -106,13 +108,14 @@ export function Writing({
   }
 
   async function skipTimer() {
+    const hostToken = localStorage.getItem("hostControlToken");
     setSkipping(true);
     setError("");
     try {
       const res = await fetch(`/api/games/${code}/next`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, hostToken }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -127,6 +130,41 @@ export function Writing({
 
   const player = game.players.find((p) => p.id === playerId);
   const isAI = player?.type === "AI";
+
+  if (forceStageView) {
+    return (
+      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+        <motion.div
+          className="w-full max-w-lg"
+          variants={fadeInUp}
+          initial="hidden"
+          animate="visible"
+        >
+          <div className="text-center mb-6">
+            <h1 className="font-display text-3xl font-bold mb-3 text-ink">
+              Round {game.currentRound}
+            </h1>
+            <PulsingDot>Players are writing their answers...</PulsingDot>
+          </div>
+          {!game.timersDisabled && (
+            <div className="mb-6">
+              <Timer deadline={game.phaseDeadline} />
+            </div>
+          )}
+          {isHost && (
+            <motion.button
+              onClick={skipTimer}
+              disabled={skipping}
+              className="w-full py-2 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              {...buttonTap}
+            >
+              {getSkipButtonText(skipping, game.timersDisabled, "Writing")}
+            </motion.button>
+          )}
+        </motion.div>
+      </main>
+    );
+  }
 
   if (isSpectator) {
     // Spectator: read-only view of all prompts with assignments

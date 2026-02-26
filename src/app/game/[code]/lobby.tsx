@@ -51,7 +51,6 @@ export function Lobby({
     }
   }, [game.status]);
 
-  // Track player joins/leaves for SFX
   const prevPlayerIds = useRef(new Set(game.players.map((p) => p.id)));
   useEffect(() => {
     const currentIds = new Set(game.players.map((p) => p.id));
@@ -67,14 +66,15 @@ export function Lobby({
   const handleKick = useCallback(
     async (targetPlayerId: string) => {
       const playerId = localStorage.getItem("playerId");
-      if (!playerId) return;
+      const hostToken = localStorage.getItem("hostControlToken");
+      if (!playerId && !hostToken) return;
       const target = game.players.find((p) => p.id === targetPlayerId);
       if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
       try {
         await fetch(`/api/games/${code}/kick`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, targetPlayerId }),
+          body: JSON.stringify({ playerId, hostToken, targetPlayerId }),
         });
       } catch {
         // ignore
@@ -93,6 +93,8 @@ export function Lobby({
   async function startGame() {
     if (startPendingRef.current) return;
     const playerId = localStorage.getItem("playerId");
+    const hostToken = localStorage.getItem("hostControlToken");
+    if (!playerId && !hostToken) return;
     startPendingRef.current = true;
     setStarting(true);
     setError("");
@@ -101,7 +103,7 @@ export function Lobby({
       const res = await fetch(`/api/games/${code}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, hostToken }),
       });
       const data = await res.json();
       if (!res.ok) {

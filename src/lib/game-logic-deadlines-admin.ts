@@ -1,8 +1,9 @@
 import { prisma } from "./db";
-import { HOST_STALE_MS, VOTE_PER_PROMPT_SECONDS } from "./game-constants";
+import { HOST_STALE_MS, ROUND_RESULTS_SECONDS, VOTE_PER_PROMPT_SECONDS } from "./game-constants";
 import { applyScoreResult, scorePrompt, type PlayerState } from "./scoring";
 import type { PlayerType } from "./types";
 import type { PhaseAdvanceResult } from "./game-logic-core";
+import { advanceGame } from "./game-logic-rounds";
 import {
   checkAllVotesForCurrentPrompt,
   fillAbstainVotes,
@@ -94,16 +95,12 @@ async function applyRoundScores(gameId: string): Promise<void> {
 
   if (!round) return;
 
-  // Build mutable player states — updated after each prompt
   const playerStates = new Map<string, PlayerState>(
     players.map((p) => [p.id, { score: p.score, humorRating: p.humorRating, winStreak: p.winStreak }]),
   );
-
+  const playerTypeMap = new Map(players.map((p) => [p.id, toPlayerType(p.type)]));
   const scoreIncrements: Record<string, number> = {};
   const responsePoints: { id: string; points: number }[] = [];
-
-  // Build a player type lookup once (stable across prompts)
-  const playerTypeMap = new Map(players.map((p) => [p.id, toPlayerType(p.type)]));
 
   for (const prompt of round.prompts) {
     const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
@@ -122,7 +119,6 @@ async function applyRoundScores(gameId: string): Promise<void> {
       eligibleVoterCount,
     );
 
-    // Accumulate score increments for DB writes
     for (const resp of prompt.responses) {
       const pts = result.points[resp.id] ?? 0;
       scoreIncrements[resp.playerId] = (scoreIncrements[resp.playerId] ?? 0) + pts;
@@ -132,13 +128,10 @@ async function applyRoundScores(gameId: string): Promise<void> {
       scoreIncrements[playerId] = (scoreIncrements[playerId] ?? 0) + penalty;
     }
 
-    // Update running player states for subsequent prompts
     applyScoreResult(result, prompt.responses, playerStates);
   }
 
-  // Batch DB updates
   await Promise.all([
-    // Player score, HR, streak
     ...Object.entries(scoreIncrements).map(([playerId, points]) => {
       const state = playerStates.get(playerId)!;
       return prisma.player.update({
@@ -150,7 +143,6 @@ async function applyRoundScores(gameId: string): Promise<void> {
         },
       });
     }),
-    // Response pointsEarned
     ...responsePoints.map(({ id, points }) =>
       prisma.response.update({
         where: { id },
@@ -160,19 +152,43 @@ async function applyRoundScores(gameId: string): Promise<void> {
   ]);
 }
 
+function getRoundResultsDeadline(params: {
+  hostPlayerId: string | null;
+  timersDisabled: boolean;
+}): Date | null {
+  // Display-only hosts auto-advance between rounds
+  if (params.hostPlayerId == null && !params.timersDisabled) {
+    return new Date(Date.now() + ROUND_RESULTS_SECONDS * 1000);
+  }
+  return null;
+}
+
 /** Atomically transition VOTING to ROUND_RESULTS and apply scores. */
 export async function calculateRoundScores(gameId: string): Promise<void> {
-  // Atomic guard: only one caller can claim VOTING→ROUND_RESULTS
+  const gameMeta = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { hostPlayerId: true, timersDisabled: true },
+  });
+
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: "VOTING" },
-    data: { status: "ROUND_RESULTS", phaseDeadline: null, winnerTagline: null, version: { increment: 1 } },
+    data: {
+      status: "ROUND_RESULTS",
+      phaseDeadline: gameMeta
+        ? getRoundResultsDeadline({
+            hostPlayerId: gameMeta.hostPlayerId,
+            timersDisabled: gameMeta.timersDisabled,
+          })
+        : null,
+      winnerTagline: null,
+      version: { increment: 1 },
+    },
   });
   if (claim.count === 0) return;
 
   await applyRoundScores(gameId);
 
-  // Bump version again so pollers see the updated scores
-  // (a poller arriving between the status change and score application would see 0s)
+  // Bump version so pollers see the updated scores
   await prisma.game.update({
     where: { id: gameId },
     data: { version: { increment: 1 } },
@@ -181,7 +197,7 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
 
 /**
  * Fill "..." placeholder responses for any assigned players who haven't submitted.
- * Also tracks idle rounds: increment for HUMAN players who didn't submit, reset for those who did.
+ * Tracks idle rounds: increment for HUMAN players who didn't submit, reset for those who did.
  */
 async function fillPlaceholderResponses(gameId: string): Promise<void> {
   const [round, humanPlayers] = await Promise.all([
@@ -207,35 +223,31 @@ async function fillPlaceholderResponses(gameId: string): Promise<void> {
 
   if (!round) return;
 
-  // Collect player IDs who were assigned but didn't submit (idle)
   const idlePlayerIds = new Set<string>();
   const activePlayerIds = new Set<string>();
+  const creates: ReturnType<typeof prisma.response.create>[] = [];
 
-  const creates = round.prompts.flatMap((prompt) => {
+  for (const prompt of round.prompts) {
     const submittedPlayerIds = new Set(prompt.responses.map((r) => r.playerId));
-    // Track active submitters
     for (const pid of submittedPlayerIds) activePlayerIds.add(pid);
 
-    return prompt.assignments
-      .filter((a) => !submittedPlayerIds.has(a.playerId))
-      .map((a) => {
-        idlePlayerIds.add(a.playerId);
-        console.warn(`[fillPlaceholder] Player ${a.playerId} timed out on prompt "${prompt.text.slice(0, 50)}" in game ${gameId}`);
-        return prisma.response.create({
-          data: {
-            promptId: prompt.id,
-            playerId: a.playerId,
-            text: "...",
-          },
-        });
-      });
-  });
+    for (const a of prompt.assignments) {
+      if (submittedPlayerIds.has(a.playerId)) continue;
+      idlePlayerIds.add(a.playerId);
+      console.warn(`[fillPlaceholder] Player ${a.playerId} timed out on prompt "${prompt.text.slice(0, 50)}" in game ${gameId}`);
+      creates.push(
+        prisma.response.create({
+          data: { promptId: prompt.id, playerId: a.playerId, text: "..." },
+        }),
+      );
+    }
+  }
+
   if (creates.length > 0) {
     console.warn(`[fillPlaceholder] Filling ${creates.length} placeholder responses for game ${gameId}`);
   }
   await Promise.all(creates);
 
-  // Update idle tracking for HUMAN players
   await Promise.all(
     humanPlayers
       .filter((p) => idlePlayerIds.has(p.id) || activePlayerIds.has(p.id))
@@ -261,7 +273,6 @@ async function advanceVotingSubPhase(gameId: string, votingRevealing: boolean): 
 /**
  * Fill placeholder responses for missing players and advance the phase.
  * During VOTING, steps through sub-phases (vote -> reveal -> next) instead of jumping to ROUND_RESULTS.
- * Returns the phase advanced to, so callers can trigger AI work in background.
  */
 export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceResult> {
   const game = await prisma.game.findUnique({
@@ -270,17 +281,21 @@ export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceRes
   });
   if (!game) return null;
 
-  if (game.status === "WRITING") {
-    await fillPlaceholderResponses(gameId);
-    const claimed = await startVoting(gameId);
-    return claimed ? "VOTING" : null;
+  switch (game.status) {
+    case "WRITING": {
+      await fillPlaceholderResponses(gameId);
+      const claimed = await startVoting(gameId);
+      return claimed ? "VOTING" : null;
+    }
+    case "VOTING":
+      return advanceVotingSubPhase(gameId, game.votingRevealing);
+    case "ROUND_RESULTS": {
+      const newRoundStarted = await advanceGame(gameId);
+      return newRoundStarted ? "WRITING" : "FINAL_RESULTS";
+    }
+    default:
+      return null;
   }
-
-  if (game.status === "VOTING") {
-    return advanceVotingSubPhase(gameId, game.votingRevealing);
-  }
-
-  return null;
 }
 
 /**
@@ -313,10 +328,7 @@ export async function checkAndEnforceDeadline(gameId: string): Promise<PhaseAdva
   return forceAdvancePhase(gameId);
 }
 
-/**
- * End the game early, skipping to FINAL_RESULTS.
- * Fills placeholder responses and calculates scores for the current round if needed.
- */
+/** End the game early, skipping to FINAL_RESULTS with scores for completed work. */
 export async function endGameEarly(gameId: string): Promise<void> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
@@ -324,43 +336,47 @@ export async function endGameEarly(gameId: string): Promise<void> {
   });
   if (!game || game.status === "LOBBY" || game.status === "FINAL_RESULTS") return;
 
-  // Atomically claim the transition to FINAL_RESULTS
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: game.status },
     data: { status: "FINAL_RESULTS", phaseDeadline: null, winnerTagline: null, version: { increment: 1 } },
   });
   if (claim.count === 0) return;
 
-  if (game.status === "WRITING") {
+  if (game.status === "WRITING" || game.status === "VOTING") {
     await fillPlaceholderResponses(gameId);
   }
 
   if (game.status === "VOTING") {
-    // Guard against in-flight AI responses that haven't finished yet
-    await fillPlaceholderResponses(gameId);
-    // Record non-voters as abstentions so penalty logic works correctly
-    const votablePrompts = await getVotablePrompts(gameId);
-    const allPlayers = await prisma.player.findMany({
-      where: { gameId, type: { not: "SPECTATOR" } },
-      select: { id: true },
-    });
-    for (const prompt of votablePrompts) {
-      const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
-      const existingVoterIds = new Set(prompt.votes.map((v) => v.voterId));
-      const missing = allPlayers.filter(
-        (p) => !respondentIds.has(p.id) && !existingVoterIds.has(p.id),
-      );
-      if (missing.length > 0) {
-        await prisma.vote.createMany({
-          data: missing.map((p) => ({ promptId: prompt.id, voterId: p.id })),
-          skipDuplicates: true,
-        });
-      }
-    }
+    await fillAbstainVotesForAllPrompts(gameId);
   }
 
   if (game.status === "WRITING" || game.status === "VOTING") {
     await applyRoundScores(gameId);
+  }
+}
+
+/** Record non-voters as abstentions across all votable prompts. */
+async function fillAbstainVotesForAllPrompts(gameId: string): Promise<void> {
+  const [votablePrompts, allPlayers] = await Promise.all([
+    getVotablePrompts(gameId),
+    prisma.player.findMany({
+      where: { gameId, type: { not: "SPECTATOR" } },
+      select: { id: true },
+    }),
+  ]);
+
+  for (const prompt of votablePrompts) {
+    const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
+    const existingVoterIds = new Set(prompt.votes.map((v) => v.voterId));
+    const missing = allPlayers.filter(
+      (p) => !respondentIds.has(p.id) && !existingVoterIds.has(p.id),
+    );
+    if (missing.length > 0) {
+      await prisma.vote.createMany({
+        data: missing.map((p) => ({ promptId: prompt.id, voterId: p.id })),
+        skipDuplicates: true,
+      });
+    }
   }
 }
 
@@ -381,7 +397,12 @@ export async function promoteHost(gameId: string): Promise<void> {
   if (nextHost) {
     await prisma.game.update({
       where: { id: gameId },
-      data: { hostPlayerId: nextHost.id, version: { increment: 1 } },
+      data: {
+        hostPlayerId: nextHost.id,
+        hostControlTokenHash: null,
+        hostControlLastSeen: null,
+        version: { increment: 1 },
+      },
     });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
@@ -14,13 +14,21 @@ import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
-function PlayerCountHint({ selectedCount }: { selectedCount: number }) {
-  const total = 1 + selectedCount;
+type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
+
+function PlayerCountHint({
+  selectedCount,
+  hostParticipation,
+}: {
+  selectedCount: number;
+  hostParticipation: HostParticipation;
+}) {
+  const total = (hostParticipation === "PLAYER" ? 1 : 0) + selectedCount;
   const remaining = MAX_PLAYERS - total;
 
   if (remaining <= 0) return null;
 
-  if (total % 2 !== 0) {
+  if (total > 0 && total % 2 !== 0) {
     return (
       <p className="text-xs text-gold/85 mb-3">
         1 more player needs to join for even teams
@@ -40,10 +48,9 @@ function PlayerCountHint({ selectedCount }: { selectedCount: number }) {
 }
 
 const NAME_MAX_LENGTH = 20;
-const MAX_AI_PLAYERS = MAX_PLAYERS - 1;
 
 function getCostTier(model: AIModel): string {
-  // Estimate per-game cost: ~3 rounds * 8 prompts * (~100 input + 50 output tokens)
+  // Rough per-game cost estimate
   const perGame =
     (3 * 8 * 100 / 1_000_000) * model.inputPer1M +
     (3 * 8 * 50 / 1_000_000) * model.outputPer1M;
@@ -57,6 +64,7 @@ export default function HostPage() {
   const { triggerElement } = usePixelDissolve();
   const [hostSecret, setHostSecret] = useState("");
   const [hostName, setHostName] = useState("");
+  const [hostParticipation, setHostParticipation] = useState<HostParticipation>("PLAYER");
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
@@ -68,24 +76,32 @@ export default function HostPage() {
   function toggleModel(modelId: string) {
     const targetModel = getModelByModelId(modelId);
     if (!targetModel) return;
+    const maxSelectableAiPlayers = MAX_PLAYERS - (hostParticipation === "PLAYER" ? 1 : 0);
 
     setSelectedModels((prev) => {
       if (prev.includes(modelId)) {
         return prev.filter((id) => id !== modelId);
       }
 
-      // Only one model per provider: selecting another variant swaps it in.
+      // One model per provider: selecting a variant swaps it in
       const withoutSameProvider = prev.filter((id) => {
         const model = getModelByModelId(id);
         return model?.provider !== targetModel.provider;
       });
 
-      if (withoutSameProvider.length >= MAX_AI_PLAYERS) {
+      if (withoutSameProvider.length >= maxSelectableAiPlayers) {
         return prev;
       }
       return [...withoutSameProvider, modelId];
     });
   }
+
+  const maxAiPlayers = MAX_PLAYERS - (hostParticipation === "PLAYER" ? 1 : 0);
+  const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + selectedModels.length;
+
+  useEffect(() => {
+    setSelectedModels((prev) => (prev.length <= maxAiPlayers ? prev : prev.slice(0, maxAiPlayers)));
+  }, [maxAiPlayers]);
 
   async function createGame() {
     if (!hostSecret.trim()) {
@@ -106,6 +122,7 @@ export default function HostPage() {
         body: JSON.stringify({
           hostSecret: hostSecret.trim(),
           hostName: hostName.trim(),
+          hostParticipation,
           aiModelIds: selectedModels,
           timersDisabled,
           ttsMode,
@@ -119,12 +136,28 @@ export default function HostPage() {
         return;
       }
 
-      localStorage.setItem("playerId", data.hostPlayerId);
-      localStorage.setItem("playerName", hostName.trim());
+      if (data.hostControlToken) {
+        localStorage.setItem("hostControlToken", data.hostControlToken);
+      }
+      if (typeof data.hostPlayerId === "string") {
+        localStorage.setItem("playerId", data.hostPlayerId);
+        localStorage.setItem("playerName", hostName.trim());
+      } else {
+        localStorage.removeItem("playerId");
+        localStorage.removeItem("playerType");
+        localStorage.removeItem("rejoinToken");
+      }
+      if (typeof data.hostPlayerType === "string") {
+        localStorage.setItem("playerType", data.hostPlayerType);
+      }
       if (data.rejoinToken) {
         localStorage.setItem("rejoinToken", data.rejoinToken);
       }
-      router.push(`/game/${data.roomCode}`);
+      router.push(
+        typeof data.hostPlayerId !== "string"
+          ? `/stage/${data.roomCode}`
+          : `/game/${data.roomCode}`,
+      );
     } catch {
       setError("Something went wrong");
     } finally {
@@ -220,12 +253,15 @@ export default function HostPage() {
                 Add AI Players
               </label>
               <span className="text-sm font-semibold tabular-nums text-ink-dim">
-                {1 + selectedModels.length}
+                {activePlayerCount}
                 <span className="text-ink-dim/50">/{MAX_PLAYERS}</span>
-                <span className="text-xs font-normal text-ink-dim/50 ml-1">players</span>
+                <span className="text-xs font-normal text-ink-dim/50 ml-1">active players</span>
               </span>
             </div>
-            <PlayerCountHint selectedCount={selectedModels.length} />
+            <PlayerCountHint
+              selectedCount={selectedModels.length}
+              hostParticipation={hostParticipation}
+            />
             <div className="grid grid-cols-1 gap-2">
               {AI_MODELS.map((model) => {
                 const selected = selectedModels.includes(model.id);
@@ -234,7 +270,7 @@ export default function HostPage() {
                   return selectedModel?.provider === model.provider;
                 });
                 const atLimit =
-                  selectedModels.length >= MAX_AI_PLAYERS &&
+                  selectedModels.length >= maxAiPlayers &&
                   !selected &&
                   !replacesSameProvider;
 
@@ -301,6 +337,20 @@ export default function HostPage() {
                 onChange={setTimersDisabled}
                 label="Disable Timers"
                 description="Phases only advance when all players submit or host skips"
+              />
+            </div>
+
+            {/* Host Participation */}
+            <div className="mb-8">
+              <Toggle
+                checked={hostParticipation === "PLAYER"}
+                onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
+                label="Host Plays Too"
+                description={
+                  hostParticipation === "PLAYER"
+                    ? "Host joins as a player (great for remote games)"
+                    : "Host runs the game as a display/controller only (TV mode)"
+                }
               />
             </div>
 

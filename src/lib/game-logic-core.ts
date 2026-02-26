@@ -2,10 +2,25 @@ import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
 import { FORFEIT_TEXT, type RoundHistoryEntry } from "./ai";
 
-export { MAX_PLAYERS, MAX_SPECTATORS, MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
+export {
+  MAX_PLAYERS,
+  MAX_SPECTATORS,
+  MIN_PLAYERS,
+  WRITING_DURATION_SECONDS,
+  VOTE_PER_PROMPT_SECONDS,
+  REVEAL_SECONDS,
+  ROUND_RESULTS_SECONDS,
+  HOST_STALE_MS,
+} from "./game-constants";
 
 /** The phase that was advanced to, or null if no transition occurred. */
-export type PhaseAdvanceResult = "VOTING" | "VOTING_SUBPHASE" | "ROUND_RESULTS" | null;
+export type PhaseAdvanceResult =
+  | "WRITING"
+  | "VOTING"
+  | "VOTING_SUBPHASE"
+  | "ROUND_RESULTS"
+  | "FINAL_RESULTS"
+  | null;
 
 /** Shape returned by the previous-rounds query for building AI history. */
 type PreviousRound = {

@@ -5,35 +5,35 @@ import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import { endGameEarly } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
+import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ playerId?: unknown }>(request);
+  const body = await parseJsonBody<{ playerId?: unknown; hostToken?: unknown }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { playerId } = body;
-
-  if (!playerId || typeof playerId !== "string") {
+  const auth = readHostAuth(body);
+  if (!auth.playerId && !auth.hostToken) {
     return NextResponse.json(
-      { error: "playerId is required" },
+      { error: "playerId or hostToken is required" },
       { status: 400 }
     );
   }
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, status: true, hostPlayerId: true },
+    select: { id: true, status: true, hostPlayerId: true, hostControlTokenHash: true },
   });
 
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  if (playerId !== game.hostPlayerId) {
+  if (!(await isAuthorizedHostControl(game, auth))) {
     return NextResponse.json(
       { error: "Only the host can end the game" },
       { status: 403 }

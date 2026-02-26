@@ -1,43 +1,42 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { parseJsonBody } from "@/lib/http";
+import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ playerId?: unknown; targetPlayerId?: unknown }>(request);
+  const body = await parseJsonBody<{ playerId?: unknown; hostToken?: unknown; targetPlayerId?: unknown }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { playerId, targetPlayerId } = body;
-
-  if (!playerId || typeof playerId !== "string" || !targetPlayerId || typeof targetPlayerId !== "string") {
+  const auth = readHostAuth(body);
+  const targetPlayerId = typeof body.targetPlayerId === "string" ? body.targetPlayerId : null;
+  if ((!auth.playerId && !auth.hostToken) || !targetPlayerId) {
     return NextResponse.json(
-      { error: "playerId and targetPlayerId are required" },
+      { error: "targetPlayerId and (playerId or hostToken) are required" },
       { status: 400 }
     );
   }
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, status: true, hostPlayerId: true },
+    select: { id: true, status: true, hostPlayerId: true, hostControlTokenHash: true },
   });
 
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  // Host-only action
-  if (playerId !== game.hostPlayerId) {
+  if (!(await isAuthorizedHostControl(game, auth))) {
     return NextResponse.json(
       { error: "Only the host can kick players" },
       { status: 403 }
     );
   }
 
-  // Only during LOBBY or ROUND_RESULTS
   if (game.status !== "LOBBY" && game.status !== "ROUND_RESULTS") {
     return NextResponse.json(
       { error: "Can only kick during lobby or between rounds" },
@@ -45,15 +44,13 @@ export async function POST(
     );
   }
 
-  // Cannot kick yourself
-  if (playerId === targetPlayerId) {
+  if (auth.playerId && auth.playerId === targetPlayerId) {
     return NextResponse.json(
       { error: "Cannot kick yourself" },
       { status: 400 }
     );
   }
 
-  // Verify target exists in this game
   const target = await prisma.player.findFirst({
     where: { id: targetPlayerId, gameId: game.id },
     select: { id: true },
@@ -66,10 +63,8 @@ export async function POST(
     );
   }
 
-  // Delete the player (cascade removes responses/votes)
   await prisma.player.delete({ where: { id: targetPlayerId } });
 
-  // Bump version so pollers pick up the change
   await prisma.game.update({
     where: { id: game.id },
     data: { version: { increment: 1 } },

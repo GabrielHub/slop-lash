@@ -1,11 +1,21 @@
 import { NextResponse, after } from "next/server";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
 import type { PhaseAdvanceResult } from "@/lib/game-logic";
-import { checkAndEnforceDeadline, generateAiVotes, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
+import {
+  checkAndEnforceDeadline,
+  generateAiResponses,
+  generateAiVotes,
+  promoteHost,
+  HOST_STALE_MS,
+} from "@/lib/game-logic";
+import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import type { GameMetaPayload, GameRoutePayload } from "./route-data";
 import { findGameMeta, findGamePayloadByStatus } from "./route-data";
 import { isDeadlineExpired, isVersionUnchanged, stripUnrevealedVotes } from "./route-helpers";
 import { jsonByteLength, logDbTransfer, recordRouteHit } from "@/lib/db-transfer-debug";
+import { matchesHostControlToken } from "@/lib/host-control";
 
 const CACHE_HEADERS = {
   "Cache-Control": "private, no-store, no-cache, must-revalidate",
@@ -13,15 +23,16 @@ const CACHE_HEADERS = {
 
 const HEARTBEAT_MIN_INTERVAL_MS = 15_000;
 
+/** Fill optional fields that may be absent in lighter select queries. */
 function normalizePayload(game: unknown): GameRoutePayload {
-  const normalized = game as Record<string, unknown>;
+  const g = game as Record<string, unknown>;
   return {
-    ...normalized,
-    aiInputTokens: (normalized.aiInputTokens as number | undefined) ?? 0,
-    aiOutputTokens: (normalized.aiOutputTokens as number | undefined) ?? 0,
-    aiCostUsd: (normalized.aiCostUsd as number | undefined) ?? 0,
-    modelUsages: (normalized.modelUsages as GameRoutePayload["modelUsages"] | undefined) ?? [],
-    rounds: (normalized.rounds as GameRoutePayload["rounds"] | undefined) ?? [],
+    ...g,
+    aiInputTokens: (g.aiInputTokens as number) ?? 0,
+    aiOutputTokens: (g.aiOutputTokens as number) ?? 0,
+    aiCostUsd: (g.aiCostUsd as number) ?? 0,
+    modelUsages: (g.modelUsages as GameRoutePayload["modelUsages"]) ?? [],
+    rounds: (g.rounds as GameRoutePayload["rounds"]) ?? [],
   } as GameRoutePayload;
 }
 
@@ -42,18 +53,46 @@ function scheduleHeartbeat(
       data: { lastSeen: new Date() },
     });
 
-    if (meta.hostPlayerId && playerId !== meta.hostPlayerId) {
-      const host = await prisma.player.findUnique({
-        where: { id: meta.hostPlayerId },
-        select: { gameId: true, lastSeen: true },
-      });
-      if (
-        host?.gameId === meta.id &&
-        Date.now() - host.lastSeen.getTime() > HOST_STALE_MS
-      ) {
-        await promoteHost(meta.id);
-      }
+    await maybePromoteHost(playerId, meta);
+  });
+}
+
+async function maybePromoteHost(
+  playerId: string,
+  meta: GameMetaPayload,
+): Promise<void> {
+  // Display-only host (no player) went stale
+  const hostControlStale =
+    !!meta.hostControlLastSeen &&
+    Date.now() - meta.hostControlLastSeen.getTime() > HOST_STALE_MS;
+
+  if (!meta.hostPlayerId && hostControlStale) {
+    await promoteHost(meta.id);
+    return;
+  }
+
+  // Player-host went stale
+  if (meta.hostPlayerId && playerId !== meta.hostPlayerId) {
+    const host = await prisma.player.findUnique({
+      where: { id: meta.hostPlayerId },
+      select: { gameId: true, lastSeen: true },
+    });
+    if (
+      host?.gameId === meta.id &&
+      Date.now() - host.lastSeen.getTime() > HOST_STALE_MS
+    ) {
+      await promoteHost(meta.id);
     }
+  }
+}
+
+function scheduleHostHeartbeat(meta: GameMetaPayload): void {
+  after(async () => {
+    const cutoff = new Date(Date.now() - HEARTBEAT_MIN_INTERVAL_MS);
+    await prisma.game.updateMany({
+      where: { id: meta.id, hostControlLastSeen: { lt: cutoff } },
+      data: { hostControlLastSeen: new Date() },
+    });
   });
 }
 
@@ -68,18 +107,29 @@ export async function GET(
   const playerId = url.searchParams.get("playerId");
   const clientVersion = url.searchParams.get("v");
   const shouldTouchRequested = url.searchParams.get("touch") === "1" && !!playerId;
+  const shouldHostTouchRequested = url.searchParams.get("hostTouch") === "1";
+  const hostToken = request.headers.get("x-host-control-token");
 
   const meta = await findGameMeta(roomCode);
   if (!meta) {
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
   const shouldTouch = shouldTouchRequested && meta.status !== "FINAL_RESULTS";
+  const shouldHostTouch =
+    shouldHostTouchRequested &&
+    meta.status !== "FINAL_RESULTS" &&
+    matchesHostControlToken(meta.hostControlTokenHash, hostToken);
 
   let advancedTo: PhaseAdvanceResult = null;
   if (isDeadlineExpired(meta.phaseDeadline)) {
     advancedTo = await checkAndEnforceDeadline(meta.id);
     if (advancedTo === "VOTING") {
       after(() => generateAiVotes(meta.id));
+    } else if (advancedTo === "WRITING") {
+      after(() => generateAiResponses(meta.id));
+    } else if (advancedTo === "FINAL_RESULTS") {
+      after(() => applyCompletedGameToLeaderboardAggregate(meta.id));
+      revalidateTag(LEADERBOARD_TAG, { expire: 0 });
     }
   }
 
@@ -91,12 +141,14 @@ export async function GET(
       version: meta.version,
     })
   ) {
-    if (shouldTouch) scheduleHeartbeat(playerId, meta);
+    if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta);
+    if (shouldHostTouch) scheduleHostHeartbeat(meta);
     logDbTransfer("/api/games/[code]", {
       result: "304",
       status: meta.status,
       version: meta.version,
       touch: shouldTouch ? 1 : 0,
+      hostTouch: shouldHostTouch ? 1 : 0,
     });
 
     return new Response(null, {
@@ -113,7 +165,8 @@ export async function GET(
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
 
-  if (shouldTouch) scheduleHeartbeat(playerId, meta);
+  if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta);
+  if (shouldHostTouch) scheduleHostHeartbeat(meta);
 
   const normalized = normalizePayload(game);
 
@@ -139,6 +192,7 @@ export async function GET(
     prompts: promptCount,
     responses: responseCount,
     touch: shouldTouch ? 1 : 0,
+    hostTouch: shouldHostTouch ? 1 : 0,
   });
 
   return jsonGameResponse(normalized);

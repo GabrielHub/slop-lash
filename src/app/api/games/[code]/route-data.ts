@@ -19,6 +19,8 @@ export const gameMetaSelect = {
   version: true,
   phaseDeadline: true,
   hostPlayerId: true,
+  hostControlTokenHash: true,
+  hostControlLastSeen: true,
 } as const satisfies Prisma.GameSelect;
 
 const gamePayloadCommonSelect = {
@@ -97,30 +99,18 @@ export function findGamePayloadByStatus(
   roomCode: string,
   status: GameStatus,
 ) {
-  if (status === "LOBBY") {
-    return prisma.game.findUnique({
-      where: { roomCode },
-      select: gamePayloadLobbySelect,
-    });
-  }
+  const select = (() => {
+    switch (status) {
+      case "LOBBY":
+        return gamePayloadLobbySelect;
+      case "WRITING":
+        return gamePayloadWritingSelect;
+      case "FINAL_RESULTS":
+        return gamePayloadAllRoundsSelect;
+      default:
+        return gamePayloadActiveSelect;
+    }
+  })();
 
-  if (status === "WRITING") {
-    return prisma.game.findUnique({
-      where: { roomCode },
-      select: gamePayloadWritingSelect,
-    });
-  }
-
-  if (status === "FINAL_RESULTS") {
-    return prisma.game.findUnique({
-      where: { roomCode },
-      select: gamePayloadAllRoundsSelect,
-    });
-  }
-
-  // VOTING and ROUND_RESULTS
-  return prisma.game.findUnique({
-    where: { roomCode },
-    select: gamePayloadActiveSelect,
-  });
+  return prisma.game.findUnique({ where: { roomCode }, select });
 }

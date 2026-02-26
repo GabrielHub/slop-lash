@@ -9,6 +9,9 @@ import { cleanupOldGames } from "@/lib/game-cleanup";
 import { isPrismaDataTransferQuotaError } from "@/lib/prisma-errors";
 import type { TtsMode } from "@/lib/types";
 import { VOICE_NAMES } from "@/lib/voices";
+import { createHostControlToken, hashHostControlToken } from "@/lib/host-control";
+
+type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
 
 function parseTtsMode(value: unknown): TtsMode {
   if (value === "OFF" || value === "ON") {
@@ -24,11 +27,17 @@ function parseTtsVoice(value: unknown): string {
   return "RANDOM";
 }
 
+function parseHostParticipation(value: unknown): HostParticipation {
+  if (value === "DISPLAY_ONLY") return "DISPLAY_ONLY";
+  return "PLAYER";
+}
+
 export async function POST(request: Request) {
   const body = await parseJsonBody<{
     hostName?: unknown;
     aiModelIds?: unknown;
     hostSecret?: unknown;
+    hostParticipation?: unknown;
     timersDisabled?: unknown;
     ttsMode?: unknown;
     ttsVoice?: unknown;
@@ -36,7 +45,15 @@ export async function POST(request: Request) {
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { hostName, aiModelIds, hostSecret, timersDisabled, ttsMode, ttsVoice } = body;
+  const {
+    hostName,
+    aiModelIds,
+    hostSecret,
+    hostParticipation,
+    timersDisabled,
+    ttsMode,
+    ttsVoice,
+  } = body;
 
   const secret = process.env.HOST_SECRET;
   if (!secret || hostSecret !== secret) {
@@ -61,7 +78,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Clean up old/incomplete games (non-blocking)
   after(async () => {
     try {
       await cleanupOldGames();
@@ -81,16 +97,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const hostRejoinToken = randomBytes(12).toString("base64url");
+    const hostControlToken = createHostControlToken();
+    const hostMode = parseHostParticipation(hostParticipation);
+    const isHostPlayer = hostMode === "PLAYER";
+    const hostRejoinToken = isHostPlayer
+      ? randomBytes(12).toString("base64url")
+      : null;
     const game = await prisma.game.create({
       data: {
         roomCode,
         timersDisabled: timersDisabled === true,
         ttsMode: parseTtsMode(ttsMode),
         ttsVoice: parseTtsVoice(ttsVoice),
-        players: {
-          create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
-        },
+        hostControlTokenHash: hashHostControlToken(hostControlToken),
+        hostControlLastSeen: new Date(),
+        ...(isHostPlayer
+          ? {
+              players: {
+                create: [{ name: cleanName, type: "HUMAN" as const, rejoinToken: hostRejoinToken }],
+              },
+            }
+          : {}),
       },
       select: {
         id: true,
@@ -98,15 +125,19 @@ export async function POST(request: Request) {
       },
     });
 
-    await prisma.game.update({
-      where: { id: game.id },
-      data: { hostPlayerId: game.players[0].id },
-    });
+    const createdHostPlayerId = game.players[0]?.id ?? null;
+    if (createdHostPlayerId) {
+      await prisma.game.update({
+        where: { id: game.id },
+        data: { hostPlayerId: createdHostPlayerId },
+      });
+    }
 
     if (Array.isArray(aiModelIds)) {
       const validIds = aiModelIds.filter((id): id is string => typeof id === "string");
+      const maxAiPlayers = MAX_PLAYERS - (isHostPlayer ? 1 : 0);
       const aiPlayers = selectUniqueModelsByProvider(validIds)
-        .slice(0, MAX_PLAYERS - 1)
+        .slice(0, maxAiPlayers)
         .map((model) => ({
           gameId: game.id,
           name: model.shortName,
@@ -122,7 +153,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       roomCode,
       gameId: game.id,
-      hostPlayerId: game.players[0].id,
+      hostPlayerId: createdHostPlayerId,
+      hostPlayerType: isHostPlayer ? "HUMAN" : null,
+      hostControlToken,
       rejoinToken: hostRejoinToken,
     });
   } catch (error) {

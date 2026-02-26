@@ -64,7 +64,6 @@ export function analyzePromptOutcome(
   const castVotes = filterCastVotes(prompt.votes);
   const totalVotes = castVotes.length;
 
-  // Points-based winner determination
   const byPoints = [...prompt.responses].sort(
     (a, b) => b.pointsEarned - a.pointsEarned,
   );
@@ -74,7 +73,6 @@ export function analyzePromptOutcome(
     ? byPoints[0].id
     : null;
 
-  // Unanimous still based on votes (for stamps)
   const voteCounts = prompt.responses
     .map((r) => ({
       resp: r,
@@ -91,7 +89,6 @@ export function analyzePromptOutcome(
     top.resp.player.type === "AI" &&
     bottom?.resp.player.type === "HUMAN";
 
-  // Check if all human voters abstained
   const humanVoters = prompt.votes.filter((v) => v.voter.type === "HUMAN");
   const allPassed = humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
 
@@ -211,7 +208,6 @@ export function Results({
 
   const currentRound = game.rounds[0];
 
-  // Fire confetti for SLOPPED! (unanimous vote) during round results
   useEffect(() => {
     if (isFinal || sloppedFired.current || !currentRound) return;
     const hasUnanimous = currentRound.prompts.some((prompt) => {
@@ -244,13 +240,14 @@ export function Results({
   const afkPlayers = game.players.filter((p) => p.type === "HUMAN" && p.idleRounds >= 2);
 
   async function handleKick(targetPlayerId: string) {
+    const hostToken = localStorage.getItem("hostControlToken");
     const target = game.players.find((p) => p.id === targetPlayerId);
     if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
     try {
       await fetch(`/api/games/${code}/kick`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, targetPlayerId }),
+        body: JSON.stringify({ playerId, hostToken, targetPlayerId }),
       });
     } catch {
       // ignore
@@ -262,6 +259,7 @@ export function Results({
 
   async function nextRound() {
     if (advancePendingRef.current) return;
+    const hostToken = localStorage.getItem("hostControlToken");
     advancePendingRef.current = true;
     playSound("round-transition");
     setAdvancing(true);
@@ -271,7 +269,7 @@ export function Results({
       const res = await fetch(`/api/games/${code}/next`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, hostToken }),
       });
       if (!res.ok) {
         const data = await res.json();

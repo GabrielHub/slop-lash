@@ -23,6 +23,7 @@ export default function JoinPage() {
   const [roomCode, setRoomCode] = useState("");
   const [name, setName] = useState("");
   const [spectator, setSpectator] = useState(false);
+  const [controllerMode, setControllerMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -61,7 +62,7 @@ export default function JoinPage() {
       if (data.playerType) {
         localStorage.setItem("playerType", data.playerType);
       }
-      router.push(`/game/${code}`);
+      router.push(controllerMode ? `/controller/${code}` : `/game/${code}`);
     } catch {
       setError("Something went wrong");
     } finally {
@@ -156,6 +157,16 @@ export default function JoinPage() {
               onChange={setSpectator}
               label="Watch as Spectator"
               description="Vote on answers but don't write — join mid-game too"
+            />
+          </div>
+
+          {/* Controller Mode Toggle */}
+          <div className="mb-6">
+            <Toggle
+              checked={controllerMode}
+              onChange={setControllerMode}
+              label="Phone Controller Mode"
+              description="Lightweight controls for writing/voting while watching the host screen"
             />
           </div>
 
