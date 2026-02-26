@@ -65,6 +65,17 @@ export function useNarrator({
     totalRoundsSnapshotRef.current = totalRounds;
 
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function scheduleRetry(delayMs = 1500) {
+      if (cancelled || gameEndedRef.current || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (cancelled || gameEndedRef.current || sessionRef.current || connectingRef.current) return;
+        connectingRef.current = true;
+        void connect();
+      }, delayMs);
+    }
 
     async function connect(handle?: string) {
       try {
@@ -73,16 +84,33 @@ export function useNarrator({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ playerId }),
         });
-        if (!res.ok || cancelled) {
-          if (!res.ok) resumeHandleRef.current = null;
+        if (!res.ok) {
+          resumeHandleRef.current = null;
+          connectedOnceRef.current = false;
+          const errorText = await res.text().catch(() => "");
+          console.warn("[narrator] token request failed:", res.status, errorText);
+          connectingRef.current = false;
+          if (res.status >= 500 || res.status === 429) {
+            scheduleRetry();
+          }
+          return;
+        }
+        if (cancelled) {
           connectingRef.current = false;
           return;
         }
         const { token, voiceName } = await res.json();
+        if (!token || !voiceName) {
+          console.warn("[narrator] token response missing fields");
+          connectingRef.current = false;
+          connectedOnceRef.current = false;
+          scheduleRetry();
+          return;
+        }
 
         getAudioContext();
 
-        const ai = new GoogleGenAI({ apiKey: token });
+        const ai = new GoogleGenAI({ apiKey: token, apiVersion: "v1alpha" });
         const systemInstruction = buildSystemPrompt(
           playersSnapshotRef.current,
           totalRoundsSnapshotRef.current,
@@ -161,12 +189,14 @@ export function useNarrator({
         console.warn("[narrator] connect failed:", err);
         connectingRef.current = false;
         connectedOnceRef.current = false;
+        scheduleRetry();
       }
     }
 
     void connect();
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameStatus, isHost, ttsMode, playerId, code]);

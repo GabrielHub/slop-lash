@@ -17,11 +17,13 @@ export async function POST(
   const { code } = await params;
   const body = await parseJsonBody<{ playerId?: unknown }>(request);
   if (!body) {
+    console.warn("[narrator] Invalid JSON body");
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { playerId } = body;
   if (!playerId || typeof playerId !== "string") {
+    console.warn("[narrator] Missing playerId");
     return NextResponse.json({ error: "playerId is required" }, { status: 400 });
   }
 
@@ -30,17 +32,21 @@ export async function POST(
   });
 
   if (!game) {
+    console.warn("[narrator] Game not found:", code);
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
   if (game.hostPlayerId !== playerId) {
+    console.warn("[narrator] Forbidden token request for non-host:", code);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (game.ttsMode !== "ON") {
+    console.warn("[narrator] Narrator disabled for game:", code, game.ttsMode);
     return NextResponse.json({ error: "Narrator not enabled" }, { status: 400 });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
+    console.error("[narrator] GEMINI_API_KEY is not configured");
     return NextResponse.json({ error: "Not configured" }, { status: 500 });
   }
 
@@ -67,6 +73,14 @@ export async function POST(
         httpOptions: { apiVersion: "v1alpha" },
       },
     });
+
+    if (!token.name) {
+      console.error("[narrator] Ephemeral token response missing token name");
+      return NextResponse.json(
+        { error: "Failed to create narrator token" },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({ token: token.name, voiceName });
   } catch (err) {
