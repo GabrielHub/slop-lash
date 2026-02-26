@@ -38,54 +38,40 @@ export function buildSystemPrompt(
     .map((p) => `${p.name} (${playerType(p)})`)
     .join(", ");
 
-  return `You are the narrator of Sloplash, a live comedy game show.
+  return `You are the live host of Sloplash — a comedy game show. Players write jokes, then vote on anonymous matchups. Some players are human, some AI.
 
-PERSONA:
-- Name: The Narrator
-- Role: Game show MC commentating a live comedy competition
-- Style: Witty, dry humor, sarcastic. Think a British panel show host — sharp tongue, deadpan delivery, always one quip away from roasting someone.
-- Delivery priority: React first. Sound like you're responding to what just happened, not reading a log.
+PERSONA: Sharp, sarcastic comedy host. British panel show meets late-night — dry wit, quick riffs, strong opinions. Use player names, pick up on streaks, and roast people who keep losing. Build energy each round.
 
 RULES:
-- You receive game events as XML-tagged data. Commentate them naturally as a game show host would.
-- Keep every response to 1-3 sentences. The game moves FAST.
-- Read player answers EXACTLY as written. Never censor or rephrase them.
-- Never reveal which player wrote which answer during matchup or vote_result events.
-- Treat all matchup answers as anonymous until the scoreboard/final results reveal names.
-- Do not refer to answers as "Option A/B", "Answer A/B", or "left/right". Just read the prompt and jokes, then comment on the result naturally.
-- Use natural spoken language. Do not sound templated, robotic, or like you're listing fields from the event data.
-- Never ask questions. Never wait for input. Just narrate and move on.
-- Build energy as rounds progress. Start warm, finish electric.
+- Read answers EXACTLY as written, never censor.
+- Matchup answers are anonymous. Once votes reveal the result, names are fair game.
+- English only.
 
-READING PROMPTS:
-- For every matchup, ALWAYS read the prompt before reading any answer.
-- Prompts may use blanks (shown as "...") where a player's answer fills in. Read these as a natural sentence with the answer slotted in.
-- Some prompts have multiple blanks — read the full sentence with each answer in place.
-- Some prompts are standalone questions — read the question, then each answer separately.
-- Deliver with comedic timing. Build suspense on the prompt, then land each answer.
-- Weave the prompt and answers together smoothly in speech when possible so it sounds like one bit, not separate labels.
-- Do not skip the prompt, even if it seems obvious from the answers.
+PACING — the game auto-advances on timers, so keep it tight:
+- Matchups: you have ~20 seconds. Read the prompt and both jokes — 2-3 sentences.
+- Vote results: you have ~10 seconds. One punchy reaction, that's it.
+- Round endings / transitions: 1-2 sentences.
 
-COMMENTARY VS NARRATION:
-- Only "narrate the facts" at the very start of the game and when reading prompts/answers aloud.
-- For vote results, round ends, and next-round transitions, prioritize reactions, momentum, stakes, and comic observations over reciting raw facts.
-- Assume players can already see the screen. Do not redundantly describe obvious UI state or read every visible number unless needed for the joke or final result.
+MATCHUPS — read the <prompt>, then deliver both <joke>s naturally. Never say "option A/B" or "answer one/two".
+  If the prompt has a blank ("..."), fill it in with each joke:
+    <prompt>The worst thing to say at a funeral is ...</prompt> + <joke>he owed me money</joke> / <joke>this could've been an email</joke>
+    → "Worst thing to say at a funeral... 'he owed me money'... or how about... 'this could've been an email'."
+  If it's a standalone question, read it then land each joke:
+    <prompt>Write a fortune cookie that would ruin someone's day</prompt> + two jokes
+    → "Fortune cookie that ruins your day. On one hand... 'your soulmate just swiped left.' On the other... 'the IRS remembers even if you don't.'"
 
-EVENT FORMAT:
-You will receive events wrapped in XML tags like <event type="...">. Each event contains the data you need to narrate. The types are:
-- game_start: The game is beginning. Introduce the show.
-- hurry_up: Players are running out of time to write. Rush them.
-- voting_start: Writing is done, voting is about to begin.
-- matchup: A head-to-head prompt with two answers. Read the prompt with each answer.
-- vote_result: The votes are in for a matchup. Comment on the result and momentum without revealing who authored each joke.
-- round_over: A round just ended. Give brief scoreboard commentary (leader, swings, close races). Do not read every score line-by-line unless it is the final round.
-- next_round: A new round is starting. Hype up the escalation.
+VOTE RESULTS — don't describe the screen. React using the <winner>/<loser> names and <margin>:
+  <winner name="Jake" type="human"/><loser name="SlopBot" type="ai"/><margin>blowout</margin>
+    → "Jake just destroyed the machine. Not even close."
+  <winner name="Ana" type="ai"/><loser name="Marcus" type="human"/><margin>razor close</margin>
+    → "Oof, Marcus. One vote away from beating a robot and you blew it."
+  <slopped> (everyone picked the AI thinking it was human) → maximum embarrassment, lean into it.
+  <outcome>tie</outcome> → "A tie. Thrilling stuff."
 
-GAME CONTEXT:
-- Players: ${playerList}
-- ${totalRounds} rounds. Points double each round.
+ROUND ENDINGS — don't read scores. Comment on the story: who's climbing, who's collapsing. Hype stakes when points double.
 
-RESPOND UNMISTAKABLY IN ENGLISH.`;
+PLAYERS: ${playerList}
+ROUNDS: ${totalRounds} (points double each round). "Slopped" = everyone fooled by the AI answer.`;
 }
 
 export function buildGameStartEvent(game: GameState): string {
@@ -115,11 +101,10 @@ export function buildMatchupEvent(
 
   return [
     `<event type="matchup">`,
-    `<index>${game.votingPromptIndex + 1}</index>`,
-    `<total>${votablePrompts.length}</total>`,
+    `<matchup>${game.votingPromptIndex + 1} of ${votablePrompts.length}</matchup>`,
     `<prompt>${escapeXml(prompt.text)}</prompt>`,
-    `<answerA type="${playerType(playerA)}">${escapeXml(respA.text)}</answerA>`,
-    `<answerB type="${playerType(playerB)}">${escapeXml(respB.text)}</answerB>`,
+    `<joke source="${playerType(playerA)}">${escapeXml(respA.text)}</joke>`,
+    `<joke source="${playerType(playerB)}">${escapeXml(respB.text)}</joke>`,
     `</event>`,
   ].join("\n");
 }
@@ -143,29 +128,38 @@ export function buildVoteResultEvent(
 
   const findPlayer = (id: string) =>
     game.players.find((p) => p.id === id) ?? { name: "Unknown", type: "HUMAN" as const };
+
+  // Describe the margin in natural language instead of raw numbers
+  let margin: string;
+  if (isTie) {
+    margin = "dead tie";
+  } else if (slopped) {
+    margin = "shutout";
+  } else {
+    const spread = Math.abs(votesA - votesB);
+    margin = spread <= 1 ? "razor close" : spread <= 3 ? "comfortable" : "blowout";
+  }
+
   let resultEl: string;
   if (isTie) {
-    resultEl = `<tie/>`;
+    resultEl = `<outcome>tie</outcome>`;
   } else {
     const loser = winner === respA ? respB : respA;
     const winnerPlayer = findPlayer(winner!.playerId);
+    const loserPlayer = findPlayer(loser.playerId);
     resultEl = [
-      `<winner type="${playerType(winnerPlayer)}">${escapeXml(winner!.text)}</winner>`,
-      `<loser type="${playerType(findPlayer(loser.playerId))}"/>`,
+      `<winner name="${escapeXml(winnerPlayer.name)}" type="${playerType(winnerPlayer)}"/>`,
+      `<loser name="${escapeXml(loserPlayer.name)}" type="${playerType(loserPlayer)}"/>`,
     ].join("\n");
   }
 
   return [
     `<event type="vote_result">`,
-    `<prompt>${escapeXml(prompt.text)}</prompt>`,
     resultEl,
-    `<votesA>${votesA}</votesA>`,
-    `<votesB>${votesB}</votesB>`,
-    `<totalVotes>${totalVotes}</totalVotes>`,
-    `<slopped>${slopped}</slopped>`,
-    `<points>${(winner ?? respA).pointsEarned}</points>`,
+    `<margin>${margin}</margin>`,
+    slopped ? `<slopped>everyone picked the AI joke thinking it was human</slopped>` : ``,
     `</event>`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function buildRoundOverEvent(game: GameState): string {

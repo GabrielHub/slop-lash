@@ -15,7 +15,7 @@ export const LEGACY_MODEL_NAME = "Legacy Model";
 export const LEGACY_MODEL_SHORT_NAME = "Legacy";
 
 export const AI_MODELS: AIModel[] = [
-  { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", shortName: "Gemini", provider: "Google", icon: "/icons/gemini-color.svg", inputPer1M: 2.00, outputPer1M: 12.00 },
+  { id: "google/gemini-3-flash", name: "Gemini 3 Flash", shortName: "Gemini", provider: "Google", icon: "/icons/gemini-color.svg", inputPer1M: 0.50, outputPer1M: 3.00 },
   { id: "zai/glm-5", name: "GLM-5", shortName: "GLM", provider: "Zhipu AI", icon: "/icons/zai-light.svg", iconDark: "/icons/zai-dark.svg", inputPer1M: 1.00, outputPer1M: 3.20 },
   { id: "minimax/minimax-m2.5", name: "MiniMax M2.5", shortName: "MiniMax", provider: "MiniMax", icon: "/icons/minimax-color.svg", inputPer1M: 0.30, outputPer1M: 1.20 },
   { id: "deepseek/deepseek-v3.2-thinking", name: "DeepSeek V3.2", shortName: "DeepSeek", provider: "DeepSeek", icon: "/icons/deepseek-color.svg", inputPer1M: 0.28, outputPer1M: 0.38 },
@@ -23,6 +23,7 @@ export const AI_MODELS: AIModel[] = [
   { id: "moonshotai/kimi-k2.5", name: "Kimi K2.5", shortName: "Kimi", provider: "Moonshot AI", icon: "/icons/moonshot-light.svg", iconDark: "/icons/moonshot-dark.svg", inputPer1M: 0.50, outputPer1M: 2.80 },
   { id: "xiaomi/mimo-v2-flash", name: "MiMo V2 Flash", shortName: "MiMo", provider: "Xiaomi", icon: "/icons/xiaomimimo-light.svg", iconDark: "/icons/xiaomimimo-dark.svg", inputPer1M: 0.10, outputPer1M: 0.30 },
   { id: "xai/grok-4.1-fast-reasoning", name: "Grok 4.1 Fast", shortName: "Grok", provider: "xAI", icon: "/icons/grok-light.svg", iconDark: "/icons/grok-dark.svg", inputPer1M: 0.20, outputPer1M: 0.50 },
+  { id: "perplexity/sonar", name: "Perplexity Sonar", shortName: "Sonar", provider: "Perplexity", icon: "/icons/perplexity-color.svg", inputPer1M: 1.00, outputPer1M: 1.00 },
   { id: "alibaba/qwen3.5-flash", name: "Qwen 3.5 Flash", shortName: "Qwen", provider: "Alibaba", icon: "/icons/qwen-color.svg", inputPer1M: 0.10, outputPer1M: 0.40 },
   { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", shortName: "Claude", provider: "Anthropic", icon: "/icons/claude-color.svg", inputPer1M: 3.00, outputPer1M: 15.00 },
 ];
