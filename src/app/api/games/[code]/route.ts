@@ -1,72 +1,24 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
+import type { PhaseAdvanceResult } from "@/lib/game-logic";
 import { checkAndEnforceDeadline, generateAiVotes, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
-import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
+import type { GameRoutePayload } from "./route-data";
+import { findGameMeta, findGamePayload } from "./route-data";
+import { isDeadlineExpired, isVersionUnchanged, stripUnrevealedVotes } from "./route-helpers";
 
 const CACHE_HEADERS = {
   "Cache-Control": "private, no-store, no-cache, must-revalidate",
 } as const;
 
-const gameInclude = {
-  players: {
-    orderBy: { score: "desc" as const },
-  },
-  rounds: {
-    orderBy: { roundNumber: "desc" as const },
-    take: 1,
-    include: roundsInclude,
-  },
-  modelUsages: modelUsagesInclude,
-} as const;
-
-function findGame(roomCode: string, { allRounds = false } = {}) {
-  return prisma.game.findUnique({
-    where: { roomCode },
-    include: allRounds
-      ? {
-          ...gameInclude,
-          rounds: {
-            orderBy: { roundNumber: "asc" as const },
-            include: roundsInclude,
-          },
-        }
-      : gameInclude,
+function jsonGameResponse(game: GameRoutePayload): Response {
+  return NextResponse.json(game, {
+    headers: { ...CACHE_HEADERS, ETag: `"${game.version}"` },
   });
-}
-
-/**
- * Strip votes from prompts that haven't been revealed yet during VOTING phase.
- * Prevents clients from peeking at partial vote results.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function stripUnrevealedVotes(game: any): void {
-  if (game.status !== "VOTING" || !game.rounds?.[0]) return;
-
-  const round = game.rounds[0];
-  const votable = [...round.prompts]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((p: any) => p.responses.length >= 2)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .sort((a: any, b: any) => a.id.localeCompare(b.id));
-
-  for (let i = 0; i < votable.length; i++) {
-    const isFuture = i > game.votingPromptIndex;
-    const isCurrentUnrevealed = i === game.votingPromptIndex && !game.votingRevealing;
-
-    if (isFuture || isCurrentUnrevealed) {
-      votable[i].votes = [];
-      // Strip reactions from unrevealed prompts (match vote stripping)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const resp of votable[i].responses as any[]) {
-        resp.reactions = [];
-      }
-    }
-  }
 }
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ code: string }> }
+  { params }: { params: Promise<{ code: string }> },
 ) {
   const { code } = await params;
   const roomCode = code.toUpperCase();
@@ -74,65 +26,67 @@ export async function GET(
   const playerId = url.searchParams.get("playerId");
   const clientVersion = url.searchParams.get("v");
 
-  const game = await findGame(roomCode);
-
-  if (!game) {
+  const meta = await findGameMeta(roomCode);
+  if (!meta) {
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
 
-  // Heartbeat: update lastSeen for the polling player (non-blocking)
   if (playerId) {
     after(() =>
       prisma.player.updateMany({
-        where: { id: playerId, gameId: game.id },
+        where: { id: playerId, gameId: meta.id },
         data: { lastSeen: new Date() },
-      })
+      }),
     );
   }
 
-  // Check if host is stale and promote a new one
   let hostPromoted = false;
-  if (game.hostPlayerId) {
-    const host = game.players.find((p) => p.id === game.hostPlayerId);
-    if (host && Date.now() - new Date(host.lastSeen).getTime() > HOST_STALE_MS) {
-      await promoteHost(game.id);
+  if (meta.hostPlayerId) {
+    const host = await prisma.player.findUnique({
+      where: { id: meta.hostPlayerId },
+      select: { gameId: true, lastSeen: true },
+    });
+    if (
+      host?.gameId === meta.id &&
+      Date.now() - host.lastSeen.getTime() > HOST_STALE_MS
+    ) {
+      await promoteHost(meta.id);
       hostPromoted = true;
     }
   }
 
-  // Check and enforce deadline (auto-advance if expired)
-  const advancedTo = await checkAndEnforceDeadline(game.id);
-
-  // If deadline advanced to voting, generate AI votes in background
-  if (advancedTo === "VOTING") {
-    after(() => generateAiVotes(game.id));
+  let advancedTo: PhaseAdvanceResult = null;
+  if (isDeadlineExpired(meta.phaseDeadline)) {
+    advancedTo = await checkAndEnforceDeadline(meta.id);
+    if (advancedTo === "VOTING") {
+      after(() => generateAiVotes(meta.id));
+    }
   }
 
-  if (advancedTo || hostPromoted) {
-    const fresh = await findGame(roomCode);
-    stripUnrevealedVotes(fresh);
-    return NextResponse.json(fresh, {
-      headers: { ...CACHE_HEADERS, ETag: `"${fresh?.version}"` },
+  if (
+    !hostPromoted &&
+    !advancedTo &&
+    isVersionUnchanged({
+      clientVersion,
+      ifNoneMatch: request.headers.get("if-none-match"),
+      version: meta.version,
+    })
+  ) {
+    return new Response(null, {
+      status: 304,
+      headers: { ...CACHE_HEADERS, ETag: `"${meta.version}"` },
     });
   }
 
-  // Smart polling: skip full response if version unchanged
-  // Supports both ?v= query param and standard HTTP If-None-Match header
-  const etag = `"${game.version}"`;
-  const versionUnchanged =
-    (clientVersion && Number(clientVersion) === game.version) ||
-    request.headers.get("if-none-match") === etag;
-
-  if (versionUnchanged) {
-    return new Response(null, { status: 304, headers: { ...CACHE_HEADERS, ETag: etag } });
+  const allRounds = !hostPromoted && !advancedTo && meta.status === "FINAL_RESULTS";
+  const game = await findGamePayload(roomCode, { allRounds });
+  if (!game) {
+    return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
 
-  // Return all rounds for FINAL_RESULTS (needed for best-prompts carousel)
-  if (game.status === "FINAL_RESULTS") {
-    const data = await findGame(roomCode, { allRounds: true });
-    return NextResponse.json(data, { headers: { ...CACHE_HEADERS, ETag: etag } });
+  if (game.status !== "FINAL_RESULTS") {
+    stripUnrevealedVotes(game);
   }
 
-  stripUnrevealedVotes(game);
-  return NextResponse.json(game, { headers: { ...CACHE_HEADERS, ETag: etag } });
+  return jsonGameResponse(game);
 }

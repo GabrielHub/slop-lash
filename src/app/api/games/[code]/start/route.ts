@@ -2,10 +2,7 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { startRound, generateAiResponses, MIN_PLAYERS } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
-
-function isPrismaCode(e: unknown, code: string): boolean {
-  return e != null && typeof e === "object" && "code" in e && (e as Record<string, unknown>).code === code;
-}
+import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 
 export async function POST(
   request: Request,
@@ -63,7 +60,7 @@ export async function POST(
   } catch (e) {
     // Duplicate start clicks can race and lose on unique(roundNumber) creation.
     // Treat the loser as success; pollers will observe the state change.
-    if (!isPrismaCode(e, "P2002")) throw e;
+    if (!hasPrismaErrorCode(e, "P2002")) throw e;
   }
 
   // Generate AI responses in background (slow AI work)

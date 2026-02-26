@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { GoogleGenAI, Modality, type LiveServerMessage } from "@google/genai";
+import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from "@google/genai";
 import type { GameStatus, GamePlayer } from "@/lib/types";
 import { getAudioContext, setNarratorDucking } from "@/lib/sounds";
 import { NarratorPlaybackQueue, base64ToPCM, pcm16ToFloat32 } from "@/lib/narrator-audio";
 import { buildSystemPrompt, NARRATOR_MODEL } from "@/lib/narrator-events";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LiveSession = any;
+function noop() {}
 
 interface UseNarratorOptions {
   code: string;
@@ -37,7 +36,7 @@ export function useNarrator({
 }: UseNarratorOptions): UseNarratorReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const sessionRef = useRef<LiveSession>(null);
+  const sessionRef = useRef<Session | null>(null);
   const queueRef = useRef<NarratorPlaybackQueue | null>(null);
   const resumeHandleRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -183,9 +182,8 @@ export function useNarrator({
       if (mountedRef.current) setIsConnected(false);
     }, 3000);
     return () => clearTimeout(timer);
-  }, [gameStatus, isConnected]);
+  }, [gameStatus]);
 
-  // Cleanup on unmount
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -207,9 +205,11 @@ export function useNarrator({
     });
   }, []);
 
-  if (ttsMode !== "ON" || !isHost) {
-    return { narrate: () => {}, isConnected: false, isSpeaking: false };
-  }
+  const disabled = ttsMode !== "ON" || !isHost;
 
-  return { narrate, isConnected, isSpeaking };
+  return {
+    narrate: disabled ? noop : narrate,
+    isConnected: disabled ? false : isConnected,
+    isSpeaking: disabled ? false : isSpeaking,
+  };
 }

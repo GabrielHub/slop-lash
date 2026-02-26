@@ -1,13 +1,11 @@
-/**
- * Shared Prisma include/select fragments for game queries.
- * Used by the game polling route and recap route.
- */
+/** Shared Prisma include/select fragments for game queries. */
 
 const responsePlayerSelect = {
   id: true,
   name: true,
   type: true,
   modelId: true,
+  idleRounds: true,
   humorRating: true,
   winStreak: true,
   lastSeen: true,

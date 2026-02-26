@@ -311,6 +311,9 @@ export function Results({
       }
       const data = await res.json();
       localStorage.setItem("playerId", data.hostPlayerId);
+      if (data.rejoinToken) {
+        localStorage.setItem("rejoinToken", data.rejoinToken);
+      }
       if (onPlayAgainCreated) {
         onPlayAgainCreated({
           roomCode: data.roomCode,

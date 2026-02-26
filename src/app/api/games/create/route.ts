@@ -8,7 +8,19 @@ import { parseJsonBody } from "@/lib/http";
 import type { TtsMode } from "@/lib/types";
 import { VOICE_NAMES } from "@/lib/voices";
 
-const VALID_TTS_MODES: TtsMode[] = ["OFF", "ON"];
+function parseTtsMode(value: unknown): TtsMode {
+  if (value === "OFF" || value === "ON") {
+    return value;
+  }
+  return "OFF";
+}
+
+function parseTtsVoice(value: unknown): string {
+  if (typeof value === "string" && (value === "RANDOM" || VOICE_NAMES.includes(value))) {
+    return value;
+  }
+  return "RANDOM";
+}
 
 export async function POST(request: Request) {
   const body = await parseJsonBody<{
@@ -67,14 +79,8 @@ export async function POST(request: Request) {
     data: {
       roomCode,
       timersDisabled: timersDisabled === true,
-      ttsMode:
-        typeof ttsMode === "string" && VALID_TTS_MODES.includes(ttsMode as TtsMode)
-          ? (ttsMode as TtsMode)
-          : "OFF",
-      ttsVoice:
-        typeof ttsVoice === "string" && (ttsVoice === "RANDOM" || VOICE_NAMES.includes(ttsVoice))
-          ? ttsVoice
-          : "RANDOM",
+      ttsMode: parseTtsMode(ttsMode),
+      ttsVoice: parseTtsVoice(ttsVoice),
       players: {
         create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
       },

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getVotablePrompts, checkAllVotesForCurrentPrompt, revealCurrentPrompt } from "@/lib/game-logic";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
+import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 
 export async function POST(
   request: Request,
@@ -16,8 +17,15 @@ export async function POST(
   const { voterId, promptId, responseId } = body;
   const validVoterId = typeof voterId === "string" ? voterId : null;
   const validPromptId = typeof promptId === "string" ? promptId : null;
-  const validResponseId =
-    responseId == null ? null : typeof responseId === "string" ? responseId : undefined;
+
+  let validResponseId: string | null | undefined;
+  if (responseId == null) {
+    validResponseId = null;
+  } else if (typeof responseId === "string") {
+    validResponseId = responseId;
+  } else {
+    validResponseId = undefined;
+  }
 
   if (!validVoterId || !validPromptId || validResponseId === undefined) {
     return NextResponse.json(
@@ -127,8 +135,7 @@ export async function POST(
       );
     }
     // P2002: unique constraint violation -- forfeit vote pre-creation raced with this human vote
-    const isPrismaConflict = e != null && typeof e === "object" && "code" in e && (e as Record<string, unknown>).code === "P2002";
-    if (isPrismaConflict) {
+    if (hasPrismaErrorCode(e, "P2002")) {
       return NextResponse.json(
         { error: "Already voted on this prompt" },
         { status: 400 }

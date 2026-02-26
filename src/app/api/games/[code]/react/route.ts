@@ -3,10 +3,7 @@ import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isValidReactionEmoji } from "@/lib/reactions";
 import { parseJsonBody } from "@/lib/http";
-
-function isPrismaCode(e: unknown, code: string): boolean {
-  return e != null && typeof e === "object" && "code" in e && (e as Record<string, unknown>).code === code;
-}
+import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 
 export async function POST(
   request: Request,
@@ -83,14 +80,14 @@ export async function POST(
       await prisma.reaction.delete({ where: { id: existing.id } });
     } catch (e) {
       // P2025: concurrent delete already removed it — treat as success
-      if (!isPrismaCode(e, "P2025")) throw e;
+      if (!hasPrismaErrorCode(e, "P2025")) throw e;
     }
   } else {
     try {
       await prisma.reaction.create({ data: { responseId: validResponseId, playerId: validPlayerId, emoji } });
     } catch (e) {
       // P2002: unique constraint race — treat as already exists (no-op)
-      if (!isPrismaCode(e, "P2002")) throw e;
+      if (!hasPrismaErrorCode(e, "P2002")) throw e;
     }
   }
 
