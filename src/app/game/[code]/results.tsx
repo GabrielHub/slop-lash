@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { GameState, GamePrompt, filterCastVotes } from "@/lib/types";
 import { FORFEIT_MARKER } from "@/lib/scoring";
+import { HOST_STALE_MS } from "@/lib/game-constants";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { PlayerList } from "@/components/player-list";
@@ -167,6 +168,7 @@ export function Results({
   const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
   const [playingAgain, setPlayingAgain] = useState(false);
+  const [showRematchTakeover, setShowRematchTakeover] = useState(false);
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
   const { tagline, isStreaming, winner: taglineWinner } = useWinnerTagline(code, isFinal, game.players);
@@ -181,6 +183,15 @@ export function Results({
       setAdvancing(false);
     }
   }, [game.status]);
+
+  useEffect(() => {
+    if (!isFinal || isHost) {
+      setShowRematchTakeover(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowRematchTakeover(true), HOST_STALE_MS + 10_000);
+    return () => clearTimeout(timer);
+  }, [isFinal, isHost, game.hostPlayerId]);
 
   useEffect(() => {
     if (!isFinal || confettiFired.current) return;
@@ -474,12 +485,25 @@ export function Results({
             )}
 
             {!isHost && (
-              <div className="text-center py-4">
+              <div className="text-center py-4 space-y-3">
                 <PulsingDot>
                   <span className="text-sm">
                     Waiting for host to start a new game...
                   </span>
                 </PulsingDot>
+                {showRematchTakeover && (
+                  <motion.button
+                    onClick={(e) => {
+                      triggerElement(e.currentTarget);
+                      void playAgain();
+                    }}
+                    disabled={playingAgain}
+                    className="w-full bg-surface/70 hover:bg-surface border border-edge text-ink font-medium py-3 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    {...buttonTapPrimary}
+                  >
+                    {playingAgain ? "Creating..." : "Start new game (host may be away)"}
+                  </motion.button>
+                )}
               </div>
             )}
 

@@ -4,6 +4,7 @@ import { applyScoreResult, scorePrompt, type PlayerState } from "./scoring";
 import type { PlayerType } from "./types";
 import type { PhaseAdvanceResult } from "./game-logic-core";
 import {
+  checkAllVotesForCurrentPrompt,
   fillAbstainVotes,
   getVotablePrompts,
   revealCurrentPrompt,
@@ -51,7 +52,16 @@ export async function advanceToNextPrompt(gameId: string): Promise<"VOTING_SUBPH
     },
   });
 
-  return claim.count > 0 ? "VOTING_SUBPHASE" : null;
+  if (claim.count === 0) return null;
+
+  // If all votes are already in for the new prompt (e.g. AI pre-voted all
+  // prompts upfront), skip the voting timer and reveal immediately.
+  const allVotesIn = await checkAllVotesForCurrentPrompt(gameId);
+  if (allVotesIn) {
+    await revealCurrentPrompt(gameId);
+  }
+
+  return "VOTING_SUBPHASE";
 }
 
 async function applyRoundScores(gameId: string): Promise<void> {

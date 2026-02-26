@@ -37,12 +37,13 @@ function getPlayerName() {
 const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
+const POLL_VISIBLE_IDLE_MS = 60_000;
+const USER_IDLE_POLL_THRESHOLD_MS = 5 * 60_000;
 const POLL_LOBBY_MS = 4000;
 const POLL_ROUND_RESULTS_MS = 4000;
 const POLL_DEFAULT_MS = 3000;
 const POLL_FINAL_WAIT_FOR_REMATCH_MS = 10_000;
 const POLL_FINAL_IDLE_MS = 60_000;
-const POLL_HIDDEN_MS = 60_000;
 const HEARTBEAT_TOUCH_MS = 15_000;
 const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
 const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
@@ -116,26 +117,57 @@ function useGamePoller(code: string, playerId: string | null) {
   const statusRef = useRef<string | null>(null);
   const gameStateRef = useRef<GameState | null>(null);
   const lastTouchAtRef = useRef(0);
+  const lastInteractionAtRef = useRef(0);
   const reactionsEtagRef = useRef<string | null>(null);
   const reactionsRoundRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let cancelHiddenWait: (() => void) | null = null;
     versionRef.current = null;
     statusRef.current = null;
     gameStateRef.current = null;
     reactionsEtagRef.current = null;
     reactionsRoundRef.current = null;
     lastTouchAtRef.current = 0;
+    lastInteractionAtRef.current = Date.now();
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const waitUntilVisible = () =>
+      new Promise<void>((resolve) => {
+        if (!isPageHidden()) {
+          resolve();
+          return;
+        }
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          cancelHiddenWait = null;
+          resolve();
+        };
+        const onVisibilityChange = () => {
+          if (!isPageHidden()) {
+            finish();
+          }
+        };
+        cancelHiddenWait = finish;
+        document.addEventListener("visibilitychange", onVisibilityChange);
+      });
 
     function resetReactionsCache() {
       reactionsEtagRef.current = null;
       reactionsRoundRef.current = null;
     }
 
+    function isUserIdleVisible(): boolean {
+      if (isPageHidden()) return false;
+      return Date.now() - lastInteractionAtRef.current >= USER_IDLE_POLL_THRESHOLD_MS;
+    }
+
     function getPollDelay(): number {
       const s = statusRef.current ?? "";
+      if (isUserIdleVisible()) return POLL_VISIBLE_IDLE_MS;
       if (ACTIVE_PHASES.has(s)) return POLL_FAST_MS;
       if (s === "LOBBY") return POLL_LOBBY_MS;
       if (s === "ROUND_RESULTS") return POLL_ROUND_RESULTS_MS;
@@ -161,7 +193,7 @@ function useGamePoller(code: string, playerId: string | null) {
         return;
       }
 
-      if (isPageHidden()) return;
+      if (isPageHidden() || isUserIdleVisible()) return;
 
       const headers: HeadersInit = {};
       if (reactionsEtagRef.current) {
@@ -204,7 +236,7 @@ function useGamePoller(code: string, playerId: string | null) {
       while (!cancelled) {
         try {
           if (isPageHidden()) {
-            await sleep(POLL_HIDDEN_MS);
+            await waitUntilVisible();
             continue;
           }
 
@@ -213,6 +245,7 @@ function useGamePoller(code: string, playerId: string | null) {
           if (versionRef.current !== null) params.set("v", String(versionRef.current));
           const shouldTouch =
             !!playerId &&
+            !isUserIdleVisible() &&
             statusRef.current !== "FINAL_RESULTS" &&
             Date.now() - lastTouchAtRef.current >= getHeartbeatTouchInterval();
           if (shouldTouch) params.set("touch", "1");
@@ -270,8 +303,31 @@ function useGamePoller(code: string, playerId: string | null) {
     void poll();
     return () => {
       cancelled = true;
+      cancelHiddenWait?.();
     };
   }, [code, playerId, refreshKey]);
+
+  useEffect(() => {
+    const markInteraction = () => {
+      const wasIdle = Date.now() - lastInteractionAtRef.current >= USER_IDLE_POLL_THRESHOLD_MS;
+      lastInteractionAtRef.current = Date.now();
+      if (wasIdle && !isPageHidden()) {
+        setRefreshKey((k) => k + 1);
+      }
+    };
+    window.addEventListener("pointerdown", markInteraction, { passive: true });
+    window.addEventListener("keydown", markInteraction);
+    window.addEventListener("mousemove", markInteraction, { passive: true });
+    window.addEventListener("touchstart", markInteraction, { passive: true });
+    window.addEventListener("focus", markInteraction);
+    return () => {
+      window.removeEventListener("pointerdown", markInteraction);
+      window.removeEventListener("keydown", markInteraction);
+      window.removeEventListener("mousemove", markInteraction);
+      window.removeEventListener("touchstart", markInteraction);
+      window.removeEventListener("focus", markInteraction);
+    };
+  }, []);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 

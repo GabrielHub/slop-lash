@@ -53,6 +53,7 @@ model Game {
 
   @@index([status])
   @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 model GameModelUsage {
@@ -66,6 +67,22 @@ model GameModelUsage {
 
   @@unique([gameId, modelId])
   @@index([gameId])
+  @@index([modelId])
+}
+
+model LeaderboardAggregate {
+  id             String   @id
+  leaderboard    Json
+  headToHead     Json
+  bestResponses  Json
+  modelUsage     Json
+  stats          Json
+  updatedAt      DateTime @updatedAt
+}
+
+model LeaderboardProcessedGame {
+  gameId       String   @id
+  processedAt  DateTime @default(now())
 }
 
 model Player {

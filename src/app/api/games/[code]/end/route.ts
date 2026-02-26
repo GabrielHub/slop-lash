@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
 import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import { endGameEarly } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
 
@@ -47,6 +48,7 @@ export async function POST(
   }
 
   await endGameEarly(game.id);
+  after(() => applyCompletedGameToLeaderboardAggregate(game.id));
   revalidateTag(LEADERBOARD_TAG, { expire: 0 });
   return NextResponse.json({ success: true });
 }

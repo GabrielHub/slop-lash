@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 import { generateUniqueRoomCode } from "@/lib/game-logic";
+import { HOST_STALE_MS } from "@/lib/game-constants";
 import { parseJsonBody } from "@/lib/http";
 import { selectUniqueModelsByProvider } from "@/lib/models";
 
@@ -39,6 +40,7 @@ export async function POST(
           name: true,
           type: true,
           modelId: true,
+          lastSeen: true,
         },
       },
     },
@@ -55,11 +57,30 @@ export async function POST(
     );
   }
 
-  if (playerId !== game.hostPlayerId) {
+  const requester = game.players.find((p) => p.id === playerId);
+  if (!requester || requester.type !== "HUMAN") {
     return NextResponse.json(
-      { error: "Only the host can start a new game" },
+      { error: "Only a human player can start a new game" },
       { status: 403 }
     );
+  }
+
+  let actingHostId = game.hostPlayerId;
+  if (playerId !== game.hostPlayerId) {
+    const host = game.players.find((p) => p.id === game.hostPlayerId);
+    const hostIsStale =
+      !host || Date.now() - new Date(host.lastSeen).getTime() > HOST_STALE_MS;
+    if (!hostIsStale) {
+      return NextResponse.json(
+        { error: "Only the host can start a new game" },
+        { status: 403 }
+      );
+    }
+    actingHostId = playerId;
+    await prisma.game.update({
+      where: { id: game.id },
+      data: { hostPlayerId: playerId, version: { increment: 1 } },
+    });
   }
 
   // Idempotent: if already created, return the existing new game code
@@ -84,7 +105,7 @@ export async function POST(
   }
 
   // Find host player to carry over name
-  const hostPlayer = game.players.find((p) => p.id === game.hostPlayerId);
+  const hostPlayer = game.players.find((p) => p.id === actingHostId);
   if (!hostPlayer) {
     return NextResponse.json(
       { error: "Host player not found" },

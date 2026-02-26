@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { cleanupOldGames } from "@/lib/game-cleanup";
+import { LEADERBOARD_TAG } from "@/lib/game-constants";
 import { isPrismaDataTransferQuotaError } from "@/lib/prisma-errors";
 
 function isAuthorized(request: Request): boolean {
@@ -19,6 +21,9 @@ export async function GET(request: Request) {
 
   try {
     const summary = await cleanupOldGames();
+    if (summary.autoFinalizedAbandonedActive > 0) {
+      revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+    }
     return NextResponse.json({ ok: true, ...summary });
   } catch (error) {
     if (isPrismaDataTransferQuotaError(error)) {
@@ -30,4 +35,3 @@ export async function GET(request: Request) {
     throw error;
   }
 }
-
