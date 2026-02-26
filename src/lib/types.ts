@@ -7,7 +7,7 @@ export type GameStatus =
 
 export type PlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
-export type TtsMode = "OFF" | "AI_VOICE" | "BROWSER_VOICE";
+export type TtsMode = "OFF" | "ON";
 
 /** A Gemini voice name (e.g. "Puck", "Zephyr") or "RANDOM". */
 export type TtsVoice = string;

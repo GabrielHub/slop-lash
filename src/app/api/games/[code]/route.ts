@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAndEnforceDeadline, generateAiVotes, generateTtsForCurrentPrompt, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
+import { checkAndEnforceDeadline, generateAiVotes, promoteHost, HOST_STALE_MS } from "@/lib/game-logic";
 import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
 
 const CACHE_HEADERS = {
@@ -103,14 +103,9 @@ export async function GET(
   // Check and enforce deadline (auto-advance if expired)
   const advancedTo = await checkAndEnforceDeadline(game.id);
 
-  // If deadline advanced to a voting phase, generate AI votes + TTS in background
+  // If deadline advanced to voting, generate AI votes in background
   if (advancedTo === "VOTING") {
-    after(() => Promise.all([
-      generateAiVotes(game.id),
-      generateTtsForCurrentPrompt(game.id),
-    ]));
-  } else if (advancedTo === "VOTING_SUBPHASE") {
-    after(() => generateTtsForCurrentPrompt(game.id));
+    after(() => generateAiVotes(game.id));
   }
 
   if (advancedTo || hostPromoted) {

@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAllResponsesIn, startVoting, generateAiVotes, generateTtsForCurrentPrompt } from "@/lib/game-logic";
+import { checkAllResponsesIn, startVoting, generateAiVotes } from "@/lib/game-logic";
 import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
@@ -118,10 +118,7 @@ export async function POST(
     if (allIn) {
       const claimed = await startVoting(game.id);
       if (claimed) {
-        await Promise.all([
-          generateAiVotes(game.id),
-          generateTtsForCurrentPrompt(game.id),
-        ]);
+        await generateAiVotes(game.id);
       }
     }
   });

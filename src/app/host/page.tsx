@@ -107,7 +107,7 @@ export default function HostPage() {
           aiModelIds: selectedModels,
           timersDisabled,
           ttsMode,
-          ttsVoice: ttsMode === "AI_VOICE" ? ttsVoice : undefined,
+          ttsVoice: ttsMode === "ON" ? ttsVoice : undefined,
         }),
       });
 
@@ -315,41 +315,31 @@ export default function HostPage() {
               </button>
             </div>
 
-            {/* Voice Readout */}
+            {/* Live Narrator */}
             <div className="mb-8">
-              <label className="block text-sm font-medium text-ink-dim mb-1">
-                Voice Readout
-              </label>
-              <p className="text-xs text-ink-dim/60 mb-3">
-                Read prompts and responses aloud during voting
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { value: "OFF", label: "Off" },
-                    { value: "AI_VOICE", label: "AI Voice" },
-                    { value: "BROWSER_VOICE", label: "Browser" },
-                  ] as const
-                ).map((opt) => (
-                  <motion.button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setTtsMode(opt.value)}
-                    className={`py-2.5 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
-                      ttsMode === opt.value
-                        ? "bg-punch/15 backdrop-blur-sm border-punch text-punch"
-                        : "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                    }`}
-                    {...buttonTap}
-                  >
-                    {opt.label}
-                  </motion.button>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => setTtsMode(ttsMode === "ON" ? "OFF" : "ON")}
+                className="w-full p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+              >
+                <div
+                  className={`relative w-10 h-6 rounded-full transition-colors ${ttsMode === "ON" ? "bg-punch" : "bg-edge-strong"}`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-surface border border-edge/50 transition-transform ${ttsMode === "ON" ? "translate-x-[18px]" : "translate-x-0.5"}`}
+                  />
+                </div>
+                <div>
+                  <span className="font-semibold text-sm">Live Narrator</span>
+                  <p className="text-xs text-ink-dim/60">
+                    AI game-show host narrates the entire game aloud
+                  </p>
+                </div>
+              </button>
 
-              {/* Voice picker (AI Voice only) */}
+              {/* Voice picker */}
               <AnimatePresence>
-                {ttsMode === "AI_VOICE" && (
+                {ttsMode === "ON" && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}

@@ -10,7 +10,19 @@ import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
 import { Results } from "@/app/game/[code]/results";
 import { phaseTransition, fadeInUp } from "@/lib/animations";
-import { playSound, preloadSounds, subscribeAudio, isMuted, toggleMute, getVolume, setVolume } from "@/lib/sounds";
+import { playSound, preloadSounds, subscribeAudio, isMuted, toggleMute, getVolume, setVolume, SOUND_NAMES } from "@/lib/sounds";
+import { useNarrator } from "@/hooks/use-narrator";
+import { NarratorIndicator } from "@/components/narrator-indicator";
+import {
+  buildGameStartEvent,
+  buildNextRoundEvent,
+  buildVotingStartEvent,
+  buildMatchupEvent,
+  buildVoteResultEvent,
+  buildRoundOverEvent,
+  buildHurryUpEvent,
+  getVotablePrompts,
+} from "@/lib/narrator-events";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -158,10 +170,6 @@ export function GameShell({ code }: { code: string }) {
     prevStatus.current = status;
     // Skip on initial mount (prev is undefined) and LOBBY phase
     if (!prev || status === "LOBBY") return;
-    // Cancel any TTS when leaving VOTING phase
-    if (prev === "VOTING" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
     playSound("phase-transition");
   }, [gameState?.status]);
 
@@ -227,6 +235,97 @@ export function GameShell({ code }: { code: string }) {
       return () => clearTimeout(timer);
     }
   }, [gameState?.status, gameState?.nextGameCode, gameState?.hostPlayerId, playerId, handlePlayAgainRedirect]);
+
+  // --- Live Narrator (hooks must be called before early returns) ---
+  const isHost = playerId === gameState?.hostPlayerId;
+  const { narrate, isConnected: narratorConnected, isSpeaking: narratorSpeaking } = useNarrator({
+    code,
+    playerId,
+    isHost,
+    ttsMode: gameState?.ttsMode ?? "OFF",
+    gameStatus: gameState?.status,
+    players: gameState?.players ?? [],
+    totalRounds: gameState?.totalRounds ?? 3,
+  });
+
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
+
+  // Fire deferred game_start when narrator connection becomes ready
+  const prevNarratorConnected = useRef(false);
+  useEffect(() => {
+    if (!narratorConnected || prevNarratorConnected.current) return;
+    prevNarratorConnected.current = true;
+    const gs = gameStateRef.current;
+    if (gs?.status === "WRITING") {
+      // Prevent the phase-transition effect below from emitting a duplicate game_start
+      narratorPrevStatus.current = gs.status;
+      narrate(buildGameStartEvent(gs));
+    }
+  }, [narratorConnected, narrate]);
+
+  // Narrate phase transitions
+  const narratorPrevStatus = useRef(gameState?.status);
+  useEffect(() => {
+    const gs = gameStateRef.current;
+    const status = gs?.status;
+    if (!status || !narratorConnected) return;
+    if (status === narratorPrevStatus.current) return;
+    const prev = narratorPrevStatus.current;
+    narratorPrevStatus.current = status;
+
+    if (!prev) return;
+
+    switch (status) {
+      case "WRITING":
+        narrate(
+          prev === "LOBBY"
+            ? buildGameStartEvent(gs)
+            : buildNextRoundEvent(gs),
+        );
+        break;
+      case "VOTING":
+        narrate(buildVotingStartEvent(gs));
+        break;
+      case "ROUND_RESULTS":
+        narrate(buildRoundOverEvent(gs));
+        break;
+    }
+  }, [gameState?.status, narratorConnected, narrate]);
+
+  // Narrate matchup and vote result changes within VOTING
+  const narratorPrevIndex = useRef<number | undefined>(undefined);
+  const narratorPrevRevealing = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const gs = gameStateRef.current;
+    if (!narratorConnected || !gs || gs.status !== "VOTING") return;
+    const idx = gs.votingPromptIndex;
+    const revealing = gs.votingRevealing;
+
+    if (idx === narratorPrevIndex.current && revealing === narratorPrevRevealing.current) return;
+    narratorPrevIndex.current = idx;
+    narratorPrevRevealing.current = revealing;
+
+    const votablePrompts = getVotablePrompts(gs);
+    const xml = revealing
+      ? buildVoteResultEvent(gs, votablePrompts)
+      : buildMatchupEvent(gs, votablePrompts);
+    if (xml) narrate(xml);
+  }, [gameState?.votingPromptIndex, gameState?.votingRevealing, narratorConnected, narrate]);
+
+  // Narrate hurry-up nudge at ~15s remaining in WRITING
+  useEffect(() => {
+    if (!narratorConnected || gameState?.status !== "WRITING" || !gameState.phaseDeadline) return;
+    const deadline = new Date(gameState.phaseDeadline).getTime();
+    const remaining = deadline - Date.now();
+    const fireAt = remaining - 15_000;
+    if (fireAt < 0) return;
+
+    const timer = setTimeout(() => {
+      narrate(buildHurryUpEvent(15));
+    }, fireAt);
+    return () => clearTimeout(timer);
+  }, [gameState?.status, gameState?.phaseDeadline, narratorConnected, narrate]);
 
   if (reconnecting) {
     return (
@@ -323,7 +422,6 @@ export function GameShell({ code }: { code: string }) {
     );
   }
 
-  const isHost = playerId === gameState.hostPlayerId;
   const currentPlayer = gameState.players.find((p) => p.id === playerId);
   const isSpectator = currentPlayer?.type === "SPECTATOR";
 
@@ -387,6 +485,12 @@ export function GameShell({ code }: { code: string }) {
         <span className="font-mono font-bold text-xs tracking-widest text-ink-dim">
           {gameState.roomCode}
         </span>
+        {narratorConnected && (
+          <>
+            <span className="text-edge-strong">|</span>
+            <NarratorIndicator state={narratorSpeaking ? "speaking" : "connected"} />
+          </>
+        )}
       </div>
       <div className="flex items-center gap-3 pr-14">
         <div className="flex items-center gap-1.5">
@@ -407,6 +511,21 @@ export function GameShell({ code }: { code: string }) {
             aria-label="Volume"
             className="volume-slider hidden sm:block w-16 h-4 cursor-pointer"
           />
+          <button
+            onClick={() => {
+              const names = SOUND_NAMES;
+              playSound(names[Math.floor(Math.random() * names.length)]);
+            }}
+            aria-label="Test sound"
+            title="Play a random sound to test volume"
+            className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
+            </svg>
+          </button>
         </div>
         {canEndGame && (
           <button

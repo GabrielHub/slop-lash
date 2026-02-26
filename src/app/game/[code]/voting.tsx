@@ -16,7 +16,6 @@ import {
 } from "@/lib/animations";
 import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { useTts } from "@/hooks/use-tts";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
@@ -35,29 +34,6 @@ function getVotingSkipText(skipping: boolean, revealing: boolean, timersDisabled
   if (revealing) return "Next";
   if (timersDisabled) return "End Voting";
   return "Skip Timer";
-}
-
-const TTS_BARS = [
-  { height: "h-3", delay: "" },
-  { height: "h-4", delay: "[animation-delay:150ms]" },
-  { height: "h-2.5", delay: "[animation-delay:300ms]" },
-] as const;
-
-const TTS_BARS_REVERSED = [...TTS_BARS].reverse();
-
-/** Animated equalizer bars shown next to a prompt while TTS is playing. */
-function TtsIndicator({ mirror = false }: { mirror?: boolean }) {
-  const bars = mirror ? TTS_BARS_REVERSED : TTS_BARS;
-  return (
-    <span className="inline-flex items-center gap-0.5 shrink-0">
-      {bars.map((bar, i) => (
-        <span
-          key={i}
-          className={`w-0.5 ${bar.height} bg-gold rounded-full animate-pulse ${bar.delay}`}
-        />
-      ))}
-    </span>
-  );
 }
 
 function progressDotClass(index: number, current: number, revealing: boolean): string {
@@ -194,14 +170,6 @@ export function Voting({
     );
   }, [currentPrompt, playerId, abstained]);
 
-  // TTS: play when votingPromptIndex changes (not during reveal)
-  const { playPromptTts, currentPromptId } = useTts({
-    code,
-    ttsMode: game.ttsMode,
-    prompts: votablePrompts,
-    activePromptId: currentPrompt?.id,
-  });
-
   // Play vote-reveal sound when reveal phase starts
   const prevRevealing = useRef(false);
   useEffect(() => {
@@ -210,17 +178,6 @@ export function Voting({
     }
     prevRevealing.current = isRevealing;
   }, [isRevealing]);
-
-  const prevIndexRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (isRevealing) return;
-    if (game.votingPromptIndex === prevIndexRef.current) return;
-    prevIndexRef.current = game.votingPromptIndex;
-
-    if (currentPrompt && game.ttsMode !== "OFF") {
-      playPromptTts(currentPrompt.id);
-    }
-  }, [game.votingPromptIndex, isRevealing, currentPrompt, game.ttsMode, playPromptTts]);
 
   async function castVote(promptId: string, responseId: string | null) {
     if (!playerId) return;
@@ -286,7 +243,6 @@ export function Voting({
         currentPrompt={currentPrompt}
         isRevealing={isRevealing}
         totalPrompts={totalPrompts}
-        currentPromptId={currentPromptId}
         playerNames={playerNames}
         scoreResult={currentPromptScore}
         runningScores={runningScores}
@@ -379,12 +335,8 @@ export function Voting({
                       Prompt {Math.min(game.votingPromptIndex + 1, Math.max(totalPrompts, 1))}
                     </span>
                   </div>
-                  <p className="mx-auto lg:mx-0 max-w-4xl font-display font-bold text-lg sm:text-2xl lg:text-3xl xl:text-[2.15rem] text-gold leading-tight inline-flex items-center justify-center lg:justify-start gap-2 flex-wrap text-center lg:text-left">
-                    {currentPromptId === currentPrompt.id && <TtsIndicator />}
-                    <span>{currentPrompt.text}</span>
-                    {currentPromptId === currentPrompt.id && (
-                      <TtsIndicator mirror />
-                    )}
+                  <p className="mx-auto lg:mx-0 max-w-4xl font-display font-bold text-lg sm:text-2xl lg:text-3xl xl:text-[2.15rem] text-gold leading-tight text-center lg:text-left">
+                    {currentPrompt.text}
                   </p>
                 </div>
 
@@ -485,7 +437,6 @@ function HostDisplay({
   currentPrompt,
   isRevealing,
   totalPrompts,
-  currentPromptId,
   playerNames,
   scoreResult,
   runningScores,
@@ -494,7 +445,6 @@ function HostDisplay({
   currentPrompt: GamePrompt | null;
   isRevealing: boolean;
   totalPrompts: number;
-  currentPromptId: string | null;
   playerNames: Map<string, string>;
   scoreResult?: ScorePromptResult;
   runningScores: Map<string, PlayerState>;
@@ -554,10 +504,8 @@ function HostDisplay({
                     {isRevealing ? "Reveal Stage" : "Voting Stage"}
                   </span>
                 </div>
-                <p className="font-display font-extrabold text-2xl sm:text-4xl lg:text-5xl text-gold leading-tight inline-flex items-center justify-center lg:justify-start gap-3 flex-wrap text-center lg:text-left">
-                  {currentPromptId === currentPrompt.id && <TtsIndicator />}
-                  <span>{currentPrompt.text}</span>
-                  {currentPromptId === currentPrompt.id && <TtsIndicator mirror />}
+                <p className="font-display font-extrabold text-2xl sm:text-4xl lg:text-5xl text-gold leading-tight text-center lg:text-left">
+                  {currentPrompt.text}
                 </p>
               </div>
 

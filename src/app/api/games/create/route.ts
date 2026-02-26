@@ -8,7 +8,7 @@ import { parseJsonBody } from "@/lib/http";
 import type { TtsMode } from "@/lib/types";
 import { VOICE_NAMES } from "@/lib/voices";
 
-const VALID_TTS_MODES: TtsMode[] = ["OFF", "AI_VOICE", "BROWSER_VOICE"];
+const VALID_TTS_MODES: TtsMode[] = ["OFF", "ON"];
 
 export async function POST(request: Request) {
   const body = await parseJsonBody<{

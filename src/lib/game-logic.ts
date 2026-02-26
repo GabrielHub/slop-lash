@@ -1,7 +1,6 @@
 import { prisma } from "./db";
 import { getRandomPrompts } from "./prompts";
 import { generateJoke, aiVote, FORFEIT_TEXT, type AiUsage, type RoundHistoryEntry } from "./ai";
-import { generateSpeechAudioForPrompt } from "./tts";
 import { scorePrompt, applyScoreResult, type PlayerState } from "./scoring";
 import { WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, HOST_STALE_MS } from "./game-constants";
 
@@ -270,10 +269,7 @@ export async function generateAiResponses(gameId: string): Promise<void> {
   if (allIn) {
     const claimed = await startVoting(gameId);
     if (claimed) {
-      await Promise.all([
-        generateAiVotes(gameId),
-        generateTtsForCurrentPrompt(gameId),
-      ]);
+      await generateAiVotes(gameId);
     }
   }
 }
@@ -814,32 +810,6 @@ export async function endGameEarly(gameId: string): Promise<void> {
 
   if (game.status === "WRITING" || game.status === "VOTING") {
     await applyRoundScores(gameId);
-  }
-}
-
-/**
- * Generate TTS audio for a single prompt by voting index (run in background).
- * Called just-in-time when each voting sub-phase starts, so we only generate
- * one TTS request at a time instead of blasting all prompts at once.
- */
-export async function generateTtsForCurrentPrompt(gameId: string): Promise<void> {
-  const game = await prisma.game.findUnique({ where: { id: gameId } });
-  if (!game || game.ttsMode !== "AI_VOICE" || game.status !== "VOTING") return;
-
-  const votablePrompts = await getVotablePrompts(gameId);
-  const prompt = votablePrompts[game.votingPromptIndex];
-  if (!prompt || prompt.responses.length < 2) return;
-
-  // Already cached — nothing to do
-  if (prompt.ttsAudio) return;
-
-  const [a, b] = [...prompt.responses].sort((x, y) => x.id.localeCompare(y.id));
-  const audio = await generateSpeechAudioForPrompt(prompt.id, prompt.text, a.text, b.text, game.ttsVoice);
-  if (audio) {
-    await prisma.prompt.updateMany({
-      where: { id: prompt.id, ttsAudio: null },
-      data: { ttsAudio: audio.toString("base64") },
-    });
   }
 }
 

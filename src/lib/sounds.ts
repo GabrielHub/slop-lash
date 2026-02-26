@@ -27,10 +27,18 @@ const DEFAULT_FADE_OUT_S = 0.02;
 let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 let compressor: DynamicsCompressorNode | null = null;
+let sfxBusGain: GainNode | null = null;
+let narratorBusGain: GainNode | null = null;
 const bufferCache = new Map<SoundName, AudioBuffer>();
 const inflightBufferLoads = new Map<SoundName, Promise<AudioBuffer>>();
 const lastPlayAtMs = new Map<SoundName, number>();
 let resumePromise: Promise<void> | null = null;
+
+// --- Narrator ducking ---
+let narratorDucking = false;
+const DUCK_GAIN = 0.35;
+const DUCK_ATTACK_S = 0.03;
+const DUCK_RELEASE_S = 0.25;
 
 const SOUND_COOLDOWN_MS: Partial<Record<SoundName, number>> = {
   "vote-cast": 60,
@@ -81,8 +89,17 @@ export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
     masterGain = audioContext.createGain();
     masterGain.gain.value = muted ? 0 : volume;
 
-    // Chain: ... → compressor → masterGain → destination
+    // Submix buses under masterGain
+    sfxBusGain = audioContext.createGain();
+    sfxBusGain.gain.value = 1;
+    narratorBusGain = audioContext.createGain();
+    narratorBusGain.gain.value = 1;
+
+    // SFX bus → compressor → master → destination
+    sfxBusGain.connect(compressor);
     compressor.connect(masterGain);
+    // Narrator bus → master → destination (bypasses compressor)
+    narratorBusGain.connect(masterGain);
     masterGain.connect(audioContext.destination);
   }
   if (audioContext.state === "suspended") {
@@ -188,10 +205,6 @@ export function toggleMute(): boolean {
   }
   if (typeof window !== "undefined") {
     localStorage.setItem("soundsMuted", String(muted));
-  }
-  // Cancel any in-progress browser TTS when muting
-  if (muted && typeof window !== "undefined" && window.speechSynthesis) {
-    window.speechSynthesis.cancel();
   }
   syncGainAndNotify();
   return muted;
@@ -329,7 +342,7 @@ export function playSound(name: SoundName): void {
   const { ctx } = getAudioContext();
 
   function play(buffer: AudioBuffer): void {
-    const target = compressor ?? masterGain;
+    const target = sfxBusGain ?? compressor ?? masterGain;
     if (!target) return;
 
     const source = ctx.createBufferSource();
@@ -388,4 +401,25 @@ export function playSound(name: SoundName): void {
       if (!muted) playWhenRunning(audioBuffer);
     })
     .catch(() => {});
+}
+
+/** Returns the narrator submix bus for connecting narrator AudioBufferSourceNodes. */
+export function getNarratorBusNode(): GainNode | null {
+  return narratorBusGain;
+}
+
+/** Duck or unduck the SFX bus when the narrator is actively speaking. */
+export function setNarratorDucking(active: boolean): void {
+  if (narratorDucking === active) return;
+  narratorDucking = active;
+  if (!sfxBusGain || !audioContext) return;
+  const now = audioContext.currentTime;
+  sfxBusGain.gain.cancelScheduledValues(now);
+  if (active) {
+    sfxBusGain.gain.setValueAtTime(sfxBusGain.gain.value, now);
+    sfxBusGain.gain.linearRampToValueAtTime(DUCK_GAIN, now + DUCK_ATTACK_S);
+  } else {
+    sfxBusGain.gain.setValueAtTime(sfxBusGain.gain.value, now);
+    sfxBusGain.gain.linearRampToValueAtTime(1, now + DUCK_RELEASE_S);
+  }
 }

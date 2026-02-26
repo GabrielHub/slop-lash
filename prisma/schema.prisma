@@ -23,8 +23,7 @@ enum PlayerType {
 
 enum TtsMode {
   OFF
-  AI_VOICE
-  BROWSER_VOICE
+  ON
 }
 
 model Game {
@@ -106,7 +105,6 @@ model Prompt {
   roundId     String
   round       Round              @relation(fields: [roundId], references: [id], onDelete: Cascade)
   text        String
-  ttsAudio    String?
   responses   Response[]
   votes       Vote[]
   assignments PromptAssignment[]

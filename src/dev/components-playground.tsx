@@ -13,6 +13,7 @@ import { PulsingDot } from "@/components/pulsing-dot";
 import { ReactionBar } from "@/components/reaction-bar";
 import { ScoreBarChart } from "@/components/score-bar-chart";
 import { Timer } from "@/components/timer";
+import { NarratorIndicator } from "@/components/narrator-indicator";
 import { WinnerTagline } from "@/components/winner-tagline";
 import { getMockScenario } from "@/dev/game-fixtures/scenarios";
 import {
@@ -235,6 +236,43 @@ function SfxMixerPanel(): React.ReactNode {
   );
 }
 
+function NarratorIndicatorDemo(): React.ReactNode {
+  const [state, setState] = useState<"off" | "connected" | "speaking">("connected");
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        {(["off", "connected", "speaking"] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setState(s)}
+            className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+              state === s
+                ? "border-teal/40 bg-teal/10 text-teal"
+                : "border-edge text-ink-dim hover:text-ink"
+            }`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 rounded-lg border border-edge bg-base/80 px-3 py-2 backdrop-blur-sm">
+          <span className="font-display text-xs font-bold text-punch tracking-tight">SLOP-LASH</span>
+          <span className="text-edge-strong">|</span>
+          <span className="font-mono text-xs font-bold tracking-widest text-ink-dim">ABCD</span>
+          {state !== "off" && (
+            <>
+              <span className="text-edge-strong">|</span>
+              <NarratorIndicator state={state} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DevComponentsPlayground() {
   const { theme, toggle: toggleTheme } = useTheme();
   const finalScenario = getMockScenario("results-final");
@@ -299,6 +337,10 @@ export function DevComponentsPlayground() {
             <CompletionCard title="All submitted!" subtitle="Waiting for the rest of the lobby..." />
             <div className="mt-4">
               <PulsingDot>Waiting for host action...</PulsingDot>
+            </div>
+            <div className="mt-5 border-t border-edge pt-4">
+              <h3 className="mb-2 text-sm font-medium text-ink">Narrator Indicator</h3>
+              <NarratorIndicatorDemo />
             </div>
           </div>
 

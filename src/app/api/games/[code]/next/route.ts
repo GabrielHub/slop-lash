@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
 import { LEADERBOARD_TAG } from "@/lib/game-constants";
-import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, generateTtsForCurrentPrompt, HOST_STALE_MS } from "@/lib/game-logic";
+import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, HOST_STALE_MS } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
 
 export async function POST(
@@ -71,12 +71,7 @@ export async function POST(
     }
     const advancedTo = await forceAdvancePhase(game.id);
     if (advancedTo === "VOTING") {
-      after(() => Promise.all([
-        generateAiVotes(game.id),
-        generateTtsForCurrentPrompt(game.id),
-      ]));
-    } else if (advancedTo === "VOTING_SUBPHASE") {
-      after(() => generateTtsForCurrentPrompt(game.id));
+      after(() => generateAiVotes(game.id));
     }
     return NextResponse.json({ success: true });
   }

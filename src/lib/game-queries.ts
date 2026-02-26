@@ -15,7 +15,6 @@ const responsePlayerSelect = {
 
 export const roundsInclude = {
   prompts: {
-    omit: { ttsAudio: true },
     include: {
       responses: {
         include: {
