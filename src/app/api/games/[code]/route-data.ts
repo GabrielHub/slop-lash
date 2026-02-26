@@ -1,6 +1,6 @@
-import type { Prisma } from "@/generated/prisma/client";
+import type { GameStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { modelUsagesInclude, roundsInclude } from "@/lib/game-queries";
+import { modelUsagesInclude, roundsInclude, roundsIncludeWriting, roundsIncludeActive } from "@/lib/game-queries";
 
 const publicPlayerSelect = {
   id: true,
@@ -11,7 +11,6 @@ const publicPlayerSelect = {
   score: true,
   humorRating: true,
   winStreak: true,
-  lastSeen: true,
 } as const;
 
 export const gameMetaSelect = {
@@ -22,7 +21,7 @@ export const gameMetaSelect = {
   hostPlayerId: true,
 } as const satisfies Prisma.GameSelect;
 
-export const gamePayloadLatestSelect = {
+const gamePayloadCommonSelect = {
   id: true,
   roomCode: true,
   status: true,
@@ -37,27 +36,51 @@ export const gamePayloadLatestSelect = {
   votingRevealing: true,
   nextGameCode: true,
   version: true,
-  aiInputTokens: true,
-  aiOutputTokens: true,
-  aiCostUsd: true,
+} as const satisfies Prisma.GameSelect;
+
+const gamePayloadPlayersSelect = {
   players: {
     select: publicPlayerSelect,
     orderBy: { score: "desc" as const },
   },
+} as const satisfies Prisma.GameSelect;
+
+export const gamePayloadLobbySelect = {
+  ...gamePayloadCommonSelect,
+  ...gamePayloadPlayersSelect,
+} as const satisfies Prisma.GameSelect;
+
+export const gamePayloadWritingSelect = {
+  ...gamePayloadCommonSelect,
+  ...gamePayloadPlayersSelect,
   rounds: {
     orderBy: { roundNumber: "desc" as const },
     take: 1,
-    include: roundsInclude,
+    include: roundsIncludeWriting,
   },
-  modelUsages: modelUsagesInclude,
+} as const satisfies Prisma.GameSelect;
+
+export const gamePayloadActiveSelect = {
+  ...gamePayloadCommonSelect,
+  ...gamePayloadPlayersSelect,
+  rounds: {
+    orderBy: { roundNumber: "desc" as const },
+    take: 1,
+    include: roundsIncludeActive,
+  },
 } as const satisfies Prisma.GameSelect;
 
 export const gamePayloadAllRoundsSelect = {
-  ...gamePayloadLatestSelect,
+  ...gamePayloadCommonSelect,
+  ...gamePayloadPlayersSelect,
+  aiInputTokens: true,
+  aiOutputTokens: true,
+  aiCostUsd: true,
   rounds: {
     orderBy: { roundNumber: "asc" as const },
     include: roundsInclude,
   },
+  modelUsages: modelUsagesInclude,
 } as const satisfies Prisma.GameSelect;
 
 export type GameMetaPayload = Prisma.GameGetPayload<{ select: typeof gameMetaSelect }>;
@@ -70,9 +93,34 @@ export function findGameMeta(roomCode: string) {
   });
 }
 
-export function findGamePayload(roomCode: string, { allRounds = false } = {}) {
+export function findGamePayloadByStatus(
+  roomCode: string,
+  status: GameStatus,
+) {
+  if (status === "LOBBY") {
+    return prisma.game.findUnique({
+      where: { roomCode },
+      select: gamePayloadLobbySelect,
+    });
+  }
+
+  if (status === "WRITING") {
+    return prisma.game.findUnique({
+      where: { roomCode },
+      select: gamePayloadWritingSelect,
+    });
+  }
+
+  if (status === "FINAL_RESULTS") {
+    return prisma.game.findUnique({
+      where: { roomCode },
+      select: gamePayloadAllRoundsSelect,
+    });
+  }
+
+  // VOTING and ROUND_RESULTS
   return prisma.game.findUnique({
     where: { roomCode },
-    select: allRounds ? gamePayloadAllRoundsSelect : gamePayloadLatestSelect,
+    select: gamePayloadActiveSelect,
   });
 }

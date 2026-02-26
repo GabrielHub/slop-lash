@@ -16,16 +16,32 @@ export async function GET(
 
   const game = await prisma.game.findUnique({
     where: { roomCode },
-    include: {
-      players: { orderBy: { score: "desc" } },
+    select: {
+      id: true,
+      status: true,
+      winnerTagline: true,
+      players: {
+        orderBy: { score: "desc" },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          modelId: true,
+          score: true,
+        },
+      },
       rounds: {
         orderBy: { roundNumber: isFinal ? "asc" : "desc" },
         ...(!isFinal ? { take: 1 } : {}),
-        include: {
+        select: {
           prompts: {
-            include: {
+            select: {
+              text: true,
               responses: {
-                include: { player: { select: { id: true, name: true, type: true, modelId: true } } },
+                select: {
+                  text: true,
+                  player: { select: { id: true, name: true, type: true, modelId: true } },
+                },
               },
             },
           },

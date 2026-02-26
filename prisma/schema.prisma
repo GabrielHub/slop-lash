@@ -44,6 +44,7 @@ model Game {
   aiInputTokens   Int        @default(0)
   aiOutputTokens  Int        @default(0)
   aiCostUsd       Float      @default(0)
+  reactionsVersion Int       @default(0)
   version         Int        @default(0)
   createdAt       DateTime   @default(now())
   players         Player[]

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { roundsInclude, modelUsagesInclude } from "@/lib/game-queries";
+import { gamePayloadAllRoundsSelect } from "../route-data";
 
 export async function GET(
   _request: Request,
@@ -11,16 +11,7 @@ export async function GET(
 
   const game = await prisma.game.findUnique({
     where: { roomCode },
-    include: {
-      players: {
-        orderBy: { score: "desc" as const },
-      },
-      rounds: {
-        orderBy: { roundNumber: "asc" as const },
-        include: roundsInclude,
-      },
-      modelUsages: modelUsagesInclude,
-    },
+    select: gamePayloadAllRoundsSelect,
   });
 
   if (!game) {

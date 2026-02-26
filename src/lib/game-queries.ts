@@ -8,9 +8,9 @@ const responsePlayerSelect = {
   idleRounds: true,
   humorRating: true,
   winStreak: true,
-  lastSeen: true,
 } as const;
 
+/** Full round include — used for FINAL_RESULTS and recap. */
 export const roundsInclude = {
   prompts: {
     include: {
@@ -24,6 +24,35 @@ export const roundsInclude = {
         include: { voter: { select: { id: true, type: true } } },
       },
       assignments: { select: { promptId: true, playerId: true } },
+    },
+  },
+} as const;
+
+/** Minimal round include for WRITING phase — only assignments + response stubs. */
+export const roundsIncludeWriting = {
+  prompts: {
+    include: {
+      assignments: { select: { promptId: true, playerId: true } },
+      responses: {
+        select: { id: true, playerId: true, text: true },
+      },
+    },
+  },
+} as const;
+
+/** Round include for VOTING / ROUND_RESULTS — full responses & votes, no assignments. */
+export const roundsIncludeActive = {
+  prompts: {
+    include: {
+      responses: {
+        include: {
+          player: { select: responsePlayerSelect },
+          reactions: true,
+        },
+      },
+      votes: {
+        include: { voter: { select: { id: true, type: true } } },
+      },
     },
   },
 } as const;

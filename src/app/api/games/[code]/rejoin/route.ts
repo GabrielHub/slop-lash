@@ -19,6 +19,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
+    select: { id: true },
   });
 
   if (!game) {
@@ -27,6 +28,7 @@ export async function POST(
 
   const player = await prisma.player.findFirst({
     where: { gameId: game.id, rejoinToken: token },
+    select: { id: true, name: true, type: true },
   });
 
   if (!player) {

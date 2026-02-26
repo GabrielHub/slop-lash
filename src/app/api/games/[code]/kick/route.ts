@@ -22,6 +22,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
+    select: { id: true, status: true, hostPlayerId: true },
   });
 
   if (!game) {
@@ -55,6 +56,7 @@ export async function POST(
   // Verify target exists in this game
   const target = await prisma.player.findFirst({
     where: { id: targetPlayerId, gameId: game.id },
+    select: { id: true },
   });
 
   if (!target) {

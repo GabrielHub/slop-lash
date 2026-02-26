@@ -38,7 +38,72 @@ const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
 const POLL_SLOW_MS = 2000;
+const POLL_FINAL_WAIT_FOR_REMATCH_MS = 10_000;
+const POLL_FINAL_IDLE_MS = 60_000;
+const POLL_HIDDEN_MS = 10_000;
+const HEARTBEAT_TOUCH_MS = 15_000;
 const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
+
+type ReactionSnapshotPayload = {
+  roundNumber: number;
+  responses: Array<{
+    responseId: string;
+    reactions: GameState["rounds"][number]["prompts"][number]["responses"][number]["reactions"];
+  }>;
+};
+
+function isPageHidden() {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+function mergeReactionSnapshot(
+  game: GameState,
+  payload: ReactionSnapshotPayload,
+): GameState {
+  if (game.status !== "VOTING") return game;
+  const currentRound = game.rounds[0];
+  if (!currentRound || currentRound.roundNumber !== payload.roundNumber) return game;
+
+  const reactionsByResponseId = new Map(
+    payload.responses.map((entry) => [entry.responseId, entry.reactions]),
+  );
+
+  let changed = false;
+  const nextPrompts = currentRound.prompts.map((prompt) => {
+    let promptChanged = false;
+    const nextResponses = prompt.responses.map((response) => {
+      const nextReactions = reactionsByResponseId.get(response.id);
+      if (!nextReactions) return response;
+
+      const sameLength = nextReactions.length === response.reactions.length;
+      const sameItems =
+        sameLength &&
+        nextReactions.every((r, i) => {
+          const prev = response.reactions[i];
+          return (
+            prev != null &&
+            prev.id === r.id &&
+            prev.playerId === r.playerId &&
+            prev.emoji === r.emoji &&
+            prev.responseId === r.responseId
+          );
+        });
+
+      if (sameItems) return response;
+      promptChanged = true;
+      changed = true;
+      return { ...response, reactions: nextReactions };
+    });
+
+    return promptChanged ? { ...prompt, responses: nextResponses } : prompt;
+  });
+
+  if (!changed) return game;
+
+  const nextRounds = [...game.rounds];
+  nextRounds[0] = { ...currentRound, prompts: nextPrompts };
+  return { ...game, rounds: nextRounds };
+}
 
 function useGamePoller(code: string, playerId: string | null) {
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -46,20 +111,100 @@ function useGamePoller(code: string, playerId: string | null) {
   const [refreshKey, setRefreshKey] = useState(0);
   const versionRef = useRef<number | null>(null);
   const statusRef = useRef<string | null>(null);
+  const gameStateRef = useRef<GameState | null>(null);
+  const lastTouchAtRef = useRef(0);
+  const reactionsEtagRef = useRef<string | null>(null);
+  const reactionsRoundRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     versionRef.current = null;
     statusRef.current = null;
+    gameStateRef.current = null;
+    reactionsEtagRef.current = null;
+    reactionsRoundRef.current = null;
+    lastTouchAtRef.current = 0;
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    function resetReactionsCache() {
+      reactionsEtagRef.current = null;
+      reactionsRoundRef.current = null;
+    }
+
+    function getPollDelay(): number {
+      const s = statusRef.current ?? "";
+      if (ACTIVE_PHASES.has(s)) return POLL_FAST_MS;
+      if (s === "FINAL_RESULTS") {
+        const game = gameStateRef.current;
+        const isHost = !!playerId && game?.hostPlayerId === playerId;
+        const hasNextGame = !!game?.nextGameCode;
+        return isHost || hasNextGame ? POLL_FINAL_IDLE_MS : POLL_FINAL_WAIT_FOR_REMATCH_MS;
+      }
+      return POLL_SLOW_MS;
+    }
+
+    async function syncVotingReactions() {
+      const game = gameStateRef.current;
+      if (!game || game.status !== "VOTING" || game.rounds[0] == null) {
+        resetReactionsCache();
+        return;
+      }
+
+      if (isPageHidden()) return;
+
+      const headers: HeadersInit = {};
+      if (reactionsEtagRef.current) {
+        headers["If-None-Match"] = reactionsEtagRef.current;
+      }
+
+      const res = await fetch(`/api/games/${code}/reactions`, {
+        headers,
+        cache: "no-store",
+      });
+      if (cancelled) return;
+
+      if (res.status === 304 || !res.ok) return;
+
+      const etag = res.headers.get("etag");
+      const payload = (await res.json()) as ReactionSnapshotPayload;
+      if (!payload || typeof payload.roundNumber !== "number" || !Array.isArray(payload.responses)) {
+        return;
+      }
+
+      if (payload.roundNumber !== game.currentRound) {
+        resetReactionsCache();
+        return;
+      }
+
+      if (etag) reactionsEtagRef.current = etag;
+      reactionsRoundRef.current = payload.roundNumber;
+
+      startTransition(() => {
+        setGameState((prev) => {
+          if (!prev) return prev;
+          const next = mergeReactionSnapshot(prev, payload);
+          gameStateRef.current = next;
+          return next;
+        });
+      });
+    }
 
     async function poll() {
       while (!cancelled) {
-        let delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
         try {
+          if (isPageHidden()) {
+            await sleep(POLL_HIDDEN_MS);
+            continue;
+          }
+
           const params = new URLSearchParams();
           if (playerId) params.set("playerId", playerId);
           if (versionRef.current !== null) params.set("v", String(versionRef.current));
+          const shouldTouch =
+            !!playerId &&
+            statusRef.current !== "FINAL_RESULTS" &&
+            Date.now() - lastTouchAtRef.current >= HEARTBEAT_TOUCH_MS;
+          if (shouldTouch) params.set("touch", "1");
           const qs = params.toString();
           const url = `/api/games/${code}${qs ? `?${qs}` : ""}`;
           const headers: HeadersInit = {};
@@ -69,37 +214,45 @@ function useGamePoller(code: string, playerId: string | null) {
           const res = await fetch(url, { headers, cache: "no-store" });
           if (cancelled) continue;
 
-          // 304 Not Modified -- keep current cadence, but still wait before polling again
           if (res.status === 304) {
-            await sleep(delay);
+            if (shouldTouch) lastTouchAtRef.current = Date.now();
+            if (statusRef.current === "VOTING") {
+              await syncVotingReactions();
+            }
+            await sleep(getPollDelay());
             continue;
           }
 
           if (!res.ok) {
             if (res.status === 404) {
               setError("Game not found");
-              return; // Stop polling on 404 only
+              return;
             }
-            // Retry on transient errors (500, etc.)
-            delay = 2000;
-            await sleep(delay);
+            await sleep(2000);
             continue;
           }
 
-          const data = await res.json();
+          if (shouldTouch) lastTouchAtRef.current = Date.now();
+
+          const data = (await res.json()) as GameState;
+          if (data.status !== "VOTING") {
+            resetReactionsCache();
+          } else if (reactionsRoundRef.current !== data.currentRound) {
+            resetReactionsCache();
+            reactionsRoundRef.current = data.currentRound;
+          }
+
+          gameStateRef.current = data;
           startTransition(() => {
             setGameState(data);
           });
           versionRef.current = data.version ?? null;
           statusRef.current = data.status ?? null;
         } catch {
-          // Silently retry on network errors, but avoid a tight retry loop.
           await sleep(2000);
           continue;
         }
-        // Poll faster during active input phases for snappier feel
-        delay = ACTIVE_PHASES.has(statusRef.current ?? "") ? POLL_FAST_MS : POLL_SLOW_MS;
-        await sleep(delay);
+        await sleep(getPollDelay());
       }
     }
 
@@ -124,6 +277,16 @@ export function GameShell({ code }: { code: string }) {
   const rejoinAttempted = useRef(false);
   const soundsMuted = useSyncExternalStore(subscribeAudio, isMuted, () => false);
   const soundsVolume = useSyncExternalStore(subscribeAudio, getVolume, () => 0.5);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [refresh]);
 
   // Session recovery: detect disconnected player and attempt rejoin
   useEffect(() => {
@@ -447,11 +610,15 @@ export function GameShell({ code }: { code: string }) {
   }
 
   function volumeIcon(): React.ReactNode {
-    const svgProps = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+    const props = {
+      width: 16, height: 16, viewBox: "0 0 24 24",
+      fill: "none", stroke: "currentColor", strokeWidth: 2,
+      strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
+    };
 
     if (soundsMuted) {
       return (
-        <svg {...svgProps}>
+        <svg {...props}>
           <path d="M11 5L6 9H2v6h4l5 4V5z" />
           <line x1="23" y1="9" x2="17" y2="15" />
           <line x1="17" y1="9" x2="23" y2="15" />
@@ -460,14 +627,14 @@ export function GameShell({ code }: { code: string }) {
     }
     if (soundsVolume < 0.5) {
       return (
-        <svg {...svgProps}>
+        <svg {...props}>
           <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
           <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
         </svg>
       );
     }
     return (
-      <svg {...svgProps}>
+      <svg {...props}>
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
         <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
         <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />

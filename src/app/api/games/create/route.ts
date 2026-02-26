@@ -5,6 +5,8 @@ import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
 import { selectUniqueModelsByProvider } from "@/lib/models";
 import { sanitize } from "@/lib/sanitize";
 import { parseJsonBody } from "@/lib/http";
+import { cleanupOldGames } from "@/lib/game-cleanup";
+import { isPrismaDataTransferQuotaError } from "@/lib/prisma-errors";
 import type { TtsMode } from "@/lib/types";
 import { VOICE_NAMES } from "@/lib/voices";
 
@@ -59,62 +61,80 @@ export async function POST(request: Request) {
     );
   }
 
-  // Clean up stale games older than 24 hours (non-blocking)
+  // Clean up old/incomplete games (non-blocking)
   after(async () => {
-    await prisma.game.deleteMany({
-      where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-    });
-  });
-
-  const roomCode = await generateUniqueRoomCode();
-  if (!roomCode) {
-    return NextResponse.json(
-      { error: "Failed to generate a unique room code, please try again" },
-      { status: 500 }
-    );
-  }
-
-  const hostRejoinToken = randomBytes(12).toString("base64url");
-  const game = await prisma.game.create({
-    data: {
-      roomCode,
-      timersDisabled: timersDisabled === true,
-      ttsMode: parseTtsMode(ttsMode),
-      ttsVoice: parseTtsVoice(ttsVoice),
-      players: {
-        create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
-      },
-    },
-    include: { players: true },
-  });
-
-  await prisma.game.update({
-    where: { id: game.id },
-    data: { hostPlayerId: game.players[0].id },
-  });
-
-  if (Array.isArray(aiModelIds)) {
-    const aiPlayers = selectUniqueModelsByProvider(
-      aiModelIds
-      .filter((id): id is string => typeof id === "string")
-    )
-      .slice(0, MAX_PLAYERS - 1)
-      .map((model) => ({
-        gameId: game.id,
-        name: model.shortName,
-        type: "AI" as const,
-        modelId: model.id,
-      }));
-
-    if (aiPlayers.length > 0) {
-      await prisma.player.createMany({ data: aiPlayers });
+    try {
+      await cleanupOldGames();
+    } catch (error) {
+      if (!isPrismaDataTransferQuotaError(error)) {
+        throw error;
+      }
     }
-  }
-
-  return NextResponse.json({
-    roomCode,
-    gameId: game.id,
-    hostPlayerId: game.players[0].id,
-    rejoinToken: hostRejoinToken,
   });
+
+  try {
+    const roomCode = await generateUniqueRoomCode();
+    if (!roomCode) {
+      return NextResponse.json(
+        { error: "Failed to generate a unique room code, please try again" },
+        { status: 500 }
+      );
+    }
+
+    const hostRejoinToken = randomBytes(12).toString("base64url");
+    const game = await prisma.game.create({
+      data: {
+        roomCode,
+        timersDisabled: timersDisabled === true,
+        ttsMode: parseTtsMode(ttsMode),
+        ttsVoice: parseTtsVoice(ttsVoice),
+        players: {
+          create: [{ name: cleanName, type: "HUMAN", rejoinToken: hostRejoinToken }],
+        },
+      },
+      select: {
+        id: true,
+        players: { select: { id: true } },
+      },
+    });
+
+    await prisma.game.update({
+      where: { id: game.id },
+      data: { hostPlayerId: game.players[0].id },
+    });
+
+    if (Array.isArray(aiModelIds)) {
+      const validIds = aiModelIds.filter((id): id is string => typeof id === "string");
+      const aiPlayers = selectUniqueModelsByProvider(validIds)
+        .slice(0, MAX_PLAYERS - 1)
+        .map((model) => ({
+          gameId: game.id,
+          name: model.shortName,
+          type: "AI" as const,
+          modelId: model.id,
+        }));
+
+      if (aiPlayers.length > 0) {
+        await prisma.player.createMany({ data: aiPlayers });
+      }
+    }
+
+    return NextResponse.json({
+      roomCode,
+      gameId: game.id,
+      hostPlayerId: game.players[0].id,
+      rejoinToken: hostRejoinToken,
+    });
+  } catch (error) {
+    if (isPrismaDataTransferQuotaError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Database is temporarily unavailable (Neon data transfer quota exceeded). Try again later or use /dev/ui for local UI iteration.",
+        },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
 }

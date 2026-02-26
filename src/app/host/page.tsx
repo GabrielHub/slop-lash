@@ -10,6 +10,7 @@ import { GEMINI_VOICES } from "@/lib/voices";
 import { ModelIcon } from "@/components/model-icon";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/game-constants";
 import { ErrorBanner } from "@/components/error-banner";
+import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
@@ -38,6 +39,19 @@ function PlayerCountHint({ selectedCount }: { selectedCount: number }) {
   return null;
 }
 
+const NAME_MAX_LENGTH = 20;
+const MAX_AI_PLAYERS = MAX_PLAYERS - 1;
+
+function getCostTier(model: AIModel): string {
+  // Estimate per-game cost: ~3 rounds * 8 prompts * (~100 input + 50 output tokens)
+  const perGame =
+    (3 * 8 * 100 / 1_000_000) * model.inputPer1M +
+    (3 * 8 * 50 / 1_000_000) * model.outputPer1M;
+  if (perGame < 0.001) return "$";
+  if (perGame < 0.005) return "$$";
+  return "$$$";
+}
+
 export default function HostPage() {
   const router = useRouter();
   const { triggerElement } = usePixelDissolve();
@@ -50,18 +64,6 @@ export default function HostPage() {
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const maxAiPlayers = MAX_PLAYERS - 1; // Reserve 1 slot for the host
-
-  function getCostTier(model: AIModel): string {
-    // Estimate per-game cost: ~3 rounds * 8 prompts * (~100 input + 50 output tokens)
-    const perGame =
-      (3 * 8 * 100 / 1_000_000) * model.inputPer1M +
-      (3 * 8 * 50 / 1_000_000) * model.outputPer1M;
-    if (perGame < 0.001) return "$";
-    if (perGame < 0.005) return "$$";
-    return "$$$";
-  }
 
   function toggleModel(modelId: string) {
     const targetModel = getModelByModelId(modelId);
@@ -78,7 +80,7 @@ export default function HostPage() {
         return model?.provider !== targetModel.provider;
       });
 
-      if (withoutSameProvider.length >= maxAiPlayers) {
+      if (withoutSameProvider.length >= MAX_AI_PLAYERS) {
         return prev;
       }
       return [...withoutSameProvider, modelId];
@@ -192,8 +194,8 @@ export default function HostPage() {
               <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
                 Your Name
                 {hostName.length >= 15 && (
-                  <span className={`text-xs tabular-nums ${hostName.length >= 20 ? "text-punch" : "text-ink-dim/50"}`}>
-                    {hostName.length}/{20}
+                  <span className={`text-xs tabular-nums ${hostName.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}>
+                    {hostName.length}/{NAME_MAX_LENGTH}
                   </span>
                 )}
               </label>
@@ -203,7 +205,7 @@ export default function HostPage() {
                 onChange={(e) => setHostName(e.target.value)}
                 placeholder="Enter your name"
                 className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
-                maxLength={20}
+                maxLength={NAME_MAX_LENGTH}
                 autoComplete="name"
                 autoCapitalize="words"
                 enterKeyHint="done"
@@ -232,7 +234,7 @@ export default function HostPage() {
                   return selectedModel?.provider === model.provider;
                 });
                 const atLimit =
-                  selectedModels.length >= maxAiPlayers &&
+                  selectedModels.length >= MAX_AI_PLAYERS &&
                   !selected &&
                   !replacesSameProvider;
 
@@ -294,51 +296,24 @@ export default function HostPage() {
           <div>
             {/* Disable Timers */}
             <div className="mb-8">
-              <button
-                type="button"
-                onClick={() => setTimersDisabled((v) => !v)}
-                className="w-full p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-              >
-                <div
-                  className={`relative w-10 h-6 rounded-full transition-colors ${timersDisabled ? "bg-punch" : "bg-edge-strong"}`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-surface border border-edge/50 transition-transform ${timersDisabled ? "translate-x-[18px]" : "translate-x-0.5"}`}
-                  />
-                </div>
-                <div>
-                  <span className="font-semibold text-sm">Disable Timers</span>
-                  <p className="text-xs text-ink-dim/60">
-                    Phases only advance when all players submit or host skips
-                  </p>
-                </div>
-              </button>
+              <Toggle
+                checked={timersDisabled}
+                onChange={setTimersDisabled}
+                label="Disable Timers"
+                description="Phases only advance when all players submit or host skips"
+              />
             </div>
 
             {/* Live Narrator */}
             <div className="mb-8">
-              <button
-                type="button"
-                onClick={() => setTtsMode(ttsMode === "ON" ? "OFF" : "ON")}
-                className="w-full p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+              <Toggle
+                checked={ttsMode === "ON"}
+                onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
+                label="Live Narrator"
+                description="AI game-show host narrates the entire game aloud"
               >
-                <div
-                  className={`relative w-10 h-6 rounded-full transition-colors ${ttsMode === "ON" ? "bg-punch" : "bg-edge-strong"}`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-surface border border-edge/50 transition-transform ${ttsMode === "ON" ? "translate-x-[18px]" : "translate-x-0.5"}`}
-                  />
-                </div>
-                <div>
-                  <span className="font-semibold text-sm">Live Narrator</span>
-                  <p className="text-xs text-ink-dim/60">
-                    AI game-show host narrates the entire game aloud
-                  </p>
-                </div>
-              </button>
-
-              {/* Voice picker */}
-              <AnimatePresence>
+                {/* Voice picker */}
+                <AnimatePresence>
                 {ttsMode === "ON" && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
@@ -471,6 +446,7 @@ export default function HostPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              </Toggle>
             </div>
 
             <ErrorBanner error={error} />

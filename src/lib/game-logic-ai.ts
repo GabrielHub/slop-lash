@@ -7,6 +7,7 @@ import {
   revealCurrentPrompt,
   startVoting,
 } from "./game-logic-voting";
+import { bumpReactionsVersion } from "./reactions-version";
 
 function getAiPlayers<T extends { id: string; type: string; modelId: string | null }>(
   players: T[],
@@ -75,11 +76,20 @@ export async function accumulateUsage(gameId: string, usages: AiUsage[]): Promis
 export async function generateAiResponses(gameId: string): Promise<void> {
   const startedAt = Date.now();
   const [players, round] = await Promise.all([
-    prisma.player.findMany({ where: { gameId } }),
+    prisma.player.findMany({ where: { gameId }, select: { id: true, type: true, modelId: true, name: true } }),
     prisma.round.findFirst({
       where: { gameId },
       orderBy: { roundNumber: "desc" },
-      include: { prompts: { include: { assignments: true } } },
+      select: {
+        roundNumber: true,
+        prompts: {
+          select: {
+            id: true,
+            text: true,
+            assignments: { select: { playerId: true } },
+          },
+        },
+      },
     }),
   ]);
 
@@ -89,7 +99,16 @@ export async function generateAiResponses(gameId: string): Promise<void> {
     ? await prisma.round.findMany({
         where: { gameId, roundNumber: { lt: round.roundNumber } },
         orderBy: { roundNumber: "asc" },
-        include: { prompts: { include: { responses: true, votes: true } } },
+        select: {
+          roundNumber: true,
+          prompts: {
+            select: {
+              text: true,
+              responses: { select: { id: true, playerId: true, text: true } },
+              votes: { select: { responseId: true } },
+            },
+          },
+        },
       })
     : [];
 
@@ -134,12 +153,18 @@ export async function generateAiResponses(gameId: string): Promise<void> {
 export async function generateAiVotes(gameId: string): Promise<void> {
   const startedAt = Date.now();
   const [players, round] = await Promise.all([
-    prisma.player.findMany({ where: { gameId } }),
+    prisma.player.findMany({ where: { gameId }, select: { id: true, type: true, modelId: true, name: true } }),
     prisma.round.findFirst({
       where: { gameId },
       orderBy: { roundNumber: "desc" },
-      include: {
-        prompts: { include: { responses: { include: { player: true } } } },
+      select: {
+        prompts: {
+          select: {
+            id: true,
+            text: true,
+            responses: { select: { id: true, playerId: true, text: true } },
+          },
+        },
       },
     }),
   ]);
@@ -183,6 +208,7 @@ export async function generateAiVotes(gameId: string): Promise<void> {
         ];
         if (reactionData.length > 0) {
           await prisma.reaction.createMany({ data: reactionData, skipDuplicates: true });
+          await bumpReactionsVersion(gameId);
         }
 
         return usage;

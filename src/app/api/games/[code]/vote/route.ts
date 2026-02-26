@@ -36,6 +36,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
+    select: { id: true, status: true, votingPromptIndex: true, votingRevealing: true },
   });
 
   if (!game) {
@@ -71,6 +72,7 @@ export async function POST(
   // Verify voter belongs to this game
   const voter = await prisma.player.findFirst({
     where: { id: validVoterId, gameId: game.id },
+    select: { id: true },
   });
   if (!voter) {
     return NextResponse.json(
@@ -91,6 +93,7 @@ export async function POST(
   if (validResponseId) {
     const response = await prisma.response.findFirst({
       where: { id: validResponseId, promptId: validPromptId },
+      select: { id: true },
     });
     if (!response) {
       return NextResponse.json(
@@ -105,6 +108,7 @@ export async function POST(
     await prisma.$transaction(async (tx) => {
       const voterResponse = await tx.response.findFirst({
         where: { promptId: validPromptId, playerId: validVoterId },
+        select: { id: true },
       });
       if (voterResponse) {
         throw new Error("RESPONDENT");
@@ -112,6 +116,7 @@ export async function POST(
 
       const existingVote = await tx.vote.findFirst({
         where: { promptId: validPromptId, voterId: validVoterId },
+        select: { id: true },
       });
       if (existingVote) {
         throw new Error("ALREADY_VOTED");

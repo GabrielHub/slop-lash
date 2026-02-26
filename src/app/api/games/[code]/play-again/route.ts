@@ -25,7 +25,23 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    include: { players: true },
+    select: {
+      id: true,
+      status: true,
+      hostPlayerId: true,
+      nextGameCode: true,
+      timersDisabled: true,
+      ttsMode: true,
+      ttsVoice: true,
+      players: {
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          modelId: true,
+        },
+      },
+    },
   });
 
   if (!game) {
@@ -101,7 +117,10 @@ export async function POST(
         ],
       },
     },
-    include: { players: true },
+    select: {
+      id: true,
+      players: { select: { id: true, type: true } },
+    },
   });
 
   const newHost = newGame.players.find((p) => p.type === "HUMAN");

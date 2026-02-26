@@ -25,6 +25,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
+    select: { id: true, status: true, hostPlayerId: true },
   });
 
   if (!game) {

@@ -35,6 +35,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
+    select: { id: true, status: true },
   });
 
   if (!game) {
@@ -51,6 +52,7 @@ export async function POST(
   // Verify player belongs to this game
   const player = await prisma.player.findFirst({
     where: { id: validPlayerId, gameId: game.id },
+    select: { id: true, type: true },
   });
   if (!player) {
     return NextResponse.json(
@@ -78,6 +80,7 @@ export async function POST(
   // Validate player is assigned to this prompt
   const assignment = await prisma.promptAssignment.findUnique({
     where: { promptId_playerId: { promptId: validPromptId, playerId: validPlayerId } },
+    select: { id: true },
   });
 
   if (!assignment) {
@@ -92,6 +95,7 @@ export async function POST(
     await prisma.$transaction(async (tx) => {
       const existing = await tx.response.findFirst({
         where: { promptId: validPromptId, playerId: validPlayerId },
+        select: { id: true },
       });
 
       if (existing) {

@@ -8,8 +8,8 @@ import { assignPrompts } from "./game-logic-core";
  */
 export async function startRound(gameId: string, roundNumber: number): Promise<void> {
   const [game, players, usedPrompts] = await Promise.all([
-    prisma.game.findUnique({ where: { id: gameId } }),
-    prisma.player.findMany({ where: { gameId, type: { not: "SPECTATOR" } } }),
+    prisma.game.findUnique({ where: { id: gameId }, select: { timersDisabled: true } }),
+    prisma.player.findMany({ where: { gameId, type: { not: "SPECTATOR" } }, select: { id: true } }),
     prisma.prompt.findMany({
       where: { round: { gameId } },
       select: { text: true },
@@ -53,6 +53,7 @@ export async function startRound(gameId: string, roundNumber: number): Promise<v
 export async function advanceGame(gameId: string): Promise<boolean> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
+    select: { currentRound: true, totalRounds: true },
   });
 
   if (!game) return false;

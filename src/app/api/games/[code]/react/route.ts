@@ -4,6 +4,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { isValidReactionEmoji } from "@/lib/reactions";
 import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
+import { bumpReactionsVersion } from "@/lib/reactions-version";
 
 export async function POST(
   request: Request,
@@ -15,13 +16,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const { playerId, responseId, emoji } = body;
-  const validPlayerId = typeof playerId === "string" ? playerId : null;
-  const validResponseId = typeof responseId === "string" ? responseId : null;
 
-  if (!validPlayerId || !validResponseId || !emoji || typeof emoji !== "string") {
+  if (typeof playerId !== "string" || typeof responseId !== "string" || typeof emoji !== "string") {
     return NextResponse.json(
       { error: "playerId, responseId, and emoji are required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -29,16 +28,16 @@ export async function POST(
     return NextResponse.json({ error: "Invalid emoji" }, { status: 400 });
   }
 
-  // Per-player rate limit (check early to avoid unnecessary DB work)
-  if (!checkRateLimit(`react:${validPlayerId}`, 30, 60_000)) {
+  if (!checkRateLimit(`react:${playerId}`, 30, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
-      { status: 429 }
+      { status: 429 },
     );
   }
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
+    select: { id: true, status: true, currentRound: true },
   });
 
   if (!game) {
@@ -48,18 +47,18 @@ export async function POST(
   if (game.status !== "VOTING") {
     return NextResponse.json(
       { error: "Reactions are only allowed during voting" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  // Verify player and response belong to this game's current round (parallel)
   const [player, response] = await Promise.all([
-    prisma.player.findFirst({ where: { id: validPlayerId, gameId: game.id } }),
+    prisma.player.findFirst({ where: { id: playerId, gameId: game.id }, select: { id: true } }),
     prisma.response.findFirst({
       where: {
-        id: validResponseId,
+        id: responseId,
         prompt: { round: { gameId: game.id, roundNumber: game.currentRound } },
       },
+      select: { id: true },
     }),
   ]);
 
@@ -72,30 +71,32 @@ export async function POST(
 
   // Toggle: delete if exists, create if not
   const existing = await prisma.reaction.findUnique({
-    where: { responseId_playerId_emoji: { responseId: validResponseId, playerId: validPlayerId, emoji } },
+    where: { responseId_playerId_emoji: { responseId, playerId, emoji } },
+    select: { id: true },
   });
 
+  let added: boolean;
   if (existing) {
     try {
       await prisma.reaction.delete({ where: { id: existing.id } });
+      added = false;
     } catch (e) {
-      // P2025: concurrent delete already removed it — treat as success
+      // P2025: concurrent delete already removed it — still gone
       if (!hasPrismaErrorCode(e, "P2025")) throw e;
+      added = false;
     }
   } else {
     try {
-      await prisma.reaction.create({ data: { responseId: validResponseId, playerId: validPlayerId, emoji } });
+      await prisma.reaction.create({ data: { responseId, playerId, emoji } });
+      added = true;
     } catch (e) {
-      // P2002: unique constraint race — treat as already exists (no-op)
+      // P2002: unique constraint race — already exists
       if (!hasPrismaErrorCode(e, "P2002")) throw e;
+      added = true;
     }
   }
 
-  // Bump version so polling picks up the change
-  await prisma.game.update({
-    where: { id: game.id },
-    data: { version: { increment: 1 } },
-  });
+  await bumpReactionsVersion(game.id);
 
-  return NextResponse.json({ success: true, added: !existing });
+  return NextResponse.json({ success: true, added });
 }

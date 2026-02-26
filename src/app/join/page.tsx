@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
+import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+
+const NAME_MAX_LENGTH = 20;
 
 function getJoinButtonText(loading: boolean, spectator: boolean): string {
   if (loading) return "Joining...";
@@ -109,8 +112,8 @@ export default function JoinPage() {
             <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
               Your Name
               {name.length >= 15 && (
-                <span className={`text-xs tabular-nums ${name.length >= 20 ? "text-punch" : "text-ink-dim/50"}`}>
-                  {name.length}/{20}
+                <span className={`text-xs tabular-nums ${name.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}>
+                  {name.length}/{NAME_MAX_LENGTH}
                 </span>
               )}
             </label>
@@ -120,7 +123,7 @@ export default function JoinPage() {
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter your name"
               className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
-              maxLength={20}
+              maxLength={NAME_MAX_LENGTH}
               autoComplete="name"
               autoCapitalize="words"
               enterKeyHint="next"
@@ -148,25 +151,12 @@ export default function JoinPage() {
 
           {/* Spectator Toggle */}
           <div className="mb-6">
-            <button
-              type="button"
-              onClick={() => setSpectator((v) => !v)}
-              className="w-full p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-            >
-              <div
-                className={`relative w-10 h-6 rounded-full transition-colors ${spectator ? "bg-punch" : "bg-edge-strong"}`}
-              >
-                <div
-                  className={`absolute top-0.5 w-5 h-5 rounded-full bg-surface border border-edge/50 transition-transform ${spectator ? "translate-x-[18px]" : "translate-x-0.5"}`}
-                />
-              </div>
-              <div>
-                <span className="font-semibold text-sm">Watch as Spectator</span>
-                <p className="text-xs text-ink-dim/60">
-                  Vote on answers but don&apos;t write — join mid-game too
-                </p>
-              </div>
-            </button>
+            <Toggle
+              checked={spectator}
+              onChange={setSpectator}
+              label="Watch as Spectator"
+              description="Vote on answers but don't write — join mid-game too"
+            />
           </div>
 
           <ErrorBanner error={error} />
