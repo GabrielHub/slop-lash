@@ -19,7 +19,7 @@ type PromptWithReactions = {
   responses: Array<{ id: string; text: string; reactions: ReactionRow[] }>;
 };
 
-const FORFEIT_TEXT = "[[FORFEIT]]";
+import { FORFEIT_MARKER as FORFEIT_TEXT } from "@/lib/scoring";
 
 function stripUnrevealedPromptReactions(
   prompts: PromptWithReactions[],

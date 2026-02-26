@@ -1,3 +1,5 @@
+import { FORFEIT_MARKER } from "@/lib/scoring";
+
 export function isVersionUnchanged(params: {
   clientVersion: string | null;
   ifNoneMatch: string | null;
@@ -15,7 +17,8 @@ export function isDeadlineExpired(phaseDeadline: Date | null, nowMs = Date.now()
 }
 
 type MutableResponse = { text: string; reactions: unknown[] };
-type MutablePrompt = { id: string; responses: MutableResponse[]; votes: unknown[] };
+type MutableVote = { voterId: string; voter: unknown; [key: string]: unknown };
+type MutablePrompt = { id: string; responses: MutableResponse[]; votes: MutableVote[] };
 type MutableRound = { prompts: MutablePrompt[] };
 type MutableVotingGame = {
   status: string;
@@ -23,8 +26,6 @@ type MutableVotingGame = {
   votingPromptIndex: number;
   votingRevealing: boolean;
 };
-
-const FORFEIT_TEXT = "[[FORFEIT]]";
 
 /**
  * Strip votes from prompts that haven't been revealed yet during VOTING phase.
@@ -38,7 +39,7 @@ export function stripUnrevealedVotes<T extends MutableVotingGame>(game: T): void
     .filter(
       (prompt) =>
         prompt.responses.length >= 2 &&
-        !prompt.responses.some((r) => r.text === FORFEIT_TEXT),
+        !prompt.responses.some((r) => r.text === FORFEIT_MARKER),
     )
     .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -47,7 +48,18 @@ export function stripUnrevealedVotes<T extends MutableVotingGame>(game: T): void
     const isCurrentUnrevealed = i === game.votingPromptIndex && !game.votingRevealing;
     if (!isFuture && !isCurrentUnrevealed) continue;
 
-    votable[i].votes = [];
+    if (isCurrentUnrevealed) {
+      // Keep voter IDs so clients can show vote progress, but hide choices
+      votable[i].votes = votable[i].votes.map((v) => ({
+        id: "",
+        voterId: v.voterId,
+        responseId: null,
+        failReason: null,
+        voter: v.voter,
+      }));
+    } else {
+      votable[i].votes = [];
+    }
     for (const response of votable[i].responses) {
       response.reactions = [];
     }

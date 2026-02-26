@@ -144,6 +144,24 @@ export function Voting({
 
   const currentPromptScore = currentPrompt ? promptScores.get(currentPrompt.id) : undefined;
 
+  // Per-matchup deltas for the standings — shows only the points from the last revealed prompt
+  const lastMatchupDeltas = useMemo(() => {
+    const deltas = new Map<string, number>();
+    const revealedCount = isRevealing ? game.votingPromptIndex + 1 : game.votingPromptIndex;
+    const lastPrompt = revealedCount > 0 ? votablePrompts[revealedCount - 1] : null;
+    const lastResult = lastPrompt ? promptScores.get(lastPrompt.id) : undefined;
+    if (!lastPrompt || !lastResult) return deltas;
+
+    for (const resp of lastPrompt.responses) {
+      const pts = lastResult.points[resp.id] ?? 0;
+      if (pts !== 0) deltas.set(resp.playerId, (deltas.get(resp.playerId) ?? 0) + pts);
+    }
+    for (const [playerId, penalty] of Object.entries(lastResult.penalties)) {
+      if (penalty !== 0) deltas.set(playerId, (deltas.get(playerId) ?? 0) + penalty);
+    }
+    return deltas;
+  }, [votablePrompts, game.votingPromptIndex, isRevealing, promptScores]);
+
   // Check if this player is a respondent for the current prompt
   const isRespondent = useMemo(() => {
     if (!currentPrompt || !playerId) return false;
@@ -162,13 +180,13 @@ export function Voting({
   // Check if the player explicitly abstained on the current prompt (survives reconnect)
   const hasAbstainedCurrent = useMemo(() => {
     if (!currentPrompt || !playerId) return false;
-    return (
-      abstained.has(currentPrompt.id) ||
-      currentPrompt.votes.some(
-        (v) => v.voterId === playerId && v.responseId == null && v.failReason == null
-      )
+    if (abstained.has(currentPrompt.id)) return true;
+    // Only trust server vote data during reveal, when votes are unstripped
+    if (!isRevealing) return false;
+    return currentPrompt.votes.some(
+      (v) => v.voterId === playerId && v.responseId == null && v.failReason == null
     );
-  }, [currentPrompt, playerId, abstained]);
+  }, [currentPrompt, playerId, abstained, isRevealing]);
 
   // Play vote-reveal sound when reveal phase starts
   const prevRevealing = useRef(false);
@@ -246,6 +264,7 @@ export function Voting({
         playerNames={playerNames}
         scoreResult={currentPromptScore}
         runningScores={runningScores}
+        lastMatchupDeltas={lastMatchupDeltas}
       />
     );
   }
@@ -340,41 +359,52 @@ export function Voting({
                   </p>
                 </div>
 
-                {isRevealing ? (
-                  <RevealView
-                    prompt={currentPrompt}
-                    players={game.players}
-                    playerNames={playerNames}
-                    scoreResult={currentPromptScore}
-                  />
-                ) : isRespondent ? (
-                  <PassiveView
-                    sublabel="You wrote one of these!"
-                    color="gold"
-                    prompt={currentPrompt}
-                    playerId={playerId}
-                    code={code}
-                    playerNames={playerNames}
-                  />
-                ) : hasVotedCurrent ? (
-                  <PassiveView
-                    sublabel="Waiting for others..."
-                    color={hasAbstainedCurrent ? "dim" : "teal"}
-                    prompt={currentPrompt}
-                    playerId={playerId}
-                    code={code}
-                    playerNames={playerNames}
-                  />
-                ) : (
-                  <VoteView
-                    prompt={currentPrompt}
-                    voting={voting}
-                    onVote={castVote}
-                    playerId={playerId}
-                    code={code}
-                    playerNames={playerNames}
-                  />
-                )}
+                {(() => {
+                  if (isRevealing) {
+                    return (
+                      <RevealView
+                        prompt={currentPrompt}
+                        players={game.players}
+                        playerNames={playerNames}
+                        scoreResult={currentPromptScore}
+                      />
+                    );
+                  }
+                  if (isRespondent) {
+                    return (
+                      <PassiveView
+                        sublabel="You wrote one of these!"
+                        color="gold"
+                        prompt={currentPrompt}
+                        playerId={playerId}
+                        code={code}
+                        playerNames={playerNames}
+                      />
+                    );
+                  }
+                  if (hasVotedCurrent) {
+                    return (
+                      <PassiveView
+                        sublabel="Waiting for others..."
+                        color={hasAbstainedCurrent ? "dim" : "teal"}
+                        prompt={currentPrompt}
+                        playerId={playerId}
+                        code={code}
+                        playerNames={playerNames}
+                      />
+                    );
+                  }
+                  return (
+                    <VoteView
+                      prompt={currentPrompt}
+                      voting={voting}
+                      onVote={castVote}
+                      playerId={playerId}
+                      code={code}
+                      playerNames={playerNames}
+                    />
+                  );
+                })()}
               </motion.div>
             ) : (
               <motion.div
@@ -405,9 +435,9 @@ export function Voting({
               className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
               style={{ boxShadow: "var(--shadow-card)" }}
             >
-              <VotingScoreboard players={game.players} runningScores={runningScores} />
+              <VotingScoreboard players={game.players} runningScores={runningScores} lastMatchupDeltas={lastMatchupDeltas} />
             </div>
-            {currentPrompt && (
+            {currentPrompt && !isRevealing && (
               <div
                 className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
                 style={{ boxShadow: "var(--shadow-card)" }}
@@ -415,9 +445,6 @@ export function Voting({
                 <VotingPromptStatusPanel
                   prompt={currentPrompt}
                   players={game.players}
-                  promptIndex={game.votingPromptIndex}
-                  totalPrompts={totalPrompts}
-                  isRevealing={isRevealing}
                 />
               </div>
             )}
@@ -440,6 +467,7 @@ function HostDisplay({
   playerNames,
   scoreResult,
   runningScores,
+  lastMatchupDeltas,
 }: {
   game: GameState;
   currentPrompt: GamePrompt | null;
@@ -448,6 +476,7 @@ function HostDisplay({
   playerNames: Map<string, string>;
   scoreResult?: ScorePromptResult;
   runningScores: Map<string, PlayerState>;
+  lastMatchupDeltas: Map<string, number>;
 }) {
   return (
     <main className="min-h-svh flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-12 pt-20">
@@ -541,7 +570,7 @@ function HostDisplay({
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...springDefault, delay: 0.2 }}
         >
-          <VotingScoreboard players={game.players} runningScores={runningScores} horizontal />
+          <VotingScoreboard players={game.players} runningScores={runningScores} lastMatchupDeltas={lastMatchupDeltas} horizontal />
         </motion.div>
       </div>
     </main>
@@ -959,7 +988,7 @@ function RevealResponseCard({
 
   return (
     <motion.div
-      className={`${padding} rounded-2xl border-2 relative overflow-hidden ${cardStyle.border}`}
+      className={`${padding} rounded-2xl border-2 relative overflow-hidden flex flex-col ${cardStyle.border}`}
       style={{ boxShadow: cardStyle.shadow }}
       initial={{ opacity: 0, x: slideFrom === "left" ? -40 : 40 }}
       animate={{ opacity: 1, x: 0 }}
@@ -977,7 +1006,7 @@ function RevealResponseCard({
         transition={{ ...springGentle, delay: 0.3 }}
       />
 
-      <div className="relative">
+      <div className="relative flex flex-col flex-1">
         {/* Winner badge — crown icon + text */}
         {isWinner && (
           <motion.div
@@ -998,12 +1027,12 @@ function RevealResponseCard({
           </motion.div>
         )}
 
-        <p className={`${textSize} leading-snug text-ink mb-3 font-medium ${isWinner ? "pr-16" : ""}`}>
+        <p className={`${textSize} leading-snug text-ink mb-3 font-medium flex-1 ${isWinner ? "pr-16" : ""}`}>
           {response.text}
         </p>
 
         {/* Author + score row */}
-        <div className="flex items-end justify-between gap-3">
+        <div className="flex items-end justify-between gap-3 mt-auto">
           <div className="min-w-0">
             <p className={`${authorSize} text-ink-dim font-medium`}>
               &mdash; {response.player.name}
@@ -1379,10 +1408,12 @@ function RevealView({
 function VotingScoreboard({
   players,
   runningScores,
+  lastMatchupDeltas,
   horizontal = false,
 }: {
   players: GamePlayer[];
   runningScores: Map<string, PlayerState>;
+  lastMatchupDeltas: Map<string, number>;
   horizontal?: boolean;
 }) {
   const sorted = players
@@ -1390,7 +1421,7 @@ function VotingScoreboard({
     .map((p) => ({
       player: p,
       score: runningScores.get(p.id)?.score ?? p.score,
-      delta: (runningScores.get(p.id)?.score ?? p.score) - p.score,
+      delta: lastMatchupDeltas.get(p.id) ?? 0,
     }))
     .sort((a, b) => b.score - a.score);
 
@@ -1411,21 +1442,24 @@ function VotingScoreboard({
               {player.name}
             </span>
             <div className="flex items-center gap-1">
-              {delta !== 0 && (
-                <motion.span
-                  key={delta}
-                  className={`text-[10px] font-mono font-bold tabular-nums ${
-                    delta > 0 ? "text-teal/70" : "text-punch/70"
-                  }`}
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={springBouncy}
-                >
-                  {formatSigned(delta)}
-                </motion.span>
-              )}
+              <AnimatePresence mode="popLayout">
+                {delta !== 0 && (
+                  <motion.span
+                    key={`${player.id}-delta-${delta}`}
+                    className={`text-[10px] font-mono font-bold tabular-nums ${
+                      delta > 0 ? "text-teal/70" : "text-punch/70"
+                    }`}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={springBouncy}
+                  >
+                    {formatSigned(delta)}
+                  </motion.span>
+                )}
+              </AnimatePresence>
               <motion.span
-                key={score}
+                key={`${player.id}-score-${score}`}
                 className="font-mono font-bold text-gold text-xs tabular-nums"
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -1469,21 +1503,24 @@ function VotingScoreboard({
               </span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {delta !== 0 && (
-                <motion.span
-                  key={delta}
-                  className={`text-[11px] font-mono font-bold tabular-nums ${
-                    delta > 0 ? "text-teal/70" : "text-punch/70"
-                  }`}
-                  initial={{ opacity: 0, y: -6, scale: 0.5 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={springBouncy}
-                >
-                  {formatSigned(delta)}
-                </motion.span>
-              )}
+              <AnimatePresence mode="popLayout">
+                {delta !== 0 && (
+                  <motion.span
+                    key={`${player.id}-delta-${delta}`}
+                    className={`text-[11px] font-mono font-bold tabular-nums ${
+                      delta > 0 ? "text-teal/70" : "text-punch/70"
+                    }`}
+                    initial={{ opacity: 0, y: -6, scale: 0.5 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.5 }}
+                    transition={springBouncy}
+                  >
+                    {formatSigned(delta)}
+                  </motion.span>
+                )}
+              </AnimatePresence>
               <motion.span
-                key={score}
+                key={`${player.id}-score-${score}`}
                 className={`font-mono font-bold text-sm tabular-nums ${
                   i === 0 ? "text-gold" : "text-ink"
                 }`}
@@ -1504,82 +1541,54 @@ function VotingScoreboard({
 function VotingPromptStatusPanel({
   prompt,
   players,
-  promptIndex,
-  totalPrompts,
-  isRevealing,
 }: {
   prompt: GamePrompt;
   players: GamePlayer[];
-  promptIndex: number;
-  totalPrompts: number;
-  isRevealing: boolean;
 }) {
   const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
-  const castVotes = filterCastVotes(prompt.votes);
-  const abstainVotes = filterAbstainVotes(prompt.votes);
-  const errorVotes = filterErrorVotes(prompt.votes);
-  const allVoterIds = new Set(prompt.votes.map((v) => v.voterId));
-  const missingVoters = players.filter(
-    (p) => p.type !== "SPECTATOR" && !respondentIds.has(p.id) && !allVoterIds.has(p.id),
-  );
-  const respondents = players.filter((p) => respondentIds.has(p.id));
-
-  const rows = [
-    { label: "Cast", value: castVotes.length, tone: "text-ink" },
-    { label: "Abstain", value: abstainVotes.length, tone: "text-ui-muted" },
-    { label: "Errors", value: errorVotes.length, tone: "text-punch" },
-    { label: "Missing", value: missingVoters.length, tone: "text-ui-muted" },
-  ];
+  const eligible = players.filter((p) => p.type !== "SPECTATOR" && !respondentIds.has(p.id));
+  const votedIds = new Set(prompt.votes.map((v) => v.voterId));
+  const waiting = eligible.filter((p) => !votedIds.has(p.id));
+  const votedCount = eligible.length - waiting.length;
+  const progress = eligible.length > 0 ? (votedCount / eligible.length) * 100 : 0;
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-medium text-ink uppercase tracking-[0.22em]">
-          Prompt Status
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[11px] font-medium text-ui-soft uppercase tracking-[0.22em]">
+          Votes
         </h3>
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.18em] ${
-          isRevealing
-            ? "border-gold/40 bg-gold/10 text-gold"
-            : "border-punch/40 bg-punch/10 text-punch"
-        }`}>
-          {isRevealing ? "Reveal" : "Voting"}
+        <span className="font-mono text-xs font-bold tabular-nums text-ink">
+          {votedCount} / {eligible.length}
         </span>
       </div>
 
-      <p className="text-xs font-mono text-ui-soft mb-1">
-        Prompt {Math.min(promptIndex + 1, Math.max(totalPrompts, 1))}/{Math.max(totalPrompts, 1)}
-      </p>
-      <p className="text-sm leading-snug text-ink mb-4">
-        {prompt.text}
-      </p>
+      <div className="h-1.5 rounded-full bg-edge/50 overflow-hidden mb-3">
+        <motion.div
+          className={`h-full rounded-full ${waiting.length === 0 ? "bg-teal" : "bg-teal/70"}`}
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          transition={springGentle}
+        />
+      </div>
 
-      <div className="mb-4">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-ui-soft mb-2">
-          {isRevealing ? "Respondents" : "Responses"}
-        </p>
-        {isRevealing ? (
+      {waiting.length > 0 ? (
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-ui-faint mb-2">
+            Waiting on
+          </p>
           <div className="flex flex-wrap gap-1.5">
-            {respondents.map((p) => (
-              <span key={p.id} className="inline-flex items-center rounded-full border border-edge/90 px-2 py-1 text-xs text-ui-soft bg-surface/55">
-                {p.name}
+            {waiting.map((p) => (
+              <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full border border-edge/80 bg-surface/55 px-2 py-1">
+                <PlayerAvatar name={p.name} modelId={p.modelId} size={14} />
+                <span className="text-xs text-ui-muted">{p.name}</span>
               </span>
             ))}
           </div>
-        ) : (
-          <div className="rounded-lg border border-edge/80 bg-surface/50 px-3 py-2 text-sm text-ui-muted">
-            {prompt.responses.length} anonymous responses (authors revealed after voting)
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between rounded-lg border border-edge/80 bg-surface/55 px-3 py-2">
-            <span className="text-xs text-ui-muted">{row.label}</span>
-            <span className={`font-mono text-xs font-bold tabular-nums ${row.tone}`}>{row.value}</span>
-          </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <p className="text-xs text-teal font-medium">All votes in</p>
+      )}
     </div>
   );
 }

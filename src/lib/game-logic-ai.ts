@@ -217,6 +217,13 @@ export async function generateAiVotes(gameId: string): Promise<void> {
 
   const usages = await collectUsages(votePromises);
   await accumulateUsage(gameId, usages);
+
+  // Bump version so pollers pick up the new votes
+  await prisma.game.update({
+    where: { id: gameId },
+    data: { version: { increment: 1 } },
+  });
+
   console.log(`[generateAiVotes] All AI votes done in ${Date.now() - startedAt}ms for game ${gameId}`);
 
   const allVotesIn = await checkAllVotesForCurrentPrompt(gameId);

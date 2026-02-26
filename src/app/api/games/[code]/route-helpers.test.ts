@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FORFEIT_MARKER } from "@/lib/scoring";
 import { isDeadlineExpired, isVersionUnchanged, stripUnrevealedVotes } from "./route-helpers";
 
 describe("isVersionUnchanged", () => {
@@ -49,9 +50,9 @@ describe("stripUnrevealedVotes", () => {
   function makePrompt(id: string, responseCount: number, forfeit = false) {
     return {
       id,
-      votes: [{ id: `vote-${id}` }],
+      votes: [{ id: `vote-${id}`, voterId: `voter-${id}`, responseId: `resp-${id}`, failReason: null, voter: { id: `voter-${id}`, type: "HUMAN" } }],
       responses: Array.from({ length: responseCount }, (_, idx) => ({
-        text: forfeit && idx === 0 ? "[[FORFEIT]]" : `response-${id}-${idx}`,
+        text: forfeit && idx === 0 ? FORFEIT_MARKER : `response-${id}-${idx}`,
         reactions: [{ id: `reaction-${id}-${idx}` }],
       })),
     };
@@ -88,7 +89,10 @@ describe("stripUnrevealedVotes", () => {
     expect(past.votes).toHaveLength(1);
     expect(past.responses[0].reactions).toHaveLength(1);
 
-    expect(current.votes).toHaveLength(0);
+    // Current prompt preserves voter IDs but hides choices
+    expect(current.votes).toHaveLength(1);
+    expect((current.votes[0] as { responseId: unknown }).responseId).toBeNull();
+    expect((current.votes[0] as { voterId: string }).voterId).toBe(`voter-b`);
     expect(current.responses.every((r) => r.reactions.length === 0)).toBe(true);
 
     expect(future.votes).toHaveLength(0);

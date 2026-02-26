@@ -1,6 +1,6 @@
 import { filterCastVotes } from "./types";
 import type { GameState } from "./types";
-import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState } from "./scoring";
+import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "./scoring";
 
 export interface Achievement {
   id: string;
@@ -94,7 +94,7 @@ function pushForIds(
 
 /** Apply scorePrompt result deltas and track max streaks for Hot Streak achievement. */
 function applyScoreResultWithStreaks(
-  result: import("./scoring").ScorePromptResult,
+  result: ScorePromptResult,
   responses: { id: string; playerId: string }[],
   playerStates: Map<string, PlayerState>,
   maxStreaks: Map<string, number>,
@@ -256,7 +256,7 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
       p.responses.filter((r) => r.playerId === player.id),
     );
     const assignments = allPrompts.flatMap((p) =>
-      p.assignments.filter((a) => a.playerId === player.id),
+      (p.assignments ?? []).filter((a) => a.playerId === player.id),
     );
     if (
       assignments.length > 0 &&

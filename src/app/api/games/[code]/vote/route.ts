@@ -125,6 +125,12 @@ export async function POST(
       await tx.vote.create({
         data: { promptId: validPromptId, voterId: validVoterId, responseId: validResponseId },
       });
+
+      // Bump version so pollers pick up the new vote
+      await tx.game.update({
+        where: { id: game.id },
+        data: { version: { increment: 1 } },
+      });
     });
   } catch (e) {
     if (e instanceof Error && e.message === "RESPONDENT") {
@@ -133,14 +139,11 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (e instanceof Error && e.message === "ALREADY_VOTED") {
-      return NextResponse.json(
-        { error: "Already voted on this prompt" },
-        { status: 400 }
-      );
-    }
-    // P2002: unique constraint violation -- forfeit vote pre-creation raced with this human vote
-    if (hasPrismaErrorCode(e, "P2002")) {
+    // ALREADY_VOTED (explicit check) or P2002 (unique constraint race with forfeit pre-creation)
+    if (
+      (e instanceof Error && e.message === "ALREADY_VOTED") ||
+      hasPrismaErrorCode(e, "P2002")
+    ) {
       return NextResponse.json(
         { error: "Already voted on this prompt" },
         { status: 400 }

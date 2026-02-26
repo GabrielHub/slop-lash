@@ -37,11 +37,14 @@ function getPlayerName() {
 const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
-const POLL_SLOW_MS = 2000;
+const POLL_LOBBY_MS = 4000;
+const POLL_ROUND_RESULTS_MS = 4000;
+const POLL_DEFAULT_MS = 3000;
 const POLL_FINAL_WAIT_FOR_REMATCH_MS = 10_000;
 const POLL_FINAL_IDLE_MS = 60_000;
-const POLL_HIDDEN_MS = 10_000;
+const POLL_HIDDEN_MS = 60_000;
 const HEARTBEAT_TOUCH_MS = 15_000;
+const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
 const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
 
 type ReactionSnapshotPayload = {
@@ -134,13 +137,21 @@ function useGamePoller(code: string, playerId: string | null) {
     function getPollDelay(): number {
       const s = statusRef.current ?? "";
       if (ACTIVE_PHASES.has(s)) return POLL_FAST_MS;
+      if (s === "LOBBY") return POLL_LOBBY_MS;
+      if (s === "ROUND_RESULTS") return POLL_ROUND_RESULTS_MS;
       if (s === "FINAL_RESULTS") {
         const game = gameStateRef.current;
         const isHost = !!playerId && game?.hostPlayerId === playerId;
         const hasNextGame = !!game?.nextGameCode;
         return isHost || hasNextGame ? POLL_FINAL_IDLE_MS : POLL_FINAL_WAIT_FOR_REMATCH_MS;
       }
-      return POLL_SLOW_MS;
+      return POLL_DEFAULT_MS;
+    }
+
+    function getHeartbeatTouchInterval(): number {
+      const s = statusRef.current ?? "";
+      if (s === "LOBBY") return HEARTBEAT_TOUCH_LOBBY_MS;
+      return HEARTBEAT_TOUCH_MS;
     }
 
     async function syncVotingReactions() {
@@ -203,7 +214,7 @@ function useGamePoller(code: string, playerId: string | null) {
           const shouldTouch =
             !!playerId &&
             statusRef.current !== "FINAL_RESULTS" &&
-            Date.now() - lastTouchAtRef.current >= HEARTBEAT_TOUCH_MS;
+            Date.now() - lastTouchAtRef.current >= getHeartbeatTouchInterval();
           if (shouldTouch) params.set("touch", "1");
           const qs = params.toString();
           const url = `/api/games/${code}${qs ? `?${qs}` : ""}`;
