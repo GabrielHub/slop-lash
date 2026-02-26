@@ -20,11 +20,12 @@ export function useWinnerTagline(
 
   const sorted = [...players].sort((a, b) => b.score - a.score);
   const winner = sorted[0]?.type === "AI" ? sorted[0] : null;
+  const winnerId = winner?.id ?? null;
 
   const fetchKey = `${code}:${isFinal}`;
 
   useEffect(() => {
-    if (!winner) return;
+    if (!winnerId) return;
     if (fetchedKeyRef.current === fetchKey) return;
 
     setTagline("");
@@ -64,7 +65,7 @@ export function useWinnerTagline(
     return () => {
       controller.abort();
     };
-  }, [code, isFinal, winner, fetchKey]);
+  }, [code, isFinal, winnerId, fetchKey]);
 
   return { tagline, isStreaming, winner };
 }

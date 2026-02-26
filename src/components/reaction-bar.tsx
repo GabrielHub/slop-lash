@@ -185,6 +185,10 @@ function ReactionChip({
   const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   const accent = EMOJI_ACCENT[r.emoji];
 
+  useEffect(() => {
+    return () => clearTimeout(tooltipTimeout.current);
+  }, []);
+
   const handleClick = useCallback(() => {
     if (canInteract) {
       onToggle();

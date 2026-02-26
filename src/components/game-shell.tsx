@@ -390,7 +390,9 @@ export function GameShell({
           refresh();
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        rejoinAttempted.current = false;
+      })
       .finally(() => setReconnecting(false));
   }, [gameState, playerId, code, searchParams, refresh]);
 

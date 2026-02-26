@@ -67,7 +67,10 @@ export async function POST(
 
   await prisma.game.update({
     where: { id: game.id },
-    data: { version: { increment: 1 } },
+    data: {
+      ...(targetPlayerId === game.hostPlayerId && { hostPlayerId: null }),
+      version: { increment: 1 },
+    },
   });
 
   return NextResponse.json({ success: true });

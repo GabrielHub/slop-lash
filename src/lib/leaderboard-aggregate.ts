@@ -5,6 +5,13 @@ import { computeLeaderboardPromptAnalytics, type LeaderboardApiResponse, type Mo
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 
 const LEADERBOARD_AGGREGATE_ID = "global";
+const LEADERBOARD_AGGREGATE_SELECT = {
+  leaderboard: true,
+  headToHead: true,
+  bestResponses: true,
+  modelUsage: true,
+  stats: true,
+} satisfies Prisma.LeaderboardAggregateSelect;
 
 const emptyData: LeaderboardApiResponse = {
   leaderboard: [],
@@ -53,18 +60,13 @@ function coerceAggregateRow(row: {
   stats: unknown;
 } | null): LeaderboardApiResponse | null {
   if (!row) return null;
-  try {
-    const data: LeaderboardApiResponse = {
-      leaderboard: Array.isArray(row.leaderboard) ? (row.leaderboard as ContestantTotals[]) : [],
-      headToHead: Array.isArray(row.headToHead) ? (row.headToHead as HeadToHeadTotals[]) : [],
-      bestResponses: Array.isArray(row.bestResponses) ? (row.bestResponses as BestResponse[]) : [],
-      modelUsage: Array.isArray(row.modelUsage) ? (row.modelUsage as ModelUsageStats[]) : [],
-      stats: (row.stats as Stats) ?? { ...emptyData.stats },
-    };
-    return data;
-  } catch {
-    return null;
-  }
+  return {
+    leaderboard: Array.isArray(row.leaderboard) ? (row.leaderboard as ContestantTotals[]) : [],
+    headToHead: Array.isArray(row.headToHead) ? (row.headToHead as HeadToHeadTotals[]) : [],
+    bestResponses: Array.isArray(row.bestResponses) ? (row.bestResponses as BestResponse[]) : [],
+    modelUsage: Array.isArray(row.modelUsage) ? (row.modelUsage as ModelUsageStats[]) : [],
+    stats: (row.stats as Stats) ?? { ...emptyData.stats },
+  };
 }
 
 function mergeModelUsage(existing: ModelUsageStats[], incoming: ModelUsageStats[]): ModelUsageStats[] {
@@ -294,7 +296,7 @@ async function buildDeltaForCompletedGame(gameId: string): Promise<LeaderboardAp
 export async function getLeaderboardAggregateOrSeed(): Promise<LeaderboardApiResponse> {
   const row = await prisma.leaderboardAggregate.findUnique({
     where: { id: LEADERBOARD_AGGREGATE_ID },
-    select: { leaderboard: true, headToHead: true, bestResponses: true, modelUsage: true, stats: true },
+    select: LEADERBOARD_AGGREGATE_SELECT,
   });
   const existing = coerceAggregateRow(row);
   if (existing) return existing;
@@ -322,11 +324,12 @@ export async function getLeaderboardAggregateOrSeed(): Promise<LeaderboardApiRes
 }
 
 export async function applyCompletedGameToLeaderboardAggregate(gameId: string): Promise<void> {
-  const existingAggregate = await prisma.leaderboardAggregate.findUnique({
+  const aggregateRow = await prisma.leaderboardAggregate.findUnique({
     where: { id: LEADERBOARD_AGGREGATE_ID },
-    select: { id: true },
+    select: LEADERBOARD_AGGREGATE_SELECT,
   });
-  if (!existingAggregate) return;
+  const current = coerceAggregateRow(aggregateRow);
+  if (!current) return;
 
   const delta = await buildDeltaForCompletedGame(gameId);
   if (!delta) return;
@@ -338,7 +341,6 @@ export async function applyCompletedGameToLeaderboardAggregate(gameId: string): 
     throw error;
   }
 
-  const current = await getLeaderboardAggregateOrSeed();
   const next = mergeAggregate(current, delta);
 
   await prisma.leaderboardAggregate.update({

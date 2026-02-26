@@ -128,8 +128,10 @@ export async function GET(
     } else if (advancedTo === "WRITING") {
       after(() => generateAiResponses(meta.id));
     } else if (advancedTo === "FINAL_RESULTS") {
-      after(() => applyCompletedGameToLeaderboardAggregate(meta.id));
-      revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+      after(async () => {
+        await applyCompletedGameToLeaderboardAggregate(meta.id);
+        revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+      });
     }
   }
 
@@ -157,8 +159,8 @@ export async function GET(
     });
   }
 
-  const freshMeta = advancedTo ? await findGameMeta(roomCode) : meta;
-  const payloadStatus = freshMeta?.status ?? meta.status;
+  const payloadStatus =
+    advancedTo && advancedTo !== "VOTING_SUBPHASE" ? advancedTo : meta.status;
 
   const game = await findGamePayloadByStatus(roomCode, payloadStatus);
   if (!game) {

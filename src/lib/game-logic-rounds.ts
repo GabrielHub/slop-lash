@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { WRITING_DURATION_SECONDS } from "./game-constants";
 import { assignPrompts } from "./game-logic-core";
+import { hasPrismaErrorCode } from "./prisma-errors";
 
 /**
  * Create the round and set the game to WRITING. Fast DB-only operation.
@@ -66,6 +67,24 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     return false;
   }
 
-  await startRound(gameId, game.currentRound + 1);
-  return true;
+  try {
+    await startRound(gameId, game.currentRound + 1);
+    return true;
+  } catch (error) {
+    if (!hasPrismaErrorCode(error, "P2002")) {
+      throw error;
+    }
+
+    // Another caller may have created the same round first. Treat that as success
+    // if the game has already advanced to the expected next round.
+    const latest = await prisma.game.findUnique({
+      where: { id: gameId },
+      select: { status: true, currentRound: true },
+    });
+    if (latest?.status === "WRITING" && latest.currentRound === game.currentRound + 1) {
+      return true;
+    }
+
+    throw error;
+  }
 }

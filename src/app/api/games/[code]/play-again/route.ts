@@ -6,6 +6,36 @@ import { HOST_STALE_MS } from "@/lib/game-constants";
 import { parseJsonBody } from "@/lib/http";
 import { selectUniqueModelsByProvider } from "@/lib/models";
 
+const PLAY_AGAIN_ALREADY_CREATED = "PLAY_AGAIN_ALREADY_CREATED";
+
+async function buildExistingPlayAgainResponse(nextGameCode: string) {
+  const nextGame = await prisma.game.findUnique({
+    where: { roomCode: nextGameCode },
+    select: {
+      roomCode: true,
+      hostPlayerId: true,
+      players: {
+        select: { id: true, type: true, rejoinToken: true },
+      },
+    },
+  });
+  if (!nextGame) return null;
+
+  const hostPlayer =
+    nextGame.players.find((p) => p.id === nextGame.hostPlayerId) ??
+    nextGame.players.find((p) => p.type === "HUMAN");
+
+  if (!hostPlayer?.rejoinToken) {
+    return null;
+  }
+
+  return {
+    roomCode: nextGame.roomCode,
+    hostPlayerId: nextGame.hostPlayerId ?? hostPlayer.id,
+    rejoinToken: hostPlayer.rejoinToken,
+  };
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
@@ -66,7 +96,8 @@ export async function POST(
   }
 
   let actingHostId = game.hostPlayerId;
-  if (playerId !== game.hostPlayerId) {
+  const needsHostTakeover = playerId !== game.hostPlayerId;
+  if (needsHostTakeover) {
     const host = game.players.find((p) => p.id === game.hostPlayerId);
     const hostIsStale =
       !host || Date.now() - new Date(host.lastSeen).getTime() > HOST_STALE_MS;
@@ -77,22 +108,13 @@ export async function POST(
       );
     }
     actingHostId = playerId;
-    await prisma.game.update({
-      where: { id: game.id },
-      data: { hostPlayerId: playerId, version: { increment: 1 } },
-    });
   }
 
   // Idempotent: if already created, return the existing new game code
   if (game.nextGameCode) {
-    const nextGame = await prisma.game.findUnique({
-      where: { roomCode: game.nextGameCode },
-    });
-    if (nextGame) {
-      return NextResponse.json({
-        roomCode: game.nextGameCode,
-        hostPlayerId: nextGame.hostPlayerId,
-      });
+    const existing = await buildExistingPlayAgainResponse(game.nextGameCode);
+    if (existing) {
+      return NextResponse.json(existing);
     }
   }
 
@@ -121,52 +143,100 @@ export async function POST(
   );
 
   const hostRejoinToken = randomBytes(12).toString("base64url");
-  const newGame = await prisma.game.create({
-    data: {
-      roomCode: newRoomCode,
-      timersDisabled: game.timersDisabled,
-      ttsMode: game.ttsMode,
-      ttsVoice: game.ttsVoice,
-      players: {
-        create: [
-          { name: hostPlayer.name, type: "HUMAN", rejoinToken: hostRejoinToken },
-          ...aiPlayers.map((model) => ({
-            name: model.shortName,
-            type: "AI" as const,
-            modelId: model.id,
-          })),
-        ],
-      },
-    },
-    select: {
-      id: true,
-      players: { select: { id: true, type: true } },
-    },
-  });
+  let createdResponse:
+    | { roomCode: string; hostPlayerId: string; rejoinToken: string }
+    | null = null;
 
-  const newHost = newGame.players.find((p) => p.type === "HUMAN");
-  if (!newHost) {
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Atomic compare-and-set so only one caller can create/link the next game.
+      const claim = await tx.game.updateMany({
+        where: { id: game.id, nextGameCode: null },
+        data: { nextGameCode: newRoomCode },
+      });
+      if (claim.count === 0) {
+        throw new Error(PLAY_AGAIN_ALREADY_CREATED);
+      }
+
+      // Promote host inside the transaction so it rolls back if anything fails.
+      if (needsHostTakeover) {
+        await tx.game.update({
+          where: { id: game.id },
+          data: { hostPlayerId: playerId, version: { increment: 1 } },
+        });
+      }
+
+      const newGame = await tx.game.create({
+        data: {
+          roomCode: newRoomCode,
+          timersDisabled: game.timersDisabled,
+          ttsMode: game.ttsMode,
+          ttsVoice: game.ttsVoice,
+          players: {
+            create: [
+              { name: hostPlayer.name, type: "HUMAN", rejoinToken: hostRejoinToken },
+              ...aiPlayers.map((model) => ({
+                name: model.shortName,
+                type: "AI" as const,
+                modelId: model.id,
+              })),
+            ],
+          },
+        },
+        select: {
+          id: true,
+          players: { select: { id: true, type: true } },
+        },
+      });
+
+      const newHost = newGame.players.find((p) => p.type === "HUMAN");
+      if (!newHost) {
+        throw new Error("FAILED_TO_SET_UP_NEW_GAME");
+      }
+
+      await tx.game.update({
+        where: { id: newGame.id },
+        data: { hostPlayerId: newHost.id },
+      });
+
+      createdResponse = {
+        roomCode: newRoomCode,
+        hostPlayerId: newHost.id,
+        rejoinToken: hostRejoinToken,
+      };
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === PLAY_AGAIN_ALREADY_CREATED) {
+      const latest = await prisma.game.findUnique({
+        where: { id: game.id },
+        select: { nextGameCode: true },
+      });
+      if (latest?.nextGameCode) {
+        const existing = await buildExistingPlayAgainResponse(latest.nextGameCode);
+        if (existing) {
+          return NextResponse.json(existing);
+        }
+      }
+      return NextResponse.json(
+        { error: "New game was already created but could not be retrieved" },
+        { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "FAILED_TO_SET_UP_NEW_GAME") {
+      return NextResponse.json(
+        { error: "Failed to set up new game" },
+        { status: 500 }
+      );
+    }
+    throw error;
+  }
+
+  if (!createdResponse) {
     return NextResponse.json(
-      { error: "Failed to set up new game" },
+      { error: "Failed to create new game" },
       { status: 500 }
     );
   }
 
-  // Set host on new game and link old game to new game in parallel
-  await Promise.all([
-    prisma.game.update({
-      where: { id: newGame.id },
-      data: { hostPlayerId: newHost.id },
-    }),
-    prisma.game.update({
-      where: { id: game.id },
-      data: { nextGameCode: newRoomCode },
-    }),
-  ]);
-
-  return NextResponse.json({
-    roomCode: newRoomCode,
-    hostPlayerId: newHost.id,
-    rejoinToken: hostRejoinToken,
-  });
+  return NextResponse.json(createdResponse);
 }

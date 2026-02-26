@@ -18,14 +18,10 @@ export async function POST(
   const validVoterId = typeof voterId === "string" ? voterId : null;
   const validPromptId = typeof promptId === "string" ? promptId : null;
 
-  let validResponseId: string | null | undefined;
-  if (responseId == null) {
-    validResponseId = null;
-  } else if (typeof responseId === "string") {
-    validResponseId = responseId;
-  } else {
-    validResponseId = undefined;
-  }
+  const validResponseId =
+    responseId == null ? null :
+    typeof responseId === "string" ? responseId :
+    undefined;
 
   if (!validVoterId || !validPromptId || validResponseId === undefined) {
     return NextResponse.json(
@@ -72,11 +68,17 @@ export async function POST(
   // Verify voter belongs to this game
   const voter = await prisma.player.findFirst({
     where: { id: validVoterId, gameId: game.id },
-    select: { id: true },
+    select: { id: true, type: true },
   });
   if (!voter) {
     return NextResponse.json(
       { error: "Player not in this game" },
+      { status: 403 }
+    );
+  }
+  if (voter.type === "SPECTATOR") {
+    return NextResponse.json(
+      { error: "Spectators cannot vote" },
       { status: 403 }
     );
   }

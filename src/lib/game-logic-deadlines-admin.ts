@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { HOST_STALE_MS, ROUND_RESULTS_SECONDS, VOTE_PER_PROMPT_SECONDS } from "./game-constants";
-import { applyScoreResult, scorePrompt, type PlayerState } from "./scoring";
+import { applyScoreResult, FORFEIT_MARKER, scorePrompt, type PlayerState } from "./scoring";
 import type { PlayerType } from "./types";
 import type { PhaseAdvanceResult } from "./game-logic-core";
 import { advanceGame } from "./game-logic-rounds";
@@ -196,7 +196,7 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
 }
 
 /**
- * Fill "..." placeholder responses for any assigned players who haven't submitted.
+ * Fill forfeit-marker placeholder responses for any assigned players who haven't submitted.
  * Tracks idle rounds: increment for HUMAN players who didn't submit, reset for those who did.
  */
 async function fillPlaceholderResponses(gameId: string): Promise<void> {
@@ -237,7 +237,7 @@ async function fillPlaceholderResponses(gameId: string): Promise<void> {
       console.warn(`[fillPlaceholder] Player ${a.playerId} timed out on prompt "${prompt.text.slice(0, 50)}" in game ${gameId}`);
       creates.push(
         prisma.response.create({
-          data: { promptId: prompt.id, playerId: a.playerId, text: "..." },
+          data: { promptId: prompt.id, playerId: a.playerId, text: FORFEIT_MARKER },
         }),
       );
     }
@@ -344,13 +344,9 @@ export async function endGameEarly(gameId: string): Promise<void> {
 
   if (game.status === "WRITING" || game.status === "VOTING") {
     await fillPlaceholderResponses(gameId);
-  }
-
-  if (game.status === "VOTING") {
-    await fillAbstainVotesForAllPrompts(gameId);
-  }
-
-  if (game.status === "WRITING" || game.status === "VOTING") {
+    if (game.status === "VOTING") {
+      await fillAbstainVotesForAllPrompts(gameId);
+    }
     await applyRoundScores(gameId);
   }
 }

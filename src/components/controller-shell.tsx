@@ -197,7 +197,9 @@ export function ControllerShell({ code }: { code: string }) {
         if (data.playerType) localStorage.setItem("playerType", data.playerType);
         refresh();
       })
-      .catch(() => {})
+      .catch(() => {
+        rejoinAttempted.current = false;
+      })
       .finally(() => setReconnecting(false));
   }, [gameState, playerId, code, searchParams, refresh]);
 
