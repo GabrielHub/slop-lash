@@ -8,11 +8,12 @@ import { getPlayerColor } from "@/lib/player-colors";
 import { staggerContainer, fadeInUp, popIn } from "@/lib/animations";
 import { HumorBadge } from "@/components/humor-badge";
 
-function TypeBadge({ label, variant }: { label: string; variant: "ai" | "spectator" | "afk" }) {
+function TypeBadge({ label, variant }: { label: string; variant: "ai" | "spectator" | "afk" | "disconnected" }) {
   const styles = {
     ai: "bg-ai-soft text-ai",
     spectator: "bg-surface text-ink-dim",
     afk: "bg-fail-soft text-fail",
+    disconnected: "bg-surface text-ink-dim",
   };
   return (
     <span className={`text-xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md shrink-0 ${styles[variant]}`}>
@@ -45,11 +46,12 @@ export function PlayerList({
             ? getModelByModelId(player.modelId)
             : null;
           const isAfk = player.idleRounds >= 1 && player.type === "HUMAN";
+          const isDisconnected = player.participationStatus === "DISCONNECTED";
 
           return (
             <motion.div
               key={player.id}
-              className="flex items-center justify-between p-3 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
+              className={`flex items-center justify-between p-3 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge${isDisconnected ? " opacity-50" : ""}`}
               style={{ boxShadow: "var(--shadow-card)" }}
               variants={fadeInUp}
               layout
@@ -69,13 +71,14 @@ export function PlayerList({
                     {player.name[0]?.toUpperCase() ?? "?"}
                   </span>
                 )}
-                <span className="font-semibold text-base truncate text-ink">
+                <span className={`font-semibold text-base truncate${isDisconnected ? " text-ink-dim line-through" : " text-ink"}`}>
                   {player.name}
                 </span>
-                {player.type === "AI" && <TypeBadge label="AI" variant="ai" />}
+                {isDisconnected && <TypeBadge label="LEFT" variant="disconnected" />}
+                {player.type === "AI" && !isDisconnected && <TypeBadge label="AI" variant="ai" />}
                 {player.type === "SPECTATOR" && <TypeBadge label="SPECTATOR" variant="spectator" />}
-                {isAfk && <TypeBadge label="AFK" variant="afk" />}
-                <HumorBadge humorRating={player.humorRating} />
+                {isAfk && !isDisconnected && <TypeBadge label="AFK" variant="afk" />}
+                {!isDisconnected && <HumorBadge humorRating={player.humorRating} />}
               </div>
               <div className="flex items-center gap-2">
                 {showScores && (
@@ -89,7 +92,7 @@ export function PlayerList({
                     {player.score}
                   </motion.span>
                 )}
-                {onKick && player.id !== hostPlayerId && (
+                {onKick && player.id !== hostPlayerId && !isDisconnected && (
                   <button
                     onClick={() => onKick(player.id)}
                     className="text-xs text-ink-dim hover:text-fail transition-colors cursor-pointer px-1.5 py-0.5 rounded"

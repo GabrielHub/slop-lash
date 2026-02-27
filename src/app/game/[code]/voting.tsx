@@ -3,8 +3,8 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes, filterErrorVotes } from "@/lib/types";
-import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "@/lib/scoring";
-import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/lib/game-constants";
+import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "@/games/sloplash/scoring";
+import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/games/sloplash/game-constants";
 import { Timer } from "@/components/timer";
 import { ErrorBanner } from "@/components/error-banner";
 import {
@@ -24,7 +24,6 @@ import { ReactionBar } from "@/components/reaction-bar";
 import { VsDivider } from "@/components/vs-divider";
 import { CrownIcon, SlopIcon } from "@/components/icons";
 
-/** Format a number with a leading "+" for positive values. */
 function formatSigned(n: number): string {
   return n >= 0 ? `+${n.toLocaleString()}` : n.toLocaleString();
 }
@@ -39,11 +38,9 @@ function getVotingSkipText(skipping: boolean, revealing: boolean, timersDisabled
 function progressDotClass(index: number, current: number, revealing: boolean): string {
   if (index < current) return "bg-teal w-1.5 h-1.5";
   if (index > current) return "bg-edge-strong w-1.5 h-1.5";
-  // index === current
   return revealing ? "bg-gold w-2.5 h-2.5" : "bg-punch w-2.5 h-2.5";
 }
 
-/** Progress dots showing which prompt we're on. */
 function ProgressDots({
   total,
   current,
@@ -184,12 +181,32 @@ export function Voting({
   }, [currentPrompt, playerId, abstained, isRevealing]);
 
   const prevRevealing = useRef(false);
+  const skipAnchorRef = useRef<{ promptIndex: number; revealing: boolean } | null>(null);
   useEffect(() => {
     if (isRevealing && !prevRevealing.current) {
       playSound("vote-reveal");
     }
     prevRevealing.current = isRevealing;
   }, [isRevealing]);
+
+  useEffect(() => {
+    if (!skipping) return;
+    if (game.status !== "VOTING") {
+      setSkipping(false);
+      skipAnchorRef.current = null;
+      return;
+    }
+    const anchor = skipAnchorRef.current;
+    if (!anchor) return;
+
+    const advanced =
+      game.votingPromptIndex !== anchor.promptIndex ||
+      game.votingRevealing !== anchor.revealing;
+    if (!advanced) return;
+
+    setSkipping(false);
+    skipAnchorRef.current = null;
+  }, [skipping, game.status, game.votingPromptIndex, game.votingRevealing]);
 
   async function castVote(promptId: string, responseId: string | null) {
     if (!playerId) return;
@@ -228,6 +245,11 @@ export function Voting({
     const hostToken = localStorage.getItem("hostControlToken");
     setSkipping(true);
     setError("");
+    skipAnchorRef.current = {
+      promptIndex: game.votingPromptIndex,
+      revealing: game.votingRevealing,
+    };
+    let keepPending = false;
     try {
       const res = await fetch(`/api/games/${code}/next`, {
         method: "POST",
@@ -237,11 +259,16 @@ export function Voting({
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || "Failed to skip");
+      } else {
+        keepPending = true;
       }
     } catch {
       setError("Something went wrong");
     } finally {
-      setSkipping(false);
+      if (!keepPending) {
+        setSkipping(false);
+        skipAnchorRef.current = null;
+      }
     }
   }
 
@@ -268,7 +295,7 @@ export function Voting({
   }
 
   return (
-    <main className="min-h-svh flex flex-col items-center px-4 sm:px-6 py-8 pt-16 sm:pt-20">
+    <main className="flex-1 flex flex-col items-center px-4 sm:px-6 py-8">
       <div className="w-full max-w-lg lg:max-w-none xl:max-w-[1240px] lg:grid lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] lg:gap-8 xl:gap-10">
         <motion.div
           variants={fadeInUp}
@@ -483,7 +510,7 @@ function HostDisplay({
   skipping?: boolean;
 }) {
   return (
-    <main className="min-h-svh flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-12 pt-20">
+    <main className="flex-1 flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-12">
       <div className="w-full max-w-4xl">
         {/* Phase label */}
         <motion.div

@@ -1,11 +1,12 @@
 import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
-import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { getGameDefinition } from "@/games/registry";
+import { LEADERBOARD_TAG } from "@/games/core/constants";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
-import { endGameEarly } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
+import { logGameEvent } from "@/games/core/observability";
 
 export async function POST(
   request: Request,
@@ -26,7 +27,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, status: true, hostPlayerId: true, hostControlTokenHash: true },
+    select: { id: true, gameType: true, status: true, hostPlayerId: true, hostControlTokenHash: true },
   });
 
   if (!game) {
@@ -47,8 +48,14 @@ export async function POST(
     );
   }
 
-  await endGameEarly(game.id);
-  after(() => applyCompletedGameToLeaderboardAggregate(game.id));
-  revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+  const def = getGameDefinition(game.gameType);
+  await def.handlers.endGameEarly(game.id);
+  logGameEvent("ended", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+    fromStatus: game.status,
+  });
+  if (def.capabilities.retainsCompletedData) {
+    after(() => applyCompletedGameToLeaderboardAggregate(game.id));
+    revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+  }
   return NextResponse.json({ success: true });
 }

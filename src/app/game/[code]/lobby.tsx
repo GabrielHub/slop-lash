@@ -12,7 +12,7 @@ import {
   fadeInUp,
   buttonTapPrimary,
 } from "@/lib/animations";
-import { MIN_PLAYERS, MAX_PLAYERS, MAX_SPECTATORS } from "@/lib/game-constants";
+import { MIN_PLAYERS, MAX_PLAYERS, MAX_SPECTATORS } from "@/games/sloplash/game-constants";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
@@ -124,7 +124,7 @@ export function Lobby({
   }
 
   return (
-    <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+    <main className="flex-1 flex flex-col items-center px-6 py-12">
       <div className="w-full max-w-md">
         <motion.h1
           className="font-display text-3xl font-bold mb-2 text-center text-ink"
@@ -135,7 +135,6 @@ export function Lobby({
           Game Lobby
         </motion.h1>
 
-        {/* Room Code Display */}
         <div className="text-center mb-10">
           <motion.p
             className="text-sm text-ink-dim mb-3"
@@ -185,7 +184,6 @@ export function Lobby({
           </button>
         </div>
 
-        {/* Player List */}
         <div className="mb-8">
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-sm font-medium text-ink-dim">Players</h2>
@@ -207,7 +205,6 @@ export function Lobby({
 
         <ErrorBanner error={error} />
 
-        {/* Start / Waiting */}
         {isHost ? (
           <motion.button
             onClick={(e) => {

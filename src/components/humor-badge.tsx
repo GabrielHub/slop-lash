@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { HR_HOT_THRESHOLD, HR_COLD_THRESHOLD } from "@/lib/game-constants";
+import { HR_HOT_THRESHOLD, HR_COLD_THRESHOLD } from "@/games/sloplash/game-constants";
 
 interface HumorBadgeProps {
   humorRating: number;

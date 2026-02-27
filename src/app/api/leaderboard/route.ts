@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
-import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { LEADERBOARD_TAG } from "@/games/core/constants";
 import type { LeaderboardApiResponse } from "@/lib/leaderboard-analytics";
 import { getLeaderboardAggregateOrSeed } from "@/lib/leaderboard-aggregate";
 

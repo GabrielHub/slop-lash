@@ -7,6 +7,10 @@ export type GameStatus =
 
 export type PlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
+export type GameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN";
+
+export type ParticipationStatus = "ACTIVE" | "DISCONNECTED";
+
 export type TtsMode = "OFF" | "ON";
 
 /** A Gemini voice name (e.g. "Puck", "Zephyr") or "RANDOM". */
@@ -21,7 +25,17 @@ export interface GamePlayer {
   score: number;
   humorRating: number;
   winStreak: number;
+  participationStatus: ParticipationStatus;
   lastSeen: string;
+}
+
+export interface GameChatMessage {
+  id: string;
+  gameId: string;
+  playerId: string;
+  roundNumber: number | null;
+  content: string;
+  createdAt: string;
 }
 
 export interface GameReaction {
@@ -100,6 +114,7 @@ export interface GameModelUsage {
 export interface GameState {
   id: string;
   roomCode: string;
+  gameType: GameType;
   status: GameStatus;
   currentRound: number;
   totalRounds: number;

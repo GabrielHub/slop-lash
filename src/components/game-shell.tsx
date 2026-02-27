@@ -22,7 +22,7 @@ import {
   buildRoundOverEvent,
   buildHurryUpEvent,
   getVotablePrompts,
-} from "@/lib/narrator-events";
+} from "@/games/sloplash/narrator-events";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -37,6 +37,7 @@ function getHostControlToken() {
 const noopSubscribe = () => () => {};
 
 const POLL_FAST_MS = 1000;
+const POLL_VOTING_OPEN_MS = 1500;
 const POLL_VISIBLE_IDLE_MS = 60_000;
 const USER_IDLE_POLL_THRESHOLD_MS = 5 * 60_000;
 const POLL_LOBBY_MS = 4000;
@@ -171,6 +172,11 @@ function useGamePoller(
     function getPollDelay(): number {
       const s = statusRef.current ?? "";
       if (isUserIdleVisible()) return POLL_VISIBLE_IDLE_MS;
+      if (s === "VOTING") {
+        // Keep request volume roughly flat after extending vote timer by polling
+        // the non-reveal subphase less aggressively.
+        return gameStateRef.current?.votingRevealing ? POLL_FAST_MS : POLL_VOTING_OPEN_MS;
+      }
       if (ACTIVE_PHASES.has(s)) return POLL_FAST_MS;
       if (s === "LOBBY") return POLL_LOBBY_MS;
       if (s === "ROUND_RESULTS") return POLL_ROUND_RESULTS_MS;
@@ -375,7 +381,7 @@ export function GameShell({
     const token = searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
     if (!token) return;
 
-    setReconnecting(true);
+    queueMicrotask(() => setReconnecting(true));
     fetch(`/api/games/${code}/rejoin`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -438,9 +444,12 @@ export function GameShell({
     totalRounds: gameState?.totalRounds ?? 3,
   });
 
-  const gameStateRef = useRef(gameState);
-  gameStateRef.current = gameState;
+  const gameStateRef = useRef<GameState | null>(gameState);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
+  const narratorPrevStatus = useRef(gameState?.status);
   const prevNarratorConnected = useRef(false);
   useEffect(() => {
     if (!narratorConnected || prevNarratorConnected.current) return;
@@ -451,8 +460,6 @@ export function GameShell({
       narrate(buildGameStartEvent(gs));
     }
   }, [narratorConnected, narrate]);
-
-  const narratorPrevStatus = useRef(gameState?.status);
   useEffect(() => {
     const gs = gameStateRef.current;
     const status = gs?.status;
@@ -562,24 +569,20 @@ export function GameShell({
 
   if (!gameState) {
     return (
-      <>
-        {/* Skeleton header */}
-        <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
+      <div className="min-h-svh flex flex-col bg-base">
+        <div className="shrink-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
           <div className="h-4 w-20 rounded bg-edge/40 animate-pulse" />
           <div className="h-4 w-px bg-edge-strong" />
           <div className="h-4 w-14 rounded bg-edge/40 animate-pulse" />
         </div>
-        <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+        <main className="flex-1 flex flex-col items-center px-6 py-12">
           <div className="w-full max-w-md space-y-8">
-            {/* Title */}
             <div className="flex justify-center">
               <div className="h-8 w-40 rounded-lg bg-edge/40 animate-pulse" />
             </div>
-            {/* Subtitle */}
             <div className="flex justify-center">
               <div className="h-4 w-36 rounded bg-edge/40 animate-pulse" />
             </div>
-            {/* Room code boxes */}
             <div className="flex justify-center gap-2.5">
               {[0, 1, 2, 3].map((i) => (
                 <div
@@ -588,7 +591,6 @@ export function GameShell({
                 />
               ))}
             </div>
-            {/* Player list heading */}
             <div className="space-y-3">
               <div className="h-4 w-16 rounded bg-edge/40 animate-pulse" />
               {[0, 1, 2].map((i) => (
@@ -599,11 +601,10 @@ export function GameShell({
                 />
               ))}
             </div>
-            {/* Button */}
             <div className="h-14 rounded-xl bg-edge/40 animate-pulse" />
           </div>
         </main>
-      </>
+      </div>
     );
   }
 
@@ -622,12 +623,15 @@ export function GameShell({
     if (!window.confirm("End the game early? Scores will be calculated for completed rounds.")) return;
     setEndingGame(true);
     try {
-      await fetch(`/api/games/${code}/end`, {
+      const res = await fetch(`/api/games/${code}/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ playerId, hostToken: hostControlToken }),
       });
-    } finally {
+      if (!res.ok) {
+        setEndingGame(false);
+      }
+    } catch {
       setEndingGame(false);
     }
   }
@@ -659,7 +663,7 @@ export function GameShell({
   }
 
   const gameHeader = (
-    <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
+    <div className="shrink-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
         <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
           SLOP-LASH
@@ -729,11 +733,12 @@ export function GameShell({
   );
 
   return (
-    <>
+    <div className="min-h-svh flex flex-col bg-base">
       {gameHeader}
       <AnimatePresence mode="wait">
         <motion.div
           key={gameState.status}
+          className="flex-1 flex flex-col"
           variants={phaseTransition}
           initial="hidden"
           animate="visible"
@@ -778,6 +783,6 @@ export function GameShell({
           )}
         </motion.div>
       </AnimatePresence>
-    </>
+    </div>
   );
 }

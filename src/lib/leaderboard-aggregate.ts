@@ -152,12 +152,14 @@ function mergeAggregate(base: LeaderboardApiResponse, delta: LeaderboardApiRespo
 }
 
 async function buildFullLeaderboardSnapshot(): Promise<LeaderboardApiResponse> {
-  const totalGames = await prisma.game.count({ where: { status: "FINAL_RESULTS" } });
+  // Only SLOPLASH games contribute to the global leaderboard
+  const sloplashFilter = { status: "FINAL_RESULTS" as const, gameType: "SLOPLASH" as const };
+  const totalGames = await prisma.game.count({ where: sloplashFilter });
   if (totalGames === 0) return cloneEmpty();
 
   const modelUsageRaw = await prisma.gameModelUsage.groupBy({
     by: ["modelId"],
-    where: { game: { status: "FINAL_RESULTS" } },
+    where: { game: sloplashFilter },
     _sum: { inputTokens: true, outputTokens: true, costUsd: true },
   });
 
@@ -181,7 +183,7 @@ async function buildFullLeaderboardSnapshot(): Promise<LeaderboardApiResponse> {
 
   const [prompts, totalVotes] = await Promise.all([
     prisma.prompt.findMany({
-      where: { round: { game: { status: "FINAL_RESULTS" } } },
+      where: { round: { game: sloplashFilter } },
       select: {
         id: true,
         text: true,
@@ -198,7 +200,7 @@ async function buildFullLeaderboardSnapshot(): Promise<LeaderboardApiResponse> {
     }),
     prisma.vote.count({
       where: {
-        prompt: { round: { game: { status: "FINAL_RESULTS" } } },
+        prompt: { round: { game: sloplashFilter } },
         NOT: { responseId: null },
       },
     }),
@@ -225,6 +227,7 @@ async function buildDeltaForCompletedGame(gameId: string): Promise<LeaderboardAp
     where: { id: gameId },
     select: {
       status: true,
+      gameType: true,
       rounds: {
         select: {
           prompts: {
@@ -251,6 +254,8 @@ async function buildDeltaForCompletedGame(gameId: string): Promise<LeaderboardAp
   });
 
   if (!game || game.status !== "FINAL_RESULTS") return null;
+  // Only SLOPLASH games contribute to the global leaderboard
+  if (game.gameType !== "SLOPLASH") return null;
 
   const prompts: CompletedGamePrompt[] = game.rounds.flatMap((r) => r.prompts);
   const totalVotes = prompts.reduce(

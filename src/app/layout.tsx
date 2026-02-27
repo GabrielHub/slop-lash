@@ -28,21 +28,21 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Slop-Lash",
-    template: "%s | Slop-Lash",
+    default: "SlopBox Party Pack",
+    template: "%s | SlopBox Party Pack",
   },
-  description: "A Quiplash-style party game where AI models play alongside humans",
+  description: "A party game pack where AI models play alongside humans",
   metadataBase: new URL("https://slop-lash.vercel.app"),
   openGraph: {
-    title: "Slop-Lash",
-    description: "The comedy game where AI plays too",
-    siteName: "Slop-Lash",
+    title: "SlopBox Party Pack",
+    description: "Party games where AI plays too",
+    siteName: "SlopBox Party Pack",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "Slop-Lash",
-    description: "The comedy game where AI plays too",
+    title: "SlopBox Party Pack",
+    description: "Party games where AI plays too",
   },
   icons: {
     icon: "/icon.svg",

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { AI_MODELS } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { useTheme } from "@/components/theme-provider";
-import { getRandomPrompts } from "@/lib/prompts";
+import { getRandomPrompts } from "@/games/core/prompts";
 import {
   staggerContainer,
   fadeInUp,
@@ -16,7 +16,6 @@ import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 const MotionLink = motion.create(Link);
 
-// Glow color per icon position (cycles through theme accents)
 const GLOW_CLASSES = [
   "icon-glow-punch",
   "icon-glow-teal",
@@ -29,7 +28,6 @@ const GLOW_CLASSES = [
   "icon-glow-gold",
 ];
 
-// Desktop scattered positions
 const ICON_POSITIONS = [
   { top: "13%", left: "10%", delay: 0 },
   { top: "6%", left: "46%", delay: 0.7 },
@@ -42,7 +40,6 @@ const ICON_POSITIONS = [
   { top: "84%", right: "26%", delay: 0.6 },
 ];
 
-// Mobile positions (flanking the content on both sides)
 const MOBILE_ICON_POSITIONS = [
   { top: "4%", left: "6%", delay: 0 },
   { top: "3%", right: "8%", delay: 0.5 },
@@ -56,16 +53,16 @@ const MOBILE_ICON_POSITIONS = [
 ];
 
 const TAGLINES = [
-  "The comedy game where AI plays too.",
+  "Party games where AI plays too.",
   "Friendslop for when you don't have friends.",
   "You will not be funnier than ChatGPT.",
-  "Party game. Friends not required.",
+  "Party games. Friends not required.",
   "Losing to a robot has never been this fun.",
   "The AI is funnier than you. Accept it.",
   "Your jokes are mid. The AI's are worse.",
   "Comedy night, but make it dystopian.",
   "You vs. seven chatbots. Good luck.",
-  "Finally, a game where everyone's humor is artificial.",
+  "Finally, games where everyone's humor is artificial.",
   "Turing test, but for comedy.",
   "The only game where lag makes the jokes better.",
   "Come for the laughs. Stay because you have no friends.",
@@ -99,14 +96,12 @@ export default function Home() {
 
   return (
     <main className="min-h-svh flex flex-col items-center justify-center px-6 py-16 relative overflow-hidden">
-      {/* Background gradient blobs */}
       <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full blur-[120px] bg-punch opacity-[0.07]" />
         <div className="absolute bottom-[25%] right-[20%] w-[350px] h-[350px] rounded-full blur-[90px] bg-teal opacity-[0.05]" />
         <div className="absolute top-[60%] left-[12%] w-[250px] h-[250px] rounded-full blur-[70px] bg-gold opacity-[0.04]" />
       </div>
 
-      {/* Floating AI Model Icons — Desktop */}
       {mounted && (
         <div
           className="absolute inset-0 hidden md:block pointer-events-none"
@@ -142,7 +137,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Floating AI Model Icons — Mobile */}
       {mounted && (
         <div
           className="absolute inset-0 md:hidden pointer-events-none"
@@ -178,24 +172,21 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main content */}
       <motion.div
         className="text-center max-w-md w-full relative z-10"
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
       >
-        {/* Title with glow */}
         <motion.h1
-          className="font-display text-7xl sm:text-8xl font-extrabold tracking-tight text-punch mb-3 title-glow"
+          className="font-display text-5xl sm:text-7xl font-extrabold tracking-tight text-punch mb-3 title-glow"
           variants={fadeInUp}
         >
-          SLOP
+          SLOPBOX
           <br />
-          LASH
+          PARTY PACK
         </motion.h1>
 
-        {/* Divider accent */}
         <motion.div
           className="flex items-center justify-center gap-3 mb-4"
           variants={fadeInUp}
@@ -205,7 +196,6 @@ export default function Home() {
           <div className="h-0.5 w-10 bg-edge-strong rounded-full" />
         </motion.div>
 
-        {/* Tagline */}
         <motion.p
           className="text-lg text-ink-dim font-medium mb-8"
           variants={fadeInUp}
@@ -214,7 +204,6 @@ export default function Home() {
           {tagline}
         </motion.p>
 
-        {/* Prompt showcase card */}
         <motion.div className="mb-10 mx-auto max-w-sm" variants={fadeInUp}>
           <div
             className="relative bg-surface/40 backdrop-blur-md border border-edge/60 rounded-2xl px-6 py-5"
@@ -239,12 +228,10 @@ export default function Home() {
                 )}
               </AnimatePresence>
             </div>
-            {/* Speech bubble tail */}
             <div className="absolute -bottom-[7px] left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-surface/40 backdrop-blur-md border-r border-b border-edge/60 rotate-45" />
           </div>
         </motion.div>
 
-        {/* CTA Buttons */}
         <motion.div
           className="flex flex-col sm:flex-row gap-4 justify-center"
           variants={fadeInUp}
@@ -269,7 +256,6 @@ export default function Home() {
           </MotionLink>
         </motion.div>
 
-        {/* Leaderboard link */}
         <motion.div className="mt-6 text-center" variants={fadeInUp}>
           <MotionLink
             href="/leaderboard"
@@ -283,7 +269,6 @@ export default function Home() {
 
       </motion.div>
 
-      {/* Floating GitHub icon */}
       {mounted && (
         <motion.a
           href="https://github.com/GabrielHub/slop-lash"

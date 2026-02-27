@@ -1,9 +1,10 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { getVotablePrompts, checkAllVotesForCurrentPrompt, revealCurrentPrompt } from "@/lib/game-logic";
+import { getGameDefinition } from "@/games/registry";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
+import { logGameEvent } from "@/games/core/observability";
 
 export async function POST(
   request: Request,
@@ -32,7 +33,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, status: true, votingPromptIndex: true, votingRevealing: true },
+    select: { id: true, gameType: true, status: true, votingPromptIndex: true, votingRevealing: true },
   });
 
   if (!game) {
@@ -46,7 +47,6 @@ export async function POST(
     );
   }
 
-  // Reject votes during reveal sub-phase
   if (game.votingRevealing) {
     return NextResponse.json(
       { error: "Voting is paused during reveal" },
@@ -54,8 +54,9 @@ export async function POST(
     );
   }
 
-  // Validate vote is for the currently active prompt
-  const votablePrompts = await getVotablePrompts(game.id);
+  const def = getGameDefinition(game.gameType);
+
+  const votablePrompts = await def.handlers.getVotablePrompts(game.id);
   const currentPrompt = votablePrompts[game.votingPromptIndex];
 
   if (!currentPrompt || currentPrompt.id !== validPromptId) {
@@ -65,10 +66,9 @@ export async function POST(
     );
   }
 
-  // Verify voter belongs to this game
   const voter = await prisma.player.findFirst({
     where: { id: validVoterId, gameId: game.id },
-    select: { id: true, type: true },
+    select: { id: true, type: true, participationStatus: true },
   });
   if (!voter) {
     return NextResponse.json(
@@ -82,8 +82,13 @@ export async function POST(
       { status: 403 }
     );
   }
+  if (voter.participationStatus === "DISCONNECTED") {
+    return NextResponse.json(
+      { error: "Disconnected players cannot vote" },
+      { status: 403 }
+    );
+  }
 
-  // Per-player rate limit
   if (!checkRateLimit(`vote:${validVoterId}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
@@ -91,7 +96,6 @@ export async function POST(
     );
   }
 
-  // Verify response belongs to this prompt (skip for abstain votes)
   if (validResponseId) {
     const response = await prisma.response.findFirst({
       where: { id: validResponseId, promptId: validPromptId },
@@ -105,15 +109,39 @@ export async function POST(
     }
   }
 
-  // Use transaction to prevent race conditions on self-vote and duplicate votes
+  // AI_CHAT_SHOWDOWN: all players respond AND vote (no abstains, self-vote disallowed)
+  // SLOPLASH: respondents cannot vote on their own prompt (abstains allowed)
+  const isAllPlayerVoting = game.gameType === "AI_CHAT_SHOWDOWN";
+
+  if (isAllPlayerVoting && !validResponseId) {
+    return NextResponse.json(
+      { error: "Abstaining is not allowed in this game mode" },
+      { status: 400 }
+    );
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
-      const voterResponse = await tx.response.findFirst({
-        where: { promptId: validPromptId, playerId: validVoterId },
-        select: { id: true },
-      });
-      if (voterResponse) {
-        throw new Error("RESPONDENT");
+      if (isAllPlayerVoting) {
+        // Self-vote check: cannot vote for your own response
+        if (validResponseId) {
+          const selfResponse = await tx.response.findFirst({
+            where: { id: validResponseId, playerId: validVoterId },
+            select: { id: true },
+          });
+          if (selfResponse) {
+            throw new Error("SELF_VOTE");
+          }
+        }
+      } else {
+        // SLOPLASH: respondents cannot vote on their prompt at all
+        const voterResponse = await tx.response.findFirst({
+          where: { promptId: validPromptId, playerId: validVoterId },
+          select: { id: true },
+        });
+        if (voterResponse) {
+          throw new Error("RESPONDENT");
+        }
       }
 
       const existingVote = await tx.vote.findFirst({
@@ -135,6 +163,12 @@ export async function POST(
       });
     });
   } catch (e) {
+    if (e instanceof Error && e.message === "SELF_VOTE") {
+      return NextResponse.json(
+        { error: "Cannot vote for your own response" },
+        { status: 400 }
+      );
+    }
     if (e instanceof Error && e.message === "RESPONDENT") {
       return NextResponse.json(
         { error: "Cannot vote on a prompt you responded to" },
@@ -154,11 +188,15 @@ export async function POST(
     throw e;
   }
 
-  // Check and reveal in background so the human gets an instant response
+  logGameEvent("voted", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+    voterId: validVoterId,
+    abstain: !validResponseId,
+  });
+
   after(async () => {
-    const allIn = await checkAllVotesForCurrentPrompt(game.id);
+    const allIn = await def.handlers.checkAllVotesForCurrentPrompt(game.id);
     if (allIn) {
-      await revealCurrentPrompt(game.id);
+      await def.handlers.revealCurrentPrompt(game.id);
     }
   });
 

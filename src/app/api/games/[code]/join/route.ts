@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
-import { MAX_PLAYERS } from "@/lib/game-logic";
-import { MAX_SPECTATORS } from "@/lib/game-constants";
+import { getGameDefinition } from "@/games/registry";
 import { sanitize } from "@/lib/sanitize";
 import { parseJsonBody } from "@/lib/http";
+import { logGameEvent } from "@/games/core/observability";
 
 /** A player is considered stale (reclaimable) after 30 seconds of inactivity. */
 const STALE_THRESHOLD_MS = 30_000;
@@ -34,6 +34,7 @@ export async function POST(
     where: { roomCode: code.toUpperCase() },
     select: {
       id: true,
+      gameType: true,
       status: true,
       players: {
         select: {
@@ -50,7 +51,15 @@ export async function POST(
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  // Non-spectators can only join in LOBBY
+  const def = getGameDefinition(game.gameType);
+
+  if (isSpectator && !def.capabilities.supportsSpectators) {
+    return NextResponse.json(
+      { error: "This game mode doesn't support spectators" },
+      { status: 400 }
+    );
+  }
+
   if (!isSpectator && game.status !== "LOBBY") {
     return NextResponse.json(
       { error: "Game already in progress" },
@@ -58,26 +67,24 @@ export async function POST(
     );
   }
 
-  // Quick capacity check before transaction
   if (!isSpectator) {
     const playerCount = game.players.filter((p) => p.type !== "SPECTATOR").length;
-    if (playerCount >= MAX_PLAYERS) {
+    if (playerCount >= def.constants.maxPlayers) {
       return NextResponse.json(
-        { error: `Game is full (max ${MAX_PLAYERS} players)` },
+        { error: `Game is full (max ${def.constants.maxPlayers} players)` },
         { status: 400 }
       );
     }
   } else {
     const spectatorCount = game.players.filter((p) => p.type === "SPECTATOR").length;
-    if (spectatorCount >= MAX_SPECTATORS) {
+    if (spectatorCount >= def.constants.maxSpectators) {
       return NextResponse.json(
-        { error: `Spectator slots full (max ${MAX_SPECTATORS})` },
+        { error: `Spectator slots full (max ${def.constants.maxSpectators})` },
         { status: 400 }
       );
     }
   }
 
-  // Case-insensitive duplicate name check — allow reclaiming stale players
   const existingPlayer = game.players.find(
     (p) => p.name.toLowerCase() === cleanName.toLowerCase()
   );
@@ -122,6 +129,12 @@ export async function POST(
       data: { version: { increment: 1 } },
     });
 
+    logGameEvent("joined", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+      playerId: existingPlayer.id,
+      playerType: isSpectator ? "SPECTATOR" : existingPlayer.type,
+      reclaimed: true,
+    });
+
     return NextResponse.json({
       playerId: existingPlayer.id,
       gameId: game.id,
@@ -130,7 +143,6 @@ export async function POST(
     });
   }
 
-  // Use a transaction to prevent race conditions
   let player;
   try {
     player = await prisma.$transaction(async (tx) => {
@@ -138,12 +150,12 @@ export async function POST(
         const spectatorCount = await tx.player.count({
           where: { gameId: game.id, type: "SPECTATOR" },
         });
-        if (spectatorCount >= MAX_SPECTATORS) throw new Error("SPEC_FULL");
+        if (spectatorCount >= def.constants.maxSpectators) throw new Error("SPEC_FULL");
       } else {
         const playerCount = await tx.player.count({
           where: { gameId: game.id, type: { not: "SPECTATOR" } },
         });
-        if (playerCount >= MAX_PLAYERS) throw new Error("FULL");
+        if (playerCount >= def.constants.maxPlayers) throw new Error("FULL");
       }
 
       const existing = await tx.player.findFirst({
@@ -163,8 +175,8 @@ export async function POST(
     });
   } catch (e) {
     const errorMessages: Record<string, string> = {
-      FULL: `Game is full (max ${MAX_PLAYERS} players)`,
-      SPEC_FULL: `Spectator slots full (max ${MAX_SPECTATORS})`,
+      FULL: `Game is full (max ${def.constants.maxPlayers} players)`,
+      SPEC_FULL: `Spectator slots full (max ${def.constants.maxSpectators})`,
       NAME_TAKEN: "That name is already taken",
     };
     const msg = e instanceof Error ? errorMessages[e.message] : undefined;
@@ -174,10 +186,15 @@ export async function POST(
     throw e;
   }
 
-  // Bump version so pollers pick up the new player
   await prisma.game.update({
     where: { id: game.id },
     data: { version: { increment: 1 } },
+  });
+
+  logGameEvent("joined", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+    playerId: player.id,
+    playerType: player.type,
+    reclaimed: false,
   });
 
   return NextResponse.json({

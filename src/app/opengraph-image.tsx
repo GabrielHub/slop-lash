@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "Slop-Lash — The comedy game where AI plays too";
+export const alt = "SlopBox Party Pack — Party games where AI plays too";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -30,7 +30,7 @@ export default function OGImage() {
             lineHeight: 1,
           }}
         >
-          Slop-Lash
+          SlopBox Party Pack
         </div>
 
         {/* Tagline */}
@@ -41,7 +41,7 @@ export default function OGImage() {
             marginTop: 24,
           }}
         >
-          The comedy game where AI plays too
+          Party games where AI plays too
         </div>
 
         {/* Color accent bar */}

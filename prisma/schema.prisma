@@ -21,6 +21,16 @@ enum PlayerType {
   SPECTATOR
 }
 
+enum GameType {
+  SLOPLASH
+  AI_CHAT_SHOWDOWN
+}
+
+enum ParticipationStatus {
+  ACTIVE
+  DISCONNECTED
+}
+
 enum TtsMode {
   OFF
   ON
@@ -29,6 +39,7 @@ enum TtsMode {
 model Game {
   id              String     @id @default(cuid())
   roomCode        String     @unique
+  gameType        GameType   @default(SLOPLASH)
   status          GameStatus @default(LOBBY)
   currentRound    Int        @default(0)
   totalRounds     Int        @default(3)
@@ -52,6 +63,7 @@ model Game {
   players         Player[]
   rounds          Round[]
   modelUsages     GameModelUsage[]
+  chatMessages    ChatMessage[]
 
   @@index([status])
   @@index([createdAt])
@@ -88,22 +100,24 @@ model LeaderboardProcessedGame {
 }
 
 model Player {
-  id          String             @id @default(cuid())
-  gameId      String
-  game        Game               @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  name        String
-  type        PlayerType         @default(HUMAN)
-  modelId     String?
-  rejoinToken String?
-  idleRounds  Int                @default(0)
-  score       Int                @default(0)
-  humorRating Float              @default(1.0)
-  winStreak   Int                @default(0)
-  lastSeen    DateTime           @default(now())
-  responses   Response[]
-  votes       Vote[]
-  assignments PromptAssignment[]
-  reactions   Reaction[]
+  id                    String              @id @default(cuid())
+  gameId                String
+  game                  Game                @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name                  String
+  type                  PlayerType          @default(HUMAN)
+  modelId               String?
+  rejoinToken           String?
+  idleRounds            Int                 @default(0)
+  score                 Int                 @default(0)
+  humorRating           Float               @default(1.0)
+  winStreak             Int                 @default(0)
+  participationStatus   ParticipationStatus @default(ACTIVE)
+  lastSeen              DateTime            @default(now())
+  responses             Response[]
+  votes                 Vote[]
+  assignments           PromptAssignment[]
+  reactions             Reaction[]
+  chatMessages          ChatMessage[]
 
   @@unique([gameId, rejoinToken])
   @@index([gameId])
@@ -187,4 +201,19 @@ model Reaction {
 
   @@unique([responseId, playerId, emoji])
   @@index([responseId])
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  roundNumber Int?
+  content     String
+  createdAt   DateTime @default(now())
+
+  @@index([gameId, createdAt])
+  @@index([gameId, roundNumber])
+  @@index([playerId])
 }

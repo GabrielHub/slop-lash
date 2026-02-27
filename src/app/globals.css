@@ -33,7 +33,6 @@
   --ai-badge-soft: #F0EBFF;
   --shadow-card: 0 1px 3px rgba(26, 22, 37, 0.06), 0 1px 2px rgba(26, 22, 37, 0.04);
 }
-
 /* --- Dark Mode --- */
 [data-theme="dark"] {
   --bg: #0E0C15;
@@ -443,6 +442,117 @@ body::after {
 }
 
 /* --- Reduced Motion --- */
+/* ============================================
+   CHATSLOP THEME: "LATE NIGHT LOUNGE"
+   Warm, smoky jazz-club aesthetic.
+   Brass + Ivory + Rosewood on deep charcoal.
+   ============================================ */
+
+[data-game="chatslop"] {
+  --cs-bg: #14110E;
+  --cs-surface: #1E1A15;
+  --cs-raised: #2A2520;
+  --cs-ink: #F0E8D8;
+  --cs-ink-dim: #8B7E6A;
+  --cs-accent: #D4A853;
+  --cs-accent-soft: #D4A85318;
+  --cs-accent-glow: #D4A85340;
+  --cs-violet: #C08B6E;
+  --cs-violet-soft: #C08B6E18;
+  --cs-system: #5C5244;
+  --cs-bubble-me: #2A2215;
+  --cs-bubble-other: #1E1A15;
+  --cs-bubble-ai: #221C1A;
+  --cs-bubble-game: #1C1810;
+  --cs-edge: #342E26;
+  --cs-glow: 0 0 24px #D4A85312, 0 0 60px #D4A85308;
+  --cs-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] [data-game="chatslop"],
+:root:not([data-theme="dark"]) [data-game="chatslop"] {
+  --cs-bg: #FAF6EE;
+  --cs-surface: #FFFFFF;
+  --cs-raised: #F0EBE0;
+  --cs-ink: #1A1610;
+  --cs-ink-dim: #7A7060;
+  --cs-accent: #B08830;
+  --cs-accent-soft: #B0883018;
+  --cs-accent-glow: #B0883040;
+  --cs-violet: #9A6B52;
+  --cs-violet-soft: #9A6B5218;
+  --cs-system: #A09484;
+  --cs-bubble-me: #EDE5D4;
+  --cs-bubble-other: #F4F0E8;
+  --cs-bubble-ai: #F0E8E0;
+  --cs-bubble-game: #F5F0E4;
+  --cs-edge: #DDD6C8;
+  --cs-glow: 0 0 24px #B0883012, 0 0 60px #B0883008;
+  --cs-shadow: 0 1px 4px rgba(26, 22, 16, 0.08);
+}
+
+@keyframes cs-typing-dot {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+@keyframes cs-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes cs-gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes cs-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* --- Chat Particle: single pixel "falling" into a message --- */
+@keyframes cs-particle-fall {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--particle-drift, 0px), var(--particle-travel-y, 200px));
+    opacity: 0;
+  }
+}
+
+.animate-cs-particle-fall {
+  animation: cs-particle-fall ease-in forwards;
+}
+
+/* --- Chat Particle: single pixel "rising" from a sent message --- */
+@keyframes cs-particle-rise {
+  0% {
+    transform: translate(0, 0) scale(1.3);
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--particle-drift, 0px), var(--particle-travel-y, -200px)) scale(0.4);
+    opacity: 0;
+  }
+}
+
+.animate-cs-particle-rise {
+  animation: cs-particle-rise ease-out forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body::after {
     display: none;
@@ -457,7 +567,9 @@ body::after {
   .animate-badge-shine,
   .animate-blink-cursor,
   .animate-heat-pulse,
-  .animate-vs-glow {
+  .animate-vs-glow,
+  .animate-cs-particle-fall,
+  .animate-cs-particle-rise {
     animation: none !important;
     opacity: 1 !important;
   }

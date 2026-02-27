@@ -10,6 +10,7 @@ Uses **pnpm**.
 
 - Never start the dev server (`pnpm dev`) or run builds (`pnpm build`). Assume the dev server is already running.
 - Always run `pnpm check` after making changes to catch lint and type errors.
+- When creating **new UI screens or components**, always use the `frontend-design` skill.
 
 ## UI Iteration Routes
 

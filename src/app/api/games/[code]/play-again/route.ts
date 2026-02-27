@@ -1,10 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
-import { generateUniqueRoomCode } from "@/lib/game-logic";
-import { HOST_STALE_MS } from "@/lib/game-constants";
+import { getGameDefinition } from "@/games/registry";
+import { generateUniqueRoomCode } from "@/games/core/room";
+import { deleteTransientGameData } from "@/games/core/cleanup";
 import { parseJsonBody } from "@/lib/http";
 import { selectUniqueModelsByProvider } from "@/lib/models";
+import { logGameEvent } from "@/games/core/observability";
 
 const PLAY_AGAIN_ALREADY_CREATED = "PLAY_AGAIN_ALREADY_CREATED";
 
@@ -58,6 +60,7 @@ export async function POST(
     where: { roomCode: code.toUpperCase() },
     select: {
       id: true,
+      gameType: true,
       status: true,
       hostPlayerId: true,
       nextGameCode: true,
@@ -95,12 +98,14 @@ export async function POST(
     );
   }
 
+  const def = getGameDefinition(game.gameType);
+
   let actingHostId = game.hostPlayerId;
   const needsHostTakeover = playerId !== game.hostPlayerId;
   if (needsHostTakeover) {
     const host = game.players.find((p) => p.id === game.hostPlayerId);
     const hostIsStale =
-      !host || Date.now() - new Date(host.lastSeen).getTime() > HOST_STALE_MS;
+      !host || Date.now() - new Date(host.lastSeen).getTime() > def.constants.hostStaleMs;
     if (!hostIsStale) {
       return NextResponse.json(
         { error: "Only the host can start a new game" },
@@ -110,7 +115,6 @@ export async function POST(
     actingHostId = playerId;
   }
 
-  // Idempotent: if already created, return the existing new game code
   if (game.nextGameCode) {
     const existing = await buildExistingPlayAgainResponse(game.nextGameCode);
     if (existing) {
@@ -126,7 +130,6 @@ export async function POST(
     );
   }
 
-  // Find host player to carry over name
   const hostPlayer = game.players.find((p) => p.id === actingHostId);
   if (!hostPlayer) {
     return NextResponse.json(
@@ -135,7 +138,6 @@ export async function POST(
     );
   }
 
-  // Re-validate AI lineup against current model catalog and provider uniqueness rules.
   const aiPlayers = selectUniqueModelsByProvider(
     game.players
       .filter((p): p is typeof p & { modelId: string } => p.type === "AI" && p.modelId != null)
@@ -169,6 +171,7 @@ export async function POST(
       const newGame = await tx.game.create({
         data: {
           roomCode: newRoomCode,
+          gameType: game.gameType,
           timersDisabled: game.timersDisabled,
           ttsMode: game.ttsMode,
           ttsVoice: game.ttsVoice,
@@ -236,6 +239,15 @@ export async function POST(
       { error: "Failed to create new game" },
       { status: 500 }
     );
+  }
+
+  logGameEvent("playAgain", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+    newRoomCode,
+    transientCleanup: !def.capabilities.retainsCompletedData,
+  });
+
+  if (!def.capabilities.retainsCompletedData) {
+    after(() => deleteTransientGameData(game.id));
   }
 
   return NextResponse.json(createdResponse);

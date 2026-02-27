@@ -10,7 +10,7 @@ import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import type { ControllerGameState } from "@/lib/controller-types";
-import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/lib/game-constants";
+import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 function getPlayerId() {

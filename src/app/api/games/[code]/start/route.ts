@@ -1,9 +1,10 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { startRound, generateAiResponses, MIN_PLAYERS } from "@/lib/game-logic";
+import { getGameDefinition } from "@/games/registry";
 import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
+import { logGameEvent } from "@/games/core/observability";
 
 export async function POST(
   request: Request,
@@ -26,6 +27,7 @@ export async function POST(
     where: { roomCode: code.toUpperCase() },
     select: {
       id: true,
+      gameType: true,
       status: true,
       hostPlayerId: true,
       hostControlTokenHash: true,
@@ -51,17 +53,19 @@ export async function POST(
     );
   }
 
+  const def = getGameDefinition(game.gameType);
+
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
-  if (activePlayers.length < MIN_PLAYERS) {
+  if (activePlayers.length < def.constants.minPlayers) {
     return NextResponse.json(
-      { error: `Need at least ${MIN_PLAYERS} players` },
+      { error: `Need at least ${def.constants.minPlayers} players` },
       { status: 400 }
     );
   }
 
   let startedRound = false;
   try {
-    await startRound(game.id, 1);
+    await def.handlers.startGame(game.id, 1);
     startedRound = true;
   } catch (e) {
     // Race-loser on unique(roundNumber) — treat as success
@@ -69,7 +73,10 @@ export async function POST(
   }
 
   if (startedRound) {
-    after(() => generateAiResponses(game.id));
+    logGameEvent("started", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+      players: activePlayers.length,
+    });
+    after(() => def.handlers.generateAiResponses(game.id));
   }
 
   return NextResponse.json({ success: true });

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
-import { GameShell } from "@/components/game-shell";
+import { resolveGameType } from "@/games/core";
+import { GameShellResolver } from "@/components/shell-resolvers";
 
 export const metadata: Metadata = {
   title: "Game",
@@ -12,10 +13,11 @@ export default async function GamePage({
   params: Promise<{ code: string }>;
 }) {
   const { code } = await params;
+  const gameType = await resolveGameType(code);
 
   return (
     <Suspense>
-      <GameShell code={code} />
+      <GameShellResolver code={code} gameType={gameType ?? "SLOPLASH"} />
     </Suspense>
   );
 }

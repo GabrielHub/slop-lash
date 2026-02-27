@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from "@google/genai";
 import type { GameStatus, GamePlayer } from "@/lib/types";
 import { getAudioContext, setNarratorDucking } from "@/lib/sounds";
-import { NarratorPlaybackQueue, base64ToPCM, pcm16ToFloat32 } from "@/lib/narrator-audio";
-import { buildSystemPrompt, NARRATOR_MODEL } from "@/lib/narrator-events";
+import { NarratorPlaybackQueue, base64ToPCM, pcm16ToFloat32 } from "@/games/sloplash/narrator-audio";
+import { buildSystemPrompt, NARRATOR_MODEL } from "@/games/sloplash/narrator-events";
 
 function noop() {}
 

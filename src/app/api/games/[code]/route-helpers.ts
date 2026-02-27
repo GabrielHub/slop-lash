@@ -1,4 +1,4 @@
-import { FORFEIT_MARKER } from "@/lib/scoring";
+import { FORFEIT_MARKER } from "@/games/core/constants";
 
 export function isVersionUnchanged(params: {
   clientVersion: string | null;

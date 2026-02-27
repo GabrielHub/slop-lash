@@ -1,18 +1,26 @@
 const SOUND_MAP = {
-  "game-start": "/sfx/game-start.mp3",
-  "phase-transition": "/sfx/phase-transition.mp3",
-  "submitted": "/sfx/submitted.mp3",
-  "vote-cast": "/sfx/vote-cast.mp3",
-  "winner-reveal": "/sfx/winner-reveal.mp3",
-  "celebration": "/sfx/celebration.mp3",
-  "round-transition": "/sfx/round-transition.mp3",
-  "stamp-slam": "/sfx/stamp-slam.mp3",
-  "vote-reveal": "/sfx/vote-reveal.mp3",
-  "timer-warning": "/sfx/timer-warning.mp3",
-  "prompt-advance": "/sfx/prompt-advance.mp3",
-  "game-over": "/sfx/game-over.mp3",
-  "player-join": "/sfx/player-join.mp3",
-  "player-leave": "/sfx/player-leave.mp3",
+  // Shared sounds (used by both sloplash and chatslop)
+  "game-start": "/sfx/shared/game-start.mp3",
+  "phase-transition": "/sfx/shared/phase-transition.mp3",
+  "submitted": "/sfx/shared/submitted.mp3",
+  "vote-cast": "/sfx/shared/vote-cast.mp3",
+  "winner-reveal": "/sfx/shared/winner-reveal.mp3",
+  "celebration": "/sfx/shared/celebration.mp3",
+  "round-transition": "/sfx/shared/round-transition.mp3",
+  "game-over": "/sfx/shared/game-over.mp3",
+  "player-join": "/sfx/shared/player-join.mp3",
+  "player-leave": "/sfx/shared/player-leave.mp3",
+  // Sloplash-specific sounds
+  "stamp-slam": "/sfx/sloplash/stamp-slam.mp3",
+  "vote-reveal": "/sfx/sloplash/vote-reveal.mp3",
+  "timer-warning": "/sfx/sloplash/timer-warning.mp3",
+  "prompt-advance": "/sfx/sloplash/prompt-advance.mp3",
+  // Chatslop-specific sounds
+  "chat-send": "/sfx/chatslop/chat-send.mp3",
+  "chat-receive": "/sfx/chatslop/chat-receive.mp3",
+  "all-in": "/sfx/chatslop/all-in.mp3",
+  "round-start": "/sfx/chatslop/round-start.mp3",
+  "player-ready": "/sfx/chatslop/player-ready.mp3",
 } as const;
 
 export type SoundName = keyof typeof SOUND_MAP;
@@ -46,6 +54,8 @@ const SOUND_COOLDOWN_MS: Partial<Record<SoundName, number>> = {
   "player-join": 200,
   "player-leave": 200,
   "submitted": 80,
+  "chat-send": 100,
+  "chat-receive": 150,
 };
 
 // Per-sound trim multipliers (linear gain) to normalize AI-generated SFX.
@@ -60,6 +70,11 @@ const DEFAULT_SOUND_GAIN_MULTIPLIER: Partial<Record<SoundName, number>> = {
   "vote-reveal": 0.9,
   "player-join": 0.85,
   "player-leave": 0.85,
+  "chat-send": 0.6,
+  "chat-receive": 0.5,
+  "all-in": 0.85,
+  "round-start": 0.85,
+  "player-ready": 0.7,
 };
 
 type SoundTuningStorage = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FORFEIT_MARKER } from "@/lib/scoring";
+import { FORFEIT_MARKER } from "@/games/core/constants";
 import { isDeadlineExpired, isVersionUnchanged, stripUnrevealedVotes } from "./route-helpers";
 
 describe("isVersionUnchanged", () => {

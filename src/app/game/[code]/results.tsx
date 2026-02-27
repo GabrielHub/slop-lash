@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { GameState, GamePrompt, filterCastVotes } from "@/lib/types";
-import { FORFEIT_MARKER } from "@/lib/scoring";
+import { FORFEIT_MARKER } from "@/games/sloplash/scoring";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { PlayerList } from "@/components/player-list";
@@ -18,7 +18,7 @@ import {
 import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
 import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
 import { CrownIcon } from "@/components/icons";
-import { computeAchievements } from "@/lib/achievements";
+import { computeAchievements } from "@/games/sloplash/achievements";
 import {
   fadeInUp,
   floatIn,
@@ -52,9 +52,7 @@ export interface PromptOutcome {
   totalVotes: number;
   isUnanimous: boolean;
   aiBeatsHuman: boolean;
-  /** Response ID of the points-based winner (null if tie) */
   winnerResponseId: string | null;
-  /** True when all human voters abstained */
   allPassed: boolean;
 }
 
@@ -255,7 +253,7 @@ export function Results({
   }
 
   const bestPrompts = isFinal ? extractBestPrompts(game) : [];
-  const achievements = isFinal ? computeAchievements(game) : [];
+  const achievements = isFinal && game.gameType === "SLOPLASH" ? computeAchievements(game) : [];
 
   async function nextRound() {
     if (advancePendingRef.current) return;
@@ -288,12 +286,10 @@ export function Results({
     }
   }
 
-  /* ---- FINAL RESULTS layout ---- */
   if (isFinal) {
     return (
-      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+      <main className="flex-1 flex flex-col items-center px-6 py-12">
         <div className="w-full max-w-lg lg:max-w-4xl">
-          {/* Header */}
           <div className="text-center mb-10">
             <motion.h1
               className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-3 title-glow"
@@ -305,14 +301,11 @@ export function Results({
             </motion.h1>
           </div>
 
-          {/* Winner tagline speech bubble */}
           {taglineWinner && (
             <WinnerTagline winner={taglineWinner} tagline={tagline} isStreaming={isStreaming} />
           )}
 
-          {/* Scoreboard + Best Moments — side by side on desktop */}
           <div className="lg:grid lg:grid-cols-2 lg:gap-8 mb-10">
-            {/* Score Bar Chart */}
             <motion.div
               className="mb-10 lg:mb-0"
               variants={fadeInUp}
@@ -325,7 +318,6 @@ export function Results({
               <ScoreBarChart game={game} />
             </motion.div>
 
-            {/* Best Prompts Carousel */}
             {bestPrompts.length > 0 && (
               <motion.div
                 className="mb-10 lg:mb-0"
@@ -342,7 +334,6 @@ export function Results({
             )}
           </div>
 
-          {/* Awards */}
           {achievements.length > 0 && (
             <motion.div
               className="mb-10"
@@ -370,8 +361,7 @@ export function Results({
                         damping: 25,
                       }}
                     >
-                      {/* Subtle gradient overlay */}
-                      <div className={`absolute inset-0 ${badgeColor.bg} opacity-30`} />
+                        <div className={`absolute inset-0 ${badgeColor.bg} opacity-30`} />
                       <div className="relative">
                         <div className={`w-11 h-11 rounded-xl ${badgeColor.iconBg} flex items-center justify-center mb-2.5`}
                           style={{ boxShadow: badgeColor.glow }}
@@ -395,7 +385,6 @@ export function Results({
             </motion.div>
           )}
 
-          {/* AI Usage Stats */}
           <motion.div
             className="mb-10"
             variants={fadeInUp}
@@ -416,7 +405,6 @@ export function Results({
 
           <ErrorBanner error={error} />
 
-          {/* Actions */}
           <div className="lg:max-w-lg lg:mx-auto">
             {isHost && (
               <motion.div {...buttonTapPrimary}>
@@ -450,7 +438,6 @@ export function Results({
               </div>
             )}
 
-            {/* Shareable recap link */}
             <div className="text-center mt-4">
               <Link
                 href={`/game/${code}/recap`}
@@ -465,11 +452,9 @@ export function Results({
     );
   }
 
-  /* ---- ROUND RESULTS layout ---- */
   return (
-    <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+    <main className="flex-1 flex flex-col items-center px-6 py-12">
       <div className="w-full max-w-lg lg:max-w-5xl">
-        {/* Header */}
         <div className="text-center mb-10">
           <motion.div
             variants={fadeInUp}
@@ -485,14 +470,11 @@ export function Results({
           </motion.div>
         </div>
 
-        {/* Winner tagline speech bubble */}
         {taglineWinner && (
           <WinnerTagline winner={taglineWinner} tagline={tagline} isStreaming={isStreaming} />
         )}
 
-        {/* Two-column layout on desktop; sidebar-first on mobile */}
         <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-8">
-          {/* Sidebar: Scoreboard + Actions — renders first on mobile, right column on desktop */}
           <div className="mb-8 lg:mb-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-20 lg:self-start">
             <div className="mb-6 lg:mb-8">
               <h2 className="text-base font-medium text-ink-dim mb-3">
@@ -501,7 +483,6 @@ export function Results({
               <PlayerList players={sortedPlayers} showScores />
             </div>
 
-            {/* AFK Warning */}
             {isHost && !isFinal && afkPlayers.length > 0 && (
               <div className="mb-4 p-3 rounded-xl border-2 border-fail/30 bg-fail-soft/50">
                 <p className="text-xs font-medium text-fail mb-2">AFK Players:</p>
@@ -523,7 +504,6 @@ export function Results({
 
             <ErrorBanner error={error} />
 
-            {/* Actions */}
             {isHost ? (
               <motion.button
                 onClick={(e) => {
@@ -550,7 +530,6 @@ export function Results({
             )}
           </div>
 
-          {/* Prompt Results — below sidebar on mobile, left column on desktop */}
           {currentRound && (
             <motion.div
               className="space-y-5 lg:col-start-1 lg:row-start-1"
@@ -558,7 +537,6 @@ export function Results({
               initial="hidden"
               animate="visible"
             >
-              {/* Grid of prompt cards on desktop */}
               <div className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
                 {currentRound.prompts.filter((p) => !p.responses.some((r) => r.text === FORFEIT_MARKER)).map((prompt, promptIdx) => {
                   const outcome = analyzePromptOutcome(prompt);
@@ -600,7 +578,6 @@ export function Results({
                                   : "border-edge bg-raised/80 backdrop-blur-sm"
                               }`}
                             >
-                              {/* Vote bar */}
                               <motion.div
                                 className={`absolute inset-0 ${
                                   isWinner ? "bg-gold/10" : "bg-ink/[0.03]"
@@ -668,7 +645,6 @@ export function Results({
                 })}
               </div>
 
-              {/* Forfeited matchups — AI crashed, opponent auto-wins */}
               <ForfeitedMatchups prompts={currentRound.prompts} players={game.players} />
             </motion.div>
           )}
@@ -679,7 +655,6 @@ export function Results({
   );
 }
 
-/** Show forfeited matchups where an AI crashed and the opponent auto-won. */
 function ForfeitedMatchups({
   prompts,
   players,

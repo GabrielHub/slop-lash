@@ -52,7 +52,10 @@ export async function POST(
   }
 
   const [player, response] = await Promise.all([
-    prisma.player.findFirst({ where: { id: playerId, gameId: game.id }, select: { id: true } }),
+    prisma.player.findFirst({
+      where: { id: playerId, gameId: game.id },
+      select: { id: true, participationStatus: true },
+    }),
     prisma.response.findFirst({
       where: {
         id: responseId,
@@ -64,6 +67,9 @@ export async function POST(
 
   if (!player) {
     return NextResponse.json({ error: "Player not in this game" }, { status: 403 });
+  }
+  if (player.participationStatus === "DISCONNECTED") {
+    return NextResponse.json({ error: "Disconnected players cannot react" }, { status: 403 });
   }
   if (!response) {
     return NextResponse.json({ error: "Response not found in this game" }, { status: 400 });

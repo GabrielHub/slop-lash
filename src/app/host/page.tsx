@@ -6,15 +6,31 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
 import type { TtsMode } from "@/lib/types";
-import { GEMINI_VOICES } from "@/lib/voices";
+import type { GameType } from "@/games/core";
+import { GEMINI_VOICES } from "@/games/sloplash/voices";
 import { ModelIcon } from "@/components/model-icon";
-import { MAX_PLAYERS, MIN_PLAYERS } from "@/lib/game-constants";
+import { MAX_PLAYERS, MIN_PLAYERS } from "@/games/sloplash/game-constants";
 import { ErrorBanner } from "@/components/error-banner";
 import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
+
+const GAME_TYPE_OPTIONS: { id: GameType; displayName: string; description: string; supportsNarrator: boolean }[] = [
+  {
+    id: "SLOPLASH",
+    displayName: "Slop-Lash",
+    description: "Quiplash-style comedy game with AI opponents and a live narrator",
+    supportsNarrator: true,
+  },
+  {
+    id: "AI_CHAT_SHOWDOWN",
+    displayName: "ChatSlop",
+    description: "AI group chat game — one prompt, everyone competes, no spectators",
+    supportsNarrator: false,
+  },
+];
 
 function PlayerCountHint({
   selectedCount,
@@ -50,7 +66,6 @@ function PlayerCountHint({
 const NAME_MAX_LENGTH = 20;
 
 function getCostTier(model: AIModel): string {
-  // Rough per-game cost estimate
   const perGame =
     (3 * 8 * 100 / 1_000_000) * model.inputPer1M +
     (3 * 8 * 50 / 1_000_000) * model.outputPer1M;
@@ -62,6 +77,7 @@ function getCostTier(model: AIModel): string {
 export default function HostPage() {
   const router = useRouter();
   const { triggerElement } = usePixelDissolve();
+  const [gameType, setGameType] = useState<GameType>("SLOPLASH");
   const [hostSecret, setHostSecret] = useState("");
   const [hostName, setHostName] = useState("");
   const [hostParticipation, setHostParticipation] = useState<HostParticipation>("PLAYER");
@@ -83,7 +99,6 @@ export default function HostPage() {
         return prev.filter((id) => id !== modelId);
       }
 
-      // One model per provider: selecting a variant swaps it in
       const withoutSameProvider = prev.filter((id) => {
         const model = getModelByModelId(id);
         return model?.provider !== targetModel.provider;
@@ -96,12 +111,20 @@ export default function HostPage() {
     });
   }
 
+  const selectedGameType = GAME_TYPE_OPTIONS.find((g) => g.id === gameType) ?? GAME_TYPE_OPTIONS[0];
   const maxAiPlayers = MAX_PLAYERS - (hostParticipation === "PLAYER" ? 1 : 0);
   const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + selectedModels.length;
 
   useEffect(() => {
     setSelectedModels((prev) => (prev.length <= maxAiPlayers ? prev : prev.slice(0, maxAiPlayers)));
   }, [maxAiPlayers]);
+
+  useEffect(() => {
+    if (!selectedGameType.supportsNarrator) {
+      setTtsMode("OFF");
+      setVoicePickerOpen(false);
+    }
+  }, [selectedGameType.supportsNarrator]);
 
   async function createGame() {
     if (!hostSecret.trim()) {
@@ -120,6 +143,7 @@ export default function HostPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          gameType,
           hostSecret: hostSecret.trim(),
           hostName: hostName.trim(),
           hostParticipation,
@@ -173,7 +197,6 @@ export default function HostPage() {
         initial="hidden"
         animate="visible"
       >
-        {/* Back link */}
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-ink-dim hover:text-ink transition-colors mb-8 text-sm font-medium"
@@ -204,9 +227,38 @@ export default function HostPage() {
           }}
           className="flex flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-12"
         >
-          {/* Left top: Identity fields */}
           <div>
-            {/* Password */}
+            <div className="mb-8">
+              <label className="block text-sm font-medium text-ink-dim mb-3">
+                Game Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {GAME_TYPE_OPTIONS.map((option) => {
+                  const selected = gameType === option.id;
+                  return (
+                    <motion.button
+                      type="button"
+                      key={option.id}
+                      onClick={() => setGameType(option.id)}
+                      className={`p-3 rounded-xl border-2 text-left transition-colors cursor-pointer ${
+                        selected
+                          ? "bg-punch/10 border-punch"
+                          : "bg-surface/80 backdrop-blur-sm border-edge hover:border-edge-strong"
+                      }`}
+                      {...buttonTap}
+                    >
+                      <span className={`font-semibold text-sm block ${selected ? "text-punch" : "text-ink"}`}>
+                        {option.displayName}
+                      </span>
+                      <span className="text-[11px] text-ink-dim/60 leading-snug block mt-0.5">
+                        {option.description}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="mb-6">
               <label className="block text-sm font-medium text-ink-dim mb-2">
                 Host Password
@@ -222,7 +274,6 @@ export default function HostPage() {
               />
             </div>
 
-            {/* Name */}
             <div className="mb-8">
               <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
                 Your Name
@@ -246,7 +297,6 @@ export default function HostPage() {
             </div>
           </div>
 
-          {/* Right column: AI Opponents (spans full height on desktop) */}
           <div className="mb-8 lg:mb-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
             <div className="flex items-baseline justify-between mb-3">
               <label className="text-sm font-medium text-ink-dim">
@@ -328,19 +378,18 @@ export default function HostPage() {
             </div>
           </div>
 
-          {/* Left bottom: Game options + submit */}
           <div>
-            {/* Disable Timers */}
-            <div className="mb-8">
-              <Toggle
-                checked={timersDisabled}
-                onChange={setTimersDisabled}
-                label="Disable Timers"
-                description="Phases only advance when all players submit or host skips"
-              />
-            </div>
+            {gameType === "SLOPLASH" && (
+              <div className="mb-8">
+                <Toggle
+                  checked={timersDisabled}
+                  onChange={setTimersDisabled}
+                  label="Disable Timers"
+                  description="Phases only advance when all players submit or host skips"
+                />
+              </div>
+            )}
 
-            {/* Host Participation */}
             <div className="mb-8">
               <Toggle
                 checked={hostParticipation === "PLAYER"}
@@ -354,15 +403,13 @@ export default function HostPage() {
               />
             </div>
 
-            {/* Live Narrator */}
-            <div className="mb-8">
+            {selectedGameType.supportsNarrator && <div className="mb-8">
               <Toggle
                 checked={ttsMode === "ON"}
                 onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
                 label="Live Narrator"
                 description="AI game-show host narrates the entire game aloud"
               >
-                {/* Voice picker */}
                 <AnimatePresence>
                 {ttsMode === "ON" && (
                   <motion.div
@@ -373,7 +420,6 @@ export default function HostPage() {
                     className="overflow-hidden"
                   >
                     <div className="mt-3">
-                      {/* Random default + expand toggle */}
                       <div className="flex gap-2">
                         <motion.button
                           type="button"
@@ -429,7 +475,6 @@ export default function HostPage() {
                         </motion.button>
                       </div>
 
-                      {/* Expandable voice list */}
                       <AnimatePresence>
                         {voicePickerOpen && (
                           <motion.div
@@ -497,11 +542,10 @@ export default function HostPage() {
                 )}
               </AnimatePresence>
               </Toggle>
-            </div>
+            </div>}
 
             <ErrorBanner error={error} />
 
-            {/* Submit */}
             <motion.button
               type="submit"
               disabled={loading}

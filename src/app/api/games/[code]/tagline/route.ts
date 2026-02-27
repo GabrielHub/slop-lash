@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
-import { generateWinnerTagline, FORFEIT_TEXT } from "@/lib/ai";
-import { accumulateUsage } from "@/lib/game-logic";
+import { generateWinnerTagline, FORFEIT_TEXT } from "@/games/sloplash/ai";
+import { accumulateUsage } from "@/games/sloplash/game-logic";
 
 /** Sentinel stored while the first caller is generating the tagline. */
 const GENERATING = "__generating__";
@@ -18,6 +18,7 @@ export async function GET(
     where: { roomCode },
     select: {
       id: true,
+      gameType: true,
       status: true,
       winnerTagline: true,
       players: {
@@ -54,12 +55,16 @@ export async function GET(
     return new Response(null, { status: 404 });
   }
 
+  // Tagline generation is currently Slop-Lash specific
+  if (game.gameType !== "SLOPLASH") {
+    return new Response(null, { status: 204 });
+  }
+
   const expectedStatus = isFinal ? "FINAL_RESULTS" : "ROUND_RESULTS";
   if (game.status !== expectedStatus) {
     return new Response(null, { status: 204 });
   }
 
-  // Overall leader must be AI (players already sorted by score desc)
   const leader = game.players[0];
   if (!leader || leader.type !== "AI" || !leader.modelId) {
     return new Response(null, { status: 204 });
@@ -70,7 +75,6 @@ export async function GET(
     return new Response(game.winnerTagline);
   }
 
-  // Atomically claim generation so only one caller generates
   const claimed = await prisma.game.updateMany({
     where: { id: game.id, winnerTagline: null },
     data: { winnerTagline: GENERATING },
@@ -81,7 +85,6 @@ export async function GET(
     return new Response(null, { status: 204 });
   }
 
-  // We claimed it — generate the tagline
   const scoreBoard = game.players
     .map((p, i) => `${i + 1}. ${p.name} (${p.type}) — ${p.score} pts`)
     .join("\n");

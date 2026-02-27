@@ -2,17 +2,11 @@ import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
 import type { ControllerGameState } from "@/lib/controller-types";
-import type { PhaseAdvanceResult } from "@/lib/game-logic";
-import {
-  checkAndEnforceDeadline,
-  generateAiResponses,
-  generateAiVotes,
-  promoteHost,
-  HOST_STALE_MS,
-} from "@/lib/game-logic";
-import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { getGameDefinition } from "@/games/registry";
+import type { PhaseAdvanceResult } from "@/games/core";
+import { FORFEIT_MARKER, LEADERBOARD_TAG } from "@/games/core/constants";
+import { checkAndDisconnectInactivePlayers } from "@/games/core/disconnect";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
-import { FORFEIT_MARKER } from "@/lib/scoring";
 import { isDeadlineExpired, isVersionUnchanged } from "../route-helpers";
 
 const CACHE_HEADERS = {
@@ -32,6 +26,7 @@ async function findControllerMeta(roomCode: string) {
     where: { roomCode },
     select: {
       id: true,
+      gameType: true,
       status: true,
       version: true,
       phaseDeadline: true,
@@ -41,7 +36,8 @@ async function findControllerMeta(roomCode: string) {
   });
 }
 
-function scheduleHeartbeat(playerId: string, meta: NonNullable<Awaited<ReturnType<typeof findControllerMeta>>>): void {
+function scheduleHeartbeat(playerId: string, meta: NonNullable<Awaited<ReturnType<typeof findControllerMeta>>>, roomCode: string): void {
+  const def = getGameDefinition(meta.gameType);
   after(async () => {
     const cutoff = new Date(Date.now() - HEARTBEAT_MIN_INTERVAL_MS);
     await prisma.player.updateMany({
@@ -51,10 +47,10 @@ function scheduleHeartbeat(playerId: string, meta: NonNullable<Awaited<ReturnTyp
 
     const hostControlStale =
       !!meta.hostControlLastSeen &&
-      Date.now() - meta.hostControlLastSeen.getTime() > HOST_STALE_MS;
+      Date.now() - meta.hostControlLastSeen.getTime() > def.constants.hostStaleMs;
 
     if (!meta.hostPlayerId && hostControlStale) {
-      await promoteHost(meta.id);
+      await def.handlers.promoteHost(meta.id);
       return;
     }
 
@@ -63,9 +59,14 @@ function scheduleHeartbeat(playerId: string, meta: NonNullable<Awaited<ReturnTyp
         where: { id: meta.hostPlayerId },
         select: { gameId: true, lastSeen: true },
       });
-      if (host?.gameId === meta.id && Date.now() - host.lastSeen.getTime() > HOST_STALE_MS) {
-        await promoteHost(meta.id);
+      if (host?.gameId === meta.id && Date.now() - host.lastSeen.getTime() > def.constants.hostStaleMs) {
+        await def.handlers.promoteHost(meta.id);
       }
+    }
+
+    const isActivePhase = meta.status === "WRITING" || meta.status === "VOTING";
+    if (isActivePhase) {
+      await checkAndDisconnectInactivePlayers(meta.id, meta.gameType, roomCode);
     }
   });
 }
@@ -76,6 +77,7 @@ async function findControllerPayload(roomCode: string, playerId: string | null):
     select: {
       id: true,
       roomCode: true,
+      gameType: true,
       status: true,
       currentRound: true,
       totalRounds: true,
@@ -87,7 +89,7 @@ async function findControllerPayload(roomCode: string, playerId: string | null):
       nextGameCode: true,
       version: true,
       players: {
-        select: { id: true, name: true, type: true },
+        select: { id: true, name: true, type: true, participationStatus: true },
         orderBy: { name: "asc" },
       },
       rounds: {
@@ -150,10 +152,12 @@ async function findControllerPayload(roomCode: string, playerId: string | null):
         currentPrompt: {
           id: currentPrompt.id,
           text: currentPrompt.text,
-          responses: currentPrompt.responses.slice(0, 2).map((r) => ({
-            id: r.id,
-            text: r.text,
-          })),
+          responses: currentPrompt.responses
+            .filter((r) => r.text !== FORFEIT_MARKER)
+            .map((r) => ({
+              id: r.id,
+              text: r.text,
+            })),
           isRespondent,
           hasVoted: ownVote != null,
           hasAbstained:
@@ -173,6 +177,7 @@ async function findControllerPayload(roomCode: string, playerId: string | null):
   return {
     id: game.id,
     roomCode: game.roomCode,
+    gameType: game.gameType,
     status: game.status,
     currentRound: game.currentRound,
     totalRounds: game.totalRounds,
@@ -205,16 +210,18 @@ export async function GET(
   if (!meta) {
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
+
+  const def = getGameDefinition(meta.gameType);
   const shouldTouch = shouldTouchRequested && meta.status !== "FINAL_RESULTS";
 
   let advancedTo: PhaseAdvanceResult = null;
   if (isDeadlineExpired(meta.phaseDeadline)) {
-    advancedTo = await checkAndEnforceDeadline(meta.id);
+    advancedTo = await def.handlers.checkAndEnforceDeadline(meta.id);
     if (advancedTo === "VOTING") {
-      after(() => generateAiVotes(meta.id));
+      after(() => def.handlers.generateAiVotes(meta.id));
     } else if (advancedTo === "WRITING") {
-      after(() => generateAiResponses(meta.id));
-    } else if (advancedTo === "FINAL_RESULTS") {
+      after(() => def.handlers.generateAiResponses(meta.id));
+    } else if (advancedTo === "FINAL_RESULTS" && def.capabilities.retainsCompletedData) {
       after(() => applyCompletedGameToLeaderboardAggregate(meta.id));
       revalidateTag(LEADERBOARD_TAG, { expire: 0 });
     }
@@ -228,7 +235,7 @@ export async function GET(
       version: meta.version,
     })
   ) {
-    if (playerId && shouldTouch) scheduleHeartbeat(playerId, meta);
+    if (playerId && shouldTouch) scheduleHeartbeat(playerId, meta, roomCode);
     return new Response(null, {
       status: 304,
       headers: { ...CACHE_HEADERS, ETag: `"${meta.version}"` },
@@ -240,7 +247,7 @@ export async function GET(
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
 
-  if (playerId && shouldTouch) scheduleHeartbeat(playerId, meta);
+  if (playerId && shouldTouch) scheduleHeartbeat(playerId, meta, roomCode);
 
   return jsonControllerResponse(payload);
 }

@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { parseJsonBody } from "@/lib/http";
+import { restorePlayer } from "@/games/core/disconnect";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
+  const roomCode = code.toUpperCase();
   const body = await parseJsonBody<{ token?: unknown }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -18,8 +20,8 @@ export async function POST(
   }
 
   const game = await prisma.game.findUnique({
-    where: { roomCode: code.toUpperCase() },
-    select: { id: true },
+    where: { roomCode },
+    select: { id: true, gameType: true },
   });
 
   if (!game) {
@@ -28,18 +30,21 @@ export async function POST(
 
   const player = await prisma.player.findFirst({
     where: { gameId: game.id, rejoinToken: token },
-    select: { id: true, name: true, type: true },
+    select: { id: true, name: true, type: true, participationStatus: true },
   });
 
   if (!player) {
     return NextResponse.json({ error: "Invalid rejoin token" }, { status: 404 });
   }
 
-  // Update lastSeen on successful rejoin
-  await prisma.player.update({
-    where: { id: player.id },
-    data: { lastSeen: new Date() },
-  });
+  if (player.participationStatus === "DISCONNECTED") {
+    await restorePlayer(game.id, game.gameType, roomCode, player.id);
+  } else {
+    await prisma.player.update({
+      where: { id: player.id },
+      data: { lastSeen: new Date() },
+    });
+  }
 
   return NextResponse.json({
     playerId: player.id,

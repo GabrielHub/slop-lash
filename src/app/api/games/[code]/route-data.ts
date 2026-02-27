@@ -1,6 +1,6 @@
 import type { GameStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { modelUsagesInclude, roundsInclude, roundsIncludeWriting, roundsIncludeActive } from "@/lib/game-queries";
+import { modelUsagesInclude, roundsInclude, roundsIncludeWriting, roundsIncludeActive } from "@/games/core/queries";
 
 const publicPlayerSelect = {
   id: true,
@@ -11,10 +11,12 @@ const publicPlayerSelect = {
   score: true,
   humorRating: true,
   winStreak: true,
+  participationStatus: true,
 } as const;
 
 export const gameMetaSelect = {
   id: true,
+  gameType: true,
   status: true,
   version: true,
   phaseDeadline: true,
@@ -26,6 +28,7 @@ export const gameMetaSelect = {
 const gamePayloadCommonSelect = {
   id: true,
   roomCode: true,
+  gameType: true,
   status: true,
   currentRound: true,
   totalRounds: true,

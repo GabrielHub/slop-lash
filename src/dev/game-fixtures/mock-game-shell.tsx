@@ -8,7 +8,7 @@ import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
 import { Results } from "@/app/game/[code]/results";
 import { phaseTransition } from "@/lib/animations";
-import { FORFEIT_MARKER } from "@/lib/scoring";
+import { FORFEIT_MARKER } from "@/games/sloplash/scoring";
 import type { GameReaction, GameResponse, GameState, PlayerType } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
 import { getMockScenario, type MockScenario } from "./scenarios";
@@ -389,8 +389,8 @@ export function MockGameShell({
   }
 
   return (
-    <>
-      <div className="fixed top-0 left-0 right-0 z-40 border-b border-edge bg-base/90 backdrop-blur-sm">
+    <div className="flex h-svh flex-col">
+      <div className="shrink-0 border-b border-edge bg-base/90 backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-6xl items-start justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs">
@@ -414,7 +414,7 @@ export function MockGameShell({
             <button
               type="button"
               onClick={toggleTheme}
-              className="rounded-md border border-edge px-2 py-1 text-ink-dim hover:border-edge-strong hover:text-ink"
+              className="cursor-pointer rounded-md border border-edge px-2 py-1 text-ink-dim hover:border-edge-strong hover:text-ink"
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
               {theme === "dark" ? "Light" : "Dark"}
@@ -422,7 +422,7 @@ export function MockGameShell({
             <button
               type="button"
               onClick={resetScenario}
-              className="rounded-md border border-edge px-2 py-1 text-ink-dim hover:border-edge-strong hover:text-ink"
+              className="cursor-pointer rounded-md border border-edge px-2 py-1 text-ink-dim hover:border-edge-strong hover:text-ink"
             >
               Reset
             </button>
@@ -459,14 +459,15 @@ export function MockGameShell({
         )}
       </div>
 
+      <div className="min-h-0 flex-1 overflow-auto flex flex-col">
       <AnimatePresence mode="wait">
         <motion.div
           key={screenKey}
+          className="min-h-full flex flex-col"
           variants={phaseTransition}
           initial="hidden"
           animate="visible"
           exit="exit"
-          className="pt-16"
         >
           {game.status === "LOBBY" && (
             <Lobby game={game} isHost={isHost} code={mockCode} onRefresh={() => {}} />
@@ -500,6 +501,7 @@ export function MockGameShell({
           )}
         </motion.div>
       </AnimatePresence>
-    </>
+      </div>
+    </div>
   );
 }

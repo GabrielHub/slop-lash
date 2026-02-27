@@ -1,9 +1,10 @@
-import type { GameStatus, PlayerType } from "./types";
+import type { GameStatus, GameType, ParticipationStatus, PlayerType } from "./types";
 
 export interface ControllerPlayerSummary {
   id: string;
   name: string;
   type: PlayerType;
+  participationStatus: ParticipationStatus;
 }
 
 export interface ControllerWritingPrompt {
@@ -38,6 +39,7 @@ export interface ControllerWritingState {
 export interface ControllerGameState {
   id: string;
   roomCode: string;
+  gameType: GameType;
   status: GameStatus;
   currentRound: number;
   totalRounds: number;

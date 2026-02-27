@@ -1,15 +1,18 @@
 import { NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
-import { generateUniqueRoomCode, MAX_PLAYERS } from "@/lib/game-logic";
+import { getGameDefinition, getAllGameTypes } from "@/games/registry";
+import type { GameType } from "@/games/core";
+import { generateUniqueRoomCode } from "@/games/core/room";
 import { selectUniqueModelsByProvider } from "@/lib/models";
 import { sanitize } from "@/lib/sanitize";
 import { parseJsonBody } from "@/lib/http";
-import { cleanupOldGames } from "@/lib/game-cleanup";
+import { cleanupOldGames } from "@/games/core/cleanup";
 import { isPrismaDataTransferQuotaError } from "@/lib/prisma-errors";
 import type { TtsMode } from "@/lib/types";
-import { VOICE_NAMES } from "@/lib/voices";
+import { VOICE_NAMES } from "@/games/sloplash/voices";
 import { createHostControlToken, hashHostControlToken } from "@/lib/host-control";
+import { logGameEvent } from "@/games/core/observability";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
 
@@ -41,6 +44,7 @@ export async function POST(request: Request) {
     timersDisabled?: unknown;
     ttsMode?: unknown;
     ttsVoice?: unknown;
+    gameType?: unknown;
   }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -53,6 +57,7 @@ export async function POST(request: Request) {
     timersDisabled,
     ttsMode,
     ttsVoice,
+    gameType: rawGameType,
   } = body;
 
   const secret = process.env.HOST_SECRET;
@@ -88,6 +93,12 @@ export async function POST(request: Request) {
     }
   });
 
+  const validGameTypes = getAllGameTypes();
+  const gameType: GameType = (
+    typeof rawGameType === "string" && validGameTypes.includes(rawGameType as GameType)
+  ) ? rawGameType as GameType : "SLOPLASH";
+  const def = getGameDefinition(gameType);
+
   try {
     const roomCode = await generateUniqueRoomCode();
     if (!roomCode) {
@@ -103,12 +114,14 @@ export async function POST(request: Request) {
     const hostRejoinToken = isHostPlayer
       ? randomBytes(12).toString("base64url")
       : null;
+    const effectiveTtsMode = def.capabilities.supportsNarrator ? parseTtsMode(ttsMode) : ("OFF" as const);
     const game = await prisma.game.create({
       data: {
         roomCode,
+        gameType,
         timersDisabled: timersDisabled === true,
-        ttsMode: parseTtsMode(ttsMode),
-        ttsVoice: parseTtsVoice(ttsVoice),
+        ttsMode: effectiveTtsMode,
+        ttsVoice: effectiveTtsMode === "ON" ? parseTtsVoice(ttsVoice) : "RANDOM",
         hostControlTokenHash: hashHostControlToken(hostControlToken),
         hostControlLastSeen: new Date(),
         ...(isHostPlayer
@@ -135,7 +148,7 @@ export async function POST(request: Request) {
 
     if (Array.isArray(aiModelIds)) {
       const validIds = aiModelIds.filter((id): id is string => typeof id === "string");
-      const maxAiPlayers = MAX_PLAYERS - (isHostPlayer ? 1 : 0);
+      const maxAiPlayers = def.constants.maxPlayers - (isHostPlayer ? 1 : 0);
       const aiPlayers = selectUniqueModelsByProvider(validIds)
         .slice(0, maxAiPlayers)
         .map((model) => ({
@@ -149,6 +162,12 @@ export async function POST(request: Request) {
         await prisma.player.createMany({ data: aiPlayers });
       }
     }
+
+    logGameEvent("created", { gameType, gameId: game.id, roomCode }, {
+      hostMode,
+      aiPlayers: Array.isArray(aiModelIds) ? aiModelIds.filter((id): id is string => typeof id === "string").length : 0,
+      ttsMode: effectiveTtsMode,
+    });
 
     return NextResponse.json({
       roomCode,

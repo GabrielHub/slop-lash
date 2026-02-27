@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { prisma } from "@/lib/db";
+import { getGameDefinition } from "@/games/registry";
 import { parseJsonBody } from "@/lib/http";
-import { VOICE_NAMES, pickRandomVoice } from "@/lib/voices";
-import { NARRATOR_MODEL } from "@/lib/narrator-events";
+import { VOICE_NAMES, pickRandomVoice } from "@/games/sloplash/voices";
+import { NARRATOR_MODEL } from "@/games/sloplash/narrator-events";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 
 function resolveVoice(voice: string): string {
@@ -32,6 +33,7 @@ export async function POST(
     where: { roomCode: code.toUpperCase() },
     select: {
       id: true,
+      gameType: true,
       hostPlayerId: true,
       hostControlTokenHash: true,
       ttsMode: true,
@@ -43,12 +45,18 @@ export async function POST(
     console.warn("[narrator] Game not found:", code);
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
+
+  const def = getGameDefinition(game.gameType);
+  if (!def.capabilities.supportsNarrator) {
+    return NextResponse.json({ error: "This game mode does not support narrator" }, { status: 400 });
+  }
+
   if (!(await isAuthorizedHostControl(game, auth))) {
-    console.warn("[narrator] Forbidden token request for non-host:", code);
+    console.warn(`[narrator] Forbidden token request for non-host: ${code} gameType=${game.gameType}`);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (game.ttsMode !== "ON") {
-    console.warn("[narrator] Narrator disabled for game:", code, game.ttsMode);
+    console.warn(`[narrator] Narrator disabled for game: ${code} gameType=${game.gameType} ttsMode=${game.ttsMode}`);
     return NextResponse.json({ error: "Narrator not enabled" }, { status: 400 });
   }
 

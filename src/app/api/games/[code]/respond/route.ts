@@ -1,9 +1,10 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkAllResponsesIn, startVoting, generateAiVotes } from "@/lib/game-logic";
+import { getGameDefinition } from "@/games/registry";
 import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
+import { logGameEvent } from "@/games/core/observability";
 
 export async function POST(
   request: Request,
@@ -35,7 +36,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, status: true },
+    select: { id: true, gameType: true, status: true },
   });
 
   if (!game) {
@@ -49,10 +50,9 @@ export async function POST(
     );
   }
 
-  // Verify player belongs to this game
   const player = await prisma.player.findFirst({
     where: { id: validPlayerId, gameId: game.id },
-    select: { id: true, type: true },
+    select: { id: true, type: true, participationStatus: true },
   });
   if (!player) {
     return NextResponse.json(
@@ -61,15 +61,19 @@ export async function POST(
     );
   }
 
-  // Spectators cannot submit responses
   if (player.type === "SPECTATOR") {
     return NextResponse.json(
       { error: "Spectators cannot submit responses" },
       { status: 403 }
     );
   }
+  if (player.participationStatus === "DISCONNECTED") {
+    return NextResponse.json(
+      { error: "Disconnected players cannot submit responses" },
+      { status: 403 }
+    );
+  }
 
-  // Per-player rate limit
   if (!checkRateLimit(`respond:${validPlayerId}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
@@ -77,7 +81,6 @@ export async function POST(
     );
   }
 
-  // Validate player is assigned to this prompt
   const assignment = await prisma.promptAssignment.findUnique({
     where: { promptId_playerId: { promptId: validPromptId, playerId: validPlayerId } },
     select: { id: true },
@@ -90,7 +93,6 @@ export async function POST(
     );
   }
 
-  // Use transaction to prevent race conditions on duplicate submission
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.response.findFirst({
@@ -116,13 +118,18 @@ export async function POST(
     throw e;
   }
 
-  // Check and advance in background so the human gets an instant response
+  const def = getGameDefinition(game.gameType);
+
+  logGameEvent("responded", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+    playerId: validPlayerId,
+  });
+
   after(async () => {
-    const allIn = await checkAllResponsesIn(game.id);
+    const allIn = await def.handlers.checkAllResponsesIn(game.id);
     if (allIn) {
-      const claimed = await startVoting(game.id);
+      const claimed = await def.handlers.startVoting(game.id);
       if (claimed) {
-        await generateAiVotes(game.id);
+        await def.handlers.generateAiVotes(game.id);
       }
     }
   });

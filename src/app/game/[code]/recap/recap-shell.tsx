@@ -69,13 +69,13 @@ export function RecapShell({ code }: { code: string }) {
   /* ---- Loading skeleton ---- */
   if (!game && !error) {
     return (
-      <>
-        <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
+      <div className="min-h-svh flex flex-col bg-base">
+        <div className="shrink-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
           <div className="h-4 w-20 rounded bg-edge/40 animate-pulse" />
           <div className="h-4 w-px bg-edge-strong" />
           <div className="h-4 w-14 rounded bg-edge/40 animate-pulse" />
         </div>
-        <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+        <main className="flex-1 flex flex-col items-center px-6 py-12">
           <div className="w-full max-w-lg lg:max-w-4xl space-y-8">
             <div className="flex justify-center">
               <div className="h-10 w-48 rounded-lg bg-edge/40 animate-pulse" />
@@ -94,7 +94,7 @@ export function RecapShell({ code }: { code: string }) {
             </div>
           </div>
         </main>
-      </>
+      </div>
     );
   }
 
@@ -102,7 +102,7 @@ export function RecapShell({ code }: { code: string }) {
   if (error) {
     const isInProgress = errorStatus && errorStatus !== "FINAL_RESULTS";
     return (
-      <main className="min-h-svh flex items-center justify-center px-6">
+      <main className="flex-1 flex items-center justify-center px-6">
         <motion.div
           className="text-center"
           variants={fadeInUp}
@@ -155,9 +155,9 @@ export function RecapShell({ code }: { code: string }) {
   const bestPrompts = extractBestPrompts(game);
 
   return (
-    <>
+    <div className="min-h-svh flex flex-col bg-base">
       {/* Static header */}
-      <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
+      <div className="shrink-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
         <span className="font-display font-bold text-xs text-punch tracking-tight">
           SLOP-LASH
         </span>
@@ -169,7 +169,7 @@ export function RecapShell({ code }: { code: string }) {
         <span className="text-xs font-medium text-ink-dim">Recap</span>
       </div>
 
-      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+      <main className="flex-1 flex flex-col items-center px-6 py-12">
         <div className="w-full max-w-lg lg:max-w-4xl">
           {/* Title */}
           <div className="text-center mb-10">
@@ -379,6 +379,6 @@ export function RecapShell({ code }: { code: string }) {
           </div>
         </div>
       </main>
-    </>
+    </div>
   );
 }

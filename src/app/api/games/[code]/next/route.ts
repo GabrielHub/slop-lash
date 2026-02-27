@@ -1,11 +1,12 @@
 import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
-import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { getGameDefinition } from "@/games/registry";
+import { LEADERBOARD_TAG } from "@/games/core/constants";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
-import { advanceGame, generateAiResponses, forceAdvancePhase, generateAiVotes, HOST_STALE_MS } from "@/lib/game-logic";
 import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
+import { logGameEvent } from "@/games/core/observability";
 
 export async function POST(
   request: Request,
@@ -28,6 +29,7 @@ export async function POST(
     where: { roomCode: code.toUpperCase() },
     select: {
       id: true,
+      gameType: true,
       status: true,
       hostPlayerId: true,
       hostControlTokenHash: true,
@@ -45,6 +47,7 @@ export async function POST(
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
+  const def = getGameDefinition(game.gameType);
   const isHost = await isAuthorizedHostControl(game, auth);
 
   if (game.status === "ROUND_RESULTS") {
@@ -54,11 +57,11 @@ export async function POST(
         : null;
       const playerHostIsActive =
         host != null &&
-        Date.now() - new Date(host.lastSeen).getTime() <= HOST_STALE_MS;
+        Date.now() - new Date(host.lastSeen).getTime() <= def.constants.hostStaleMs;
       const displayHostIsActive =
         !game.hostPlayerId &&
         game.hostControlLastSeen != null &&
-        Date.now() - new Date(game.hostControlLastSeen).getTime() <= HOST_STALE_MS;
+        Date.now() - new Date(game.hostControlLastSeen).getTime() <= def.constants.hostStaleMs;
 
       if (playerHostIsActive || displayHostIsActive) {
         return NextResponse.json(
@@ -67,10 +70,14 @@ export async function POST(
         );
       }
     }
-    const newRoundStarted = await advanceGame(game.id);
+    const newRoundStarted = await def.handlers.advanceGame(game.id);
+    logGameEvent("phaseAdvanced", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+      from: "ROUND_RESULTS",
+      newRound: newRoundStarted,
+    });
     if (newRoundStarted) {
-      after(() => generateAiResponses(game.id));
-    } else {
+      after(() => def.handlers.generateAiResponses(game.id));
+    } else if (def.capabilities.retainsCompletedData) {
       after(() => applyCompletedGameToLeaderboardAggregate(game.id));
       revalidateTag(LEADERBOARD_TAG, { expire: 0 });
     }
@@ -90,9 +97,14 @@ export async function POST(
         data: { phaseDeadline: null },
       });
     }
-    const advancedTo = await forceAdvancePhase(game.id);
+    const advancedTo = await def.handlers.forceAdvancePhase(game.id);
+    logGameEvent("phaseAdvanced", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
+      from: game.status,
+      to: advancedTo ?? "none",
+      forced: true,
+    });
     if (advancedTo === "VOTING") {
-      after(() => generateAiVotes(game.id));
+      after(() => def.handlers.generateAiVotes(game.id));
     }
     return NextResponse.json({ success: true });
   }

@@ -44,6 +44,7 @@ function player(
     score: 0,
     humorRating: 1.0,
     winStreak: 0,
+    participationStatus: "ACTIVE",
     lastSeen: NOW,
     ...opts,
   };
@@ -160,6 +161,7 @@ function makeGame(overrides: Partial<GameState>): GameState {
   return {
     id: "game-mock-1",
     roomCode: "SLOP",
+    gameType: "SLOPLASH",
     status: "LOBBY",
     currentRound: 1,
     totalRounds: 2,
@@ -540,7 +542,346 @@ function buildWritingAiWaiting(): MockScenario {
   };
 }
 
-export const MOCK_SCENARIOS: MockScenario[] = [
+const CHAT_HOST_ID = "cp-host";
+const CHAT_HUMAN_2_ID = "cp-dana";
+const CHAT_HUMAN_3_ID = "cp-eli";
+const CHAT_AI_ID = "cp-ai";
+
+function chatPlayer(
+  id: string,
+  name: string,
+  type: PlayerType,
+  opts: Partial<GamePlayer> = {},
+): GamePlayer {
+  return {
+    id,
+    name,
+    type,
+    modelId: type === "AI" ? "openai/gpt-5.2-chat" : null,
+    idleRounds: 0,
+    score: 0,
+    humorRating: 1.0,
+    winStreak: 0,
+    participationStatus: "ACTIVE",
+    lastSeen: NOW,
+    ...opts,
+  };
+}
+
+function chatBasePlayers(): GamePlayer[] {
+  return [
+    chatPlayer(CHAT_HOST_ID, "Ong", "HUMAN", { score: 60, humorRating: 1.1, winStreak: 1 }),
+    chatPlayer(CHAT_HUMAN_2_ID, "Dana", "HUMAN", { score: 50, humorRating: 1.05 }),
+    chatPlayer(CHAT_HUMAN_3_ID, "Eli", "HUMAN", { score: 45, humorRating: 0.95 }),
+    chatPlayer(CHAT_AI_ID, "Claude Bot", "AI", {
+      score: 55,
+      humorRating: 1.0,
+      modelId: "openai/gpt-5.2-chat",
+    }),
+  ];
+}
+
+function makeChatGame(overrides: Partial<GameState>): GameState {
+  const players = overrides.players ?? chatBasePlayers();
+  return {
+    id: "game-chat-mock",
+    roomCode: "CHAT",
+    gameType: "AI_CHAT_SHOWDOWN",
+    status: "LOBBY",
+    currentRound: 1,
+    totalRounds: 3,
+    hostPlayerId: CHAT_HOST_ID,
+    phaseDeadline: null,
+    timersDisabled: true,
+    ttsMode: "OFF",
+    ttsVoice: "RANDOM",
+    votingPromptIndex: 0,
+    votingRevealing: false,
+    nextGameCode: null,
+    version: 1,
+    aiInputTokens: 4200,
+    aiOutputTokens: 1900,
+    aiCostUsd: 0.035,
+    modelUsages: [
+      {
+        modelId: "openai/gpt-5.2-chat",
+        inputTokens: 4200,
+        outputTokens: 1900,
+        costUsd: 0.035,
+      },
+    ],
+    players,
+    rounds: [],
+    ...overrides,
+  };
+}
+
+function buildChatWritingRound(players: GamePlayer[], submitted: string[] = []): GameRound {
+  const p = new Map(players.map((pl) => [pl.id, pl]));
+  const roundId = "cr-writing";
+  const allActive = players.filter(
+    (pl) => pl.type !== "SPECTATOR" && pl.participationStatus === "ACTIVE",
+  );
+  const allIds = allActive.map((pl) => pl.id);
+
+  const responses: GameResponse[] = submitted
+    .filter((id) => p.has(id))
+    .map((id, i) => ({
+      id: `cresp-w-${i}`,
+      promptId: "cprompt-w-1",
+      playerId: id,
+      text: id === CHAT_AI_ID
+        ? "It judges you silently via Bluetooth."
+        : `Response from ${p.get(id)!.name}`,
+      pointsEarned: 0,
+      failReason: null,
+      reactions: [],
+      player: (() => {
+        const { score, ...rest } = p.get(id)!;
+        void score;
+        return rest;
+      })(),
+    }));
+
+  return round(roundId, 1, [
+    prompt(
+      "cprompt-w-1",
+      roundId,
+      "A feature your smart fridge definitely does NOT need:",
+      allIds,
+      responses,
+      [],
+    ),
+  ]);
+}
+
+function buildChatVotingRound(players: GamePlayer[], voted: string[] = []): GameRound {
+  const p = new Map(players.map((pl) => [pl.id, pl]));
+  const roundId = "cr-voting";
+  const allActive = players.filter(
+    (pl) => pl.type !== "SPECTATOR" && pl.participationStatus === "ACTIVE",
+  );
+  const allIds = allActive.map((pl) => pl.id);
+
+  const responses: GameResponse[] = allActive.map((pl, i) => ({
+    id: `cresp-v-${i}`,
+    promptId: "cprompt-v-1",
+    playerId: pl.id,
+    text: [
+      "It texts your ex when it detects loneliness.",
+      "A passive-aggressive sticky note generator.",
+      "Calorie-shaming every time you open the door.",
+      "Milk futures trading without your consent.",
+    ][i] ?? `Answer ${i + 1}`,
+    pointsEarned: 0,
+    failReason: null,
+    reactions: [],
+    player: (() => {
+      const { score, ...rest } = p.get(pl.id)!;
+      void score;
+      return rest;
+    })(),
+  }));
+
+  const votes = voted.map((voterId, i) => {
+    const voter = p.get(voterId)!;
+    const ownRespIdx = allActive.findIndex((pl) => pl.id === voterId);
+    const voteTargetIdx = ownRespIdx === 0 ? 1 : 0;
+    return vote(
+      `cvote-v-${i}`,
+      "cprompt-v-1",
+      voterId,
+      voter.type,
+      responses[voteTargetIdx]?.id ?? responses[0]!.id,
+    );
+  });
+
+  return round(roundId, 1, [
+    prompt("cprompt-v-1", roundId, "A feature your smart fridge definitely does NOT need:", allIds, responses, votes),
+  ]);
+}
+
+function buildChatRoundResultsRound(players: GamePlayer[]): GameRound {
+  const p = new Map(players.map((pl) => [pl.id, pl]));
+  const roundId = "cr-results";
+  const allActive = players.filter(
+    (pl) => pl.type !== "SPECTATOR" && pl.participationStatus === "ACTIVE",
+  );
+  const allIds = allActive.map((pl) => pl.id);
+
+  const responses: GameResponse[] = allActive.map((pl, i) => ({
+    id: `cresp-r-${i}`,
+    promptId: "cprompt-r-1",
+    playerId: pl.id,
+    text: [
+      "It texts your ex when it detects loneliness.",
+      "A passive-aggressive sticky note generator.",
+      "Calorie-shaming every time you open the door.",
+      "Milk futures trading without your consent.",
+    ][i] ?? `Answer ${i + 1}`,
+    pointsEarned: [160, 120, 80, 40][i] ?? 0,
+    failReason: null,
+    reactions: [],
+    player: (() => {
+      const { score, ...rest } = p.get(pl.id)!;
+      void score;
+      return rest;
+    })(),
+  }));
+
+  const votes = [
+    vote("cvote-r-1", "cprompt-r-1", allActive[1]!.id, allActive[1]!.type, responses[0]!.id),
+    vote("cvote-r-2", "cprompt-r-1", allActive[2]!.id, allActive[2]!.type, responses[0]!.id),
+    vote("cvote-r-3", "cprompt-r-1", allActive[3]!.id, allActive[3]!.type, responses[1]!.id),
+    vote("cvote-r-4", "cprompt-r-1", allActive[0]!.id, allActive[0]!.type, responses[1]!.id),
+  ];
+
+  return round(roundId, 1, [
+    prompt("cprompt-r-1", roundId, "A feature your smart fridge definitely does NOT need:", allIds, responses, votes),
+  ]);
+}
+
+function buildChatLobby(): MockScenario {
+  return {
+    slug: "chat-lobby",
+    title: "ChatSlop Lobby",
+    description: "ChatSlop lobby with 4 players, no spectators allowed.",
+    playerId: CHAT_HOST_ID,
+    game: makeChatGame({ status: "LOBBY", rounds: [] }),
+  };
+}
+
+function buildChatWriting(): MockScenario {
+  const players = chatBasePlayers();
+  return {
+    slug: "chat-writing",
+    title: "ChatSlop Writing",
+    description: "Single shared prompt, 1/4 submitted. Chat visible alongside prompt.",
+    playerId: CHAT_HOST_ID,
+    game: makeChatGame({
+      status: "WRITING",
+      players,
+      rounds: [buildChatWritingRound(players, [CHAT_AI_ID])],
+      currentRound: 1,
+    }),
+  };
+}
+
+function buildChatWritingDisconnect(): MockScenario {
+  const players = chatBasePlayers().map((pl) =>
+    pl.id === CHAT_HUMAN_3_ID
+      ? { ...pl, participationStatus: "DISCONNECTED" as const, lastSeen: new Date(Date.now() - 150_000).toISOString() }
+      : pl,
+  );
+  return {
+    slug: "chat-writing-disconnect",
+    title: "ChatSlop Writing (Disconnect)",
+    description: "One player disconnected mid-writing. Quorum shrinks: 1/3 submitted.",
+    playerId: CHAT_HOST_ID,
+    game: makeChatGame({
+      status: "WRITING",
+      players,
+      rounds: [buildChatWritingRound(players, [CHAT_AI_ID])],
+      currentRound: 1,
+    }),
+  };
+}
+
+function buildChatVoting(): MockScenario {
+  const players = chatBasePlayers();
+  return {
+    slug: "chat-voting",
+    title: "ChatSlop Voting",
+    description: "All responses in, voting in progress. Self-vote blocked, no abstains.",
+    playerId: CHAT_HUMAN_2_ID,
+    game: makeChatGame({
+      status: "VOTING",
+      players,
+      rounds: [buildChatVotingRound(players, [CHAT_AI_ID])],
+      currentRound: 1,
+    }),
+  };
+}
+
+function buildChatRejoin(): MockScenario {
+  const players = chatBasePlayers().map((pl) =>
+    pl.id === CHAT_HUMAN_2_ID
+      ? { ...pl, participationStatus: "DISCONNECTED" as const, lastSeen: new Date(Date.now() - 130_000).toISOString() }
+      : pl,
+  );
+  return {
+    slug: "chat-rejoin",
+    title: "ChatSlop Rejoin",
+    description: "Viewer is disconnected and will attempt rejoin-to-active on load.",
+    playerId: CHAT_HUMAN_2_ID,
+    game: makeChatGame({
+      status: "VOTING",
+      players,
+      rounds: [buildChatVotingRound(players, [CHAT_AI_ID, CHAT_HOST_ID])],
+      currentRound: 1,
+    }),
+  };
+}
+
+function buildChatRoundResults(): MockScenario {
+  const players = chatBasePlayers().map((pl) => {
+    if (pl.id === CHAT_HOST_ID) return { ...pl, score: 220, humorRating: 1.3, winStreak: 2 };
+    if (pl.id === CHAT_HUMAN_2_ID) return { ...pl, score: 170, humorRating: 1.15 };
+    if (pl.id === CHAT_HUMAN_3_ID) return { ...pl, score: 125, humorRating: 1.0 };
+    if (pl.id === CHAT_AI_ID) return { ...pl, score: 95, humorRating: 0.95 };
+    return pl;
+  });
+  return {
+    slug: "chat-results-round",
+    title: "ChatSlop Round Results",
+    description: "Round results with vote bars and standings inside chat layout.",
+    playerId: CHAT_HOST_ID,
+    game: makeChatGame({
+      status: "ROUND_RESULTS",
+      players,
+      rounds: [buildChatRoundResultsRound(players)],
+      currentRound: 2,
+      totalRounds: 3,
+    }),
+  };
+}
+
+function buildChatFinalResults(): MockScenario {
+  const players = chatBasePlayers().map((pl) => {
+    if (pl.id === CHAT_HOST_ID) return { ...pl, score: 340, humorRating: 1.45, winStreak: 3 };
+    if (pl.id === CHAT_HUMAN_2_ID) return { ...pl, score: 280, humorRating: 1.25 };
+    if (pl.id === CHAT_HUMAN_3_ID) return { ...pl, score: 210, humorRating: 1.08 };
+    if (pl.id === CHAT_AI_ID) return { ...pl, score: 170, humorRating: 0.92 };
+    return pl;
+  });
+  return {
+    slug: "chat-results-final",
+    title: "ChatSlop Final Results",
+    description: "Game over with score chart and AI cost inside chat layout.",
+    playerId: CHAT_HOST_ID,
+    game: makeChatGame({
+      status: "FINAL_RESULTS",
+      players,
+      rounds: [buildChatRoundResultsRound(players)],
+      currentRound: 3,
+      totalRounds: 3,
+      nextGameCode: "NEXT",
+      aiInputTokens: 12600,
+      aiOutputTokens: 5700,
+      aiCostUsd: 0.105,
+      modelUsages: [
+        {
+          modelId: "openai/gpt-5.2-chat",
+          inputTokens: 12600,
+          outputTokens: 5700,
+          costUsd: 0.105,
+        },
+      ],
+    }),
+  };
+}
+
+export const SLOPLASH_SCENARIOS: MockScenario[] = [
   buildLobbyHostReady(),
   buildLobbyPlayerWaiting(),
   buildWritingPlayer(),
@@ -551,6 +892,21 @@ export const MOCK_SCENARIOS: MockScenario[] = [
   buildVotingReveal(),
   buildRoundResults(),
   buildFinalResults(),
+];
+
+export const CHATSLOP_SCENARIOS: MockScenario[] = [
+  buildChatLobby(),
+  buildChatWriting(),
+  buildChatWritingDisconnect(),
+  buildChatVoting(),
+  buildChatRejoin(),
+  buildChatRoundResults(),
+  buildChatFinalResults(),
+];
+
+export const MOCK_SCENARIOS: MockScenario[] = [
+  ...SLOPLASH_SCENARIOS,
+  ...CHATSLOP_SCENARIOS,
 ];
 
 export function getMockScenario(slug: string): MockScenario | undefined {

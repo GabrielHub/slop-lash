@@ -1,15 +1,10 @@
 import { NextResponse, after } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db";
-import type { PhaseAdvanceResult } from "@/lib/game-logic";
-import {
-  checkAndEnforceDeadline,
-  generateAiResponses,
-  generateAiVotes,
-  promoteHost,
-  HOST_STALE_MS,
-} from "@/lib/game-logic";
-import { LEADERBOARD_TAG } from "@/lib/game-constants";
+import { getGameDefinition } from "@/games/registry";
+import type { PhaseAdvanceResult } from "@/games/core";
+import { LEADERBOARD_TAG } from "@/games/core/constants";
+import { checkAndDisconnectInactivePlayers } from "@/games/core/disconnect";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import type { GameMetaPayload, GameRoutePayload } from "./route-data";
 import { findGameMeta, findGamePayloadByStatus } from "./route-data";
@@ -45,6 +40,8 @@ function jsonGameResponse(game: GameRoutePayload): Response {
 function scheduleHeartbeat(
   playerId: string,
   meta: GameMetaPayload,
+  hostStaleMs: number,
+  roomCode: string,
 ): void {
   after(async () => {
     const cutoff = new Date(Date.now() - HEARTBEAT_MIN_INTERVAL_MS);
@@ -53,25 +50,31 @@ function scheduleHeartbeat(
       data: { lastSeen: new Date() },
     });
 
-    await maybePromoteHost(playerId, meta);
+    await maybePromoteHost(playerId, meta, hostStaleMs);
+
+    const isActivePhase = meta.status === "WRITING" || meta.status === "VOTING";
+    if (isActivePhase) {
+      await checkAndDisconnectInactivePlayers(meta.id, meta.gameType, roomCode);
+    }
   });
 }
 
 async function maybePromoteHost(
   playerId: string,
   meta: GameMetaPayload,
+  hostStaleMs: number,
 ): Promise<void> {
-  // Display-only host (no player) went stale
+  const def = getGameDefinition(meta.gameType);
+
   const hostControlStale =
     !!meta.hostControlLastSeen &&
-    Date.now() - meta.hostControlLastSeen.getTime() > HOST_STALE_MS;
+    Date.now() - meta.hostControlLastSeen.getTime() > hostStaleMs;
 
   if (!meta.hostPlayerId && hostControlStale) {
-    await promoteHost(meta.id);
+    await def.handlers.promoteHost(meta.id);
     return;
   }
 
-  // Player-host went stale
   if (meta.hostPlayerId && playerId !== meta.hostPlayerId) {
     const host = await prisma.player.findUnique({
       where: { id: meta.hostPlayerId },
@@ -79,9 +82,9 @@ async function maybePromoteHost(
     });
     if (
       host?.gameId === meta.id &&
-      Date.now() - host.lastSeen.getTime() > HOST_STALE_MS
+      Date.now() - host.lastSeen.getTime() > hostStaleMs
     ) {
-      await promoteHost(meta.id);
+      await def.handlers.promoteHost(meta.id);
     }
   }
 }
@@ -114,6 +117,9 @@ export async function GET(
   if (!meta) {
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
+
+  const def = getGameDefinition(meta.gameType);
+
   const shouldTouch = shouldTouchRequested && meta.status !== "FINAL_RESULTS";
   const shouldHostTouch =
     shouldHostTouchRequested &&
@@ -122,12 +128,12 @@ export async function GET(
 
   let advancedTo: PhaseAdvanceResult = null;
   if (isDeadlineExpired(meta.phaseDeadline)) {
-    advancedTo = await checkAndEnforceDeadline(meta.id);
+    advancedTo = await def.handlers.checkAndEnforceDeadline(meta.id);
     if (advancedTo === "VOTING") {
-      after(() => generateAiVotes(meta.id));
+      after(() => def.handlers.generateAiVotes(meta.id));
     } else if (advancedTo === "WRITING") {
-      after(() => generateAiResponses(meta.id));
-    } else if (advancedTo === "FINAL_RESULTS") {
+      after(() => def.handlers.generateAiResponses(meta.id));
+    } else if (advancedTo === "FINAL_RESULTS" && def.capabilities.retainsCompletedData) {
       after(async () => {
         await applyCompletedGameToLeaderboardAggregate(meta.id);
         revalidateTag(LEADERBOARD_TAG, { expire: 0 });
@@ -143,10 +149,11 @@ export async function GET(
       version: meta.version,
     })
   ) {
-    if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta);
+    if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta, def.constants.hostStaleMs, roomCode);
     if (shouldHostTouch) scheduleHostHeartbeat(meta);
     logDbTransfer("/api/games/[code]", {
       result: "304",
+      gameType: meta.gameType,
       status: meta.status,
       version: meta.version,
       touch: shouldTouch ? 1 : 0,
@@ -167,7 +174,7 @@ export async function GET(
     return NextResponse.json({ error: "Game not found" }, { status: 404, headers: CACHE_HEADERS });
   }
 
-  if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta);
+  if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta, def.constants.hostStaleMs, roomCode);
   if (shouldHostTouch) scheduleHostHeartbeat(meta);
 
   const normalized = normalizePayload(game);
@@ -186,6 +193,7 @@ export async function GET(
   );
   logDbTransfer("/api/games/[code]", {
     result: "200",
+    gameType: meta.gameType,
     status: normalized.status,
     version: normalized.version,
     bytes: jsonByteLength(normalized),

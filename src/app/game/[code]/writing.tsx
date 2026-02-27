@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { Timer } from "@/components/timer";
@@ -78,6 +78,12 @@ export function Writing({
     return set;
   }, [currentRound, playerId]);
 
+  useEffect(() => {
+    if (game.status !== "WRITING") {
+      setSkipping(false);
+    }
+  }, [game.status]);
+
   async function submitResponse(promptId: string) {
     const text = responses[promptId];
     if (!text?.trim()) return;
@@ -111,6 +117,7 @@ export function Writing({
     const hostToken = localStorage.getItem("hostControlToken");
     setSkipping(true);
     setError("");
+    let keepPending = false;
     try {
       const res = await fetch(`/api/games/${code}/next`, {
         method: "POST",
@@ -120,11 +127,15 @@ export function Writing({
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || "Failed to skip");
+      } else {
+        keepPending = true;
       }
     } catch {
       setError("Something went wrong");
     } finally {
-      setSkipping(false);
+      if (!keepPending) {
+        setSkipping(false);
+      }
     }
   }
 
@@ -133,7 +144,7 @@ export function Writing({
 
   if (forceStageView) {
     return (
-      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+      <main className="flex-1 flex flex-col items-center px-6 py-12">
         <motion.div
           className="w-full max-w-lg"
           variants={fadeInUp}
@@ -171,7 +182,7 @@ export function Writing({
     const allPrompts = currentRound?.prompts ?? [];
     const playerById = new Map(game.players.map((p) => [p.id, p]));
     return (
-      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+      <main className="flex-1 flex flex-col items-center px-6 py-12">
         <motion.div
           className="w-full max-w-lg"
           variants={fadeInUp}
@@ -215,7 +226,7 @@ export function Writing({
 
   if (isAI || !playerId) {
     return (
-      <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+      <main className="flex-1 flex flex-col items-center px-6 py-12">
         <motion.div
           className="text-center"
           variants={fadeInUp}
@@ -238,7 +249,7 @@ export function Writing({
     );
 
   return (
-    <main className="min-h-svh flex flex-col items-center px-6 py-12 pt-20">
+    <main className="flex-1 flex flex-col items-center px-6 py-12">
       <motion.div
         className="w-full max-w-lg"
         variants={fadeInUp}

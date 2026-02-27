@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { FORFEIT_MARKER } from "@/games/core/constants";
 import { jsonByteLength, logDbTransfer, recordRouteHit } from "@/lib/db-transfer-debug";
-import { isPrismaMissingColumnError } from "@/lib/prisma-errors";
 
 const CACHE_HEADERS = {
   "Cache-Control": "private, no-store, no-cache, must-revalidate",
@@ -19,8 +19,6 @@ type PromptWithReactions = {
   responses: Array<{ id: string; text: string; reactions: ReactionRow[] }>;
 };
 
-import { FORFEIT_MARKER as FORFEIT_TEXT } from "@/lib/scoring";
-
 function stripUnrevealedPromptReactions(
   prompts: PromptWithReactions[],
   votingPromptIndex: number,
@@ -30,7 +28,7 @@ function stripUnrevealedPromptReactions(
     .filter(
       (prompt) =>
         prompt.responses.length >= 2 &&
-        !prompt.responses.some((response) => response.text === FORFEIT_TEXT),
+        !prompt.responses.some((response) => response.text === FORFEIT_MARKER),
     )
     .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -60,41 +58,21 @@ type ReactionMeta = {
   currentRound: number;
   votingPromptIndex: number;
   votingRevealing: boolean;
-  reactionsVersion: number | null;
+  reactionsVersion: number;
 };
 
 async function findReactionMeta(roomCode: string): Promise<ReactionMeta | null> {
-  try {
-    const game = await prisma.game.findUnique({
-      where: { roomCode },
-      select: {
-        id: true,
-        status: true,
-        currentRound: true,
-        votingPromptIndex: true,
-        votingRevealing: true,
-        reactionsVersion: true,
-      },
-    });
-    if (!game) return null;
-    return game;
-  } catch (error) {
-    if (!isPrismaMissingColumnError(error, "reactionsVersion")) throw error;
-
-    // Backward-compatible path until the migration is applied in production.
-    const game = await prisma.game.findUnique({
-      where: { roomCode },
-      select: {
-        id: true,
-        status: true,
-        currentRound: true,
-        votingPromptIndex: true,
-        votingRevealing: true,
-      },
-    });
-    if (!game) return null;
-    return { ...game, reactionsVersion: null };
-  }
+  return prisma.game.findUnique({
+    where: { roomCode },
+    select: {
+      id: true,
+      status: true,
+      currentRound: true,
+      votingPromptIndex: true,
+      votingRevealing: true,
+      reactionsVersion: true,
+    },
+  });
 }
 
 export async function GET(
@@ -130,16 +108,9 @@ export async function GET(
     return NextResponse.json(payload, { headers: { ...CACHE_HEADERS, ETag: etag } });
   }
 
-  const etag = game.reactionsVersion === null
-    ? null
-    : buildVotingEtag({
-        currentRound: game.currentRound,
-        votingPromptIndex: game.votingPromptIndex,
-        votingRevealing: game.votingRevealing,
-        reactionsVersion: game.reactionsVersion,
-      });
+  const etag = buildVotingEtag(game);
 
-  if (etag && request.headers.get("if-none-match") === etag) {
+  if (request.headers.get("if-none-match") === etag) {
     logDbTransfer("/api/games/[code]/reactions", {
       result: "304-meta",
       roundNumber: game.currentRound,
@@ -175,7 +146,7 @@ export async function GET(
     .filter(
       (prompt) =>
         prompt.responses.length >= 2 &&
-        !prompt.responses.some((response) => response.text === FORFEIT_TEXT),
+        !prompt.responses.some((response) => response.text === FORFEIT_MARKER),
     )
     .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -245,6 +216,6 @@ export async function GET(
   });
 
   return NextResponse.json(payload, {
-    headers: etag ? { ...CACHE_HEADERS, ETag: etag } : CACHE_HEADERS,
+    headers: { ...CACHE_HEADERS, ETag: etag },
   });
 }

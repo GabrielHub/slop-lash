@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { ControllerShell } from "@/components/controller-shell";
+import { resolveGameType } from "@/games/core";
+import { ControllerShellResolver } from "@/components/shell-resolvers";
 
 export const metadata: Metadata = {
   title: "Controller",
@@ -12,10 +13,11 @@ export default async function ControllerPage({
   params: Promise<{ code: string }>;
 }) {
   const { code } = await params;
+  const gameType = await resolveGameType(code);
 
   return (
     <Suspense>
-      <ControllerShell code={code} />
+      <ControllerShellResolver code={code} gameType={gameType ?? "SLOPLASH"} />
     </Suspense>
   );
 }
