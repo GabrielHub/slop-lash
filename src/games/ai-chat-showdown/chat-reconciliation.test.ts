@@ -24,6 +24,7 @@ describe("createPendingMessage", () => {
       clientId: "client-1",
       playerId: "player-1",
       content: "hello world",
+      replyToId: null,
       createdAt: "2026-02-27T12:00:00Z",
       status: "pending",
     });
@@ -71,6 +72,7 @@ describe("poll reconciliation", () => {
         id: "s1",
         playerId: "p1",
         content: "same text",
+        replyToId: null,
         createdAt: "2026-02-27T12:00:03Z",
       },
     ];
@@ -95,6 +97,7 @@ describe("poll reconciliation", () => {
         id: "s1",
         playerId: "p2",
         content: "remote",
+        replyToId: null,
         createdAt: "2026-02-27T12:00:00Z",
       },
     ];
@@ -118,12 +121,14 @@ describe("poll reconciliation", () => {
         id: "s-early",
         playerId: "p2",
         content: "early",
+        replyToId: null,
         createdAt: "2026-02-27T12:00:00Z",
       },
       {
         id: "s-late",
         playerId: "p3",
         content: "late",
+        replyToId: null,
         createdAt: "2026-02-27T12:10:00Z",
       },
     ];

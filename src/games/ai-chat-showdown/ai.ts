@@ -16,15 +16,15 @@ export interface AiUsage {
 
 const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
-function extractUsage(modelId: string, usage: { inputTokens?: number; outputTokens?: number }): AiUsage {
+export function extractUsage(modelId: string, usage: { inputTokens?: number; outputTokens?: number }): AiUsage {
   const input = usage.inputTokens ?? 0;
   const output = usage.outputTokens ?? 0;
   return { modelId, inputTokens: input, outputTokens: output, costUsd: calculateCostUsd(modelId, input, output) };
 }
 
-type JSONish = Record<string, string | Record<string, string>>;
+export type JSONish = Record<string, string | Record<string, string>>;
 
-function getLowReasoningProviderOptions(modelId: string): Record<string, JSONish> | undefined {
+export function getLowReasoningProviderOptions(modelId: string): Record<string, JSONish> | undefined {
   const provider = modelId.split("/")[0];
   if (provider === "anthropic") return { anthropic: { effort: "low" } };
   if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
@@ -37,7 +37,7 @@ function describeError(err: unknown): string {
   return `${err.name}: ${err.message}${status}`;
 }
 
-function escapeXml(s: string): string {
+export function escapeXml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

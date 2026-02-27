@@ -211,6 +211,9 @@ model ChatMessage {
   player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
   roundNumber Int?
   content     String
+  replyToId   String?
+  replyTo     ChatMessage?  @relation("ChatReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     ChatMessage[] @relation("ChatReply")
   createdAt   DateTime @default(now())
 
   @@index([gameId, createdAt])

@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/db";
 import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
+import { generateAiChatReply } from "@/games/ai-chat-showdown/ai-chat-reply";
 
 const MAX_CHAT_LENGTH = 200;
 const FETCH_LIMIT = 50;
@@ -14,7 +15,7 @@ export async function GET(
   const { code } = await params;
   const roomCode = code.toUpperCase();
   const url = new URL(request.url);
-  const after = url.searchParams.get("after");
+  const afterCursor = url.searchParams.get("after");
   const afterId = url.searchParams.get("afterId");
 
   const game = await prisma.game.findUnique({
@@ -43,8 +44,8 @@ export async function GET(
         OR: Array<{ createdAt: { gt: Date } } | { createdAt: Date; id: { gt: string } }>;
       } = { gameId: game.id };
 
-  if (after) {
-    const afterDate = new Date(after);
+  if (afterCursor) {
+    const afterDate = new Date(afterCursor);
     if (isNaN(afterDate.getTime())) {
       return NextResponse.json(
         { error: "Invalid 'after' timestamp" },
@@ -71,16 +72,17 @@ export async function GET(
       id: true,
       playerId: true,
       content: true,
+      replyToId: true,
       createdAt: true,
     },
     // Bootstrap with newest-first when no cursor, then normalize to ascending for clients.
-    orderBy: after
+    orderBy: afterCursor
       ? [{ createdAt: "asc" }, { id: "asc" }]
       : [{ createdAt: "desc" }, { id: "desc" }],
     take: FETCH_LIMIT,
   });
 
-  const ordered = after ? messages : [...messages].reverse();
+  const ordered = afterCursor ? messages : [...messages].reverse();
 
   return NextResponse.json({
     messages: ordered.map((m) => ({
@@ -178,6 +180,11 @@ export async function POST(
     },
     select: { id: true, createdAt: true },
   });
+
+  // Fire-and-forget: check if a human message mentions an AI player
+  if (player.type !== "AI") {
+    after(() => generateAiChatReply(game.id, message.id, trimmed));
+  }
 
   return NextResponse.json({
     id: message.id,

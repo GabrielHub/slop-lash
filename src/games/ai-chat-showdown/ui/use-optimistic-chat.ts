@@ -9,6 +9,7 @@ export interface OptimisticChatMessage {
   clientId: string;
   playerId: string;
   content: string;
+  replyToId: string | null;
   createdAt: string;
   status: ChatMessageStatus;
 }
@@ -17,6 +18,7 @@ export interface ServerChatMessage {
   id: string;
   playerId: string;
   content: string;
+  replyToId: string | null;
   createdAt: string;
 }
 
@@ -42,6 +44,7 @@ export function createPendingMessage(
     clientId,
     playerId,
     content: content.trim(),
+    replyToId: null,
     createdAt,
     status: "pending",
   };
@@ -99,6 +102,7 @@ export function reconcileIncomingChatMessages(
       updated[pendingIdx] = {
         ...updated[pendingIdx],
         id: msg.id,
+        replyToId: msg.replyToId,
         createdAt: msg.createdAt,
         status: "confirmed",
       };
@@ -108,6 +112,7 @@ export function reconcileIncomingChatMessages(
         clientId: msg.id,
         playerId: msg.playerId,
         content: msg.content,
+        replyToId: msg.replyToId,
         createdAt: msg.createdAt,
         status: "confirmed",
       });

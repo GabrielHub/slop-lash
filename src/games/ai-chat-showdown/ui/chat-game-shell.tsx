@@ -218,6 +218,8 @@ function Bubble({
   playerName,
   modelId,
   isMe,
+  allMessages,
+  players,
   onRetry,
   onDismiss,
 }: {
@@ -225,6 +227,8 @@ function Bubble({
   playerName: string;
   modelId: string | null;
   isMe: boolean;
+  allMessages: OptimisticChatMessage[];
+  players: { id: string; name: string; modelId: string | null }[];
   onRetry: () => void;
   onDismiss: () => void;
 }) {
@@ -232,15 +236,26 @@ function Bubble({
   const isFailed = message.status === "failed";
   const isAi = !!modelId;
 
-  const bubbleBg = isMe
-    ? "bg-[var(--cs-bubble-me)]"
-    : isAi
-      ? "bg-[var(--cs-bubble-ai)]"
-      : "bg-[var(--cs-bubble-other)]";
+  let bubbleBg: string;
+  if (isMe) bubbleBg = "bg-[var(--cs-bubble-me)]";
+  else if (isAi) bubbleBg = "bg-[var(--cs-bubble-ai)]";
+  else bubbleBg = "bg-[var(--cs-bubble-other)]";
 
   const bubbleRadius = isMe
     ? "rounded-2xl rounded-tr-sm"
     : "rounded-2xl rounded-tl-sm";
+
+  let nameColor: string;
+  if (isAi) nameColor = "text-[var(--cs-violet)]";
+  else if (isMe) nameColor = "text-[var(--cs-accent)]";
+  else nameColor = "text-[var(--cs-ink-dim)]";
+
+  const replyTo = message.replyToId
+    ? allMessages.find((m) => m.id === message.replyToId)
+    : null;
+  const replyToPlayer = replyTo
+    ? players.find((p) => p.id === replyTo.playerId)
+    : null;
 
   return (
     <motion.div
@@ -258,9 +273,25 @@ function Bubble({
         />
       </div>
       <div className={`min-w-0 flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-        <span className={`text-[10px] lg:text-[11px] font-semibold mb-0.5 ${isAi ? "text-[var(--cs-violet)]" : isMe ? "text-[var(--cs-accent)]" : "text-[var(--cs-ink-dim)]"}`}>
+        <span className={`text-[10px] lg:text-[11px] font-semibold mb-0.5 ${nameColor}`}>
           {playerName}
         </span>
+        {replyTo && (
+          <div
+            className="flex items-center gap-1.5 mb-1 px-2.5 py-1 rounded-lg border-l-2 max-w-full"
+            style={{
+              borderColor: "var(--cs-violet)",
+              background: "color-mix(in srgb, var(--cs-violet) 8%, transparent)",
+            }}
+          >
+            <span className="text-[10px] font-semibold shrink-0" style={{ color: "var(--cs-violet)" }}>
+              {replyToPlayer?.name ?? "Unknown"}
+            </span>
+            <span className="text-[10px] truncate" style={{ color: "var(--cs-ink-dim)" }}>
+              {replyTo.content.length > 60 ? replyTo.content.slice(0, 57) + "..." : replyTo.content}
+            </span>
+          </div>
+        )}
         <div
           className={`px-3.5 py-2.5 lg:px-4 lg:py-3 text-sm lg:text-[15px] leading-relaxed break-words ${bubbleBg} ${bubbleRadius} ${isPending ? "opacity-50" : ""} ${isFailed ? "ring-1 ring-fail/40" : ""}`}
           style={{ color: "var(--cs-ink)" }}
@@ -1313,6 +1344,8 @@ export function ChatGameShell({
         playerName={player?.name ?? "Unknown"}
         modelId={player?.modelId ?? null}
         isMe={msg.playerId === playerId}
+        allMessages={chatMessages}
+        players={game.players}
         onRetry={() => void retryMessage(msg.clientId)}
         onDismiss={() => dismissFailed(msg.clientId)}
       />
