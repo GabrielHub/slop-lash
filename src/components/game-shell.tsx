@@ -12,6 +12,7 @@ import { Results } from "@/app/game/[code]/results";
 import { phaseTransition, fadeInUp } from "@/lib/animations";
 import { playSound, preloadSounds, subscribeAudio, isMuted, toggleMute, getVolume, setVolume, SOUND_NAMES } from "@/lib/sounds";
 import { useNarrator } from "@/hooks/use-narrator";
+import { useGameStream } from "@/hooks/use-game-stream";
 import { NarratorIndicator } from "@/components/narrator-indicator";
 import {
   buildGameStartEvent,
@@ -23,6 +24,8 @@ import {
   buildHurryUpEvent,
   getVotablePrompts,
 } from "@/games/sloplash/narrator-events";
+
+const USE_SSE = process.env.NEXT_PUBLIC_USE_SSE === "1";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -362,7 +365,14 @@ export function GameShell({
   const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
-  const { gameState, error, refresh } = useGamePoller(code, playerId, hostControlToken, viewMode);
+  const pollerResult = useGamePoller(code, playerId, hostControlToken, viewMode);
+  const streamResult = useGameStream(
+    USE_SSE ? code : "",
+    USE_SSE ? playerId : null,
+    USE_SSE ? hostControlToken : null,
+    viewMode,
+  );
+  const { gameState, error, refresh } = USE_SSE ? streamResult : pollerResult;
   const [endingGame, setEndingGame] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const rejoinAttempted = useRef(false);
@@ -387,7 +397,9 @@ export function GameShell({
     localStorage.setItem("theme", "dark");
   }, [viewMode]);
 
+  // SSE hooks handle their own visibility reconnection; only poll mode needs this.
   useEffect(() => {
+    if (USE_SSE) return;
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         refresh();

@@ -98,6 +98,19 @@ export function findGameMeta(roomCode: string) {
   });
 }
 
+/** Fill optional fields that may be absent in lighter select queries. */
+export function normalizePayload(game: unknown): GameRoutePayload {
+  const g = game as Record<string, unknown>;
+  return {
+    ...g,
+    aiInputTokens: (g.aiInputTokens as number) ?? 0,
+    aiOutputTokens: (g.aiOutputTokens as number) ?? 0,
+    aiCostUsd: (g.aiCostUsd as number) ?? 0,
+    modelUsages: (g.modelUsages as GameRoutePayload["modelUsages"]) ?? [],
+    rounds: (g.rounds as GameRoutePayload["rounds"]) ?? [],
+  } as GameRoutePayload;
+}
+
 export function findGamePayloadByStatus(
   roomCode: string,
   status: GameStatus,

@@ -26,6 +26,9 @@ import {
   type OptimisticChatMessage,
 } from "./use-optimistic-chat";
 import { useChatParticles, ChatParticleLayer } from "./chat-particles";
+import { useGameStream } from "@/hooks/use-game-stream";
+
+const USE_SSE = process.env.NEXT_PUBLIC_USE_SSE === "1";
 
 /* ─── localStorage helpers ─── */
 
@@ -552,7 +555,14 @@ export function ChatGameShell({
   const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
-  const { gameState, error, refresh } = useChatGamePoller(code, playerId, hostControlToken, viewMode);
+  const pollerResult = useChatGamePoller(code, playerId, hostControlToken, viewMode);
+  const streamResult = useGameStream(
+    USE_SSE ? code : "",
+    USE_SSE ? playerId : null,
+    USE_SSE ? hostControlToken : null,
+    viewMode,
+  );
+  const { gameState, error, refresh } = USE_SSE ? streamResult : pollerResult;
   const { triggerElement } = usePixelDissolve();
 
   // Optimistic chat

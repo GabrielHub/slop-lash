@@ -12,6 +12,9 @@ import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import type { ControllerGameState } from "@/lib/controller-types";
 import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { useControllerStream } from "@/hooks/use-controller-stream";
+
+const USE_SSE = process.env.NEXT_PUBLIC_USE_SSE === "1";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -143,7 +146,9 @@ export function ControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const { gameState, error, refresh } = useControllerPoller(code, playerId);
+  const pollerResult = useControllerPoller(code, playerId);
+  const streamResult = useControllerStream(USE_SSE ? code : "", USE_SSE ? playerId : null);
+  const { gameState, error, refresh } = USE_SSE ? streamResult : pollerResult;
 
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(new Set());

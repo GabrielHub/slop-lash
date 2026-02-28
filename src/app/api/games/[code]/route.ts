@@ -7,31 +7,17 @@ import { LEADERBOARD_TAG } from "@/games/core/constants";
 import { checkAndDisconnectInactivePlayers } from "@/games/core/disconnect";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import type { GameMetaPayload, GameRoutePayload } from "./route-data";
-import { findGameMeta, findGamePayloadByStatus } from "./route-data";
+import { findGameMeta, findGamePayloadByStatus, normalizePayload } from "./route-data";
 import { isDeadlineExpired, isVersionUnchanged, stripUnrevealedVotes } from "./route-helpers";
 import { jsonByteLength, logDbTransfer, recordRouteHit } from "@/lib/db-transfer-debug";
 import { matchesHostControlToken } from "@/lib/host-control";
+import { HEARTBEAT_MIN_INTERVAL_MS } from "./sse-helpers";
 
 const CACHE_HEADERS = {
   "Cache-Control": "private, no-store, no-cache, must-revalidate",
 } as const;
-
-const HEARTBEAT_MIN_INTERVAL_MS = 15_000;
 const SAFETY_CHECK_INTERVAL_MS = 10_000;
 const lastSafetyCheck = new Map<string, number>();
-
-/** Fill optional fields that may be absent in lighter select queries. */
-function normalizePayload(game: unknown): GameRoutePayload {
-  const g = game as Record<string, unknown>;
-  return {
-    ...g,
-    aiInputTokens: (g.aiInputTokens as number) ?? 0,
-    aiOutputTokens: (g.aiOutputTokens as number) ?? 0,
-    aiCostUsd: (g.aiCostUsd as number) ?? 0,
-    modelUsages: (g.modelUsages as GameRoutePayload["modelUsages"]) ?? [],
-    rounds: (g.rounds as GameRoutePayload["rounds"]) ?? [],
-  } as GameRoutePayload;
-}
 
 function jsonGameResponse(game: GameRoutePayload): Response {
   return NextResponse.json(game, {
