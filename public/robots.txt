@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /game/
+Disallow: /controller/
+Disallow: /api/
+Disallow: /dev/
+Allow: /
+Allow: /leaderboard

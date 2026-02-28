@@ -39,6 +39,7 @@ const noopSubscribe = () => () => {};
 const POLL_FAST_MS = 1000;
 const POLL_VOTING_OPEN_MS = 1500;
 const POLL_VISIBLE_IDLE_MS = 60_000;
+const POLL_STAGE_HIDDEN_MS = 5000;
 const USER_IDLE_POLL_THRESHOLD_MS = 5 * 60_000;
 const POLL_LOBBY_MS = 4000;
 const POLL_ROUND_RESULTS_MS = 4000;
@@ -165,6 +166,7 @@ function useGamePoller(
     }
 
     function isUserIdleVisible(): boolean {
+      if (viewMode === "stage") return false;
       if (isPageHidden()) return false;
       return Date.now() - lastInteractionAtRef.current >= USER_IDLE_POLL_THRESHOLD_MS;
     }
@@ -196,7 +198,7 @@ function useGamePoller(
         return;
       }
 
-      if (isPageHidden() || isUserIdleVisible()) return;
+      if (viewMode !== "stage" && (isPageHidden() || isUserIdleVisible())) return;
 
       const headers: HeadersInit = {};
       if (reactionsEtagRef.current) {
@@ -239,8 +241,13 @@ function useGamePoller(
       while (!cancelled) {
         try {
           if (isPageHidden()) {
-            await waitUntilVisible();
-            continue;
+            if (viewMode === "stage") {
+              // Stage/TV: keep polling at a slower rate instead of pausing
+              await sleep(POLL_STAGE_HIDDEN_MS);
+            } else {
+              await waitUntilVisible();
+              continue;
+            }
           }
 
           const params = new URLSearchParams();
@@ -361,6 +368,24 @@ export function GameShell({
   const rejoinAttempted = useRef(false);
   const soundsMuted = useSyncExternalStore(subscribeAudio, isMuted, () => false);
   const soundsVolume = useSyncExternalStore(subscribeAudio, getVolume, () => 0.5);
+
+  // Stage mode: absorb ?token=xxx from URL into localStorage
+  useEffect(() => {
+    if (viewMode !== "stage") return;
+    const urlToken = searchParams.get("token");
+    if (urlToken) {
+      localStorage.setItem("hostControlToken", urlToken);
+    }
+  }, [viewMode, searchParams]);
+
+  // Stage mode: force dark theme for TV readability.
+  // Bypasses ThemeProvider intentionally — stage view never shows the toggle,
+  // and adding a setTheme() API to the provider isn't worth the complexity.
+  useEffect(() => {
+    if (viewMode !== "stage") return;
+    document.documentElement.setAttribute("data-theme", "dark");
+    localStorage.setItem("theme", "dark");
+  }, [viewMode]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -732,8 +757,12 @@ export function GameShell({
     </div>
   );
 
+  const shellClass = forceStageView
+    ? "h-svh overflow-hidden flex flex-col bg-base"
+    : "min-h-svh flex flex-col bg-base";
+
   return (
-    <div className="min-h-svh flex flex-col bg-base">
+    <div className={shellClass}>
       {gameHeader}
       <AnimatePresence mode="wait">
         <motion.div

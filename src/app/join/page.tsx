@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
@@ -26,6 +26,12 @@ export default function JoinPage() {
   const [controllerMode, setControllerMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 768px)").matches) {
+      setControllerMode(true);
+    }
+  }, []);
 
   async function joinGame() {
     if (!name.trim()) {

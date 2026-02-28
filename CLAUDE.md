@@ -28,6 +28,13 @@ Uses **pnpm**.
 - Migrations: `pnpm prisma migrate dev` — runs against the single production database. Never run `prisma migrate reset`.
 - The `prisma.config.ts` loads env vars from `.env.local` (pulled via `npx vercel env pull .env.local`).
 
+## Proxy (Request Interception)
+
+- Next.js 16 uses `src/proxy.ts` as the convention file for request interception (rate limiting, bot blocking, etc.).
+- **Do NOT create `middleware.ts`** — it is deprecated in Next.js 16 and replaced by `proxy.ts`.
+- The exported function must be named `proxy` (not `middleware`). The `config` object with `matcher` is exported alongside it.
+- Proxy runs on the Node.js runtime (not Edge). The `runtime` config option is not available.
+
 ## Deployment
 
 - Hosted on **Vercel**. Pushes to `master` trigger deployments.

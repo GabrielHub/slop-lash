@@ -15,6 +15,15 @@ import {
 import { MIN_PLAYERS, MAX_PLAYERS, MAX_SPECTATORS } from "@/games/sloplash/game-constants";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
 
 function getStartButtonText(starting: boolean, activePlayerCount: number): string {
   if (starting) return "Starting...";
@@ -38,7 +47,8 @@ export function Lobby({
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, copyToClipboard] = useCopyToClipboard();
+  const [tvCopied, copyTvToClipboard] = useCopyToClipboard();
   const startPendingRef = useRef(false);
   const { triggerElement } = usePixelDissolve();
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
@@ -85,10 +95,15 @@ export function Lobby({
 
   const copyCode = useCallback(() => {
     preloadSounds();
-    navigator.clipboard.writeText(game.roomCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [game.roomCode]);
+    copyToClipboard(game.roomCode);
+  }, [game.roomCode, copyToClipboard]);
+
+  const copyTvLink = useCallback(() => {
+    const hostToken = localStorage.getItem("hostControlToken");
+    const base = `${window.location.origin}/stage/${game.roomCode}`;
+    const url = hostToken ? `${base}?token=${encodeURIComponent(hostToken)}` : base;
+    copyTvToClipboard(url);
+  }, [game.roomCode, copyTvToClipboard]);
 
   async function startGame() {
     if (startPendingRef.current) return;
@@ -161,27 +176,48 @@ export function Lobby({
               </motion.div>
             ))}
           </motion.div>
-          <button
-            onClick={copyCode}
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
-          >
-            {copied ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Copied!
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-                Copy Code
-              </>
+          <div className="flex items-center justify-center gap-4 mt-3">
+            <button
+              onClick={copyCode}
+              className="inline-flex items-center gap-1.5 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
+            >
+              {copied ? (
+                <>
+                  <CheckIcon />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                  Copy Code
+                </>
+              )}
+            </button>
+            {isHost && (
+              <button
+                onClick={copyTvLink}
+                className="inline-flex items-center gap-1.5 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
+              >
+                {tvCopied ? (
+                  <>
+                    <CheckIcon />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
+                      <polyline points="17 2 12 7 7 2" />
+                    </svg>
+                    TV Link
+                  </>
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </div>
 
         <div className="mb-8">

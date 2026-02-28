@@ -17,6 +17,8 @@ const CACHE_HEADERS = {
 } as const;
 
 const HEARTBEAT_MIN_INTERVAL_MS = 15_000;
+const SAFETY_CHECK_INTERVAL_MS = 10_000;
+const lastSafetyCheck = new Map<string, number>();
 
 /** Fill optional fields that may be absent in lighter select queries. */
 function normalizePayload(game: unknown): GameRoutePayload {
@@ -151,6 +153,35 @@ export async function GET(
   ) {
     if (shouldTouch && playerId) scheduleHeartbeat(playerId, meta, def.constants.hostStaleMs, roomCode);
     if (shouldHostTouch) scheduleHostHeartbeat(meta);
+
+    // Safety net: check if all responses are in during WRITING phase.
+    // The respond route's after() can fail silently, so pollers provide
+    // redundancy. startVoting() uses optimistic locking so concurrent
+    // calls from multiple pollers are safe. Throttled to at most once
+    // per SAFETY_CHECK_INTERVAL_MS per game to avoid N-per-second DB spam.
+    if (meta.status === "WRITING") {
+      const now = Date.now();
+      const lastCheck = lastSafetyCheck.get(meta.id) ?? 0;
+      if (now - lastCheck >= SAFETY_CHECK_INTERVAL_MS) {
+        lastSafetyCheck.set(meta.id, now);
+        after(async () => {
+          try {
+            const allIn = await def.handlers.checkAllResponsesIn(meta.id);
+            if (allIn) {
+              lastSafetyCheck.delete(meta.id);
+              const claimed = await def.handlers.startVoting(meta.id);
+              // AI_CHAT_SHOWDOWN triggers AI votes inside forceAdvancePhase()
+              if (claimed && meta.gameType !== "AI_CHAT_SHOWDOWN") {
+                await def.handlers.generateAiVotes(meta.id);
+              }
+            }
+          } catch {
+            lastSafetyCheck.delete(meta.id);
+          }
+        });
+      }
+    }
+
     logDbTransfer("/api/games/[code]", {
       result: "304",
       gameType: meta.gameType,
