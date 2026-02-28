@@ -123,16 +123,9 @@ export async function POST(
     );
   }
 
-  if (!checkRateLimit(`chat:${playerId}`, 10, 10_000)) {
-    return NextResponse.json(
-      { error: "Too many messages, please slow down" },
-      { status: 429 },
-    );
-  }
-
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, gameType: true, currentRound: true },
+    select: { id: true, gameType: true, status: true, currentRound: true },
   });
 
   if (!game) {
@@ -142,6 +135,12 @@ export async function POST(
   if (game.gameType !== "AI_CHAT_SHOWDOWN") {
     return NextResponse.json(
       { error: "Chat not available for this game type" },
+      { status: 400 },
+    );
+  }
+  if (game.status === "FINAL_RESULTS") {
+    return NextResponse.json(
+      { error: "Chat is closed for this game" },
       { status: 400 },
     );
   }
@@ -168,6 +167,18 @@ export async function POST(
     return NextResponse.json(
       { error: "Disconnected players cannot chat" },
       { status: 403 },
+    );
+  }
+  if (!checkRateLimit(`chat:${player.id}`, 10, 10_000)) {
+    return NextResponse.json(
+      { error: "Too many messages, please slow down" },
+      { status: 429 },
+    );
+  }
+  if (!checkRateLimit(`chat-game:${game.id}`, 40, 10_000)) {
+    return NextResponse.json(
+      { error: "Chat is moving too fast, please slow down" },
+      { status: 429 },
     );
   }
 

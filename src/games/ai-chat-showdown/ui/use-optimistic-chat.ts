@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 export type ChatMessageStatus = "pending" | "confirmed" | "failed";
 
@@ -28,6 +28,12 @@ type ChatCursor = {
   createdAt: string;
   id: string;
 };
+
+const EMPTY_MESSAGES: OptimisticChatMessage[] = [];
+
+function isDocumentHidden() {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
 
 function makeClientMessageId() {
   return `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -134,18 +140,42 @@ export function useOptimisticChat(
   playerId: string | null,
   enabled: boolean,
 ) {
-  const [messages, setMessages] = useState<OptimisticChatMessage[]>([]);
+  const [messagesState, setMessagesState] = useState<{
+    code: string;
+    messages: OptimisticChatMessage[];
+  }>({ code, messages: [] });
   /** Increments whenever a new message from another player arrives via polling. */
-  const [incomingTick, setIncomingTick] = useState(0);
+  const [incomingTickState, setIncomingTickState] = useState<{
+    code: string;
+    tick: number;
+  }>({ code, tick: 0 });
   const cursorRef = useRef<ChatCursor | null>(null);
   const knownIdsRef = useRef(new Set<string>());
   const messagesRef = useRef<OptimisticChatMessage[]>([]);
-  const [prevCode, setPrevCode] = useState(code);
 
-  if (prevCode !== code) {
-    setPrevCode(code);
-    setMessages([]);
-  }
+  const messages = useMemo(
+    () => (messagesState.code === code ? messagesState.messages : EMPTY_MESSAGES),
+    [messagesState, code],
+  );
+  const incomingTick =
+    incomingTickState.code === code ? incomingTickState.tick : 0;
+
+  const setMessagesForCode = useCallback(
+    (updater: (prev: OptimisticChatMessage[]) => OptimisticChatMessage[]) => {
+      setMessagesState((prev) => {
+        const current = prev.code === code ? prev.messages : [];
+        return { code, messages: updater(current) };
+      });
+    },
+    [code],
+  );
+
+  const incrementIncomingTick = useCallback(() => {
+    setIncomingTickState((prev) => ({
+      code,
+      tick: prev.code === code ? prev.tick + 1 : 1,
+    }));
+  }, [code]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -162,11 +192,7 @@ export function useOptimisticChat(
 
     async function poll() {
       while (!cancelled) {
-        const isHidden =
-          typeof document !== "undefined" &&
-          document.visibilityState === "hidden";
-
-        if (!isHidden) {
+        if (!isDocumentHidden()) {
           try {
             const params = new URLSearchParams();
             if (cursorRef.current) {
@@ -190,18 +216,16 @@ export function useOptimisticChat(
                   (m) => m.playerId !== playerId,
                 );
 
-                setMessages((prev) => {
-                  const reconciled = reconcileIncomingChatMessages(
-                    prev,
-                    data.messages,
-                    knownIdsRef.current,
-                  );
-                  knownIdsRef.current = reconciled.knownIds;
-                  return reconciled.messages;
-                });
+                const reconciled = reconcileIncomingChatMessages(
+                  messagesRef.current,
+                  data.messages,
+                  knownIdsRef.current,
+                );
+                knownIdsRef.current = reconciled.knownIds;
+                setMessagesForCode(() => reconciled.messages);
 
                 if (hasOtherPlayerMsg) {
-                  setIncomingTick((t) => t + 1);
+                  incrementIncomingTick();
                 }
 
                 const last = data.messages[data.messages.length - 1];
@@ -221,7 +245,7 @@ export function useOptimisticChat(
     return () => {
       cancelled = true;
     };
-  }, [code, enabled, playerId]);
+  }, [code, enabled, playerId, incrementIncomingTick, setMessagesForCode]);
 
   /** POST a chat message and update the optimistic entry by clientId. */
   const postAndReconcile = useCallback(
@@ -235,21 +259,21 @@ export function useOptimisticChat(
         });
 
         if (!res.ok) {
-          setMessages((prev) => setMessageStatus(prev, clientId, "failed"));
+          setMessagesForCode((prev) => setMessageStatus(prev, clientId, "failed"));
           return;
         }
 
         const data = (await res.json()) as { id: string; createdAt: string };
         knownIdsRef.current.add(data.id);
 
-        setMessages((prev) =>
+        setMessagesForCode((prev) =>
           confirmMessage(prev, clientId, data.id, data.createdAt),
         );
       } catch {
-        setMessages((prev) => setMessageStatus(prev, clientId, "failed"));
+        setMessagesForCode((prev) => setMessageStatus(prev, clientId, "failed"));
       }
     },
-    [code, playerId],
+    [code, playerId, setMessagesForCode],
   );
 
   const sendMessage = useCallback(
@@ -258,10 +282,10 @@ export function useOptimisticChat(
 
       const optimistic = createPendingMessage(playerId, content);
 
-      setMessages((prev) => [...prev, optimistic]);
+      setMessagesForCode((prev) => [...prev, optimistic]);
       await postAndReconcile(optimistic.clientId, optimistic.content);
     },
-    [playerId, postAndReconcile],
+    [playerId, postAndReconcile, setMessagesForCode],
   );
 
   const retryMessage = useCallback(
@@ -269,15 +293,15 @@ export function useOptimisticChat(
       const msg = messagesRef.current.find((m) => m.clientId === clientId);
       if (!msg || msg.status !== "failed" || !playerId) return;
 
-      setMessages((prev) => setMessageStatus(prev, clientId, "pending"));
+      setMessagesForCode((prev) => setMessageStatus(prev, clientId, "pending"));
       await postAndReconcile(clientId, msg.content);
     },
-    [playerId, postAndReconcile],
+    [playerId, postAndReconcile, setMessagesForCode],
   );
 
   const dismissFailed = useCallback((clientId: string) => {
-    setMessages((prev) => removeMessageByClientId(prev, clientId));
-  }, []);
+    setMessagesForCode((prev) => removeMessageByClientId(prev, clientId));
+  }, [setMessagesForCode]);
 
   return { messages, sendMessage, retryMessage, dismissFailed, incomingTick };
 }

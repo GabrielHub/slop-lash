@@ -43,17 +43,49 @@ Rules:
 
 /* ─── Cooldown check ─── */
 
-function findAvailableReplier(
+async function findAvailableReplier(
   gameId: string,
   mentioned: AiPlayerInfo[],
-): AiPlayerInfo | null {
+  aiPlayerIds: string[],
+): Promise<{ replier: AiPlayerInfo; currentCount: number } | null> {
+  const memoryCount = aiChatCounts.get(gameId) ?? 0;
+  if (memoryCount >= MAX_AI_CHAT_MESSAGES_PER_GAME) return null;
+
+  // Cross-instance guardrails: enforce limits from persisted chat history, not only process memory.
+  const [dbAiReplyCount, recentlyReplied] = await Promise.all([
+    prisma.chatMessage.count({
+      where: {
+        gameId,
+        playerId: { in: aiPlayerIds },
+        replyToId: { not: null },
+      },
+    }),
+    prisma.chatMessage.findMany({
+      where: {
+        gameId,
+        playerId: { in: mentioned.map((p) => p.id) },
+        createdAt: { gte: new Date(Date.now() - COOLDOWN_MS) },
+      },
+      select: { playerId: true },
+      distinct: ["playerId"],
+    }),
+  ]);
+
+  if (dbAiReplyCount >= MAX_AI_CHAT_MESSAGES_PER_GAME) return null;
+
+  const recentlyRepliedIds = new Set(recentlyReplied.map((m) => m.playerId));
   const now = Date.now();
   for (const ai of mentioned) {
+    if (recentlyRepliedIds.has(ai.id)) continue;
+
     const key = `${gameId}:${ai.id}`;
     const lastReply = aiCooldowns.get(key) ?? 0;
     if (now - lastReply >= COOLDOWN_MS) {
       aiCooldowns.set(key, now);
-      return ai;
+      return {
+        replier: ai,
+        currentCount: Math.max(memoryCount, dbAiReplyCount),
+      };
     }
   }
   return null;
@@ -66,7 +98,6 @@ export async function generateAiChatReply(
   triggerMessageId: string,
   content: string,
 ): Promise<void> {
-  let cooldownKey: string | null = null;
   try {
     const game = await prisma.game.findUnique({
       where: { id: gameId },
@@ -89,12 +120,13 @@ export async function generateAiChatReply(
     const mentioned = detectMentionedAiPlayers(content, aiPlayers);
     if (mentioned.length === 0) return;
 
-    const currentCount = aiChatCounts.get(gameId) ?? 0;
-    if (currentCount >= MAX_AI_CHAT_MESSAGES_PER_GAME) return;
-
-    const replier = findAvailableReplier(gameId, mentioned);
-    if (!replier) return;
-    cooldownKey = `${gameId}:${replier.id}`;
+    const available = await findAvailableReplier(
+      gameId,
+      mentioned,
+      aiPlayers.map((p) => p.id),
+    );
+    if (!available) return;
+    const { replier, currentCount } = available;
 
     // Fetch recent chat context
     const recentMessages = await prisma.chatMessage.findMany({
@@ -158,8 +190,7 @@ ${chatContext}
 
     console.log(`[chatslop:aiChatReply] ${replier.name} replied to "${content.slice(0, 40)}" → "${replyText.slice(0, 60)}"`);
   } catch (err) {
-    // Roll back cooldown so the AI can retry on the next message
-    if (cooldownKey) aiCooldowns.delete(cooldownKey);
+    // Let cooldown stand on transient failures to prevent retry storms during gateway outages.
     console.error(`[chatslop:aiChatReply] Failed:`, err);
   }
 }

@@ -103,7 +103,8 @@ export async function POST(
       to: advancedTo ?? "none",
       forced: true,
     });
-    if (advancedTo === "VOTING") {
+    // AI_CHAT_SHOWDOWN already triggers AI votes inside forceAdvancePhase().
+    if (advancedTo === "VOTING" && game.gameType !== "AI_CHAT_SHOWDOWN") {
       after(() => def.handlers.generateAiVotes(game.id));
     }
     return NextResponse.json({ success: true });

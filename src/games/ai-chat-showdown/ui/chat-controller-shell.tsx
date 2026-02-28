@@ -69,6 +69,10 @@ const POLL_SLOW_MS = 3000;
 const HEARTBEAT_TOUCH_MS = 15_000;
 const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
 
+function isPageHidden() {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 function useChatControllerPoller(code: string, playerId: string | null) {
   const [gameState, setGameState] = useState<ControllerGameState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,11 +83,24 @@ function useChatControllerPoller(code: string, playerId: string | null) {
 
   useEffect(() => {
     let cancelled = false;
+    let cancelHiddenWait: (() => void) | null = null;
     versionRef.current = null;
     statusRef.current = null;
     lastTouchAtRef.current = 0;
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const waitUntilVisible = () =>
+      new Promise<void>((resolve) => {
+        if (!isPageHidden()) { resolve(); return; }
+        const ac = new AbortController();
+        const finish = () => { ac.abort(); cancelHiddenWait = null; resolve(); };
+        cancelHiddenWait = finish;
+        document.addEventListener(
+          "visibilitychange",
+          () => { if (!isPageHidden()) finish(); },
+          { signal: ac.signal },
+        );
+      });
 
     function getPollDelay() {
       const s = statusRef.current;
@@ -99,6 +116,11 @@ function useChatControllerPoller(code: string, playerId: string | null) {
     async function poll() {
       while (!cancelled) {
         try {
+          if (isPageHidden()) {
+            await waitUntilVisible();
+            continue;
+          }
+
           const params = new URLSearchParams();
           if (playerId) params.set("playerId", playerId);
           if (versionRef.current != null)
@@ -156,6 +178,7 @@ function useChatControllerPoller(code: string, playerId: string | null) {
     void poll();
     return () => {
       cancelled = true;
+      cancelHiddenWait?.();
     };
   }, [code, playerId, refreshKey]);
 
