@@ -17,6 +17,7 @@
     "@google/genai": "^1.42.0",
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
+    "@vercel/analytics": "^1.6.1",
     "ai": "^6.0.97",
     "canvas-confetti": "^1.9.4",
     "motion": "^12.34.3",

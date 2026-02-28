@@ -32,8 +32,17 @@ function getRouteKey(pathname: string): string | null {
 /** Minimal HTML returned to bots instead of full SSR */
 const BOT_HTML = `<!DOCTYPE html><html><head><meta name="robots" content="noindex"></head><body></body></html>`;
 
+/** SSE stream routes are long-lived connections that don't need proxy overhead. */
+const SSE_STREAM_PATTERN = /^\/api\/games\/[^/]+\/(stream|controller\/stream)$/;
+
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
+
+  // Skip proxy for SSE stream routes — bots won't hold SSE connections,
+  // and avoiding middleware CPU on persistent connections saves cost.
+  if (SSE_STREAM_PATTERN.test(pathname)) {
+    return NextResponse.next();
+  }
 
   // Block bots from SSR-heavy game routes and API GET requests
   if (request.method === "GET" && isBot(request)) {

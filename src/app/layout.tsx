@@ -3,6 +3,7 @@ import { Urbanist, Outfit, Geist_Mono } from "next/font/google";
 import { ThemeProvider, ThemeToggle } from "@/components/theme-provider";
 import { PixelRain } from "@/components/pixel-rain";
 import { PixelDissolveOverlay } from "@/components/pixel-dissolve-overlay";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const urbanist = Urbanist({
@@ -72,6 +73,7 @@ export default function RootLayout({
           <ThemeToggle />
           {children}
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );

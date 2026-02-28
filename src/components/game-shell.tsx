@@ -39,14 +39,15 @@ function getHostControlToken() {
 
 const noopSubscribe = () => () => {};
 
-const POLL_FAST_MS = 1000;
-const POLL_VOTING_OPEN_MS = 1500;
+const POLL_FAST_MS = 2000;
+const POLL_VOTING_OPEN_MS = 2500;
 const POLL_VISIBLE_IDLE_MS = 60_000;
-const POLL_STAGE_HIDDEN_MS = 5000;
+const REACTIONS_SYNC_INTERVAL_MS = 3000;
+const POLL_STAGE_HIDDEN_MS = 10_000;
 const USER_IDLE_POLL_THRESHOLD_MS = 5 * 60_000;
-const POLL_LOBBY_MS = 4000;
-const POLL_ROUND_RESULTS_MS = 4000;
-const POLL_DEFAULT_MS = 3000;
+const POLL_LOBBY_MS = 5000;
+const POLL_ROUND_RESULTS_MS = 5000;
+const POLL_DEFAULT_MS = 5000;
 const HEARTBEAT_TOUCH_MS = 15_000;
 const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
 const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
@@ -128,6 +129,8 @@ function useGamePoller(
   const lastInteractionAtRef = useRef(0);
   const reactionsEtagRef = useRef<string | null>(null);
   const reactionsRoundRef = useRef<number | null>(null);
+  const lastReactionsSyncRef = useRef(0);
+  const reactionsVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +140,8 @@ function useGamePoller(
     gameStateRef.current = null;
     reactionsEtagRef.current = null;
     reactionsRoundRef.current = null;
+    lastReactionsSyncRef.current = 0;
+    reactionsVersionRef.current = null;
     lastTouchAtRef.current = 0;
     lastInteractionAtRef.current = Date.now();
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -286,7 +291,15 @@ function useGamePoller(
               return;
             }
             if (statusRef.current === "VOTING") {
-              await syncVotingReactions();
+              const serverRxVersion = res.headers.get("x-reactions-version");
+              if (serverRxVersion !== null) {
+                const rxChanged = serverRxVersion !== reactionsVersionRef.current;
+                reactionsVersionRef.current = serverRxVersion;
+                if (rxChanged && Date.now() - lastReactionsSyncRef.current >= REACTIONS_SYNC_INTERVAL_MS) {
+                  lastReactionsSyncRef.current = Date.now();
+                  await syncVotingReactions();
+                }
+              }
             }
             await sleep(getPollDelay());
             continue;

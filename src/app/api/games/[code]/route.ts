@@ -179,7 +179,11 @@ export async function GET(
 
     return new Response(null, {
       status: 304,
-      headers: { ...CACHE_HEADERS, ETag: `"${meta.version}"` },
+      headers: {
+        ...CACHE_HEADERS,
+        ETag: `"${meta.version}"`,
+        "X-Reactions-Version": String(meta.reactionsVersion),
+      },
     });
   }
 

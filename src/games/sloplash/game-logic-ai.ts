@@ -7,7 +7,6 @@ import {
   revealCurrentPrompt,
   startVoting,
 } from "./game-logic-voting";
-import { bumpReactionsVersion } from "@/lib/reactions-version";
 
 function getAiPlayers<T extends { id: string; type: string; modelId: string | null }>(
   players: T[],
@@ -187,6 +186,9 @@ export async function generateAiVotes(gameId: string): Promise<void> {
     `[generateAiVotes] Starting AI votes for game ${gameId}: ${aiPlayers.length} voters × ${votable.length} prompts`,
   );
 
+  let currentPromptVotes = 0;
+  let anyReactionsCreated = false;
+
   const votePromises = votable.flatMap((prompt) => {
     const [responseA, responseB] = prompt.responses;
     const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
@@ -211,12 +213,8 @@ export async function generateAiVotes(gameId: string): Promise<void> {
           },
         });
 
-        // Bump version only for the currently-visible prompt so pollers see live progress
         if (prompt.id === currentPromptId) {
-          await prisma.game.update({
-            where: { id: gameId },
-            data: { version: { increment: 1 } },
-          });
+          currentPromptVotes++;
         }
 
         const reactionData = [
@@ -225,7 +223,7 @@ export async function generateAiVotes(gameId: string): Promise<void> {
         ];
         if (reactionData.length > 0) {
           await prisma.reaction.createMany({ data: reactionData, skipDuplicates: true });
-          await bumpReactionsVersion(gameId);
+          anyReactionsCreated = true;
         }
 
         return usage;
@@ -234,6 +232,18 @@ export async function generateAiVotes(gameId: string): Promise<void> {
 
   const usages = await collectUsages(votePromises);
   await accumulateUsage(gameId, usages);
+
+  // Batch: single DB write for version + reactions bumps after all AI votes settle.
+  // Version jumps by total current-prompt votes rather than incrementing per-vote.
+  if (currentPromptVotes > 0 || anyReactionsCreated) {
+    await prisma.game.update({
+      where: { id: gameId },
+      data: {
+        ...(currentPromptVotes > 0 ? { version: { increment: currentPromptVotes } } : {}),
+        ...(anyReactionsCreated ? { reactionsVersion: { increment: 1 } } : {}),
+      },
+    });
+  }
 
   console.log(`[generateAiVotes] All AI votes done in ${Date.now() - startedAt}ms for game ${gameId}`);
 

@@ -23,8 +23,8 @@ function getPlayerId() {
 
 const noopSubscribe = () => () => {};
 
-const POLL_FAST_MS = 1000;
-const POLL_SLOW_MS = 3000;
+const POLL_FAST_MS = 2000;
+const POLL_SLOW_MS = 5000;
 const HEARTBEAT_TOUCH_MS = 15_000;
 const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
 

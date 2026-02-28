@@ -23,6 +23,7 @@ export const gameMetaSelect = {
   hostPlayerId: true,
   hostControlTokenHash: true,
   hostControlLastSeen: true,
+  reactionsVersion: true,
 } as const satisfies Prisma.GameSelect;
 
 const gamePayloadCommonSelect = {
