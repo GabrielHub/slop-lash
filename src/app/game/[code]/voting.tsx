@@ -462,17 +462,6 @@ export function Voting({
             >
               <VotingScoreboard players={game.players} runningScores={runningScores} lastMatchupDeltas={lastMatchupDeltas} />
             </div>
-            {currentPrompt && !isRevealing && (
-              <div
-                className="rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-4 xl:p-5"
-                style={{ boxShadow: "var(--shadow-card)" }}
-              >
-                <VotingPromptStatusPanel
-                  prompt={currentPrompt}
-                  players={game.players}
-                />
-              </div>
-            )}
           </div>
         </motion.div>
       </div>
@@ -1569,61 +1558,6 @@ function VotingScoreboard({
           </motion.div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function VotingPromptStatusPanel({
-  prompt,
-  players,
-}: {
-  prompt: GamePrompt;
-  players: GamePlayer[];
-}) {
-  const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
-  const eligible = players.filter((p) => p.type !== "SPECTATOR" && !respondentIds.has(p.id));
-  const votedIds = new Set(prompt.votes.map((v) => v.voterId));
-  const waiting = eligible.filter((p) => !votedIds.has(p.id));
-  const votedCount = eligible.length - waiting.length;
-  const progress = eligible.length > 0 ? (votedCount / eligible.length) * 100 : 0;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[11px] font-medium text-ui-soft uppercase tracking-[0.22em]">
-          Votes
-        </h3>
-        <span className="font-mono text-xs font-bold tabular-nums text-ink">
-          {votedCount} / {eligible.length}
-        </span>
-      </div>
-
-      <div className="h-1.5 rounded-full bg-edge/50 overflow-hidden mb-3">
-        <motion.div
-          className={`h-full rounded-full ${waiting.length === 0 ? "bg-teal" : "bg-teal/70"}`}
-          initial={{ width: 0 }}
-          animate={{ width: `${progress}%` }}
-          transition={springGentle}
-        />
-      </div>
-
-      {waiting.length > 0 ? (
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-ui-faint mb-2">
-            Waiting on
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {waiting.map((p) => (
-              <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full border border-edge/80 bg-surface/55 px-2 py-1">
-                <PlayerAvatar name={p.name} modelId={p.modelId} size={14} />
-                <span className="text-xs text-ui-muted">{p.name}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p className="text-xs text-teal font-medium">All votes in</p>
-      )}
     </div>
   );
 }

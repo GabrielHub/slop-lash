@@ -120,7 +120,8 @@ export async function GET(
     });
 
     return new Response(text);
-  } catch {
+  } catch (err) {
+    console.error("[tagline] Generation failed:", err);
     // Generation failed — reset so another caller can retry
     try {
       await prisma.game.update({

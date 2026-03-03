@@ -17,8 +17,8 @@ const HR_FLOOR = 0.5;
 const FLAWLESS_BONUS = 0.25;
 const UPSET_PCT = 0.10;
 const UPSET_CAP_PER_ROUND = 500;
-const ABSTAIN_AI_PENALTY_PER_HUMAN = 20;
-const ABSTAIN_HUMAN_PENALTY = 10;
+const ABSTAIN_AI_PENALTY_PER_HUMAN = 100;
+const ABSTAIN_HUMAN_PENALTY = 75;
 
 import { FORFEIT_MARKER } from "@/games/core/constants";
 export { FORFEIT_MARKER };
