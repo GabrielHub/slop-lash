@@ -57,6 +57,7 @@ function getAdvanceButtonText(
 
 export interface PromptOutcome {
   totalVotes: number;
+  castVotes: ReturnType<typeof filterCastVotes>;
   isUnanimous: boolean;
   aiBeatsHuman: boolean;
   winnerResponseId: string | null;
@@ -78,26 +79,24 @@ export function analyzePromptOutcome(
     ? byPoints[0].id
     : null;
 
-  const voteCounts = prompt.responses
-    .map((r) => ({
-      resp: r,
-      count: castVotes.filter((v) => v.responseId === r.id).length,
-    }))
-    .sort((a, b) => b.count - a.count);
-
-  const top = voteCounts[0];
-  const bottom = voteCounts[1];
-  const isUnanimous = totalVotes >= 2 && top?.count === totalVotes;
-  const hasVoteWinner = top?.count > (bottom?.count ?? 0);
+  const winner = winnerResponseId
+    ? prompt.responses.find((response) => response.id === winnerResponseId) ?? null
+    : null;
+  const loser = winner
+    ? prompt.responses.find((response) => response.id !== winner.id) ?? null
+    : null;
+  const isUnanimous =
+    totalVotes >= 2 &&
+    winnerResponseId != null &&
+    castVotes.every((vote) => vote.responseId === winnerResponseId);
   const aiBeatsHuman =
-    hasVoteWinner &&
-    top.resp.player.type === "AI" &&
-    bottom?.resp.player.type === "HUMAN";
+    winner?.player.type === "AI" &&
+    loser?.player.type === "HUMAN";
 
   const humanVoters = prompt.votes.filter((v) => v.voter.type === "HUMAN");
   const allPassed = humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
 
-  return { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed };
+  return { totalVotes, castVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed };
 }
 
 export function getPromptCardBorder(outcome: PromptOutcome): { border: string; shadow: string } {
@@ -579,7 +578,7 @@ export function Results({
               <div className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
                 {currentRound.prompts.filter((p) => !p.responses.some((r) => r.text === FORFEIT_MARKER)).map((prompt, promptIdx) => {
                   const outcome = analyzePromptOutcome(prompt);
-                  const { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } = outcome;
+                  const { totalVotes, castVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } = outcome;
                   const cardStyle = getPromptCardBorder(outcome);
 
                   return (
@@ -594,7 +593,7 @@ export function Results({
                       </p>
                       <div className="space-y-3">
                         {prompt.responses.map((resp, respIdx) => {
-                          const voteCount = filterCastVotes(prompt.votes).filter(
+                          const voteCount = castVotes.filter(
                             (v) => v.responseId === resp.id
                           ).length;
                           const pct =

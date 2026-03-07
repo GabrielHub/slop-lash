@@ -81,14 +81,11 @@ function viewerType(game: GameState, playerId: string | null): PlayerType | null
 
 function nextWritingFixtureSlug(game: GameState, playerId: string | null): string {
   const type = viewerType(game, playerId);
-  if (type === "SPECTATOR") return "writing-spectator";
   if (type === "AI" || !playerId) return "writing-ai-waiting";
   return "writing-player";
 }
 
 function nextVotingFixtureSlug(game: GameState, playerId: string | null): string {
-  const type = viewerType(game, playerId);
-  if (type === "SPECTATOR") return "voting-player";
   if (!playerId) return "voting-player";
   const currentPrompt = game.rounds[0]?.prompts[game.votingPromptIndex];
   const isRespondent = !!currentPrompt?.responses.some((r) => r.playerId === playerId);
@@ -373,9 +370,7 @@ export function MockGameShell({
   }, [game, mockCode, playerId]);
 
   const { theme, toggle: toggleTheme } = useTheme();
-  const currentPlayer = game.players.find((p) => p.id === playerId);
   const isHost = playerId === game.hostPlayerId;
-  const isSpectator = currentPlayer?.type === "SPECTATOR";
 
   const screenKey = useMemo(
     () => `${game.status}:${game.votingPromptIndex}:${game.votingRevealing ? "reveal" : "vote"}`,
@@ -478,7 +473,6 @@ export function MockGameShell({
               playerId={playerId}
               code={mockCode}
               isHost={isHost}
-              isSpectator={isSpectator}
             />
           )}
           {game.status === "VOTING" && (
@@ -487,7 +481,6 @@ export function MockGameShell({
               playerId={playerId}
               code={mockCode}
               isHost={isHost}
-              isSpectator={isSpectator}
             />
           )}
           {(game.status === "ROUND_RESULTS" || game.status === "FINAL_RESULTS") && (

@@ -209,8 +209,6 @@ export function ControllerShell({ code }: { code: string }) {
   }, [gameState, playerId, code, searchParams, refresh]);
 
   const isHost = !!(gameState && playerId && gameState.hostPlayerId === playerId);
-  const me = gameState?.me ?? null;
-  const isSpectator = me?.type === "SPECTATOR";
   const activePlayerCount = gameState?.players.filter((p) => p.type !== "SPECTATOR").length ?? 0;
 
   async function postHostAction(path: "start" | "next") {
@@ -365,7 +363,7 @@ export function ControllerShell({ code }: { code: string }) {
               {gameState.status === "FINAL_RESULTS" && "Game Over"}
             </h1>
             <p className="text-xs text-ink-dim mt-1">
-              {isHost ? "Host controller" : isSpectator ? "Spectator controller" : "Player controller"}
+              {isHost ? "Host controller" : "Player controller"}
             </p>
           </div>
 
@@ -421,13 +419,6 @@ export function ControllerShell({ code }: { code: string }) {
           {gameState.status === "WRITING" && (
             <div className="space-y-4">
               {(() => {
-                if (isSpectator) {
-                  return (
-                    <div className="text-center py-6">
-                      <PulsingDot>Watching writing on the main screen...</PulsingDot>
-                    </div>
-                  );
-                }
                 if (allWritingDone) {
                   return (
                     <CompletionCard

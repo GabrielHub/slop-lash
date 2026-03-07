@@ -117,10 +117,10 @@ async function readJson(res: Response) {
 }
 
 // ===========================================================================
-// 1. AI_CHAT_SHOWDOWN spectator rejection (join route)
+// 1. Spectator rejection (join route)
 // ===========================================================================
 
-describe("AI_CHAT_SHOWDOWN spectator rejection (join route)", () => {
+describe("spectator rejection (join route)", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("rejects spectator join for AI_CHAT_SHOWDOWN", async () => {
@@ -175,7 +175,7 @@ describe("AI_CHAT_SHOWDOWN spectator rejection (join route)", () => {
     expect(body.playerType).toBe("HUMAN");
   });
 
-  it("allows spectator join to SLOPLASH", async () => {
+  it("rejects spectator join to SLOPLASH", async () => {
     db.game.findUnique.mockResolvedValue({
       id: "g2",
       gameType: "SLOPLASH",
@@ -183,30 +183,14 @@ describe("AI_CHAT_SHOWDOWN spectator rejection (join route)", () => {
       players: [],
     } as never);
 
-    db.$transaction.mockImplementation(async (fn: (...args: never[]) => unknown) =>
-      fn({
-        player: {
-          count: vi.fn().mockResolvedValue(0),
-          findFirst: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({
-            id: "s1",
-            name: "Alice",
-            type: "SPECTATOR",
-            rejoinToken: "tok",
-          }),
-        },
-      } as never),
-    );
-    db.game.update.mockResolvedValue({} as never);
-
     const res = await joinPOST(
       jsonRequest({ name: "Alice", spectator: true }),
       routeParams(),
     );
     const { status, body } = await readJson(res);
 
-    expect(status).toBe(200);
-    expect(body.playerType).toBe("SPECTATOR");
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/spectators/i);
   });
 });
 

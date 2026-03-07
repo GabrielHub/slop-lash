@@ -5,24 +5,17 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
-import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 const NAME_MAX_LENGTH = 20;
 
-function getJoinButtonText(loading: boolean, spectator: boolean): string {
-  if (loading) return "Joining...";
-  if (spectator) return "Watch Game";
-  return "Join Game";
-}
 
 export default function JoinPage() {
   const router = useRouter();
   const { triggerElement } = usePixelDissolve();
   const [roomCode, setRoomCode] = useState("");
   const [name, setName] = useState("");
-  const [spectator, setSpectator] = useState(false);
   const [controllerMode, setControllerMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -51,7 +44,7 @@ export default function JoinPage() {
       const res = await fetch(`/api/games/${code}/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), spectator }),
+        body: JSON.stringify({ name: name.trim() }),
       });
 
       const data = await res.json();
@@ -156,24 +149,22 @@ export default function JoinPage() {
             />
           </div>
 
-          {/* Spectator Toggle */}
-          <div className="mb-6">
-            <Toggle
-              checked={spectator}
-              onChange={setSpectator}
-              label="Watch as Spectator"
-              description="Vote on answers but don't write — join mid-game too"
-            />
-          </div>
-
           {/* Controller Mode Toggle */}
           <div className="mb-6">
-            <Toggle
-              checked={controllerMode}
-              onChange={setControllerMode}
-              label="Phone Controller Mode"
-              description="Lightweight controls for writing/voting while watching the host screen"
-            />
+            <label className="flex items-start gap-3 rounded-xl border border-edge bg-surface/60 p-4">
+              <input
+                type="checkbox"
+                checked={controllerMode}
+                onChange={(e) => setControllerMode(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-edge"
+              />
+              <span>
+                <span className="block text-sm font-medium text-ink">Phone Controller Mode</span>
+                <span className="block text-sm text-ink-dim">
+                  Lightweight controls for writing and voting while watching the host screen
+                </span>
+              </span>
+            </label>
           </div>
 
           <ErrorBanner error={error} />
@@ -186,7 +177,7 @@ export default function JoinPage() {
             onClick={(e) => triggerElement(e.currentTarget)}
             {...buttonTapPrimary}
           >
-            {getJoinButtonText(loading, spectator)}
+            {loading ? "Joining..." : "Join Game"}
           </motion.button>
         </form>
       </motion.div>

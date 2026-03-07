@@ -42,14 +42,12 @@ export function Writing({
   playerId,
   code,
   isHost,
-  isSpectator = false,
   forceStageView = false,
 }: {
   game: GameState;
   playerId: string | null;
   code: string;
   isHost: boolean;
-  isSpectator?: boolean;
   forceStageView?: boolean;
 }) {
   const [responses, setResponses] = useState<Record<string, string>>({});
@@ -172,53 +170,6 @@ export function Writing({
               {getSkipButtonText(skipping, game.timersDisabled, "Writing")}
             </motion.button>
           )}
-        </motion.div>
-      </main>
-    );
-  }
-
-  if (isSpectator) {
-    // Spectator: read-only view of all prompts with assignments
-    const allPrompts = currentRound?.prompts ?? [];
-    const playerById = new Map(game.players.map((p) => [p.id, p]));
-    return (
-      <main className="flex-1 flex flex-col items-center px-6 py-12">
-        <motion.div
-          className="w-full max-w-lg"
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-        >
-          <div className="text-center mb-6">
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">
-              Round {game.currentRound}
-            </h1>
-            <p className="text-ink-dim text-sm mt-1">Watching players write...</p>
-          </div>
-          {!game.timersDisabled && (
-            <div className="mb-6">
-              <Timer deadline={game.phaseDeadline} />
-            </div>
-          )}
-          <div className="space-y-4">
-            {allPrompts.map((prompt) => {
-              const assigned = prompt.assignments
-                .map((a) => playerById.get(a.playerId)?.name ?? "?")
-                .join(" vs ");
-              return (
-                <div
-                  key={prompt.id}
-                  className="p-4 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
-                  style={{ boxShadow: "var(--shadow-card)" }}
-                >
-                  <p className="font-display font-semibold text-base text-gold mb-2">
-                    {prompt.text}
-                  </p>
-                  <p className="text-xs text-ink-dim">{assigned}</p>
-                </div>
-              );
-            })}
-          </div>
         </motion.div>
       </main>
     );

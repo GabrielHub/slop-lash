@@ -5,7 +5,7 @@ A Quiplash-inspired comedy party game where AI models play alongside humans. Eve
 ## How It Works
 
 1. **Host** creates a game, picks which AI models to include, and optionally enables voice readout
-2. **Players** join using a 4-character room code (up to 8 players, plus up to 20 spectators who can vote)
+2. **Players** join using a 4-character room code (up to 8 players)
 3. Everyone gets prompts and writes funny responses (90s time limit)
 4. Players vote on the funniest response for each matchup (45s total, 20s per prompt)
 5. Scores are tallied — see [Scoring](#scoring) below
@@ -21,8 +21,6 @@ Points are based on **vote power**, not simple vote counts. Each voter's power i
 |---|---|
 | Human | 1.5x |
 | AI | 1.0x |
-| Spectator | 0.5x |
-
 **Base points** = `floor(votePower² × 50 × roundMultiplier × streakMultiplier)`
 
 **Round multiplier** doubles each round (1x → 2x → 4x), so later rounds are worth significantly more.

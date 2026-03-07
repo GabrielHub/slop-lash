@@ -18,8 +18,15 @@ export async function POST(
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { name, spectator } = body;
-  const isSpectator = spectator === true;
+
+  if (body.spectator === true) {
+    return NextResponse.json(
+      { error: "Spectators are no longer supported" },
+      { status: 400 }
+    );
+  }
+
+  const { name } = body;
 
   if (!name || typeof name !== "string") {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -53,36 +60,19 @@ export async function POST(
 
   const def = getGameDefinition(game.gameType);
 
-  if (isSpectator && !def.capabilities.supportsSpectators) {
-    return NextResponse.json(
-      { error: "This game mode doesn't support spectators" },
-      { status: 400 }
-    );
-  }
-
-  if (!isSpectator && game.status !== "LOBBY") {
+  if (game.status !== "LOBBY") {
     return NextResponse.json(
       { error: "Game already in progress" },
       { status: 400 }
     );
   }
 
-  if (!isSpectator) {
-    const playerCount = game.players.filter((p) => p.type !== "SPECTATOR").length;
-    if (playerCount >= def.constants.maxPlayers) {
-      return NextResponse.json(
-        { error: `Game is full (max ${def.constants.maxPlayers} players)` },
-        { status: 400 }
-      );
-    }
-  } else {
-    const spectatorCount = game.players.filter((p) => p.type === "SPECTATOR").length;
-    if (spectatorCount >= def.constants.maxSpectators) {
-      return NextResponse.json(
-        { error: `Spectator slots full (max ${def.constants.maxSpectators})` },
-        { status: 400 }
-      );
-    }
+  const playerCount = game.players.filter((p) => p.type !== "SPECTATOR").length;
+  if (playerCount >= def.constants.maxPlayers) {
+    return NextResponse.json(
+      { error: `Game is full (max ${def.constants.maxPlayers} players)` },
+      { status: 400 }
+    );
   }
 
   const existingPlayer = game.players.find(
@@ -92,7 +82,7 @@ export async function POST(
     const isStale = Date.now() - new Date(existingPlayer.lastSeen).getTime() > STALE_THRESHOLD_MS;
 
     // Non-spectator reclaim only allowed during LOBBY (mirrors the new-join guard)
-    const canReclaim = isStale && (existingPlayer.type === "SPECTATOR" || game.status === "LOBBY");
+    const canReclaim = isStale && game.status === "LOBBY";
 
     if (!canReclaim) {
       return NextResponse.json(
@@ -112,7 +102,7 @@ export async function POST(
       data: {
         rejoinToken: newToken,
         lastSeen: new Date(),
-        type: isSpectator ? "SPECTATOR" : existingPlayer.type,
+        type: existingPlayer.type === "SPECTATOR" ? "HUMAN" : existingPlayer.type,
       },
     });
 
@@ -131,14 +121,14 @@ export async function POST(
 
     logGameEvent("joined", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
       playerId: existingPlayer.id,
-      playerType: isSpectator ? "SPECTATOR" : existingPlayer.type,
+      playerType: existingPlayer.type === "SPECTATOR" ? "HUMAN" : existingPlayer.type,
       reclaimed: true,
     });
 
     return NextResponse.json({
       playerId: existingPlayer.id,
       gameId: game.id,
-      playerType: isSpectator ? "SPECTATOR" : existingPlayer.type,
+      playerType: existingPlayer.type === "SPECTATOR" ? "HUMAN" : existingPlayer.type,
       rejoinToken: newToken,
     });
   }
@@ -146,17 +136,10 @@ export async function POST(
   let player;
   try {
     player = await prisma.$transaction(async (tx) => {
-      if (isSpectator) {
-        const spectatorCount = await tx.player.count({
-          where: { gameId: game.id, type: "SPECTATOR" },
-        });
-        if (spectatorCount >= def.constants.maxSpectators) throw new Error("SPEC_FULL");
-      } else {
-        const playerCount = await tx.player.count({
-          where: { gameId: game.id, type: { not: "SPECTATOR" } },
-        });
-        if (playerCount >= def.constants.maxPlayers) throw new Error("FULL");
-      }
+      const playerCount = await tx.player.count({
+        where: { gameId: game.id, type: { not: "SPECTATOR" } },
+      });
+      if (playerCount >= def.constants.maxPlayers) throw new Error("FULL");
 
       const existing = await tx.player.findFirst({
         where: { gameId: game.id, name: { equals: cleanName, mode: "insensitive" } },
@@ -168,7 +151,7 @@ export async function POST(
         data: {
           gameId: game.id,
           name: cleanName,
-          type: isSpectator ? "SPECTATOR" : "HUMAN",
+          type: "HUMAN",
           rejoinToken,
         },
       });
@@ -176,7 +159,6 @@ export async function POST(
   } catch (e) {
     const errorMessages: Record<string, string> = {
       FULL: `Game is full (max ${def.constants.maxPlayers} players)`,
-      SPEC_FULL: `Spectator slots full (max ${def.constants.maxSpectators})`,
       NAME_TAKEN: "That name is already taken",
     };
     const msg = e instanceof Error ? errorMessages[e.message] : undefined;

@@ -3,7 +3,6 @@ import { FORFEIT_TEXT, type RoundHistoryEntry } from "./ai";
 
 export {
   MAX_PLAYERS,
-  MAX_SPECTATORS,
   MIN_PLAYERS,
   WRITING_DURATION_SECONDS,
   VOTE_PER_PROMPT_SECONDS,

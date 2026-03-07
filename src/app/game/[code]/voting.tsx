@@ -74,14 +74,12 @@ export function Voting({
   playerId,
   code,
   isHost,
-  isSpectator = false,
   forceStageView = false,
 }: {
   game: GameState;
   playerId: string | null;
   code: string;
   isHost: boolean;
-  isSpectator?: boolean;
   forceStageView?: boolean;
 }) {
   const [voted, setVoted] = useState<Set<string>>(new Set());
@@ -274,7 +272,7 @@ export function Voting({
 
   const player = game.players.find((p) => p.id === playerId);
   const isAI = player?.type === "AI";
-  const showHostStageDisplay = forceStageView || ((isAI || !playerId) && !isSpectator);
+  const showHostStageDisplay = forceStageView || isAI || !playerId;
 
   if (showHostStageDisplay) {
     return (

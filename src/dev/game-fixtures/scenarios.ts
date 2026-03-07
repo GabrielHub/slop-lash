@@ -21,8 +21,6 @@ const HOST_ID = "p-host";
 const HUMAN_2_ID = "p-amy";
 const HUMAN_3_ID = "p-beau";
 const AI_ID = "p-ai";
-const SPECTATOR_ID = "p-spec";
-
 const NOW = "2026-02-25T12:00:00.000Z";
 
 function futureDeadline(seconds: number): string {
@@ -60,7 +58,6 @@ function basePlayers(): GamePlayer[] {
       humorRating: 1.02,
       modelId: "openai/gpt-5.2-chat",
     }),
-    player(SPECTATOR_ID, "Kai (spectator)", "SPECTATOR", { score: 0 }),
   ];
 }
 
@@ -318,7 +315,6 @@ function buildVotingRound(players: GamePlayer[]): GameRound {
       [
         vote("vote-v-1", "prompt-v-1", HUMAN_2_ID, "HUMAN", "resp-v-1-b"),
         vote("vote-v-2", "prompt-v-1", HUMAN_3_ID, "HUMAN", "resp-v-1-a"),
-        vote("vote-v-2b", "prompt-v-1", SPECTATOR_ID, "SPECTATOR", "resp-v-1-b"),
       ],
     ),
     prompt(
@@ -329,7 +325,7 @@ function buildVotingRound(players: GamePlayer[]): GameRound {
       [
         response(p, "resp-v-2-a", "prompt-v-2", HUMAN_2_ID, "Panic+ Premium", 0),
         response(p, "resp-v-2-b", "prompt-v-2", HUMAN_3_ID, "Breathe Maybe", 0, {
-          reactions: [reaction("rx-v-1", "resp-v-2-b", SPECTATOR_ID, "😵")],
+          reactions: [reaction("rx-v-1", "resp-v-2-b", HOST_ID, "😵")],
         }),
       ],
       [
@@ -384,23 +380,6 @@ function buildWritingPlayer(): MockScenario {
       players,
       rounds: [buildWritingRound(players)],
       phaseDeadline: futureDeadline(78),
-      currentRound: 1,
-    }),
-  };
-}
-
-function buildWritingSpectator(): MockScenario {
-  const players = basePlayers();
-  return {
-    slug: "writing-spectator",
-    title: "Writing (Spectator)",
-    description: "Spectator read-only prompt assignment view.",
-    playerId: SPECTATOR_ID,
-    game: makeGame({
-      status: "WRITING",
-      players,
-      rounds: [buildWritingRound(players)],
-      phaseDeadline: futureDeadline(71),
       currentRound: 1,
     }),
   };
@@ -885,7 +864,6 @@ export const SLOPLASH_SCENARIOS: MockScenario[] = [
   buildLobbyHostReady(),
   buildLobbyPlayerWaiting(),
   buildWritingPlayer(),
-  buildWritingSpectator(),
   buildWritingAiWaiting(),
   buildVotingPlayer(),
   buildVotingRespondent(),

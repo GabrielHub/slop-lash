@@ -12,7 +12,7 @@ import {
   fadeInUp,
   buttonTapPrimary,
 } from "@/lib/animations";
-import { MIN_PLAYERS, MAX_PLAYERS, MAX_SPECTATORS } from "@/games/sloplash/game-constants";
+import { MIN_PLAYERS, MAX_PLAYERS } from "@/games/sloplash/game-constants";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
@@ -52,7 +52,6 @@ export function Lobby({
   const startPendingRef = useRef(false);
   const { triggerElement } = usePixelDissolve();
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
-  const spectators = game.players.filter((p) => p.type === "SPECTATOR");
   const isDisplayOnlyHostMode = game.hostPlayerId == null;
 
   useEffect(() => {
@@ -226,15 +225,10 @@ export function Lobby({
             <h2 className="text-sm font-medium text-ink-dim">Players</h2>
             <span className="text-xs font-mono text-ink-dim/60">
               {activePlayers.length}/{MAX_PLAYERS}
-              {spectators.length > 0 && (
-                <span className="ml-2">
-                  Spectators {spectators.length}/{MAX_SPECTATORS}
-                </span>
-              )}
             </span>
           </div>
           <PlayerList
-            players={game.players}
+            players={activePlayers}
             onKick={isHost ? handleKick : undefined}
             hostPlayerId={game.hostPlayerId ?? undefined}
           />

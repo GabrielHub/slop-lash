@@ -17,7 +17,6 @@ import {
   MAX_PLAYERS,
   HOST_STALE_MS,
 } from "./game-logic";
-import { MAX_SPECTATORS } from "./game-constants";
 
 export const sloplashDefinition: GameDefinition = {
   id: "SLOPLASH",
@@ -26,7 +25,7 @@ export const sloplashDefinition: GameDefinition = {
     supportsNarrator: true,
     supportsSfx: true,
     supportsChatFeed: false,
-    supportsSpectators: true,
+    supportsSpectators: false,
     retainsCompletedData: true,
   },
   handlers: {
@@ -47,7 +46,7 @@ export const sloplashDefinition: GameDefinition = {
   constants: {
     minPlayers: MIN_PLAYERS,
     maxPlayers: MAX_PLAYERS,
-    maxSpectators: MAX_SPECTATORS,
+    maxSpectators: 0,
     hostStaleMs: HOST_STALE_MS,
   },
 };

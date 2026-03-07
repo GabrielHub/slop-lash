@@ -1,5 +1,4 @@
 export const MAX_PLAYERS = 8;
-export const MAX_SPECTATORS = 20;
 export const MIN_PLAYERS = 3;
 export const WRITING_DURATION_SECONDS = 90;
 export const VOTE_PER_PROMPT_SECONDS = 30;

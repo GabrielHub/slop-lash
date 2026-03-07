@@ -49,10 +49,10 @@ describe("game registry", () => {
       supportsNarrator: true,
       supportsSfx: true,
       supportsChatFeed: false,
-      supportsSpectators: true,
+      supportsSpectators: false,
       retainsCompletedData: true,
     });
-    expect(sloplash.constants.maxSpectators).toBeGreaterThan(0);
+    expect(sloplash.constants.maxSpectators).toBe(0);
     expect(sloplash.displayName).toBe("Slop-Lash");
 
     const chatslop = getGameDefinition("AI_CHAT_SHOWDOWN");

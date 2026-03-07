@@ -658,8 +658,6 @@ export function GameShell({
     );
   }
 
-  const currentPlayer = gameState.players.find((p) => p.id === playerId);
-  const isSpectator = currentPlayer?.type === "SPECTATOR";
   const forceStageView = viewMode === "stage";
 
   const canEndGame =
@@ -812,7 +810,6 @@ export function GameShell({
               playerId={playerId}
               code={code}
               isHost={isHost}
-              isSpectator={isSpectator}
               forceStageView={forceStageView}
             />
           )}
@@ -822,7 +819,6 @@ export function GameShell({
               playerId={playerId}
               code={code}
               isHost={isHost}
-              isSpectator={isSpectator}
               forceStageView={forceStageView}
             />
           )}
