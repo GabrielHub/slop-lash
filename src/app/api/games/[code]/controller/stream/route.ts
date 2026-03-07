@@ -11,6 +11,8 @@ import { findControllerMeta, findControllerPayload } from "../controller-data";
 import { sseEvent, SSE_HEADERS, SSE_POLL_INTERVAL_MS, SSE_KEEPALIVE_INTERVAL_MS, HEARTBEAT_MIN_INTERVAL_MS } from "../../sse-helpers";
 
 export const dynamic = "force-dynamic";
+const SAFETY_CHECK_INTERVAL_MS = 10_000;
+const lastSafetyCheck = new Map<string, number>();
 
 export async function GET(
   request: Request,
@@ -101,6 +103,26 @@ export async function GET(
                 void applyCompletedGameToLeaderboardAggregate(meta.id).then(() =>
                   revalidateTag(LEADERBOARD_TAG, { expire: 0 }),
                 );
+              }
+            }
+
+            if (!advancedTo && meta.status === "WRITING") {
+              const now = Date.now();
+              const lastCheck = lastSafetyCheck.get(meta.id) ?? 0;
+              if (now - lastCheck >= SAFETY_CHECK_INTERVAL_MS) {
+                lastSafetyCheck.set(meta.id, now);
+                try {
+                  const allIn = await def.handlers.checkAllResponsesIn(meta.id);
+                  if (allIn) {
+                    lastSafetyCheck.delete(meta.id);
+                    const claimed = await def.handlers.startVoting(meta.id);
+                    if (claimed && meta.gameType !== "AI_CHAT_SHOWDOWN") {
+                      void def.handlers.generateAiVotes(meta.id);
+                    }
+                  }
+                } catch {
+                  lastSafetyCheck.delete(meta.id);
+                }
               }
             }
 

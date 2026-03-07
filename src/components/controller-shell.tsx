@@ -10,7 +10,7 @@ import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import type { ControllerGameState } from "@/lib/controller-types";
-import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/games/sloplash/game-constants";
+import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 
@@ -26,7 +26,7 @@ const noopSubscribe = () => () => {};
 const POLL_FAST_MS = 2000;
 const POLL_SLOW_MS = 5000;
 const HEARTBEAT_TOUCH_MS = 15_000;
-const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
+const HEARTBEAT_TOUCH_LOBBY_MS = 10_000;
 
 function useControllerPoller(code: string, playerId: string | null) {
   const [gameState, setGameState] = useState<ControllerGameState | null>(null);
@@ -323,6 +323,12 @@ export function ControllerShell({ code }: { code: string }) {
     gameState.status === "LOBBY"
       ? "Controller"
       : `Round ${gameState.currentRound}/${gameState.totalRounds}`;
+  const isDisplayOnlyHostMode = gameState.hostPlayerId == null;
+  const isAutoAdvancingResults =
+    gameState.status === "ROUND_RESULTS" &&
+    isDisplayOnlyHostMode &&
+    !gameState.timersDisabled &&
+    gameState.phaseDeadline != null;
 
   const showTimer = !gameState.timersDisabled && (gameState.status === "WRITING" || gameState.status === "VOTING");
   const canHostAdvance =
@@ -402,7 +408,11 @@ export function ControllerShell({ code }: { code: string }) {
                 </motion.button>
               ) : (
                 <div className="text-center py-3">
-                  <PulsingDot>Waiting for host to start...</PulsingDot>
+                  <PulsingDot>
+                    {isDisplayOnlyHostMode
+                      ? "Waiting for the TV screen to start the game..."
+                      : "Waiting for host to start..."}
+                  </PulsingDot>
                 </div>
               )}
             </div>
@@ -552,6 +562,23 @@ export function ControllerShell({ code }: { code: string }) {
                 </PulsingDot>
               </div>
 
+              {isAutoAdvancingResults && (
+                <div className="rounded-xl border border-edge bg-surface/70 p-4 text-center">
+                  <p className="mb-2 text-xs uppercase tracking-wider text-ink-dim">
+                    TV Mode Auto-Advance
+                  </p>
+                  <Timer
+                    deadline={gameState.phaseDeadline}
+                    total={ROUND_RESULTS_SECONDS}
+                  />
+                  <p className="mt-2 text-xs text-ink-dim">
+                    {gameState.currentRound >= gameState.totalRounds
+                      ? "The game will finish automatically when the countdown ends."
+                      : "The next round will start automatically when the countdown ends."}
+                  </p>
+                </div>
+              )}
+
               {isHost && gameState.status === "ROUND_RESULTS" ? (
                 <motion.button
                   type="button"
@@ -570,7 +597,11 @@ export function ControllerShell({ code }: { code: string }) {
                   <PulsingDot>
                     {gameState.status === "FINAL_RESULTS"
                       ? "Waiting for the next game..."
-                      : "Waiting for host to continue..."}
+                      : isAutoAdvancingResults
+                        ? (gameState.currentRound >= gameState.totalRounds
+                          ? "Waiting for the game to finish automatically..."
+                          : "Waiting for the next round to start automatically...")
+                        : "Waiting for host to continue..."}
                   </PulsingDot>
                 </div>
               )}

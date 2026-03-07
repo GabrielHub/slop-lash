@@ -15,6 +15,8 @@ import { HEARTBEAT_MIN_INTERVAL_MS } from "../sse-helpers";
 const CACHE_HEADERS = {
   "Cache-Control": "private, no-store, no-cache, must-revalidate",
 } as const;
+const SAFETY_CHECK_INTERVAL_MS = 10_000;
+const lastSafetyCheck = new Map<string, number>();
 
 function jsonControllerResponse(game: ControllerGameState): Response {
   return NextResponse.json(game, {
@@ -86,6 +88,28 @@ export async function GET(
     } else if (advancedTo === "FINAL_RESULTS" && def.capabilities.retainsCompletedData) {
       after(() => applyCompletedGameToLeaderboardAggregate(meta.id));
       revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+    }
+  }
+
+  if (!advancedTo && meta.status === "WRITING") {
+    const now = Date.now();
+    const lastCheck = lastSafetyCheck.get(meta.id) ?? 0;
+    if (now - lastCheck >= SAFETY_CHECK_INTERVAL_MS) {
+      lastSafetyCheck.set(meta.id, now);
+      after(async () => {
+        try {
+          const allIn = await def.handlers.checkAllResponsesIn(meta.id);
+          if (allIn) {
+            lastSafetyCheck.delete(meta.id);
+            const claimed = await def.handlers.startVoting(meta.id);
+            if (claimed && meta.gameType !== "AI_CHAT_SHOWDOWN") {
+              await def.handlers.generateAiVotes(meta.id);
+            }
+          }
+        } catch {
+          lastSafetyCheck.delete(meta.id);
+        }
+      });
     }
   }
 

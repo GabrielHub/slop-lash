@@ -11,6 +11,7 @@ import { PlayerList } from "@/components/player-list";
 import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { ScoreBarChart } from "@/components/score-bar-chart";
+import { Timer } from "@/components/timer";
 import {
   BestPromptsCarousel,
   extractBestPrompts,
@@ -31,6 +32,7 @@ import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useWinnerTagline } from "@/hooks/use-winner-tagline";
 import { WinnerTagline } from "@/components/winner-tagline";
+import { ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
 
 function formatSigned(n: number): string {
   return n >= 0 ? `+${n.toLocaleString()}` : n.toLocaleString();
@@ -42,8 +44,13 @@ function getPointsTextColor(pts: number, isWinner: boolean): string {
   return "text-ink-dim";
 }
 
-function getAdvanceButtonText(advancing: boolean, isLastRound: boolean): string {
-  if (advancing) return "Starting...";
+function getAdvanceButtonText(
+  advancing: boolean,
+  isLastRound: boolean,
+  isAutoAdvancing: boolean,
+): string {
+  if (advancing) return isAutoAdvancing ? "Skipping..." : "Starting...";
+  if (isAutoAdvancing) return isLastRound ? "Finish Now" : "Start Next Round Now";
   if (isLastRound) return "Finish Game";
   return "Next Round";
 }
@@ -205,6 +212,11 @@ export function Results({
   }, [isFinal]);
 
   const currentRound = game.rounds[0];
+  const isAutoAdvancingResults =
+    !isFinal &&
+    game.hostPlayerId == null &&
+    !game.timersDisabled &&
+    game.phaseDeadline != null;
 
   useEffect(() => {
     if (isFinal || sloppedFired.current || !currentRound) return;
@@ -502,6 +514,25 @@ export function Results({
               </div>
             )}
 
+            {isAutoAdvancingResults && (
+              <div className="mb-4 rounded-xl border border-edge bg-surface/70 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-ink-dim">
+                  TV Mode Auto-Advance
+                </p>
+                <Timer
+                  deadline={game.phaseDeadline}
+                  total={ROUND_RESULTS_SECONDS}
+                />
+                <p className="mt-2 text-xs text-ink-dim">
+                  {isHost
+                    ? "This countdown advances the game automatically. Use the button below only to skip it."
+                    : game.currentRound >= game.totalRounds
+                      ? "The game will finish automatically when the countdown ends."
+                      : "The next round starts automatically when the countdown ends."}
+                </p>
+              </div>
+            )}
+
             <ErrorBanner error={error} />
 
             {isHost ? (
@@ -515,15 +546,23 @@ export function Results({
                 className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
                 {...buttonTapPrimary}
               >
-                {getAdvanceButtonText(advancing, game.currentRound >= game.totalRounds)}
+                {getAdvanceButtonText(
+                  advancing,
+                  game.currentRound >= game.totalRounds,
+                  isAutoAdvancingResults,
+                )}
               </motion.button>
             ) : (
               <div className="text-center py-4">
                 <PulsingDot>
                   <span className="text-sm">
-                    {game.currentRound >= game.totalRounds
-                      ? "Waiting for host to finish the game..."
-                      : "Waiting for host to start next round..."}
+                    {isAutoAdvancingResults
+                      ? game.currentRound >= game.totalRounds
+                        ? "Waiting for the game to finish automatically..."
+                        : "Waiting for the next round to start automatically..."
+                      : game.currentRound >= game.totalRounds
+                        ? "Waiting for host to finish the game..."
+                        : "Waiting for host to start next round..."}
                   </span>
                 </PulsingDot>
               </div>

@@ -49,7 +49,7 @@ const POLL_LOBBY_MS = 5000;
 const POLL_ROUND_RESULTS_MS = 5000;
 const POLL_DEFAULT_MS = 5000;
 const HEARTBEAT_TOUCH_MS = 15_000;
-const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
+const HEARTBEAT_TOUCH_LOBBY_MS = 10_000;
 const ACTIVE_PHASES = new Set(["WRITING", "VOTING"]);
 
 type ReactionSnapshotPayload = {

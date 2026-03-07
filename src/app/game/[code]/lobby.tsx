@@ -53,6 +53,7 @@ export function Lobby({
   const { triggerElement } = usePixelDissolve();
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
   const spectators = game.players.filter((p) => p.type === "SPECTATOR");
+  const isDisplayOnlyHostMode = game.hostPlayerId == null;
 
   useEffect(() => {
     if (game.status !== "LOBBY") {
@@ -242,29 +243,40 @@ export function Lobby({
         <ErrorBanner error={error} />
 
         {isHost ? (
-          <motion.button
-            onClick={(e) => {
-              if (starting) return;
-              triggerElement(e.currentTarget);
-              void startGame();
-            }}
-            disabled={starting || activePlayers.length < MIN_PLAYERS}
-            className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${
-              activePlayers.length < MIN_PLAYERS
-                ? "bg-raised/80 backdrop-blur-sm text-ink-dim border-2 border-edge"
-                : "bg-teal/90 backdrop-blur-sm hover:bg-teal-hover text-white disabled:opacity-50"
-            }`}
-            variants={fadeInUp}
-            initial="hidden"
-            animate="visible"
-            {...buttonTapPrimary}
-          >
-            {getStartButtonText(starting, activePlayers.length)}
-          </motion.button>
+          <div className="space-y-3">
+            {isDisplayOnlyHostMode && (
+              <p className="text-center text-sm text-ink-dim">
+                This TV screen is the host in TV mode. Start the game here when everyone is ready.
+              </p>
+            )}
+            <motion.button
+              onClick={(e) => {
+                if (starting) return;
+                triggerElement(e.currentTarget);
+                void startGame();
+              }}
+              disabled={starting || activePlayers.length < MIN_PLAYERS}
+              className={`w-full font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed ${
+                activePlayers.length < MIN_PLAYERS
+                  ? "bg-raised/80 backdrop-blur-sm text-ink-dim border-2 border-edge"
+                  : "bg-teal/90 backdrop-blur-sm hover:bg-teal-hover text-white disabled:opacity-50"
+              }`}
+              variants={fadeInUp}
+              initial="hidden"
+              animate="visible"
+              {...buttonTapPrimary}
+            >
+              {getStartButtonText(starting, activePlayers.length)}
+            </motion.button>
+          </div>
         ) : (
           <div className="text-center py-4">
             <PulsingDot>
-              <span className="text-sm">Waiting for host to start...</span>
+              <span className="text-sm">
+                {isDisplayOnlyHostMode
+                  ? "Waiting for the TV screen to start the game..."
+                  : "Waiting for host to start..."}
+              </span>
             </PulsingDot>
           </div>
         )}
