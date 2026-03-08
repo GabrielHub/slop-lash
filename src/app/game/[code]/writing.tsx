@@ -142,7 +142,7 @@ export function Writing({
 
   if (forceStageView) {
     return (
-      <main className="flex-1 flex flex-col items-center px-6 py-12">
+      <main className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}>
         <motion.div
           className="w-full max-w-lg"
           variants={fadeInUp}
@@ -177,7 +177,7 @@ export function Writing({
 
   if (isAI || !playerId) {
     return (
-      <main className="flex-1 flex flex-col items-center px-6 py-12">
+      <main className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}>
         <motion.div
           className="text-center"
           variants={fadeInUp}
@@ -200,7 +200,7 @@ export function Writing({
     );
 
   return (
-    <main className="flex-1 flex flex-col items-center px-6 py-12">
+    <main className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}>
       <motion.div
         className="w-full max-w-lg"
         variants={fadeInUp}

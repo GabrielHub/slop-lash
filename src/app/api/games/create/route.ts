@@ -68,21 +68,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!hostName || typeof hostName !== "string") {
-    return NextResponse.json(
-      { error: "Host name is required" },
-      { status: 400 }
-    );
-  }
-
-  const cleanName = sanitize(hostName, 20);
-  if (cleanName.length === 0) {
-    return NextResponse.json(
-      { error: "Host name is required" },
-      { status: 400 }
-    );
-  }
-
   after(async () => {
     try {
       await cleanupOldGames();
@@ -98,6 +83,26 @@ export async function POST(request: Request) {
     typeof rawGameType === "string" && validGameTypes.includes(rawGameType as GameType)
   ) ? rawGameType as GameType : "SLOPLASH";
   const def = getGameDefinition(gameType);
+  const hostMode = parseHostParticipation(hostParticipation);
+  const isHostPlayer = hostMode === "PLAYER";
+
+  if (isHostPlayer && (!hostName || typeof hostName !== "string")) {
+    return NextResponse.json(
+      { error: "Host name is required" },
+      { status: 400 }
+    );
+  }
+
+  const cleanName =
+    typeof hostName === "string"
+      ? sanitize(hostName, 20)
+      : "";
+  if (isHostPlayer && cleanName.length === 0) {
+    return NextResponse.json(
+      { error: "Host name is required" },
+      { status: 400 }
+    );
+  }
 
   try {
     const roomCode = await generateUniqueRoomCode();
@@ -109,8 +114,6 @@ export async function POST(request: Request) {
     }
 
     const hostControlToken = createHostControlToken();
-    const hostMode = parseHostParticipation(hostParticipation);
-    const isHostPlayer = hostMode === "PLAYER";
     const hostRejoinToken = isHostPlayer
       ? randomBytes(12).toString("base64url")
       : null;

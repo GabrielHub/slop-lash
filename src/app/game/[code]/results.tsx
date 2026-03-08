@@ -153,6 +153,7 @@ interface ResultsProps {
   playerId: string | null;
   code: string;
   isFinal: boolean;
+  compactStage?: boolean;
 }
 
 export function Results({
@@ -161,6 +162,7 @@ export function Results({
   playerId,
   code,
   isFinal,
+  compactStage = false,
 }: ResultsProps) {
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState("");
@@ -299,7 +301,7 @@ export function Results({
 
   if (isFinal) {
     return (
-      <main className="flex-1 flex flex-col items-center px-6 py-12">
+      <main className={`flex-1 flex flex-col items-center px-6 ${compactStage ? "py-8 lg:py-6" : "py-12"}`}>
         <div className="w-full max-w-lg lg:max-w-4xl">
           <div className="text-center mb-10">
             <motion.h1
@@ -464,7 +466,7 @@ export function Results({
   }
 
   return (
-    <main className="flex-1 flex flex-col items-center px-6 py-12">
+    <main className={`flex-1 flex flex-col items-center px-6 ${compactStage ? "py-8 lg:py-6" : "py-12"}`}>
       <div className="w-full max-w-lg lg:max-w-5xl">
         <div className="text-center mb-10">
           <motion.div

@@ -2,7 +2,7 @@
  * Integration tests for C2: route dispatch by gameType, spectator rejection,
  * no-abstain enforcement, and transient game deletion lifecycle.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module mocks — hoisted before any import resolution
@@ -75,6 +75,7 @@ vi.mock("@/lib/leaderboard-aggregate", () => ({
 import { prisma } from "@/lib/db";
 import { deleteTransientGameData, cleanupOldGames } from "@/games/core/cleanup";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
+import { POST as createPOST } from "@/app/api/games/create/route";
 import { POST as joinPOST } from "@/app/api/games/[code]/join/route";
 import { POST as votePOST } from "@/app/api/games/[code]/vote/route";
 import { GET as controllerGET } from "@/app/api/games/[code]/controller/route";
@@ -191,6 +192,104 @@ describe("spectator rejection (join route)", () => {
 
     expect(status).toBe(400);
     expect(body.error).toMatch(/spectators/i);
+  });
+
+  it("reclaims a disconnected Slop-Lash player during an active game", async () => {
+    db.game.findUnique.mockResolvedValue({
+      id: "g3",
+      gameType: "SLOPLASH",
+      status: "WRITING",
+      players: [
+        {
+          id: "p-rejoin",
+          name: "Alice",
+          type: "HUMAN",
+          participationStatus: "DISCONNECTED",
+          lastSeen: new Date(Date.now() - 180_000).toISOString(),
+        },
+      ],
+    } as never);
+
+    db.player.updateMany.mockResolvedValue({ count: 1 } as never);
+    db.game.update.mockResolvedValue({} as never);
+
+    const res = await joinPOST(
+      jsonRequest({ name: "Alice" }),
+      routeParams(),
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(200);
+    expect(body.playerId).toBe("p-rejoin");
+    expect(body.playerType).toBe("HUMAN");
+    expect(body.rejoinToken).toEqual(expect.any(String));
+    expect(db.player.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "p-rejoin" }),
+        data: expect.objectContaining({ participationStatus: "ACTIVE" }),
+      }),
+    );
+  });
+});
+
+// ===========================================================================
+// 1b. Host creation flow
+// ===========================================================================
+
+describe("host creation", () => {
+  const originalHostSecret = process.env.HOST_SECRET;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.HOST_SECRET = "test-secret";
+  });
+
+  it("allows display-only host mode without a host name", async () => {
+    db.game.findUnique.mockResolvedValue(null as never);
+    db.game.create.mockResolvedValue({
+      id: "g-display",
+      players: [],
+    } as never);
+    db.player.createMany.mockResolvedValue({ count: 2 } as never);
+
+    const res = await createPOST(
+      jsonRequest({
+        hostSecret: "test-secret",
+        hostParticipation: "DISPLAY_ONLY",
+        aiModelIds: ["gpt-4o-mini", "gemini-2.5-flash"],
+      }),
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(200);
+    expect(body.hostPlayerId).toBeNull();
+    expect(body.hostPlayerType).toBeNull();
+    expect(body.hostControlToken).toEqual(expect.any(String));
+    expect(db.game.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.not.objectContaining({
+          players: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it("still requires a name when the host is joining as a player", async () => {
+    const res = await createPOST(
+      jsonRequest({
+        hostSecret: "test-secret",
+        hostParticipation: "PLAYER",
+        hostName: "   ",
+      }),
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/host name is required/i);
+  });
+
+  afterAll(() => {
+    process.env.HOST_SECRET = originalHostSecret;
   });
 });
 

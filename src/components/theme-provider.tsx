@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
 } from "react";
+import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 
 type Theme = "light" | "dark";
@@ -67,18 +68,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function ThemeToggle() {
   const { theme, toggle, mounted } = useTheme();
+  const pathname = usePathname();
+  const hideOnImmersiveRoute =
+    pathname.startsWith("/game/") ||
+    pathname.startsWith("/controller/") ||
+    pathname.startsWith("/stage/");
+
+  if (hideOnImmersiveRoute) {
+    return null;
+  }
 
   // Don't render until mounted to avoid hydration mismatch
   if (!mounted) {
     return (
-      <div className="fixed top-4 right-4 z-40 w-10 h-10 rounded-full bg-surface border-2 border-edge" />
+      <div className="fixed top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-40 w-10 h-10 rounded-full bg-surface border-2 border-edge" />
     );
   }
 
   return (
     <motion.button
       onClick={toggle}
-      className="fixed top-4 right-4 z-40 w-10 h-10 flex items-center justify-center rounded-full bg-surface border-2 border-edge hover:border-edge-strong transition-colors cursor-pointer"
+      className="fixed top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-40 w-10 h-10 flex items-center justify-center rounded-full bg-surface border-2 border-edge hover:border-edge-strong transition-colors cursor-pointer"
       aria-label={
         theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
       }

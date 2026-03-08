@@ -9,11 +9,11 @@ const INACTIVITY_THRESHOLD_MS = 120_000;
 /**
  * Check for inactive players and mark them as DISCONNECTED.
  *
- * Only applies to AI_CHAT_SHOWDOWN (action-gated mode) where quorum matters.
- * Slop-Lash uses deadline-based progression and does not disconnect players.
+ * Applies to all game modes so stale players can reclaim their seat by name
+ * or auto-heal with their rejoin token when they return.
  *
- * After disconnecting players, triggers quorum re-check to auto-advance
- * phases if the remaining active players have all acted.
+ * AI_CHAT_SHOWDOWN also triggers quorum re-checks because phase progression is
+ * action-gated; Slop-Lash remains deadline-based.
  *
  * Returns the IDs of newly disconnected players (empty if none).
  */
@@ -22,9 +22,6 @@ export async function checkAndDisconnectInactivePlayers(
   gameType: GameType,
   roomCode: string,
 ): Promise<string[]> {
-  // Only auto-disconnect in action-gated game modes
-  if (gameType !== "AI_CHAT_SHOWDOWN") return [];
-
   const cutoff = new Date(Date.now() - INACTIVITY_THRESHOLD_MS);
 
   const stalePlayers = await prisma.player.findMany({
@@ -59,7 +56,9 @@ export async function checkAndDisconnectInactivePlayers(
     });
   }
 
-  await recheckQuorumAfterDisconnect(gameId, gameType);
+  if (gameType === "AI_CHAT_SHOWDOWN") {
+    await recheckQuorumAfterDisconnect(gameId, gameType);
+  }
 
   return staleIds;
 }

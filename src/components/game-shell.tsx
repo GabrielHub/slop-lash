@@ -376,8 +376,11 @@ export function GameShell({
   viewMode?: "game" | "stage";
 }) {
   const searchParams = useSearchParams();
-  const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
+  const storedPlayerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
+  // Stage/TV mode is display-only and should never impersonate a player from
+  // stale localStorage state left over from another session.
+  const playerId = viewMode === "stage" ? null : storedPlayerId;
   const pollerResult = useGamePoller(code, playerId, hostControlToken, viewMode);
   const streamResult = useGameStream(
     USE_SSE ? code : "",
@@ -423,13 +426,23 @@ export function GameShell({
   }, [refresh]);
 
   useEffect(() => {
+    if (viewMode === "stage") return;
     if (!gameState || rejoinAttempted.current) return;
-    const inGame = gameState.players.some((p) => p.id === playerId);
-    if (inGame || !playerId) return;
+    const localPlayer = playerId
+      ? gameState.players.find((p) => p.id === playerId)
+      : null;
+    const needsRejoin =
+      playerId == null ||
+      localPlayer == null ||
+      localPlayer.participationStatus === "DISCONNECTED";
+    if (!needsRejoin) return;
 
     rejoinAttempted.current = true;
     const token = searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
-    if (!token) return;
+    if (!token) {
+      rejoinAttempted.current = false;
+      return;
+    }
 
     queueMicrotask(() => setReconnecting(true));
     fetch(`/api/games/${code}/rejoin`, {
@@ -443,14 +456,17 @@ export function GameShell({
           localStorage.setItem("playerId", data.playerId);
           localStorage.setItem("playerName", data.playerName);
           localStorage.setItem("rejoinToken", token);
+          if (data.playerType) localStorage.setItem("playerType", data.playerType);
           refresh();
+          return;
         }
+        rejoinAttempted.current = false;
       })
       .catch(() => {
         rejoinAttempted.current = false;
       })
       .finally(() => setReconnecting(false));
-  }, [gameState, playerId, code, searchParams, refresh]);
+  }, [gameState, playerId, code, searchParams, refresh, viewMode]);
 
   useEffect(() => {
     window.addEventListener("pointerdown", preloadSounds, { once: true });
@@ -727,7 +743,7 @@ export function GameShell({
           </>
         )}
       </div>
-      <div className="flex items-center gap-3 pr-14">
+      <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
           <button
             onClick={toggleMute}
@@ -781,7 +797,7 @@ export function GameShell({
   );
 
   const shellClass = forceStageView
-    ? "h-svh overflow-hidden flex flex-col bg-base"
+    ? "min-h-svh flex flex-col bg-base overflow-x-hidden"
     : "min-h-svh flex flex-col bg-base";
 
   return (
@@ -802,6 +818,7 @@ export function GameShell({
               isHost={isHost}
               code={code}
               onRefresh={refresh}
+              compactStage={forceStageView}
             />
           )}
           {gameState.status === "WRITING" && (
@@ -829,6 +846,7 @@ export function GameShell({
               playerId={playerId}
               code={code}
               isFinal={gameState.status === "FINAL_RESULTS"}
+              compactStage={forceStageView}
             />
           )}
         </motion.div>

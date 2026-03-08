@@ -67,15 +67,18 @@ export function useNarrator({
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
 
     function scheduleRetry(delayMs = 1500) {
       if (cancelled || gameEndedRef.current || retryTimer) return;
+      const capped = Math.min(delayMs * 2 ** retryCount, 30_000);
+      retryCount++;
       retryTimer = setTimeout(() => {
         retryTimer = null;
         if (cancelled || gameEndedRef.current || sessionRef.current || connectingRef.current) return;
         connectingRef.current = true;
         void connect();
-      }, delayMs);
+      }, capped);
     }
 
     async function connect(handle?: string) {
@@ -156,8 +159,10 @@ export function useNarrator({
             onclose() {
               if (!mountedRef.current) return;
               setIsConnected(false);
+              setIsSpeaking(false);
               sessionRef.current = null;
               connectingRef.current = false;
+              connectedOnceRef.current = false;
               queueRef.current?.destroy();
               queueRef.current = null;
               setNarratorDucking(false);
@@ -170,6 +175,8 @@ export function useNarrator({
                     void connect(handle);
                   }
                 }, 500);
+              } else if (!gameEndedRef.current) {
+                scheduleRetry(750);
               }
             },
             onerror(err: unknown) {
@@ -186,6 +193,7 @@ export function useNarrator({
 
         sessionRef.current = session;
         connectingRef.current = false;
+        retryCount = 0;
         if (mountedRef.current) setIsConnected(true);
       } catch (err) {
         console.warn("[narrator] connect failed:", err);

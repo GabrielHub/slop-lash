@@ -131,7 +131,7 @@ export default function HostPage() {
       setError("Enter the host password");
       return;
     }
-    if (!hostName.trim()) {
+    if (hostParticipation === "PLAYER" && !hostName.trim()) {
       setError("Enter your name");
       return;
     }
@@ -168,6 +168,7 @@ export default function HostPage() {
         localStorage.setItem("playerName", hostName.trim());
       } else {
         localStorage.removeItem("playerId");
+        localStorage.removeItem("playerName");
         localStorage.removeItem("playerType");
         localStorage.removeItem("rejoinToken");
       }
@@ -275,25 +276,33 @@ export default function HostPage() {
             </div>
 
             <div className="mb-8">
-              <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
-                Your Name
-                {hostName.length >= 15 && (
-                  <span className={`text-xs tabular-nums ${hostName.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}>
-                    {hostName.length}/{NAME_MAX_LENGTH}
-                  </span>
-                )}
-              </label>
-              <input
-                type="text"
-                value={hostName}
-                onChange={(e) => setHostName(e.target.value)}
-                placeholder="Enter your name"
-                className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
-                maxLength={NAME_MAX_LENGTH}
-                autoComplete="name"
-                autoCapitalize="words"
-                enterKeyHint="done"
-              />
+              {hostParticipation === "PLAYER" ? (
+                <>
+                  <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
+                    Your Name
+                    {hostName.length >= 15 && (
+                      <span className={`text-xs tabular-nums ${hostName.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}>
+                        {hostName.length}/{NAME_MAX_LENGTH}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="text"
+                    value={hostName}
+                    onChange={(e) => setHostName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
+                    maxLength={NAME_MAX_LENGTH}
+                    autoComplete="name"
+                    autoCapitalize="words"
+                    enterKeyHint="done"
+                  />
+                </>
+              ) : (
+                <div className="rounded-xl border border-edge bg-surface/60 px-4 py-3 text-sm text-ink-dim">
+                  TV mode does not create a host player, so no host name is needed.
+                </div>
+              )}
             </div>
           </div>
 

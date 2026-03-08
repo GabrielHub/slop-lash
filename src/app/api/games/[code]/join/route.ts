@@ -48,6 +48,7 @@ export async function POST(
           id: true,
           name: true,
           type: true,
+          participationStatus: true,
           lastSeen: true,
         },
       },
@@ -60,29 +61,14 @@ export async function POST(
 
   const def = getGameDefinition(game.gameType);
 
-  if (game.status !== "LOBBY") {
-    return NextResponse.json(
-      { error: "Game already in progress" },
-      { status: 400 }
-    );
-  }
-
-  const playerCount = game.players.filter((p) => p.type !== "SPECTATOR").length;
-  if (playerCount >= def.constants.maxPlayers) {
-    return NextResponse.json(
-      { error: `Game is full (max ${def.constants.maxPlayers} players)` },
-      { status: 400 }
-    );
-  }
-
   const existingPlayer = game.players.find(
     (p) => p.name.toLowerCase() === cleanName.toLowerCase()
   );
   if (existingPlayer) {
     const isStale = Date.now() - new Date(existingPlayer.lastSeen).getTime() > STALE_THRESHOLD_MS;
-
-    // Non-spectator reclaim only allowed during LOBBY (mirrors the new-join guard)
-    const canReclaim = isStale && game.status === "LOBBY";
+    const canReclaim =
+      existingPlayer.participationStatus === "DISCONNECTED" ||
+      (isStale && game.status === "LOBBY");
 
     if (!canReclaim) {
       return NextResponse.json(
@@ -102,6 +88,7 @@ export async function POST(
       data: {
         rejoinToken: newToken,
         lastSeen: new Date(),
+        participationStatus: "ACTIVE",
         type: existingPlayer.type === "SPECTATOR" ? "HUMAN" : existingPlayer.type,
       },
     });
@@ -131,6 +118,21 @@ export async function POST(
       playerType: existingPlayer.type === "SPECTATOR" ? "HUMAN" : existingPlayer.type,
       rejoinToken: newToken,
     });
+  }
+
+  if (game.status !== "LOBBY") {
+    return NextResponse.json(
+      { error: "Game already in progress" },
+      { status: 400 }
+    );
+  }
+
+  const playerCount = game.players.filter((p) => p.type !== "SPECTATOR").length;
+  if (playerCount >= def.constants.maxPlayers) {
+    return NextResponse.json(
+      { error: `Game is full (max ${def.constants.maxPlayers} players)` },
+      { status: 400 }
+    );
   }
 
   let player;

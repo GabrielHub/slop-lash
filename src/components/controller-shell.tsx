@@ -179,13 +179,21 @@ export function ControllerShell({ code }: { code: string }) {
 
   useEffect(() => {
     if (!gameState || rejoinAttempted.current) return;
-    if (!playerId) return;
-    const inGame = gameState.players.some((p) => p.id === playerId);
-    if (inGame) return;
+    const localPlayer = playerId
+      ? gameState.players.find((p) => p.id === playerId)
+      : null;
+    const needsRejoin =
+      playerId == null ||
+      localPlayer == null ||
+      localPlayer.participationStatus === "DISCONNECTED";
+    if (!needsRejoin) return;
 
     rejoinAttempted.current = true;
     const token = searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
-    if (!token) return;
+    if (!token) {
+      rejoinAttempted.current = false;
+      return;
+    }
 
     setReconnecting(true);
     fetch(`/api/games/${code}/rejoin`, {
@@ -194,7 +202,10 @@ export function ControllerShell({ code }: { code: string }) {
       body: JSON.stringify({ token }),
     })
       .then(async (res) => {
-        if (!res.ok) return;
+        if (!res.ok) {
+          rejoinAttempted.current = false;
+          return;
+        }
         const data = await res.json();
         localStorage.setItem("playerId", data.playerId);
         localStorage.setItem("playerName", data.playerName);

@@ -272,7 +272,7 @@ export function Voting({
 
   const player = game.players.find((p) => p.id === playerId);
   const isAI = player?.type === "AI";
-  const showHostStageDisplay = forceStageView || isAI || !playerId;
+  const showHostStageDisplay = !forceStageView && (isAI || !playerId);
 
   if (showHostStageDisplay) {
     return (
@@ -293,7 +293,7 @@ export function Voting({
   }
 
   return (
-    <main className="flex-1 flex flex-col items-center px-4 sm:px-6 py-8">
+    <main className={`flex-1 flex flex-col items-center px-4 sm:px-6 ${forceStageView ? "py-6 lg:py-5" : "py-8"}`}>
       <div className="w-full max-w-lg lg:max-w-none xl:max-w-[1240px] lg:grid lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] lg:gap-8 xl:gap-10">
         <motion.div
           variants={fadeInUp}
@@ -390,6 +390,18 @@ export function Voting({
                         players={game.players}
                         playerNames={playerNames}
                         scoreResult={currentPromptScore}
+                      />
+                    );
+                  }
+                  if (forceStageView) {
+                    return (
+                      <PassiveView
+                        sublabel="Players are voting..."
+                        color="dim"
+                        prompt={currentPrompt}
+                        playerId={null}
+                        code={code}
+                        playerNames={playerNames}
                       />
                     );
                   }
@@ -872,7 +884,7 @@ function VoterChip({
 
   return (
     <span
-      className={`inline-flex items-center ${chipClass} rounded-full bg-surface/80 border border-edge font-medium text-ink-dim`}
+      className={`inline-flex items-center ${chipClass} rounded-full bg-surface/85 border border-edge font-medium ${size === "lg" ? "text-ui-soft" : "text-ink-dim"}`}
     >
       {model ? (
         <ModelIcon model={model} size={iconSize} />
@@ -1003,6 +1015,8 @@ function RevealResponseCard({
   const pctSize = isHostDisplay ? "text-3xl sm:text-5xl lg:text-6xl" : "text-2xl sm:text-3xl lg:text-4xl";
   const voteCountSize = isHostDisplay ? "text-sm sm:text-base" : "text-xs sm:text-sm";
   const padding = isHostDisplay ? "p-6 sm:p-8 lg:p-10" : "p-4 sm:p-5 lg:p-6";
+  const authorTone = isHostDisplay ? "text-ui-soft" : "text-ink-dim";
+  const voteCountTone = isHostDisplay ? "text-ui-faint" : "text-ink-dim/60";
 
   const playerById = new Map(players.map((p) => [p.id, p]));
 
@@ -1056,7 +1070,7 @@ function RevealResponseCard({
         {/* Author + score row */}
         <div className="flex items-end justify-between gap-3 mt-auto">
           <div className="min-w-0">
-            <p className={`${authorSize} text-ink-dim font-medium`}>
+            <p className={`${authorSize} ${authorTone} font-medium`}>
               &mdash; {response.player.name}
             </p>
             {/* Voter badges */}
@@ -1096,7 +1110,7 @@ function RevealResponseCard({
               {pct}
               <span className={isHostDisplay ? "text-lg sm:text-2xl" : "text-sm"}>%</span>
             </span>
-            <p className={`${voteCountSize} text-ink-dim/60 tabular-nums`}>
+            <p className={`${voteCountSize} ${voteCountTone} tabular-nums`}>
               {votes.length} vote{votes.length !== 1 ? "s" : ""}
             </p>
             {pointsEarned != null && (

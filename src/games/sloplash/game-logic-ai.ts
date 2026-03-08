@@ -3,8 +3,6 @@ import { aiVote, FORFEIT_TEXT, generateJoke, type AiUsage } from "./ai";
 import { buildPlayerHistory } from "./game-logic-core";
 import {
   checkAllResponsesIn,
-  checkAllVotesForCurrentPrompt,
-  revealCurrentPrompt,
   startVoting,
 } from "./game-logic-voting";
 
@@ -148,7 +146,8 @@ export async function generateAiResponses(gameId: string): Promise<void> {
  * Forfeited prompts are skipped (only votable prompts with 2+ valid responses).
  * Bumps the game version only for votes on the currently-visible prompt so
  * clients see live vote progress; future-prompt votes stay hidden.
- * After completion, checks if the current prompt can be revealed.
+ * After completion, the normal voting deadline/host controls still govern
+ * when the prompt is revealed so the shared screen does not auto-skip.
  */
 export async function generateAiVotes(gameId: string): Promise<void> {
   const startedAt = Date.now();
@@ -246,9 +245,4 @@ export async function generateAiVotes(gameId: string): Promise<void> {
   }
 
   console.log(`[generateAiVotes] All AI votes done in ${Date.now() - startedAt}ms for game ${gameId}`);
-
-  const allVotesIn = await checkAllVotesForCurrentPrompt(gameId);
-  if (allVotesIn) {
-    await revealCurrentPrompt(gameId);
-  }
 }
