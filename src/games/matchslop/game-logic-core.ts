@@ -7,7 +7,6 @@ import {
 } from "./config/game-config";
 import { MATCHSLOP_PERSONA_EXAMPLES } from "./config/persona-examples";
 import { MATCHSLOP_PLAYER_EXAMPLES } from "./config/player-examples";
-import { createInitialPersonaImageState } from "./config/persona-image";
 import {
   ROUND_RESULTS_SECONDS,
   VOTING_SECONDS,
@@ -16,12 +15,14 @@ import {
 import type {
   MatchSlopIdentity,
   MatchSlopModeState,
+  MatchSlopPersonaDetails,
+  MatchSlopPersonaImageState,
   MatchSlopProfile,
   MatchSlopProfilePrompt,
   MatchSlopRoundResult,
   MatchSlopTranscriptEntry,
 } from "./types";
-import { asRecord, asString, asNumber } from "@/lib/json-guards";
+import { asRecord, asString, asNumber, asStringArray } from "@/lib/json-guards";
 
 function isIdentity(value: unknown): value is MatchSlopIdentity {
   return value === "MAN" || value === "WOMAN" || value === "NON_BINARY" || value === "OTHER";
@@ -35,6 +36,17 @@ function parseProfilePrompt(value: unknown): MatchSlopProfilePrompt | null {
   const answer = asString(record.answer);
   if (!id || !prompt || !answer) return null;
   return { id, prompt, answer };
+}
+
+export function parseDetails(value: unknown): MatchSlopPersonaDetails | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  return {
+    job: asString(record.job) ?? null,
+    school: asString(record.school) ?? null,
+    height: asString(record.height) ?? null,
+    languages: asStringArray(record.languages),
+  };
 }
 
 function parseProfile(value: unknown): MatchSlopProfile | null {
@@ -53,11 +65,13 @@ function parseProfile(value: unknown): MatchSlopProfile | null {
 
   return {
     displayName,
+    backstory: asString(record.backstory),
     age: asNumber(record.age),
     location: asString(record.location),
     bio,
     tagline: asString(record.tagline),
     prompts,
+    details: parseDetails(record.details),
   };
 }
 
@@ -110,6 +124,14 @@ function parseLastRoundResult(value: unknown): MatchSlopRoundResult | null {
   };
 }
 
+function createInitialImageState(): MatchSlopPersonaImageState {
+  return {
+    status: "NOT_REQUESTED",
+    imageUrl: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function createInitialModeState(
   seekerIdentity: MatchSlopIdentity,
   personaIdentity: MatchSlopIdentity,
@@ -121,10 +143,10 @@ export function createInitialModeState(
     humanVoteWeight: MATCHSLOP_HUMAN_VOTE_WEIGHT,
     aiVoteWeight: MATCHSLOP_AI_VOTE_WEIGHT,
     selectedPersonaExampleIds: [],
-    selectedPlayerExampleIds: [],
+    selectedPlayerExamples: [],
     transcript: [],
     profile: null,
-    personaImage: createInitialPersonaImageState(),
+    personaImage: createInitialImageState(),
     lastRoundResult: null,
   };
 }
@@ -134,7 +156,7 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
   const seekerIdentity = isIdentity(record?.seekerIdentity) ? record.seekerIdentity : "OTHER";
   const personaIdentity = isIdentity(record?.personaIdentity) ? record.personaIdentity : "OTHER";
   const imageRecord = asRecord(record?.personaImage);
-  const defaultImage = createInitialPersonaImageState();
+  const defaultImage = createInitialImageState();
 
   return {
     seekerIdentity,
@@ -147,12 +169,8 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
         : "IN_PROGRESS",
     humanVoteWeight: asNumber(record?.humanVoteWeight) ?? MATCHSLOP_HUMAN_VOTE_WEIGHT,
     aiVoteWeight: asNumber(record?.aiVoteWeight) ?? MATCHSLOP_AI_VOTE_WEIGHT,
-    selectedPersonaExampleIds: Array.isArray(record?.selectedPersonaExampleIds)
-      ? record.selectedPersonaExampleIds.filter((value): value is string => typeof value === "string")
-      : [],
-    selectedPlayerExampleIds: Array.isArray(record?.selectedPlayerExampleIds)
-      ? record.selectedPlayerExampleIds.filter((value): value is string => typeof value === "string")
-      : [],
+    selectedPersonaExampleIds: asStringArray(record?.selectedPersonaExampleIds),
+    selectedPlayerExamples: asStringArray(record?.selectedPlayerExamples),
     transcript: Array.isArray(record?.transcript)
       ? record.transcript
           .map((value, index) => parseTranscriptEntry(value, index))
@@ -207,7 +225,7 @@ export async function getActivePlayerIds(gameId: string): Promise<string[]> {
   return players.map((player) => player.id);
 }
 
-function sampleItems<T extends { id: string }>(items: T[], count: number): T[] {
+function sampleItems<T>(items: T[], count: number): T[] {
   if (items.length <= count) return [...items];
   const pool = [...items];
   const selected: T[] = [];
@@ -219,28 +237,27 @@ function sampleItems<T extends { id: string }>(items: T[], count: number): T[] {
   return selected;
 }
 
-export function selectPersonaExamples() {
-  return sampleItems(MATCHSLOP_PERSONA_EXAMPLES, MATCHSLOP_PERSONA_EXAMPLE_COUNT);
+export function selectPersonaExamples(personaIdentity?: MatchSlopIdentity) {
+  const pool = personaIdentity
+    ? MATCHSLOP_PERSONA_EXAMPLES.filter((e) => e.identity === personaIdentity)
+    : MATCHSLOP_PERSONA_EXAMPLES;
+  const source = pool.length > 0 ? pool : MATCHSLOP_PERSONA_EXAMPLES;
+  return sampleItems(source, MATCHSLOP_PERSONA_EXAMPLE_COUNT);
 }
 
-export function selectPlayerExamples() {
+export function selectPlayerExamples(): string[] {
   return sampleItems(MATCHSLOP_PLAYER_EXAMPLES, MATCHSLOP_PLAYER_EXAMPLE_COUNT);
 }
 
+const PERSONA_EXAMPLES_BY_ID = new Map(
+  MATCHSLOP_PERSONA_EXAMPLES.map((e) => [e.id, e]),
+);
+
 export function resolvePersonaExamples(ids: string[]) {
   if (ids.length === 0) return selectPersonaExamples();
-  const byId = new Map(MATCHSLOP_PERSONA_EXAMPLES.map((example) => [example.id, example]));
   return ids
-    .map((id) => byId.get(id))
+    .map((id) => PERSONA_EXAMPLES_BY_ID.get(id))
     .filter((example): example is (typeof MATCHSLOP_PERSONA_EXAMPLES)[number] => example != null);
-}
-
-export function resolvePlayerExamples(ids: string[]) {
-  if (ids.length === 0) return selectPlayerExamples();
-  const byId = new Map(MATCHSLOP_PLAYER_EXAMPLES.map((example) => [example.id, example]));
-  return ids
-    .map((id) => byId.get(id))
-    .filter((example): example is (typeof MATCHSLOP_PLAYER_EXAMPLES)[number] => example != null);
 }
 
 export function buildRoundPromptText(

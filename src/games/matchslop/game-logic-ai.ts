@@ -8,7 +8,7 @@ import { generateAiFollowup, generateAiFunnyVote, generateAiOpener } from "./ai"
 import {
   buildVoteContext,
   parseModeState,
-  resolvePlayerExamples,
+  selectPlayerExamples,
 } from "./game-logic-core";
 import {
   checkAllResponsesIn,
@@ -93,7 +93,10 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
   const modeState = parseModeState(game.modeState);
   const profile = modeState.profile;
   if (!profile) return;
-  const playerExamples = resolvePlayerExamples(modeState.selectedPlayerExampleIds);
+  const playerExamples =
+    modeState.selectedPlayerExamples.length > 0
+      ? modeState.selectedPlayerExamples
+      : selectPlayerExamples();
   const context = buildVoteContext(profile, modeState.transcript, prompt.text);
 
   const existingResponders = new Set(prompt.responses.map((response) => response.playerId));

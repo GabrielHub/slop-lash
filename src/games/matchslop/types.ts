@@ -1,5 +1,3 @@
-import type { MatchSlopPersonaImageState } from "./config/persona-image";
-
 export type MatchSlopIdentity = "MAN" | "WOMAN" | "NON_BINARY" | "OTHER";
 export type MatchSlopOutcome =
   | "IN_PROGRESS"
@@ -8,19 +6,40 @@ export type MatchSlopOutcome =
   | "TURN_LIMIT";
 export type MatchSlopDecision = "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
 
+export type MatchSlopPersonaImageStatus =
+  | "NOT_REQUESTED"
+  | "PENDING"
+  | "READY"
+  | "FAILED";
+
+export interface MatchSlopPersonaImageState {
+  status: MatchSlopPersonaImageStatus;
+  imageUrl: string | null;
+  updatedAt: string;
+}
+
 export interface MatchSlopProfilePrompt {
   id: string;
   prompt: string;
   answer: string;
 }
 
+export interface MatchSlopPersonaDetails {
+  job: string | null;
+  school: string | null;
+  height: string | null;
+  languages: string[];
+}
+
 export interface MatchSlopProfile {
   displayName: string;
+  backstory: string | null;
   age: number | null;
   location: string | null;
   bio: string;
   tagline: string | null;
   prompts: MatchSlopProfilePrompt[];
+  details: MatchSlopPersonaDetails | null;
 }
 
 export interface MatchSlopTranscriptEntry {
@@ -51,7 +70,7 @@ export interface MatchSlopModeState {
   humanVoteWeight: number;
   aiVoteWeight: number;
   selectedPersonaExampleIds: string[];
-  selectedPlayerExampleIds: string[];
+  selectedPlayerExamples: string[];
   transcript: MatchSlopTranscriptEntry[];
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState;

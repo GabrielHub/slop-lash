@@ -10,7 +10,6 @@ import {
   type AiUsage,
 } from "@/games/ai-chat-showdown/ai";
 import type { MatchSlopPersonaSeed } from "./config/persona-examples";
-import type { MatchSlopPlayerExample } from "./config/player-examples";
 import type {
   MatchSlopDecision,
   MatchSlopIdentity,
@@ -53,13 +52,22 @@ const profilePromptSchema = z.object({
   answer: z.string(),
 });
 
+const detailsSchema = z.object({
+  job: z.string().nullable(),
+  school: z.string().nullable(),
+  height: z.string().nullable(),
+  languages: z.array(z.string()),
+});
+
 const profileSchema = z.object({
   displayName: z.string(),
+  backstory: z.string(),
   age: z.number().int().nullable(),
   location: z.string().nullable(),
   bio: z.string(),
   tagline: z.string().nullable(),
   prompts: z.array(profilePromptSchema).length(3),
+  details: detailsSchema,
 });
 
 export async function generatePersonaProfile(
@@ -71,8 +79,11 @@ export async function generatePersonaProfile(
   const examplesXml = personaExamples
     .map(
       (example) => `<example id="${escapeXml(example.id)}">
+<backstory>${escapeXml(example.backstory)}</backstory>
+<name>${escapeXml(example.name)}</name>
 <title>${escapeXml(example.title)}</title>
 <bio>${escapeXml(example.bio)}</bio>
+<details job="${escapeXml(example.details.job ?? "")}" school="${escapeXml(example.details.school ?? "")}" height="${escapeXml(example.details.height ?? "")}" languages="${escapeXml(example.details.languages.join(", "))}" />
 <promptExamples>${escapeXml(example.promptExamples.join(" | "))}</promptExamples>
 <toneTags>${escapeXml(example.toneTags.join(", "))}</toneTags>
 <redFlags>${escapeXml(example.redFlags.join(", "))}</redFlags>
@@ -85,15 +96,17 @@ export async function generatePersonaProfile(
     model: gateway(modelId),
     system: `You create fake dating-app personas for a party game called MatchSlop.
 
-Create one text-only dating persona. The vibe should be chaotic but still plausible enough that humans can riff on it.
+Create one dating persona with a rich backstory. Start with the backstory (3-5 sentences defining who this person really is — personality, contradictions, specific obsessions, how they talk). Then derive everything else from that backstory.
 
 Rules:
 - The persona is a ${identityLabel(personaIdentity)}
 - The players are collectively roleplaying as a ${identityLabel(seekerIdentity)} trying to match with this persona
 - Keep the persona playful, specific, and a little cursed
 - Do not produce hateful or sexual content
-- Write exactly 3 dating-app prompts with short existing answers
-- Keep the bio under 220 characters`,
+- Write exactly 3 dating-app prompts with short, punchy answers
+- Keep the bio under 220 characters
+- Include profile details: job, height, and languages (at least 1). school is optional (null if omitted)
+- The backstory drives the persona's voice in multi-round conversations — make it specific enough to sustain a character`,
     prompt: `<persona-seeds>${examplesXml}</persona-seeds>`,
     output: Output.object({
       schema: profileSchema,
@@ -117,7 +130,7 @@ const openerSchema = z.object({
 export async function generateAiOpener(
   modelId: string,
   profile: MatchSlopProfile,
-  examples: MatchSlopPlayerExample[],
+  examples: string[],
 ): Promise<{
   selectedPromptId: string | null;
   text: string;
@@ -130,26 +143,29 @@ export async function generateAiOpener(
         `<prompt id="${escapeXml(prompt.id)}"><question>${escapeXml(prompt.prompt)}</question><answer>${escapeXml(prompt.answer)}</answer></prompt>`,
     )
     .join("\n");
-  const examplesXml = examples
-    .map(
-      (example) =>
-        `<example><situation>${escapeXml(example.situation)}</situation><line>${escapeXml(example.winningLine)}</line><style>${escapeXml(example.styleTags.join(", "))}</style><notes>${escapeXml(example.notes)}</notes></example>`,
-    )
-    .join("\n");
+  const examplesList = examples.map((e) => `- ${escapeXml(e)}`).join("\n");
 
   try {
     const result = await generateText({
       model: gateway(modelId),
-      system: `You are an AI teammate in MatchSlop. You are not trying to genuinely charm the match.
-You are trying to write the funniest possible opener at this exact moment.
+      system: `You are an AI player in MatchSlop, a party game where players compete to write the funniest dating-app opener. Players vote on the funniest line — not the most charming or romantic. You win by being the one everyone wishes they'd written.
 
-Rules:
-- Pick one profile prompt to answer
-- Be surprising, concise, and a little unhinged
-- Keep the line under 120 characters
-- Do not explain yourself
-- Avoid sincere relationship advice energy`,
-      prompt: `<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio>${promptsXml}</profile>\n<examples>${examplesXml}</examples>`,
+Pick one profile prompt to answer, then write a single line.
+
+Constraints:
+- Under 300 characters — short punchy one-liners and longer unhinged monologues are both great
+- Be specific and absurd over generic and clever
+- Reference something concrete from the profile when possible
+
+Avoid:
+- Sincere compliments or genuine flirting
+- Generic pickup lines or puns
+- Anything that sounds like actual dating advice
+- Being edgy for shock value — the humor should be weird, not mean
+
+Example lines (tone reference only — do not copy these):
+${examplesList}`,
+      prompt: `<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio>${promptsXml}</profile>`,
       output: Output.object({
         schema: openerSchema,
         name: "matchslop_ai_opener",
@@ -189,26 +205,32 @@ const followupSchema = z.object({
 export async function generateAiFollowup(
   modelId: string,
   context: string,
-  examples: MatchSlopPlayerExample[],
+  examples: string[],
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
-  const examplesXml = examples
-    .map(
-      (example) =>
-        `<example><situation>${escapeXml(example.situation)}</situation><line>${escapeXml(example.winningLine)}</line><style>${escapeXml(example.styleTags.join(", "))}</style><notes>${escapeXml(example.notes)}</notes></example>`,
-    )
-    .join("\n");
+  const examplesList = examples.map((e) => `- ${escapeXml(e)}`).join("\n");
 
   try {
     const result = await generateText({
       model: gateway(modelId),
-      system: `You are an AI teammate in MatchSlop. Continue the conversation with the funniest possible single message.
+      system: `You are an AI player in MatchSlop, a party game where players compete to write the funniest dating-app messages. Players vote on who makes the room laugh — charm is irrelevant, comedy is everything.
 
-Rules:
+Write the single funniest next message in this conversation.
+
+Constraints:
+- Under 300 characters — a quick escalation or a full committed bit, either works
 - One message only
-- Under 120 characters
-- Escalate the bit instead of restarting the conversation
-- Be funny first, strategic second`,
-      prompt: `<conversation-context>${escapeXml(context)}</conversation-context>\n<examples>${examplesXml}</examples>`,
+- Escalate or build on what's already happening — do not restart the conversation or change the subject
+- Be specific and committed to the bit
+
+Avoid:
+- Sincere or wholesome pivots
+- Restating what was already said
+- Generic humor that could work in any conversation
+- Being mean-spirited — weird and absurd beats edgy
+
+Example lines (tone reference only — do not copy these):
+${examplesList}`,
+      prompt: `<conversation-context>${escapeXml(context)}</conversation-context>`,
       output: Output.object({
         schema: followupSchema,
         name: "matchslop_ai_followup",
@@ -284,7 +306,7 @@ Rules:
 - DATE_SEALED means the conversation genuinely landed
 - UNMATCHED means the players flopped or got too weird
 - CONTINUE means there is enough spark for one more exchange`,
-    prompt: `<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio><tagline>${escapeXml(profile.tagline ?? "")}</tagline></profile>\n<transcript>${transcriptXml}</transcript>`,
+    prompt: `<profile><name>${escapeXml(profile.displayName)}</name>${profile.backstory ? `<backstory>${escapeXml(profile.backstory)}</backstory>` : ""}<bio>${escapeXml(profile.bio)}</bio><tagline>${escapeXml(profile.tagline ?? "")}</tagline></profile>\n<transcript>${transcriptXml}</transcript>`,
     output: Output.object({
       schema: personaReplySchema,
       name: "matchslop_persona_reply",

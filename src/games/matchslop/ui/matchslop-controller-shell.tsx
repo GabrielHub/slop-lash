@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
@@ -11,7 +12,7 @@ import { PulsingDot } from "@/components/pulsing-dot";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import type { MatchSlopProfilePromptOption } from "@/lib/controller-types";
+import type { MatchSlopProfilePromptOption, MatchSlopProfileState } from "@/lib/controller-types";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -103,6 +104,146 @@ function ProfilePromptCard({
   );
 }
 
+function ProfileBottomSheet({
+  profile,
+  seekerIdentity,
+  personaIdentity,
+  open,
+  onClose,
+}: {
+  profile: MatchSlopProfileState;
+  seekerIdentity: string | null | undefined;
+  personaIdentity: string | null | undefined;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const details = profile.details;
+  const imageStatus = profile.image?.status ?? "NOT_REQUESTED";
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.div
+            className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl"
+            style={{
+              background: "var(--color-surface, #fff)",
+              borderTop: "1px solid var(--color-edge, #e5e5e5)",
+            }}
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-edge-strong" />
+            </div>
+
+            {/* Profile image */}
+            <div className="relative mx-4 overflow-hidden rounded-2xl" style={{ aspectRatio: "4/3" }}>
+              {imageStatus === "READY" && profile.image?.imageUrl ? (
+                <div
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url(${profile.image.imageUrl})` }}
+                />
+              ) : (
+                <div
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{ background: "linear-gradient(135deg, #F06292 0%, #B388FF 50%, #FF8A65 100%)", opacity: 0.2 }}
+                >
+                  <span className="text-4xl">💕</span>
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 h-1/2" style={{ background: "linear-gradient(to top, var(--color-surface, #fff), transparent)" }} />
+              <div className="absolute inset-x-0 bottom-0 p-4">
+                <h2 className="font-display text-2xl font-bold text-ink">{profile.displayName}</h2>
+                <div className="mt-0.5 flex items-center gap-2 text-sm text-ink-dim">
+                  {profile.age && <span>{profile.age}</span>}
+                  {profile.location && (
+                    <>
+                      <span className="text-edge-strong">·</span>
+                      <span>{profile.location}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Identity + detail badges */}
+            <div className="px-4 pb-2 pt-3">
+              <div className="flex flex-wrap gap-1.5">
+                <span className="rounded-full bg-punch/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-punch">
+                  {identityLabel(seekerIdentity)} seeking {identityLabel(personaIdentity)}
+                </span>
+                {details?.job && (
+                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
+                    💼 {details.job}
+                  </span>
+                )}
+                {details?.school && (
+                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
+                    🎓 {details.school}
+                  </span>
+                )}
+                {details?.height && (
+                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
+                    📏 {details.height}
+                  </span>
+                )}
+                {details?.languages && details.languages.length > 0 && (
+                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
+                    💬 {details.languages.join(", ")}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Bio */}
+            <div className="border-t border-edge px-4 py-3">
+              {profile.tagline && (
+                <p className="mb-1.5 font-display text-sm font-semibold italic text-punch">
+                  &ldquo;{profile.tagline}&rdquo;
+                </p>
+              )}
+              <p className="text-sm leading-relaxed text-ink">{profile.bio}</p>
+            </div>
+
+            {/* Prompt cards */}
+            {profile.prompts.length > 0 && (
+              <div className="space-y-2 px-4 py-3">
+                {profile.prompts.slice(0, 3).map((prompt) => (
+                  <div
+                    key={prompt.id}
+                    className="rounded-xl border border-edge bg-raised/50 p-3"
+                  >
+                    <p className="text-xs font-semibold text-punch">{prompt.prompt}</p>
+                    {prompt.answer && (
+                      <p className="mt-0.5 text-sm leading-relaxed text-ink">{prompt.answer}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Bottom padding for safe area */}
+            <div className="h-8" />
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+}
+
 export function MatchSlopControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
@@ -118,6 +259,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const [hostActionBusy, setHostActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
   const rejoinAttempted = useRef(false);
   const phaseKeyRef = useRef("");
 
@@ -184,8 +326,10 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const activePlayerCount = gameState?.players.filter((p) => p.type !== "SPECTATOR").length ?? 0;
   const matchslop = gameState?.matchslop ?? null;
   const promptOptions = matchslop?.writing?.openerOptions ?? [];
-  const openerPromptById = new Map(
-    (matchslop?.profile?.prompts ?? []).map((prompt) => [prompt.id, prompt.prompt]),
+  const prompts = matchslop?.profile?.prompts;
+  const openerPromptById = useMemo(
+    () => new Map((prompts ?? []).map((prompt) => [prompt.id, prompt.prompt])),
+    [prompts],
   );
   const firstPromptOptionId = promptOptions[0]?.id ?? null;
   const currentVotePrompt = gameState?.voting?.currentPrompt ?? null;
@@ -200,7 +344,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
     }
   }, [firstPromptOptionId, selectedPromptId]);
 
-  async function postHostAction(path: "start" | "next" | "end") {
+  async function postHostAction(path: "start" | "next") {
     const hostToken = localStorage.getItem("hostControlToken");
     if (!playerId && !hostToken) return;
     setHostActionBusy(true);
@@ -355,16 +499,41 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-edge bg-surface/70 p-4">
-              <p className="text-xs uppercase tracking-wider text-ink-dim mb-2">
-                Persona
-              </p>
-              <p className="font-display text-lg font-bold text-ink">
-                {matchslop?.profile?.displayName ?? "Waiting for persona"}
-              </p>
-              <p className="text-sm text-ink-dim mt-1">
-                {matchslop?.outcome ? outcomeLabel(matchslop.outcome) : "In progress"}
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-ink-dim mb-1">
+                    Persona
+                  </p>
+                  <p className="font-display text-lg font-bold text-ink">
+                    {matchslop?.profile?.displayName ?? "Waiting for persona"}
+                  </p>
+                  <p className="text-sm text-ink-dim mt-0.5">
+                    {matchslop?.outcome ? outcomeLabel(matchslop.outcome) : "In progress"}
+                  </p>
+                </div>
+                {matchslop?.profile && (
+                  <motion.button
+                    type="button"
+                    onClick={() => setProfileSheetOpen(true)}
+                    className="shrink-0 px-3 py-1.5 rounded-xl border border-edge bg-raised/80 text-xs font-semibold text-punch hover:bg-surface transition-colors cursor-pointer"
+                    {...buttonTap}
+                  >
+                    View Profile
+                  </motion.button>
+                )}
+              </div>
             </div>
+
+            {/* Profile bottom sheet */}
+            {matchslop?.profile && (
+              <ProfileBottomSheet
+                profile={matchslop.profile}
+                seekerIdentity={matchslop.seekerIdentity}
+                personaIdentity={matchslop.personaIdentity}
+                open={profileSheetOpen}
+                onClose={() => setProfileSheetOpen(false)}
+              />
+            )}
 
             <div className="rounded-2xl border border-edge bg-surface/70 p-4">
               <p className="text-xs uppercase tracking-wider text-ink-dim mb-2">
@@ -484,7 +653,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                         }
                       }}
                       placeholder="Type your funniest opener..."
-                      maxLength={100}
+                      maxLength={300}
                       className="w-full py-3.5 px-4 rounded-2xl bg-raised/80 border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
                     />
                     <motion.button

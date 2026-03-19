@@ -910,7 +910,7 @@ const BASE_MATCHSLOP_MODE_STATE = {
   humanVoteWeight: 2,
   aiVoteWeight: 1,
   selectedPersonaExampleIds: ["vinyl-doomprep", "tarot-coder"],
-  selectedPlayerExampleIds: ["museum-feral", "mall-mystic"],
+  selectedPlayerExamples: [],
   profile: MOCK_NORA_PROFILE,
   personaImage: { status: "PENDING", imageUrl: null },
   transcript: [] as Record<string, unknown>[],

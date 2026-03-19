@@ -9,7 +9,6 @@ import {
   getActivePlayerIds,
   parseModeState,
   resolvePersonaExamples,
-  resolvePlayerExamples,
   selectPersonaExamples,
   selectPlayerExamples,
 } from "./game-logic-core";
@@ -81,10 +80,10 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
   const sampledPersonaExamples =
     modeState.selectedPersonaExampleIds.length > 0
       ? resolvePersonaExamples(modeState.selectedPersonaExampleIds)
-      : selectPersonaExamples();
+      : selectPersonaExamples(modeState.personaIdentity);
   const sampledPlayerExamples =
-    modeState.selectedPlayerExampleIds.length > 0
-      ? resolvePlayerExamples(modeState.selectedPlayerExampleIds)
+    modeState.selectedPlayerExamples.length > 0
+      ? modeState.selectedPlayerExamples
       : selectPlayerExamples();
 
   const { profile, usage } = await generatePersonaProfile(
@@ -102,7 +101,7 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
       modeState: toJson({
         ...modeState,
         selectedPersonaExampleIds: sampledPersonaExamples.map((example) => example.id),
-        selectedPlayerExampleIds: sampledPlayerExamples.map((example) => example.id),
+        selectedPlayerExamples: sampledPlayerExamples,
         profile,
         transcript: [],
         lastRoundResult: null,

@@ -24,6 +24,13 @@ export interface MatchSlopPersonaImageState {
   imageUrl: string | null;
 }
 
+export interface MatchSlopPersonaDetailsState {
+  job: string | null;
+  school: string | null;
+  height: string | null;
+  languages: string[];
+}
+
 export interface MatchSlopProfileState {
   displayName: string;
   age: number | null;
@@ -31,6 +38,7 @@ export interface MatchSlopProfileState {
   bio: string | null;
   tagline: string | null;
   prompts: MatchSlopProfilePromptOption[];
+  details: MatchSlopPersonaDetailsState | null;
   image: MatchSlopPersonaImageState;
 }
 

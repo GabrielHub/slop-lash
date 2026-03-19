@@ -38,6 +38,13 @@ type MatchSlopProfilePrompt = {
   answer?: string;
 };
 
+type MatchSlopPersonaDetails = {
+  job?: string | null;
+  school?: string | null;
+  height?: string | null;
+  languages?: string[];
+};
+
 type MatchSlopProfile = {
   displayName?: string;
   age?: number | null;
@@ -45,6 +52,7 @@ type MatchSlopProfile = {
   bio?: string | null;
   tagline?: string | null;
   prompts?: MatchSlopProfilePrompt[];
+  details?: MatchSlopPersonaDetails | null;
   image?: MatchSlopPersonaImageState | null;
 };
 
@@ -64,7 +72,7 @@ type MatchSlopModeState = {
   humanVoteWeight?: number;
   aiVoteWeight?: number;
   selectedPersonaExampleIds?: string[];
-  selectedPlayerExampleIds?: string[];
+  selectedPlayerExamples?: string[];
   profile?: MatchSlopProfile | null;
   transcript?: MatchSlopTranscriptEntry[];
   personaImage?: MatchSlopPersonaImageState | null;
@@ -339,7 +347,7 @@ function ProfileCard({
           {profile?.bio ?? "The persona profile is being generated..."}
         </p>
 
-        {/* Identity badges */}
+        {/* Identity + detail badges */}
         <div className="flex flex-wrap items-center gap-2 mt-4">
           <span
             className="text-[clamp(0.6rem,0.8vw,0.75rem)] font-bold uppercase tracking-wider px-3 py-1 rounded-full"
@@ -347,6 +355,30 @@ function ProfileCard({
           >
             {identityLabel(seekerIdentity)} seeking {identityLabel(personaIdentity)}
           </span>
+          {profile?.details?.job && (
+            <span
+              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+            >
+              {profile.details.job}
+            </span>
+          )}
+          {profile?.details?.height && (
+            <span
+              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+            >
+              {profile.details.height}
+            </span>
+          )}
+          {profile?.details?.languages && profile.details.languages.length > 0 && (
+            <span
+              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+            >
+              {profile.details.languages.join(", ")}
+            </span>
+          )}
         </div>
       </div>
 
@@ -489,7 +521,7 @@ function PhaseStatusCard({
   hostActionBusy: boolean;
   endingGame: boolean;
   triggerElement: (el: HTMLElement) => void;
-  postHostAction: (path: "start" | "next" | "end") => void;
+  postHostAction: (path: "start" | "next") => void;
   handleEndGame: () => void;
   canEndGame: boolean;
 }) {
@@ -838,7 +870,7 @@ export function MatchSlopGameShell({
 
   const profile = modeState.profile ?? null;
   const outcome = (modeState.outcome ?? "IN_PROGRESS") as Outcome;
-  const personaImage = modeState.personaImage ?? profile?.image ?? null;
+  const personaImage = modeState.personaImage ?? null;
   const isHost =
     playerId === gameState?.hostPlayerId ||
     (viewMode === "stage" && !!hostControlToken && gameState?.hostPlayerId == null);
@@ -848,7 +880,7 @@ export function MatchSlopGameShell({
       gameState?.status === "VOTING" ||
       gameState?.status === "ROUND_RESULTS");
 
-  async function postHostAction(path: "start" | "next" | "end") {
+  async function postHostAction(path: "start" | "next") {
     const token = localStorage.getItem("hostControlToken");
     if (!playerId && !token) return;
     setHostActionBusy(true);

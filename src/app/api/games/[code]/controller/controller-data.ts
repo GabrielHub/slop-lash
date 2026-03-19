@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import type { ControllerGameState } from "@/lib/controller-types";
 import { asRecord, asString, asNumber } from "@/lib/json-guards";
+import { parseDetails } from "@/games/matchslop/game-logic-core";
 
 function asPromptOptions(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -256,6 +257,7 @@ export async function findControllerPayload(roomCode: string, playerId: string |
             bio: asString(profile.bio),
             tagline: asString(profile.tagline),
             prompts: profilePrompts,
+            details: parseDetails(profile.details),
             image: {
               status: resolvedImageStatus,
               imageUrl: asString(image?.imageUrl),

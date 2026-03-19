@@ -15,3 +15,7 @@ export function asString(value: unknown): string | null {
 export function asNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
+
+export function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
