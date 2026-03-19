@@ -5,6 +5,7 @@ import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -76,7 +77,11 @@ export async function POST(
     logGameEvent("started", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
       players: activePlayers.length,
     });
-    after(() => def.handlers.generateAiResponses(game.id));
+    await publishGameStateEvent(game.id);
+    after(async () => {
+      await def.handlers.generateAiResponses(game.id);
+      await publishGameStateEvent(game.id);
+    });
   }
 
   return NextResponse.json({ success: true });

@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { MockEventSource } from "./mock-event-source";
 import { ChatGameShell } from "@/games/ai-chat-showdown/ui/chat-game-shell";
 import type { GameState, GameResponse } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
@@ -75,6 +76,18 @@ interface MockChatMsg {
   createdAt: string;
 }
 
+type MockChatCursor = {
+  createdAt: string;
+  id: string;
+};
+
+function compareChatCursor(a: MockChatCursor, b: MockChatCursor): number {
+  const aTime = new Date(a.createdAt).getTime();
+  const bTime = new Date(b.createdAt).getTime();
+  if (aTime !== bTime) return aTime - bTime;
+  return a.id.localeCompare(b.id);
+}
+
 function initialChatMessages(game: GameState): MockChatMsg[] {
   if (game.status === "LOBBY") return [];
   const now = Date.now();
@@ -113,6 +126,13 @@ export function MockChatGameShell({
   const chatMsgsRef = useRef<MockChatMsg[]>(initialChatMessages(scenario.game));
   const gameRef = useRef<GameState>(game);
   const chatFailRef = useRef(chatFailMode);
+  const stateStreamsRef = useRef(new Set<MockEventSource>());
+  const chatStreamsRef = useRef(
+    new Set<{
+      stream: MockEventSource;
+      cursor: MockChatCursor | null;
+    }>(),
+  );
 
   useEffect(() => {
     gameRef.current = game;
@@ -122,6 +142,23 @@ export function MockChatGameShell({
   }, [chatFailMode]);
 
   useEffect(() => {
+    for (const stream of stateStreamsRef.current) {
+      stream.emit("state", game);
+      if (game.status === "FINAL_RESULTS") {
+        stream.emit("done", {});
+        stream.close();
+      }
+    }
+
+    if (game.status === "FINAL_RESULTS") {
+      for (const entry of chatStreamsRef.current) {
+        entry.stream.emit("done", {});
+        entry.stream.close();
+      }
+    }
+  }, [game]);
+
+  useEffect(() => {
     if (!playerId) return;
     const player = game.players.find((p) => p.id === playerId);
     if (!player) return;
@@ -129,12 +166,28 @@ export function MockChatGameShell({
     localStorage.setItem("playerName", player.name);
   }, [game.players, playerId]);
 
-  // useLayoutEffect ensures the fetch mock is in place BEFORE any child
-  // useEffect (e.g. ChatGameShell's poller) fires. React runs child effects
-  // before parent effects, so a regular useEffect would race with the poller
-  // and the first poll would hit the real API → 404 → "Game not found".
+  // useLayoutEffect ensures the mocked fetch/EventSource transports are in
+  // place before child effects connect to the local fixture endpoints.
   useLayoutEffect(() => {
     const originalFetch = window.fetch.bind(window);
+    const OriginalEventSource = window.EventSource;
+    const stateStreams = stateStreamsRef.current;
+    const chatStreams = chatStreamsRef.current;
+
+    function emitChatMessage(message: MockChatMsg) {
+      for (const entry of chatStreams) {
+        const nextCursor = { createdAt: message.createdAt, id: message.id };
+        if (entry.cursor && compareChatCursor(entry.cursor, nextCursor) >= 0) {
+          continue;
+        }
+        entry.cursor = nextCursor;
+        entry.stream.emit("message", {
+          ...message,
+          replyToId: null,
+          clientId: null,
+        });
+      }
+    }
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = parseUrl(input);
@@ -193,6 +246,7 @@ export function MockChatGameShell({
             createdAt: new Date().toISOString(),
           };
           chatMsgsRef.current = [...chatMsgsRef.current, msg];
+          emitChatMessage(msg);
           return jsonResponse({ id: msg.id, createdAt: msg.createdAt });
         }
       }
@@ -434,8 +488,81 @@ export function MockChatGameShell({
       return originalFetch(input as RequestInfo, init);
     };
 
+    window.EventSource = class extends MockEventSource {
+      constructor(url: string | URL) {
+        super(url);
+
+        queueMicrotask(() => {
+          if (this.readyState === MockEventSource.CLOSED) return;
+
+          const parsed = new URL(this.url);
+          if (parsed.pathname === `/api/games/${mockCode}/stream`) {
+            stateStreams.add(this);
+            this.setCleanup(() => {
+              stateStreams.delete(this);
+            });
+            this.open();
+
+            const currentGame = gameRef.current;
+            this.emit("state", currentGame);
+            if (currentGame.status === "FINAL_RESULTS") {
+              this.emit("done", {});
+              this.close();
+            }
+            return;
+          }
+
+          if (parsed.pathname === `/api/games/${mockCode}/chat/stream`) {
+            const after = parsed.searchParams.get("after");
+            const afterId = parsed.searchParams.get("afterId");
+            const cursor =
+              after && afterId
+                ? { createdAt: after, id: afterId }
+                : null;
+            const entry = { stream: this, cursor };
+            chatStreams.add(entry);
+            this.setCleanup(() => {
+              chatStreams.delete(entry);
+            });
+            this.open();
+
+            const backlog = chatMsgsRef.current.filter((message) => {
+              if (!entry.cursor) return true;
+              return compareChatCursor(entry.cursor, message) < 0;
+            });
+
+            for (const message of backlog) {
+              entry.cursor = { createdAt: message.createdAt, id: message.id };
+              this.emit("message", {
+                ...message,
+                replyToId: null,
+                clientId: null,
+              });
+            }
+
+            if (gameRef.current.status === "FINAL_RESULTS") {
+              this.emit("done", {});
+              this.close();
+            }
+            return;
+          }
+
+          this.fail();
+        });
+      }
+    } as typeof EventSource;
+
     return () => {
       window.fetch = originalFetch;
+      window.EventSource = OriginalEventSource;
+      for (const stream of stateStreams) {
+        stream.close();
+      }
+      stateStreams.clear();
+      for (const entry of chatStreams) {
+        entry.stream.close();
+      }
+      chatStreams.clear();
     };
   }, [mockCode, playerId]);
 

@@ -78,7 +78,7 @@ import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggr
 import { POST as createPOST } from "@/app/api/games/create/route";
 import { POST as joinPOST } from "@/app/api/games/[code]/join/route";
 import { POST as votePOST } from "@/app/api/games/[code]/vote/route";
-import { GET as controllerGET } from "@/app/api/games/[code]/controller/route";
+import { findControllerPayload } from "@/app/api/games/[code]/controller/controller-data";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -622,65 +622,51 @@ describe("AI_CHAT_SHOWDOWN controller voting payload", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns all voting responses (not just first two)", async () => {
-    db.game.findUnique
-      .mockResolvedValueOnce({
-        id: "g1",
-        gameType: "AI_CHAT_SHOWDOWN",
-        status: "VOTING",
-        version: 7,
-        phaseDeadline: null,
-        hostPlayerId: "host1",
-        hostControlLastSeen: null,
-      } as never)
-      .mockResolvedValueOnce({
-        id: "g1",
-        roomCode: "TEST",
-        gameType: "AI_CHAT_SHOWDOWN",
-        status: "VOTING",
-        currentRound: 1,
-        totalRounds: 3,
-        hostPlayerId: "host1",
-        phaseDeadline: null,
-        timersDisabled: false,
-        votingPromptIndex: 0,
-        votingRevealing: false,
-        nextGameCode: null,
-        version: 7,
-        players: [
-          { id: "p1", name: "A", type: "HUMAN", participationStatus: "ACTIVE" },
-          { id: "p2", name: "B", type: "HUMAN", participationStatus: "ACTIVE" },
-          { id: "p3", name: "C", type: "HUMAN", participationStatus: "ACTIVE" },
-          { id: "p4", name: "D", type: "HUMAN", participationStatus: "ACTIVE" },
-        ],
-        rounds: [
-          {
-            roundNumber: 1,
-            prompts: [
-              {
-                id: "prompt1",
-                text: "Prompt",
-                assignments: [{ playerId: "p1" }, { playerId: "p2" }, { playerId: "p3" }, { playerId: "p4" }],
-                responses: [
-                  { id: "r1", playerId: "p1", text: "one" },
-                  { id: "r2", playerId: "p2", text: "two" },
-                  { id: "r3", playerId: "p3", text: "three" },
-                  { id: "r4", playerId: "p4", text: "four" },
-                ],
-                votes: [],
-              },
-            ],
-          },
-        ],
-      } as never);
+    db.game.findUnique.mockResolvedValue({
+      id: "g1",
+      roomCode: "TEST",
+      gameType: "AI_CHAT_SHOWDOWN",
+      status: "VOTING",
+      currentRound: 1,
+      totalRounds: 3,
+      hostPlayerId: "host1",
+      phaseDeadline: null,
+      timersDisabled: false,
+      votingPromptIndex: 0,
+      votingRevealing: false,
+      nextGameCode: null,
+      version: 7,
+      players: [
+        { id: "p1", name: "A", type: "HUMAN", participationStatus: "ACTIVE" },
+        { id: "p2", name: "B", type: "HUMAN", participationStatus: "ACTIVE" },
+        { id: "p3", name: "C", type: "HUMAN", participationStatus: "ACTIVE" },
+        { id: "p4", name: "D", type: "HUMAN", participationStatus: "ACTIVE" },
+      ],
+      rounds: [
+        {
+          roundNumber: 1,
+          prompts: [
+            {
+              id: "prompt1",
+              text: "Prompt",
+              assignments: [{ playerId: "p1" }, { playerId: "p2" }, { playerId: "p3" }, { playerId: "p4" }],
+              responses: [
+                { id: "r1", playerId: "p1", text: "one" },
+                { id: "r2", playerId: "p2", text: "two" },
+                { id: "r3", playerId: "p3", text: "three" },
+                { id: "r4", playerId: "p4", text: "four" },
+              ],
+              votes: [],
+            },
+          ],
+        },
+      ],
+    } as never);
 
-    const res = await controllerGET(
-      new Request("http://test/api/games/TEST/controller?playerId=p1"),
-      routeParams(),
-    );
-    const { status, body } = await readJson(res);
+    const body = await findControllerPayload("TEST", "p1");
 
-    expect(status).toBe(200);
-    const voting = body.voting as { currentPrompt: { responses: Array<{ id: string; text: string }> } };
+    expect(body).not.toBeNull();
+    const voting = body?.voting as { currentPrompt: { responses: Array<{ id: string; text: string }> } };
     expect(voting.currentPrompt.responses.map((r) => r.id)).toEqual([
       "r1",
       "r2",

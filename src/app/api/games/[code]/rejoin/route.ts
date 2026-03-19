@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { parseJsonBody } from "@/lib/http";
 import { restorePlayer } from "@/games/core/disconnect";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -39,6 +40,7 @@ export async function POST(
 
   if (player.participationStatus === "DISCONNECTED") {
     await restorePlayer(game.id, game.gameType, roomCode, player.id);
+    await publishGameStateEvent(game.id);
   } else {
     await prisma.player.update({
       where: { id: player.id },

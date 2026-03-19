@@ -7,6 +7,7 @@ import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggr
 import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -53,6 +54,7 @@ export async function POST(
   logGameEvent("ended", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
     fromStatus: game.status,
   });
+  await publishGameStateEvent(game.id);
   if (def.capabilities.retainsCompletedData) {
     after(() => applyCompletedGameToLeaderboardAggregate(game.id));
     revalidateTag(LEADERBOARD_TAG, { expire: 0 });

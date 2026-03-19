@@ -5,6 +5,7 @@ import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -107,6 +108,11 @@ export async function POST(
       await tx.response.create({
         data: { promptId: validPromptId, playerId: validPlayerId, text: trimmed },
       });
+
+      await tx.game.update({
+        where: { id: game.id },
+        data: { version: { increment: 1 } },
+      });
     });
   } catch (e) {
     if (e instanceof Error && e.message === "ALREADY_RESPONDED") {
@@ -123,13 +129,16 @@ export async function POST(
   logGameEvent("responded", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
     playerId: validPlayerId,
   });
+  await publishGameStateEvent(game.id);
 
   after(async () => {
     const allIn = await def.handlers.checkAllResponsesIn(game.id);
     if (allIn) {
       const claimed = await def.handlers.startVoting(game.id);
       if (claimed) {
+        await publishGameStateEvent(game.id);
         await def.handlers.generateAiVotes(game.id);
+        await publishGameStateEvent(game.id);
       }
     }
   });

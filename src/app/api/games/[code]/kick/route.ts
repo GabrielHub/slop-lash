@@ -5,6 +5,7 @@ import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { disconnectPlayer } from "@/games/core/disconnect";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -92,6 +93,7 @@ export async function POST(
       targetPlayerId,
       action: "deleted",
     });
+    await publishGameStateEvent(game.id);
     return NextResponse.json({ success: true });
   }
 
@@ -103,6 +105,7 @@ export async function POST(
         { status: 400 }
       );
     }
+    await publishGameStateEvent(game.id);
     return NextResponse.json({ success: true });
   }
 

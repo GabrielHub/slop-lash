@@ -395,15 +395,23 @@ describe("checkAllVotesForCurrentPrompt", () => {
 // ===========================================================================
 
 describe("checkAndDisconnectInactivePlayers", () => {
-  it("skips non-AI_CHAT_SHOWDOWN games", async () => {
+  it("disconnects stale human players for non-AI_CHAT_SHOWDOWN without quorum re-checks", async () => {
+    db.player.findMany.mockResolvedValue([
+      { id: "p1", name: "Alpha" },
+      { id: "p2", name: "Bravo" },
+    ]);
+    db.player.updateMany.mockResolvedValue({ count: 2 });
+    db.game.update.mockResolvedValue({});
+
     const result = await checkAndDisconnectInactivePlayers(
       "game1",
       "SLOPLASH",
       "TEST",
     );
 
-    expect(result).toEqual([]);
-    expect(db.player.findMany).not.toHaveBeenCalled();
+    expect(result).toEqual(["p1", "p2"]);
+    expect(db.player.findMany).toHaveBeenCalledTimes(1);
+    expect(db.game.findUnique).not.toHaveBeenCalled();
   });
 
   it("disconnects stale human players for AI_CHAT_SHOWDOWN", async () => {

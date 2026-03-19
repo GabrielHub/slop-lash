@@ -64,12 +64,13 @@ describe("post reconciliation helpers", () => {
   });
 });
 
-describe("poll reconciliation", () => {
+describe("stream reconciliation", () => {
   it("matches pending local messages to server messages by playerId+content", () => {
     const local = [createPendingMessage("p1", "same text", "c1", "2026-02-27T12:00:00Z")];
     const incoming: ServerChatMessage[] = [
       {
         id: "s1",
+        clientId: null,
         playerId: "p1",
         content: "same text",
         replyToId: null,
@@ -95,6 +96,7 @@ describe("poll reconciliation", () => {
     const incoming: ServerChatMessage[] = [
       {
         id: "s1",
+        clientId: null,
         playerId: "p2",
         content: "remote",
         replyToId: null,
@@ -119,6 +121,7 @@ describe("poll reconciliation", () => {
     const incoming: ServerChatMessage[] = [
       {
         id: "s-early",
+        clientId: null,
         playerId: "p2",
         content: "early",
         replyToId: null,
@@ -126,6 +129,7 @@ describe("poll reconciliation", () => {
       },
       {
         id: "s-late",
+        clientId: null,
         playerId: "p3",
         content: "late",
         replyToId: null,
@@ -135,5 +139,27 @@ describe("poll reconciliation", () => {
 
     const { messages } = reconcileIncomingChatMessages(existing, incoming, new Set());
     expect(messages.map((m) => m.content)).toEqual(["early", "middle", "late"]);
+  });
+
+  it("prefers matching by clientId when the same text is sent twice", () => {
+    const existing = [
+      createPendingMessage("p1", "same text", "c1", "2026-02-27T12:00:00Z"),
+      createPendingMessage("p1", "same text", "c2", "2026-02-27T12:00:01Z"),
+    ];
+    const incoming: ServerChatMessage[] = [
+      {
+        id: "s2",
+        clientId: "c2",
+        playerId: "p1",
+        content: "same text",
+        replyToId: null,
+        createdAt: "2026-02-27T12:00:02Z",
+      },
+    ];
+
+    const { messages } = reconcileIncomingChatMessages(existing, incoming, new Set());
+    expect(messages.find((m) => m.clientId === "c1")?.status).toBe("pending");
+    expect(messages.find((m) => m.clientId === "c2")?.id).toBe("s2");
+    expect(messages.find((m) => m.clientId === "c2")?.status).toBe("confirmed");
   });
 });

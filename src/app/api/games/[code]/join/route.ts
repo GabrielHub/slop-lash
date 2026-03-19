@@ -5,6 +5,7 @@ import { getGameDefinition } from "@/games/registry";
 import { sanitize } from "@/lib/sanitize";
 import { parseJsonBody } from "@/lib/http";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 /** A player is considered stale (reclaimable) after 30 seconds of inactivity. */
 const STALE_THRESHOLD_MS = 30_000;
@@ -105,6 +106,7 @@ export async function POST(
       where: { id: game.id },
       data: { version: { increment: 1 } },
     });
+    await publishGameStateEvent(game.id);
 
     logGameEvent("joined", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
       playerId: existingPlayer.id,
@@ -174,6 +176,7 @@ export async function POST(
     where: { id: game.id },
     data: { version: { increment: 1 } },
   });
+  await publishGameStateEvent(game.id);
 
   logGameEvent("joined", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
     playerId: player.id,

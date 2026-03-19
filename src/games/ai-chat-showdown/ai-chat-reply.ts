@@ -2,6 +2,7 @@ import { generateText, createGateway } from "ai";
 import { prisma } from "@/lib/db";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { extractUsage, escapeXml, getLowReasoningProviderOptions } from "./ai";
+import { publishChatEvent } from "@/lib/realtime-events";
 
 const gateway = createGateway({
   apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
@@ -172,7 +173,7 @@ ${chatContext}
     const replyText = result.text.trim().replace(/^["']|["']$/g, "");
     if (!replyText) return;
 
-    await prisma.chatMessage.create({
+    const persistedMessage = await prisma.chatMessage.create({
       data: {
         gameId,
         playerId: replier.id,
@@ -180,6 +181,12 @@ ${chatContext}
         content: replyText.slice(0, 200),
         replyToId: triggerMessageId,
       },
+      select: { id: true, createdAt: true },
+    });
+    await publishChatEvent(gameId, {
+      clientId: null,
+      messageId: persistedMessage.id,
+      createdAt: persistedMessage.createdAt.toISOString(),
     });
 
     // Only count after successful DB write

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, startTransition } from "react
 import type { GameState } from "@/lib/types";
 
 /**
- * SSE-based game state hook. Replaces useGamePoller when NEXT_PUBLIC_USE_SSE=1.
+ * SSE-based game state hook.
  *
  * Connects to GET /api/games/[code]/stream and listens for:
  *   - `state`  – full game state payload
@@ -26,7 +26,6 @@ export function useGameStream(
   const retriesRef = useRef(0);
 
   useEffect(() => {
-    // Guard: don't connect when code is empty (hook is inactive)
     if (!code) return;
 
     let cancelled = false;

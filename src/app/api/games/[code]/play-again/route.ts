@@ -7,6 +7,7 @@ import { deleteTransientGameData } from "@/games/core/cleanup";
 import { parseJsonBody } from "@/lib/http";
 import { selectUniqueModelsByProvider } from "@/lib/models";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 const PLAY_AGAIN_ALREADY_CREATED = "PLAY_AGAIN_ALREADY_CREATED";
 
@@ -249,6 +250,8 @@ export async function POST(
   if (!def.capabilities.retainsCompletedData) {
     after(() => deleteTransientGameData(game.id));
   }
+
+  await publishGameStateEvent(game.id);
 
   return NextResponse.json(createdResponse);
 }

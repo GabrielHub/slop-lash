@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -192,11 +193,15 @@ export async function POST(
     voterId: validVoterId,
     abstain: !validResponseId,
   });
+  await publishGameStateEvent(game.id);
 
   after(async () => {
     const allIn = await def.handlers.checkAllVotesForCurrentPrompt(game.id);
     if (allIn) {
-      await def.handlers.revealCurrentPrompt(game.id);
+      const claimed = await def.handlers.revealCurrentPrompt(game.id);
+      if (claimed) {
+        await publishGameStateEvent(game.id);
+      }
     }
   });
 

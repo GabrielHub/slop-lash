@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
@@ -9,12 +9,9 @@ import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
-import type { ControllerGameState } from "@/lib/controller-types";
 import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
-
-const USE_SSE = process.env.NEXT_PUBLIC_USE_SSE === "1";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -22,102 +19,6 @@ function getPlayerId() {
 }
 
 const noopSubscribe = () => () => {};
-
-const POLL_FAST_MS = 2000;
-const POLL_SLOW_MS = 5000;
-const HEARTBEAT_TOUCH_MS = 15_000;
-const HEARTBEAT_TOUCH_LOBBY_MS = 10_000;
-
-function useControllerPoller(code: string, playerId: string | null) {
-  const [gameState, setGameState] = useState<ControllerGameState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const versionRef = useRef<number | null>(null);
-  const statusRef = useRef<string | null>(null);
-  const lastTouchAtRef = useRef(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    versionRef.current = null;
-    statusRef.current = null;
-    lastTouchAtRef.current = 0;
-
-    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    function getPollDelay() {
-      const status = statusRef.current;
-      return status === "WRITING" || status === "VOTING" ? POLL_FAST_MS : POLL_SLOW_MS;
-    }
-
-    function getTouchInterval() {
-      return statusRef.current === "LOBBY" ? HEARTBEAT_TOUCH_LOBBY_MS : HEARTBEAT_TOUCH_MS;
-    }
-
-    async function poll() {
-      while (!cancelled) {
-        try {
-          const params = new URLSearchParams();
-          if (playerId) params.set("playerId", playerId);
-          if (versionRef.current != null) params.set("v", String(versionRef.current));
-          const shouldTouch =
-            !!playerId &&
-            statusRef.current !== "FINAL_RESULTS" &&
-            Date.now() - lastTouchAtRef.current >= getTouchInterval();
-          if (shouldTouch) params.set("touch", "1");
-
-          const headers: HeadersInit = {};
-          if (versionRef.current != null) {
-            headers["If-None-Match"] = `"${versionRef.current}"`;
-          }
-
-          const qs = params.toString();
-          const res = await fetch(`/api/games/${code}/controller${qs ? `?${qs}` : ""}`, {
-            headers,
-            cache: "no-store",
-          });
-          if (cancelled) return;
-
-          if (res.status === 304) {
-            if (shouldTouch) lastTouchAtRef.current = Date.now();
-            if (statusRef.current === "FINAL_RESULTS") return;
-            await sleep(getPollDelay());
-            continue;
-          }
-
-          if (!res.ok) {
-            if (res.status === 404) {
-              setError("Game not found");
-              return;
-            }
-            await sleep(2000);
-            continue;
-          }
-
-          if (shouldTouch) lastTouchAtRef.current = Date.now();
-
-          const data = (await res.json()) as ControllerGameState;
-          setGameState(data);
-          versionRef.current = data.version ?? null;
-          statusRef.current = data.status ?? null;
-          if (data.status === "FINAL_RESULTS") return;
-        } catch {
-          await sleep(2000);
-          continue;
-        }
-
-        await sleep(getPollDelay());
-      }
-    }
-
-    void poll();
-    return () => {
-      cancelled = true;
-    };
-  }, [code, playerId, refreshKey]);
-
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
-  return { gameState, error, refresh };
-}
 
 function ControllerHeader({
   roomCode,
@@ -146,9 +47,7 @@ export function ControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const pollerResult = useControllerPoller(code, playerId);
-  const streamResult = useControllerStream(USE_SSE ? code : "", USE_SSE ? playerId : null);
-  const { gameState, error, refresh } = USE_SSE ? streamResult : pollerResult;
+  const { gameState, error, refresh } = useControllerStream(code, playerId);
 
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(new Set());

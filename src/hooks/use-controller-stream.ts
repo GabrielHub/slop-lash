@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { ControllerGameState } from "@/lib/controller-types";
 
 /**
- * SSE-based controller state hook. Replaces useControllerPoller when NEXT_PUBLIC_USE_SSE=1.
+ * SSE-based controller state hook.
  *
  * Connects to GET /api/games/[code]/controller/stream and listens for:
  *   - `state`  – full controller game state payload
@@ -21,7 +21,6 @@ export function useControllerStream(code: string, playerId: string | null) {
   const retriesRef = useRef(0);
 
   useEffect(() => {
-    // Guard: don't connect when code is empty (hook is inactive)
     if (!code) return;
 
     let cancelled = false;

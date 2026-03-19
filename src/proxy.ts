@@ -33,7 +33,7 @@ function getRouteKey(pathname: string): string | null {
 const BOT_HTML = `<!DOCTYPE html><html><head><meta name="robots" content="noindex"></head><body></body></html>`;
 
 /** SSE stream routes are long-lived connections that don't need proxy overhead. */
-const SSE_STREAM_PATTERN = /^\/api\/games\/[^/]+\/(stream|controller\/stream)$/;
+const SSE_STREAM_PATTERN = /^\/api\/games\/[^/]+\/(stream|controller\/stream|chat\/stream)$/;
 
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;

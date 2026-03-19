@@ -4,92 +4,15 @@ import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
 import { generateAiChatReply } from "@/games/ai-chat-showdown/ai-chat-reply";
+import { publishChatEvent } from "@/lib/realtime-events";
 
 const MAX_CHAT_LENGTH = 200;
-const FETCH_LIMIT = 50;
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ code: string }> },
-) {
-  const { code } = await params;
-  const roomCode = code.toUpperCase();
-  const url = new URL(request.url);
-  const afterCursor = url.searchParams.get("after");
-  const afterId = url.searchParams.get("afterId");
-
-  const game = await prisma.game.findUnique({
-    where: { roomCode },
-    select: { id: true, gameType: true },
-  });
-
-  if (!game) {
-    return NextResponse.json({ error: "Game not found" }, { status: 404 });
-  }
-
-  if (game.gameType !== "AI_CHAT_SHOWDOWN") {
-    return NextResponse.json(
-      { error: "Chat not available for this game type" },
-      { status: 400 },
-    );
-  }
-
-  let where:
-    | {
-        gameId: string;
-        createdAt?: { gt: Date };
-      }
-    | {
-        gameId: string;
-        OR: Array<{ createdAt: { gt: Date } } | { createdAt: Date; id: { gt: string } }>;
-      } = { gameId: game.id };
-
-  if (afterCursor) {
-    const afterDate = new Date(afterCursor);
-    if (isNaN(afterDate.getTime())) {
-      return NextResponse.json(
-        { error: "Invalid 'after' timestamp" },
-        { status: 400 },
-      );
-    }
-    // Stable cursor when multiple rows share the same createdAt timestamp.
-    if (afterId) {
-      where = {
-        gameId: game.id,
-        OR: [
-          { createdAt: { gt: afterDate } },
-          { createdAt: afterDate, id: { gt: afterId } },
-        ],
-      };
-    } else {
-      where = { gameId: game.id, createdAt: { gt: afterDate } };
-    }
-  }
-
-  const messages = await prisma.chatMessage.findMany({
-    where,
-    select: {
-      id: true,
-      playerId: true,
-      content: true,
-      replyToId: true,
-      createdAt: true,
-    },
-    // Bootstrap with newest-first when no cursor, then normalize to ascending for clients.
-    orderBy: afterCursor
-      ? [{ createdAt: "asc" }, { id: "asc" }]
-      : [{ createdAt: "desc" }, { id: "desc" }],
-    take: FETCH_LIMIT,
-  });
-
-  const ordered = afterCursor ? messages : [...messages].reverse();
-
-  return NextResponse.json({
-    messages: ordered.map((m) => ({
-      ...m,
-      createdAt: m.createdAt.toISOString(),
-    })),
-  });
+export async function GET() {
+  return NextResponse.json(
+    { error: "Chat snapshot endpoint has been retired. Use the SSE chat stream instead." },
+    { status: 410 },
+  );
 }
 
 export async function POST(
@@ -100,13 +23,15 @@ export async function POST(
   const body = await parseJsonBody<{
     playerId?: unknown;
     content?: unknown;
+    clientId?: unknown;
   }>(request);
 
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { playerId, content } = body;
+  const { playerId, content, clientId } = body;
+  const validClientId = typeof clientId === "string" ? clientId : null;
 
   if (typeof playerId !== "string" || typeof content !== "string") {
     return NextResponse.json(
@@ -191,6 +116,11 @@ export async function POST(
     },
     select: { id: true, createdAt: true },
   });
+  await publishChatEvent(game.id, {
+    clientId: validClientId,
+    messageId: message.id,
+    createdAt: message.createdAt.toISOString(),
+  });
 
   // Fire-and-forget: check if a human message mentions an AI player
   if (player.type !== "AI") {
@@ -200,5 +130,6 @@ export async function POST(
   return NextResponse.json({
     id: message.id,
     createdAt: message.createdAt.toISOString(),
+    clientId: validClientId,
   });
 }

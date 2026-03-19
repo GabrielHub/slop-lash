@@ -3,16 +3,13 @@
 import {
   useState,
   useEffect,
-  useCallback,
   useRef,
   useMemo,
   useSyncExternalStore,
-  startTransition,
 } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import type { GameState } from "@/lib/types";
 import { filterCastVotes } from "@/lib/types";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import { springGentle, springBouncy } from "@/lib/animations";
@@ -28,8 +25,6 @@ import {
 import { useChatParticles, ChatParticleLayer } from "./chat-particles";
 import { useGameStream } from "@/hooks/use-game-stream";
 
-const USE_SSE = process.env.NEXT_PUBLIC_USE_SSE === "1";
-
 /* ─── localStorage helpers ─── */
 
 function getPlayerId() {
@@ -43,132 +38,6 @@ function getHostControlToken() {
 }
 
 const noopSubscribe = () => () => {};
-
-/* ─── Polling ─── */
-
-const POLL_ACTIVE_MS = 1000;
-const POLL_IDLE_MS = 3000;
-const POLL_LOBBY_MS = 4000;
-const HEARTBEAT_TOUCH_MS = 15_000;
-const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
-
-function isPageHidden() {
-  return typeof document !== "undefined" && document.visibilityState === "hidden";
-}
-
-function useChatGamePoller(
-  code: string,
-  playerId: string | null,
-  hostControlToken: string | null,
-  viewMode: "game" | "stage",
-) {
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const versionRef = useRef<number | null>(null);
-  const statusRef = useRef<string | null>(null);
-  const lastTouchAtRef = useRef(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    let cancelHiddenWait: (() => void) | null = null;
-    versionRef.current = null;
-    statusRef.current = null;
-    lastTouchAtRef.current = 0;
-
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-    const waitUntilVisible = () =>
-      new Promise<void>((resolve) => {
-        if (!isPageHidden()) { resolve(); return; }
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          document.removeEventListener("visibilitychange", onVis);
-          cancelHiddenWait = null;
-          resolve();
-        };
-        const onVis = () => { if (!isPageHidden()) finish(); };
-        cancelHiddenWait = finish;
-        document.addEventListener("visibilitychange", onVis);
-      });
-
-    function getPollDelay(): number {
-      const s = statusRef.current ?? "";
-      if (s === "WRITING" || s === "VOTING") return POLL_ACTIVE_MS;
-      if (s === "LOBBY") return POLL_LOBBY_MS;
-      return POLL_IDLE_MS;
-    }
-
-    function getTouchInterval(): number {
-      return statusRef.current === "LOBBY" ? HEARTBEAT_TOUCH_LOBBY_MS : HEARTBEAT_TOUCH_MS;
-    }
-
-    async function poll() {
-      while (!cancelled) {
-        try {
-          if (isPageHidden()) { await waitUntilVisible(); continue; }
-
-          const params = new URLSearchParams();
-          if (playerId) params.set("playerId", playerId);
-          if (versionRef.current !== null) params.set("v", String(versionRef.current));
-
-          const shouldTouch =
-            !!playerId &&
-            statusRef.current !== "FINAL_RESULTS" &&
-            Date.now() - lastTouchAtRef.current >= getTouchInterval();
-          const shouldHostTouch =
-            !!hostControlToken &&
-            viewMode === "stage" &&
-            statusRef.current !== "FINAL_RESULTS" &&
-            Date.now() - lastTouchAtRef.current >= getTouchInterval();
-          if (shouldTouch) params.set("touch", "1");
-          if (shouldHostTouch) params.set("hostTouch", "1");
-
-          const qs = params.toString();
-          const url = `/api/games/${code}${qs ? `?${qs}` : ""}`;
-          const headers: HeadersInit = {};
-          if (versionRef.current !== null) headers["If-None-Match"] = `"${versionRef.current}"`;
-          if (shouldHostTouch && hostControlToken) headers["x-host-control-token"] = hostControlToken;
-
-          const res = await fetch(url, { headers, cache: "no-store" });
-          if (cancelled) continue;
-
-          if (res.status === 304) {
-            if (shouldTouch || shouldHostTouch) lastTouchAtRef.current = Date.now();
-            if (statusRef.current === "FINAL_RESULTS") return;
-            await sleep(getPollDelay());
-            continue;
-          }
-
-          if (!res.ok) {
-            if (res.status === 404) { setError("Game not found"); return; }
-            await sleep(2000);
-            continue;
-          }
-
-          if (shouldTouch || shouldHostTouch) lastTouchAtRef.current = Date.now();
-          const data = (await res.json()) as GameState;
-          startTransition(() => setGameState(data));
-          versionRef.current = data.version ?? null;
-          statusRef.current = data.status ?? null;
-          if (data.status === "FINAL_RESULTS") return;
-        } catch {
-          await sleep(2000);
-          continue;
-        }
-        await sleep(getPollDelay());
-      }
-    }
-
-    void poll();
-    return () => { cancelled = true; cancelHiddenWait?.(); };
-  }, [code, playerId, hostControlToken, viewMode, refreshKey]);
-
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
-  return { gameState, error, refresh };
-}
 
 /* ─── Shared animation configs ─── */
 
@@ -555,14 +424,7 @@ export function ChatGameShell({
   const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
-  const pollerResult = useChatGamePoller(code, playerId, hostControlToken, viewMode);
-  const streamResult = useGameStream(
-    USE_SSE ? code : "",
-    USE_SSE ? playerId : null,
-    USE_SSE ? hostControlToken : null,
-    viewMode,
-  );
-  const { gameState, error, refresh } = USE_SSE ? streamResult : pollerResult;
+  const { gameState, error, refresh } = useGameStream(code, playerId, hostControlToken, viewMode);
   const { triggerElement } = usePixelDissolve();
 
   // Optimistic chat
@@ -695,13 +557,6 @@ export function ChatGameShell({
       playSound("all-in");
     }
   }, [gameState]);
-
-  // Visibility-triggered refresh
-  useEffect(() => {
-    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [refresh]);
 
   // Rejoin attempt
   useEffect(() => {

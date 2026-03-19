@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
+import { MockEventSource } from "./mock-event-source";
 import { Lobby } from "@/app/game/[code]/lobby";
 import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
@@ -114,6 +115,12 @@ export function MockGameShell({
   const [playerId, setPlayerId] = useState<string | null>(scenario.playerId);
   const [actionLog, setActionLog] = useState<string[]>([]);
   const mockCode = makeMockCode(scenario.slug);
+  const gameRef = useRef(game);
+  const stateStreamsRef = useRef(new Set<MockEventSource>());
+
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
 
   useEffect(() => {
     if (!playerId) return;
@@ -124,7 +131,19 @@ export function MockGameShell({
   }, [game.players, playerId]);
 
   useEffect(() => {
+    for (const stream of stateStreamsRef.current) {
+      stream.emit("state", game);
+      if (game.status === "FINAL_RESULTS") {
+        stream.emit("done", {});
+        stream.close();
+      }
+    }
+  }, [game]);
+
+  useLayoutEffect(() => {
     const originalFetch = window.fetch.bind(window);
+    const OriginalEventSource = window.EventSource;
+    const stateStreams = stateStreamsRef.current;
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = parseUrl(input);
@@ -143,10 +162,11 @@ export function MockGameShell({
 
       if (method === "POST" && endpoint === "/start") {
         log("start");
-        const next = withScenarioGame(nextWritingFixtureSlug(game, playerId), (fixture) => ({
+        const currentGame = gameRef.current;
+        const next = withScenarioGame(nextWritingFixtureSlug(currentGame, playerId), (fixture) => ({
           ...fixture,
-          currentRound: game.currentRound,
-          totalRounds: game.totalRounds,
+          currentRound: currentGame.currentRound,
+          totalRounds: currentGame.totalRounds,
         }));
         if (next) setGame(next);
         return jsonResponse({ ok: true });
@@ -289,20 +309,21 @@ export function MockGameShell({
       }
 
       if (method === "POST" && endpoint === "/next") {
-        log(`next (${game.status})`);
+        const currentGame = gameRef.current;
+        log(`next (${currentGame.status})`);
 
-        if (game.status === "WRITING") {
-          const next = withScenarioGame(nextVotingFixtureSlug(game, playerId), (fixture) => ({
+        if (currentGame.status === "WRITING") {
+          const next = withScenarioGame(nextVotingFixtureSlug(currentGame, playerId), (fixture) => ({
             ...fixture,
-            currentRound: game.currentRound,
-            totalRounds: game.totalRounds,
+            currentRound: currentGame.currentRound,
+            totalRounds: currentGame.totalRounds,
           }));
           if (next) setGame(next);
           return jsonResponse({ ok: true });
         }
 
-        if (game.status === "VOTING") {
-          const totalPrompts = countVotablePrompts(game);
+        if (currentGame.status === "VOTING") {
+          const totalPrompts = countVotablePrompts(currentGame);
           setGame((prev) => {
             const next = cloneGame(prev);
             if (!next.votingRevealing) {
@@ -327,18 +348,18 @@ export function MockGameShell({
           return jsonResponse({ ok: true });
         }
 
-        if (game.status === "ROUND_RESULTS") {
-          const nextRound = game.currentRound + 1;
-          const next = withScenarioGame(nextWritingFixtureSlug(game, playerId), (fixture) => ({
+        if (currentGame.status === "ROUND_RESULTS") {
+          const nextRound = currentGame.currentRound + 1;
+          const next = withScenarioGame(nextWritingFixtureSlug(currentGame, playerId), (fixture) => ({
             ...fixture,
             currentRound: nextRound,
-            totalRounds: game.totalRounds,
+            totalRounds: currentGame.totalRounds,
           }));
           if (next) setGame(next);
           return jsonResponse({ ok: true });
         }
 
-        if (game.status === "FINAL_RESULTS") {
+        if (currentGame.status === "FINAL_RESULTS") {
           return jsonResponse({ ok: true });
         }
 
@@ -349,7 +370,7 @@ export function MockGameShell({
         log("play again");
         return jsonResponse({
           roomCode: "MOCK2",
-          hostPlayerId: game.hostPlayerId,
+          hostPlayerId: gameRef.current.hostPlayerId,
         });
       }
 
@@ -364,10 +385,44 @@ export function MockGameShell({
       return jsonResponse({ ok: true, mock: true });
     };
 
+    window.EventSource = class extends MockEventSource {
+      constructor(url: string | URL) {
+        super(url);
+
+        queueMicrotask(() => {
+          if (this.readyState === MockEventSource.CLOSED) return;
+
+          const parsed = new URL(this.url);
+          if (parsed.pathname !== `/api/games/${mockCode}/stream`) {
+            this.fail();
+            return;
+          }
+
+          stateStreams.add(this);
+          this.setCleanup(() => {
+            stateStreams.delete(this);
+          });
+          this.open();
+
+          const currentGame = gameRef.current;
+          this.emit("state", currentGame);
+          if (currentGame.status === "FINAL_RESULTS") {
+            this.emit("done", {});
+            this.close();
+          }
+        });
+      }
+    } as typeof EventSource;
+
     return () => {
       window.fetch = originalFetch;
+      window.EventSource = OriginalEventSource;
+      for (const stream of stateStreams) {
+        stream.close();
+      }
+      stateStreams.clear();
     };
-  }, [game, mockCode, playerId]);
+  }, [mockCode, playerId]);
 
   const { theme, toggle: toggleTheme } = useTheme();
   const isHost = playerId === game.hostPlayerId;

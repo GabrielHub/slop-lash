@@ -3,9 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 export type ChatMessageStatus = "pending" | "confirmed" | "failed";
 
 export interface OptimisticChatMessage {
-  /** Server-assigned ID once confirmed, or client-generated temp ID while pending/failed. */
   id: string;
-  /** Client-generated ID used to track optimistic messages across state updates. */
   clientId: string;
   playerId: string;
   content: string;
@@ -16,13 +14,12 @@ export interface OptimisticChatMessage {
 
 export interface ServerChatMessage {
   id: string;
+  clientId: string | null;
   playerId: string;
   content: string;
   replyToId: string | null;
   createdAt: string;
 }
-
-const CHAT_POLL_MS = 2000;
 
 type ChatCursor = {
   createdAt: string;
@@ -30,6 +27,7 @@ type ChatCursor = {
 };
 
 const EMPTY_MESSAGES: OptimisticChatMessage[] = [];
+const INCOMING_TICK_BATCH_MS = 120;
 
 function isDocumentHidden() {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
@@ -37,6 +35,18 @@ function isDocumentHidden() {
 
 function makeClientMessageId() {
   return `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function compareCursor(a: ChatCursor, b: ChatCursor): number {
+  const aTime = new Date(a.createdAt).getTime();
+  const bTime = new Date(b.createdAt).getTime();
+  if (aTime !== bTime) return aTime - bTime;
+  return a.id.localeCompare(b.id);
+}
+
+function advanceCursor(cursor: ChatCursor | null, next: ChatCursor): ChatCursor {
+  if (!cursor) return next;
+  return compareCursor(cursor, next) < 0 ? next : cursor;
 }
 
 export function createPendingMessage(
@@ -61,8 +71,8 @@ export function setMessageStatus(
   clientId: string,
   status: ChatMessageStatus,
 ): OptimisticChatMessage[] {
-  return messages.map((m) =>
-    m.clientId === clientId ? { ...m, status } : m,
+  return messages.map((message) =>
+    message.clientId === clientId ? { ...message, status } : message,
   );
 }
 
@@ -72,10 +82,10 @@ export function confirmMessage(
   id: string,
   createdAt: string,
 ): OptimisticChatMessage[] {
-  return messages.map((m) =>
-    m.clientId === clientId
-      ? { ...m, id, createdAt, status: "confirmed" as const }
-      : m,
+  return messages.map((message) =>
+    message.clientId === clientId
+      ? { ...message, id, createdAt, status: "confirmed" as const }
+      : message,
   );
 }
 
@@ -83,7 +93,7 @@ export function removeMessageByClientId(
   messages: OptimisticChatMessage[],
   clientId: string,
 ): OptimisticChatMessage[] {
-  return messages.filter((m) => m.clientId !== clientId);
+  return messages.filter((message) => message.clientId !== clientId);
 }
 
 export function reconcileIncomingChatMessages(
@@ -94,37 +104,44 @@ export function reconcileIncomingChatMessages(
   const updated = [...existing];
   const nextKnownIds = new Set(knownIds);
 
-  for (const msg of incoming) {
-    if (nextKnownIds.has(msg.id)) continue;
+  for (const message of incoming) {
+    if (nextKnownIds.has(message.id)) continue;
 
-    const pendingIdx = updated.findIndex(
-      (m) =>
-        (m.status === "pending" || m.status === "failed") &&
-        m.playerId === msg.playerId &&
-        m.content === msg.content,
-    );
+    let pendingIdx = -1;
+    if (message.clientId) {
+      pendingIdx = updated.findIndex((entry) => entry.clientId === message.clientId);
+    }
+
+    if (pendingIdx === -1) {
+      pendingIdx = updated.findIndex(
+        (entry) =>
+          (entry.status === "pending" || entry.status === "failed") &&
+          entry.playerId === message.playerId &&
+          entry.content === message.content,
+      );
+    }
 
     if (pendingIdx !== -1) {
       updated[pendingIdx] = {
         ...updated[pendingIdx],
-        id: msg.id,
-        replyToId: msg.replyToId,
-        createdAt: msg.createdAt,
+        id: message.id,
+        replyToId: message.replyToId,
+        createdAt: message.createdAt,
         status: "confirmed",
       };
     } else {
       updated.push({
-        id: msg.id,
-        clientId: msg.id,
-        playerId: msg.playerId,
-        content: msg.content,
-        replyToId: msg.replyToId,
-        createdAt: msg.createdAt,
+        id: message.id,
+        clientId: message.clientId ?? message.id,
+        playerId: message.playerId,
+        content: message.content,
+        replyToId: message.replyToId,
+        createdAt: message.createdAt,
         status: "confirmed",
       });
     }
 
-    nextKnownIds.add(msg.id);
+    nextKnownIds.add(message.id);
   }
 
   updated.sort(
@@ -134,7 +151,6 @@ export function reconcileIncomingChatMessages(
   return { messages: updated, knownIds: nextKnownIds };
 }
 
-/** Optimistic chat state with cursor-based polling and reconciliation. */
 export function useOptimisticChat(
   code: string,
   playerId: string | null,
@@ -144,7 +160,6 @@ export function useOptimisticChat(
     code: string;
     messages: OptimisticChatMessage[];
   }>({ code, messages: [] });
-  /** Increments whenever a new message from another player arrives via polling. */
   const [incomingTickState, setIncomingTickState] = useState<{
     code: string;
     tick: number;
@@ -152,13 +167,16 @@ export function useOptimisticChat(
   const cursorRef = useRef<ChatCursor | null>(null);
   const knownIdsRef = useRef(new Set<string>());
   const messagesRef = useRef<OptimisticChatMessage[]>([]);
+  const esRef = useRef<EventSource | null>(null);
+  const retriesRef = useRef(0);
+  const terminalRef = useRef(false);
+  const incomingTickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const messages = useMemo(
     () => (messagesState.code === code ? messagesState.messages : EMPTY_MESSAGES),
     [messagesState, code],
   );
-  const incomingTick =
-    incomingTickState.code === code ? incomingTickState.tick : 0;
+  const incomingTick = incomingTickState.code === code ? incomingTickState.tick : 0;
 
   const setMessagesForCode = useCallback(
     (updater: (prev: OptimisticChatMessage[]) => OptimisticChatMessage[]) => {
@@ -177,6 +195,14 @@ export function useOptimisticChat(
     }));
   }, [code]);
 
+  const scheduleIncomingTick = useCallback(() => {
+    if (incomingTickTimerRef.current) return;
+    incomingTickTimerRef.current = setTimeout(() => {
+      incomingTickTimerRef.current = null;
+      incrementIncomingTick();
+    }, INCOMING_TICK_BATCH_MS);
+  }, [incrementIncomingTick]);
+
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -184,78 +210,139 @@ export function useOptimisticChat(
   useEffect(() => {
     cursorRef.current = null;
     knownIdsRef.current = new Set();
+    terminalRef.current = false;
+    retriesRef.current = 0;
 
-    if (!enabled) return;
+    if (!enabled) {
+      esRef.current?.close();
+      esRef.current = null;
+      return;
+    }
+
     let cancelled = false;
 
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    function registerMessages(incoming: ServerChatMessage[]) {
+      if (incoming.length === 0) return;
 
-    async function poll() {
-      while (!cancelled) {
-        if (!isDocumentHidden()) {
-          try {
-            const params = new URLSearchParams();
-            if (cursorRef.current) {
-              params.set("after", cursorRef.current.createdAt);
-              params.set("afterId", cursorRef.current.id);
-            }
-            const qs = params.toString();
-            const res = await fetch(
-              `/api/games/${code}/chat${qs ? `?${qs}` : ""}`,
-            );
-            if (cancelled) return;
+      const hasOtherPlayerMessage = incoming.some((message) => message.playerId !== playerId);
+      const reconciled = reconcileIncomingChatMessages(
+        messagesRef.current,
+        incoming,
+        knownIdsRef.current,
+      );
 
-            if (res.ok) {
-              const data = (await res.json()) as {
-                messages: ServerChatMessage[];
-              };
+      knownIdsRef.current = reconciled.knownIds;
+      messagesRef.current = reconciled.messages;
+      setMessagesForCode(() => reconciled.messages);
 
-              if (data.messages.length > 0) {
-                // Check if any incoming messages are from other players (not ours)
-                const hasOtherPlayerMsg = data.messages.some(
-                  (m) => m.playerId !== playerId,
-                );
+      const last = incoming[incoming.length - 1];
+      cursorRef.current = advanceCursor(cursorRef.current, {
+        createdAt: last.createdAt,
+        id: last.id,
+      });
 
-                const reconciled = reconcileIncomingChatMessages(
-                  messagesRef.current,
-                  data.messages,
-                  knownIdsRef.current,
-                );
-                knownIdsRef.current = reconciled.knownIds;
-                setMessagesForCode(() => reconciled.messages);
-
-                if (hasOtherPlayerMsg) {
-                  incrementIncomingTick();
-                }
-
-                const last = data.messages[data.messages.length - 1];
-                cursorRef.current = { createdAt: last.createdAt, id: last.id };
-              }
-            }
-          } catch {
-            // Swallow poll errors
-          }
-        }
-
-        await sleep(CHAT_POLL_MS);
+      if (hasOtherPlayerMessage) {
+        scheduleIncomingTick();
       }
     }
 
-    void poll();
+    function connect() {
+      if (cancelled || terminalRef.current || isDocumentHidden()) return;
+
+      const params = new URLSearchParams();
+      if (cursorRef.current) {
+        params.set("after", cursorRef.current.createdAt);
+        params.set("afterId", cursorRef.current.id);
+      }
+      const qs = params.toString();
+      const es = new EventSource(`/api/games/${code}/chat/stream${qs ? `?${qs}` : ""}`);
+      esRef.current = es;
+
+      es.addEventListener("message", (event) => {
+        if (cancelled) return;
+        try {
+          const message = JSON.parse(event.data) as ServerChatMessage;
+          registerMessages([message]);
+          retriesRef.current = 0;
+        } catch {
+          // Ignore malformed data.
+        }
+      });
+
+      es.addEventListener("done", () => {
+        terminalRef.current = true;
+        es.close();
+        if (esRef.current === es) {
+          esRef.current = null;
+        }
+      });
+
+      es.addEventListener("server-error", () => {
+        es.close();
+        if (esRef.current === es) {
+          esRef.current = null;
+        }
+      });
+
+      es.onerror = () => {
+        if (cancelled) return;
+
+        es.close();
+        if (esRef.current === es) {
+          esRef.current = null;
+        }
+
+        if (terminalRef.current || isDocumentHidden()) {
+          return;
+        }
+
+        const delay = Math.min(2_000 * 2 ** retriesRef.current, 30_000);
+        retriesRef.current++;
+        setTimeout(() => {
+          if (!cancelled && !esRef.current && !terminalRef.current) {
+            connect();
+          }
+        }, delay);
+      };
+    }
+
+    function onVisibilityChange() {
+      if (isDocumentHidden()) {
+        esRef.current?.close();
+        esRef.current = null;
+        return;
+      }
+
+      if (!cancelled && !esRef.current && !terminalRef.current) {
+        retriesRef.current = 0;
+        connect();
+      }
+    }
+
+    connect();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      esRef.current?.close();
+      esRef.current = null;
+      if (incomingTickTimerRef.current) {
+        clearTimeout(incomingTickTimerRef.current);
+        incomingTickTimerRef.current = null;
+      }
     };
-  }, [code, enabled, playerId, incrementIncomingTick, setMessagesForCode]);
+  }, [code, enabled, playerId, scheduleIncomingTick, setMessagesForCode]);
 
-  /** POST a chat message and update the optimistic entry by clientId. */
   const postAndReconcile = useCallback(
     async (clientId: string, content: string) => {
       if (!playerId) return;
+
       try {
         const res = await fetch(`/api/games/${code}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, content }),
+          body: JSON.stringify({ playerId, content, clientId }),
         });
 
         if (!res.ok) {
@@ -263,11 +350,14 @@ export function useOptimisticChat(
           return;
         }
 
-        const data = (await res.json()) as { id: string; createdAt: string };
+        const data = (await res.json()) as {
+          id: string;
+          createdAt: string;
+          clientId: string | null;
+        };
         knownIdsRef.current.add(data.id);
-
         setMessagesForCode((prev) =>
-          confirmMessage(prev, clientId, data.id, data.createdAt),
+          confirmMessage(prev, data.clientId ?? clientId, data.id, data.createdAt),
         );
       } catch {
         setMessagesForCode((prev) => setMessageStatus(prev, clientId, "failed"));
@@ -281,7 +371,6 @@ export function useOptimisticChat(
       if (!playerId || !content.trim()) return;
 
       const optimistic = createPendingMessage(playerId, content);
-
       setMessagesForCode((prev) => [...prev, optimistic]);
       await postAndReconcile(optimistic.clientId, optimistic.content);
     },
@@ -290,18 +379,21 @@ export function useOptimisticChat(
 
   const retryMessage = useCallback(
     async (clientId: string) => {
-      const msg = messagesRef.current.find((m) => m.clientId === clientId);
-      if (!msg || msg.status !== "failed" || !playerId) return;
+      const message = messagesRef.current.find((entry) => entry.clientId === clientId);
+      if (!message || message.status !== "failed" || !playerId) return;
 
       setMessagesForCode((prev) => setMessageStatus(prev, clientId, "pending"));
-      await postAndReconcile(clientId, msg.content);
+      await postAndReconcile(clientId, message.content);
     },
     [playerId, postAndReconcile, setMessagesForCode],
   );
 
-  const dismissFailed = useCallback((clientId: string) => {
-    setMessagesForCode((prev) => removeMessageByClientId(prev, clientId));
-  }, [setMessagesForCode]);
+  const dismissFailed = useCallback(
+    (clientId: string) => {
+      setMessagesForCode((prev) => removeMessageByClientId(prev, clientId));
+    },
+    [setMessagesForCode],
+  );
 
   return { messages, sendMessage, retryMessage, dismissFailed, incomingTick };
 }

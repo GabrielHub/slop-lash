@@ -4,7 +4,6 @@ import {
   useState,
   useEffect,
   useRef,
-  useCallback,
   useSyncExternalStore,
 } from "react";
 import { useSearchParams } from "next/navigation";
@@ -20,12 +19,9 @@ import {
   phaseTransition,
   staggerContainer,
 } from "@/lib/animations";
-import type { ControllerGameState } from "@/lib/controller-types";
 import { MIN_PLAYERS } from "../game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
-
-const USE_SSE = process.env.NEXT_PUBLIC_USE_SSE === "1";
 
 function getPlayerId() {
   if (typeof window === "undefined") return null;
@@ -65,128 +61,6 @@ function phaseLabel(status: string) {
     default:
       return "";
   }
-}
-
-const POLL_FAST_MS = 1000;
-const POLL_SLOW_MS = 3000;
-const HEARTBEAT_TOUCH_MS = 15_000;
-const HEARTBEAT_TOUCH_LOBBY_MS = 60_000;
-
-function isPageHidden() {
-  return typeof document !== "undefined" && document.visibilityState === "hidden";
-}
-
-function useChatControllerPoller(code: string, playerId: string | null) {
-  const [gameState, setGameState] = useState<ControllerGameState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const versionRef = useRef<number | null>(null);
-  const statusRef = useRef<string | null>(null);
-  const lastTouchAtRef = useRef(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    let cancelHiddenWait: (() => void) | null = null;
-    versionRef.current = null;
-    statusRef.current = null;
-    lastTouchAtRef.current = 0;
-
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const waitUntilVisible = () =>
-      new Promise<void>((resolve) => {
-        if (!isPageHidden()) { resolve(); return; }
-        const ac = new AbortController();
-        const finish = () => { ac.abort(); cancelHiddenWait = null; resolve(); };
-        cancelHiddenWait = finish;
-        document.addEventListener(
-          "visibilitychange",
-          () => { if (!isPageHidden()) finish(); },
-          { signal: ac.signal },
-        );
-      });
-
-    function getPollDelay() {
-      const s = statusRef.current;
-      return s === "WRITING" || s === "VOTING" ? POLL_FAST_MS : POLL_SLOW_MS;
-    }
-
-    function getTouchInterval() {
-      return statusRef.current === "LOBBY"
-        ? HEARTBEAT_TOUCH_LOBBY_MS
-        : HEARTBEAT_TOUCH_MS;
-    }
-
-    async function poll() {
-      while (!cancelled) {
-        try {
-          if (isPageHidden()) {
-            await waitUntilVisible();
-            continue;
-          }
-
-          const params = new URLSearchParams();
-          if (playerId) params.set("playerId", playerId);
-          if (versionRef.current != null)
-            params.set("v", String(versionRef.current));
-
-          const shouldTouch =
-            !!playerId &&
-            statusRef.current !== "FINAL_RESULTS" &&
-            Date.now() - lastTouchAtRef.current >= getTouchInterval();
-          if (shouldTouch) params.set("touch", "1");
-
-          const headers: HeadersInit = {};
-          if (versionRef.current != null) {
-            headers["If-None-Match"] = `"${versionRef.current}"`;
-          }
-
-          const qs = params.toString();
-          const res = await fetch(
-            `/api/games/${code}/controller${qs ? `?${qs}` : ""}`,
-            { headers, cache: "no-store" },
-          );
-          if (cancelled) return;
-
-          if (res.status === 304) {
-            if (shouldTouch) lastTouchAtRef.current = Date.now();
-            if (statusRef.current === "FINAL_RESULTS") return;
-            await sleep(getPollDelay());
-            continue;
-          }
-
-          if (!res.ok) {
-            if (res.status === 404) {
-              setError("Game not found");
-              return;
-            }
-            await sleep(2000);
-            continue;
-          }
-
-          if (shouldTouch) lastTouchAtRef.current = Date.now();
-
-          const data = (await res.json()) as ControllerGameState;
-          setGameState(data);
-          versionRef.current = data.version ?? null;
-          statusRef.current = data.status ?? null;
-          if (data.status === "FINAL_RESULTS") return;
-        } catch {
-          await sleep(2000);
-          continue;
-        }
-        await sleep(getPollDelay());
-      }
-    }
-
-    void poll();
-    return () => {
-      cancelled = true;
-      cancelHiddenWait?.();
-    };
-  }, [code, playerId, refreshKey]);
-
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
-  return { gameState, error, refresh };
 }
 
 function ChatControllerHeader({
@@ -252,9 +126,7 @@ export function ChatControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const pollerResult = useChatControllerPoller(code, playerId);
-  const streamResult = useControllerStream(USE_SSE ? code : "", USE_SSE ? playerId : null);
-  const { gameState, error, refresh } = USE_SSE ? streamResult : pollerResult;
+  const { gameState, error, refresh } = useControllerStream(code, playerId);
 
   const [responseText, setResponseText] = useState("");
   const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(

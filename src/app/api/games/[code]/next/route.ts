@@ -7,6 +7,7 @@ import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggr
 import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
   request: Request,
@@ -76,10 +77,17 @@ export async function POST(
       newRound: newRoundStarted,
     });
     if (newRoundStarted) {
-      after(() => def.handlers.generateAiResponses(game.id));
+      await publishGameStateEvent(game.id);
+      after(async () => {
+        await def.handlers.generateAiResponses(game.id);
+        await publishGameStateEvent(game.id);
+      });
     } else if (def.capabilities.retainsCompletedData) {
       after(() => applyCompletedGameToLeaderboardAggregate(game.id));
       revalidateTag(LEADERBOARD_TAG, { expire: 0 });
+      await publishGameStateEvent(game.id);
+    } else {
+      await publishGameStateEvent(game.id);
     }
     return NextResponse.json({ success: true });
   }
@@ -105,7 +113,13 @@ export async function POST(
     });
     // AI_CHAT_SHOWDOWN already triggers AI votes inside forceAdvancePhase().
     if (advancedTo === "VOTING" && game.gameType !== "AI_CHAT_SHOWDOWN") {
-      after(() => def.handlers.generateAiVotes(game.id));
+      await publishGameStateEvent(game.id);
+      after(async () => {
+        await def.handlers.generateAiVotes(game.id);
+        await publishGameStateEvent(game.id);
+      });
+    } else {
+      await publishGameStateEvent(game.id);
     }
     return NextResponse.json({ success: true });
   }
