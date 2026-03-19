@@ -7,7 +7,8 @@ export type GameStatus =
 
 export type PlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
-export type GameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN";
+import type { GameType } from "@/games/core/types";
+export type { GameType };
 
 export type ParticipationStatus = "ACTIVE" | "DISCONNECTED";
 
@@ -49,6 +50,7 @@ export interface GameResponse {
   id: string;
   promptId: string;
   playerId: string;
+  metadata?: Record<string, unknown> | null;
   text: string;
   pointsEarned: number;
   failReason: string | null;
@@ -115,6 +117,8 @@ export interface GameState {
   id: string;
   roomCode: string;
   gameType: GameType;
+  personaModelId?: string | null;
+  modeState?: Record<string, unknown> | null;
   status: GameStatus;
   currentRound: number;
   totalRounds: number;

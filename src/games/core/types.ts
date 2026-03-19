@@ -1,6 +1,6 @@
 /** Core game contracts for multi-game support. */
 
-export type GameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN";
+export type GameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN" | "MATCHSLOP";
 
 export interface GameCapabilities {
   /** Whether the game supports a live TTS narrator (e.g. Slop-Lash). */

@@ -30,6 +30,8 @@ const gamePayloadCommonSelect = {
   id: true,
   roomCode: true,
   gameType: true,
+  personaModelId: true,
+  modeState: true,
   status: true,
   currentRound: true,
   totalRounds: true,
@@ -104,6 +106,8 @@ export function normalizePayload(game: unknown): GameRoutePayload {
   const g = game as Record<string, unknown>;
   return {
     ...g,
+    personaModelId: (g.personaModelId as string | null) ?? null,
+    modeState: g.modeState ?? null,
     aiInputTokens: (g.aiInputTokens as number) ?? 0,
     aiOutputTokens: (g.aiOutputTokens as number) ?? 0,
     aiCostUsd: (g.aiCostUsd as number) ?? 0,

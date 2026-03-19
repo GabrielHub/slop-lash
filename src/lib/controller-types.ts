@@ -13,9 +13,47 @@ export interface ControllerWritingPrompt {
   submitted: boolean;
 }
 
+export interface MatchSlopProfilePromptOption {
+  id: string;
+  prompt: string;
+  answer: string;
+}
+
+export interface MatchSlopPersonaImageState {
+  status: "NOT_REQUESTED" | "PENDING" | "READY" | "FAILED";
+  imageUrl: string | null;
+}
+
+export interface MatchSlopProfileState {
+  displayName: string;
+  age: number | null;
+  location: string | null;
+  bio: string | null;
+  tagline: string | null;
+  prompts: MatchSlopProfilePromptOption[];
+  image: MatchSlopPersonaImageState;
+}
+
+export interface MatchSlopTranscriptEntry {
+  id: string;
+  speaker: "PLAYERS" | "PERSONA";
+  text: string;
+  turn: number;
+  outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | null;
+  authorName: string | null;
+}
+
+export interface MatchSlopWritingState {
+  promptId: string;
+  text: string;
+  submitted: boolean;
+  openerOptions: MatchSlopProfilePromptOption[];
+}
+
 export interface ControllerVoteOption {
   id: string;
   text: string;
+  openerPromptId?: string | null;
 }
 
 export interface ControllerVotingPrompt {
@@ -54,4 +92,14 @@ export interface ControllerGameState {
   me: ControllerPlayerSummary | null;
   writing: ControllerWritingState | null;
   voting: ControllerVotingState | null;
+  matchslop: {
+    seekerIdentity: string | null;
+    personaIdentity: string | null;
+    outcome: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT";
+    humanVoteWeight: number;
+    aiVoteWeight: number;
+    profile: MatchSlopProfileState | null;
+    transcript: MatchSlopTranscriptEntry[];
+    writing: MatchSlopWritingState | null;
+  } | null;
 }

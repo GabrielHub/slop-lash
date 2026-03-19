@@ -1,0 +1,53 @@
+import type { GameDefinition } from "@/games/core";
+import {
+  advanceGame,
+  checkAllResponsesIn,
+  checkAllVotesForCurrentPrompt,
+  checkAndEnforceDeadline,
+  endGameEarly,
+  forceAdvancePhase,
+  generateAiResponses,
+  generateAiVotes,
+  getVotablePrompts,
+  HOST_STALE_MS,
+  MAX_PLAYERS,
+  MAX_SPECTATORS,
+  MIN_PLAYERS,
+  promoteHost,
+  revealCurrentPrompt,
+  startGame,
+  startVoting,
+} from "./game-logic";
+
+export const matchslopDefinition: GameDefinition = {
+  id: "MATCHSLOP",
+  displayName: "MatchSlop",
+  capabilities: {
+    supportsNarrator: false,
+    supportsSfx: true,
+    supportsChatFeed: false,
+    supportsSpectators: false,
+    retainsCompletedData: false,
+  },
+  handlers: {
+    startGame,
+    endGameEarly,
+    advanceGame,
+    forceAdvancePhase,
+    checkAndEnforceDeadline,
+    checkAllResponsesIn,
+    startVoting,
+    getVotablePrompts,
+    checkAllVotesForCurrentPrompt,
+    revealCurrentPrompt,
+    generateAiResponses,
+    generateAiVotes,
+    promoteHost,
+  },
+  constants: {
+    minPlayers: MIN_PLAYERS,
+    maxPlayers: MAX_PLAYERS,
+    maxSpectators: MAX_SPECTATORS,
+    hostStaleMs: HOST_STALE_MS,
+  },
+};

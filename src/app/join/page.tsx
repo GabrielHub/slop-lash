@@ -61,7 +61,11 @@ export default function JoinPage() {
       if (data.playerType) {
         localStorage.setItem("playerType", data.playerType);
       }
-      router.push(controllerMode ? `/controller/${code}` : `/game/${code}`);
+      const targetRoute =
+        controllerMode || data.gameType === "MATCHSLOP"
+          ? `/controller/${code}`
+          : `/game/${code}`;
+      router.push(targetRoute);
     } catch {
       setError("Something went wrong");
     } finally {

@@ -8,39 +8,77 @@ import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
 import type { TtsMode } from "@/lib/types";
 import type { GameType } from "@/games/core";
 import { GEMINI_VOICES } from "@/games/sloplash/voices";
+import {
+  MAX_PLAYERS as SLOPLASH_MAX_PLAYERS,
+  MIN_PLAYERS as SLOPLASH_MIN_PLAYERS,
+} from "@/games/sloplash/game-constants";
+import {
+  MAX_PLAYERS as CHATSLOP_MAX_PLAYERS,
+  MIN_PLAYERS as CHATSLOP_MIN_PLAYERS,
+} from "@/games/ai-chat-showdown/game-constants";
+import {
+  MAX_PLAYERS as MATCHSLOP_MAX_PLAYERS,
+  MIN_PLAYERS as MATCHSLOP_MIN_PLAYERS,
+} from "@/games/matchslop/game-constants";
 import { ModelIcon } from "@/components/model-icon";
-import { MAX_PLAYERS, MIN_PLAYERS } from "@/games/sloplash/game-constants";
 import { ErrorBanner } from "@/components/error-banner";
 import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { MATCHSLOP_IDENTITIES, type MatchSlopIdentity } from "@/games/matchslop/identities";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
 
-const GAME_TYPE_OPTIONS: { id: GameType; displayName: string; description: string; supportsNarrator: boolean }[] = [
+const GAME_TYPE_OPTIONS: {
+  id: GameType;
+  displayName: string;
+  description: string;
+  supportsNarrator: boolean;
+  minPlayers: number;
+  maxPlayers: number;
+}[] = [
   {
     id: "SLOPLASH",
     displayName: "Slop-Lash",
     description: "Quiplash-style comedy game with AI opponents and a live narrator",
     supportsNarrator: true,
+    minPlayers: SLOPLASH_MIN_PLAYERS,
+    maxPlayers: SLOPLASH_MAX_PLAYERS,
   },
   {
     id: "AI_CHAT_SHOWDOWN",
     displayName: "ChatSlop",
     description: "AI group chat game — one prompt, everyone competes, no spectators",
     supportsNarrator: false,
+    minPlayers: CHATSLOP_MIN_PLAYERS,
+    maxPlayers: CHATSLOP_MAX_PLAYERS,
+  },
+  {
+    id: "MATCHSLOP",
+    displayName: "MatchSlop",
+    description: "A shared AI dating profile sprint — funniest line wins the persona over",
+    supportsNarrator: false,
+    minPlayers: MATCHSLOP_MIN_PLAYERS,
+    maxPlayers: MATCHSLOP_MAX_PLAYERS,
   },
 ];
+
+const MATCHSLOP_IDENTITY_OPTIONS: { id: MatchSlopIdentity; label: string }[] =
+  MATCHSLOP_IDENTITIES.map((id) => ({ id, label: id === "NON_BINARY" ? "Non-binary" : id.charAt(0) + id.slice(1).toLowerCase() }));
 
 function PlayerCountHint({
   selectedCount,
   hostParticipation,
+  minPlayers,
+  maxPlayers,
 }: {
   selectedCount: number;
   hostParticipation: HostParticipation;
+  minPlayers: number;
+  maxPlayers: number;
 }) {
   const total = (hostParticipation === "PLAYER" ? 1 : 0) + selectedCount;
-  const remaining = MAX_PLAYERS - total;
+  const remaining = maxPlayers - total;
 
   if (remaining <= 0) return null;
 
@@ -52,7 +90,7 @@ function PlayerCountHint({
     );
   }
 
-  if (total >= MIN_PLAYERS) {
+  if (total >= minPlayers) {
     return (
       <p className="text-xs text-ink-dim/50 mb-3">
         {remaining} open {remaining === 1 ? "slot" : "slots"} for more players
@@ -81,6 +119,9 @@ export default function HostPage() {
   const [hostSecret, setHostSecret] = useState("");
   const [hostName, setHostName] = useState("");
   const [hostParticipation, setHostParticipation] = useState<HostParticipation>("PLAYER");
+  const [seekerIdentity, setSeekerIdentity] = useState<MatchSlopIdentity>("MAN");
+  const [personaIdentity, setPersonaIdentity] = useState<MatchSlopIdentity>("WOMAN");
+  const [personaModelId, setPersonaModelId] = useState<string | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
@@ -92,7 +133,9 @@ export default function HostPage() {
   function toggleModel(modelId: string) {
     const targetModel = getModelByModelId(modelId);
     if (!targetModel) return;
-    const maxSelectableAiPlayers = MAX_PLAYERS - (hostParticipation === "PLAYER" ? 1 : 0);
+    if (gameType === "MATCHSLOP" && modelId === personaModelId) return;
+    const maxSelectableAiPlayers =
+      selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
 
     setSelectedModels((prev) => {
       if (prev.includes(modelId)) {
@@ -112,12 +155,24 @@ export default function HostPage() {
   }
 
   const selectedGameType = GAME_TYPE_OPTIONS.find((g) => g.id === gameType) ?? GAME_TYPE_OPTIONS[0];
-  const maxAiPlayers = MAX_PLAYERS - (hostParticipation === "PLAYER" ? 1 : 0);
+  const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
   const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + selectedModels.length;
+  const isMatchSlop = gameType === "MATCHSLOP";
 
   useEffect(() => {
     setSelectedModels((prev) => (prev.length <= maxAiPlayers ? prev : prev.slice(0, maxAiPlayers)));
   }, [maxAiPlayers]);
+
+  useEffect(() => {
+    if (!isMatchSlop) return;
+    setHostParticipation("DISPLAY_ONLY");
+    setPersonaModelId((prev) => prev ?? AI_MODELS[0]?.id ?? null);
+  }, [isMatchSlop]);
+
+  useEffect(() => {
+    if (!isMatchSlop || !personaModelId) return;
+    setSelectedModels((prev) => prev.filter((id) => id !== personaModelId));
+  }, [isMatchSlop, personaModelId]);
 
   useEffect(() => {
     if (!selectedGameType.supportsNarrator) {
@@ -148,6 +203,9 @@ export default function HostPage() {
           hostName: hostName.trim(),
           hostParticipation,
           aiModelIds: selectedModels,
+          personaModelId: isMatchSlop ? personaModelId : undefined,
+          seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
+          personaIdentity: isMatchSlop ? personaIdentity : undefined,
           timersDisabled,
           ttsMode,
           ttsVoice: ttsMode === "ON" ? ttsVoice : undefined,
@@ -260,6 +318,131 @@ export default function HostPage() {
               </div>
             </div>
 
+            {isMatchSlop && (
+              <div className="mb-8 space-y-4 rounded-2xl border border-edge bg-surface/60 p-4">
+                <div>
+                  <p className="text-sm font-medium text-ink-dim mb-2">
+                    Dating Setup
+                  </p>
+                  <p className="text-xs text-ink-dim/70 mb-3">
+                    This sets the shared persona framing for the whole table.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <span className="block text-xs uppercase tracking-wider text-ink-dim mb-2">
+                        I&apos;m
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {MATCHSLOP_IDENTITY_OPTIONS.map((identity) => {
+                          const selected = seekerIdentity === identity.id;
+                          return (
+                            <motion.button
+                              key={identity.id}
+                              type="button"
+                              onClick={() => setSeekerIdentity(identity.id)}
+                              className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-colors cursor-pointer ${
+                                selected
+                                  ? "bg-punch/10 border-punch text-punch"
+                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                              }`}
+                              {...buttonTap}
+                            >
+                              {identity.label}
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="block text-xs uppercase tracking-wider text-ink-dim mb-2">
+                        Looking for
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {MATCHSLOP_IDENTITY_OPTIONS.map((identity) => {
+                          const selected = personaIdentity === identity.id;
+                          return (
+                            <motion.button
+                              key={identity.id}
+                              type="button"
+                              onClick={() => setPersonaIdentity(identity.id)}
+                              className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-colors cursor-pointer ${
+                                selected
+                                  ? "bg-punch/10 border-punch text-punch"
+                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                              }`}
+                              {...buttonTap}
+                            >
+                              {identity.label}
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-ink-dim mb-2">
+                    Persona Model
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {AI_MODELS.map((model) => {
+                      const selected = personaModelId === model.id;
+                      const teammateSelected = selectedModels.includes(model.id);
+                      return (
+                        <motion.button
+                          key={model.id}
+                          type="button"
+                          onClick={() => {
+                            setPersonaModelId(model.id);
+                            setSelectedModels((prev) => prev.filter((id) => id !== model.id));
+                          }}
+                          className={`p-3 rounded-xl border-2 text-left transition-colors cursor-pointer flex items-center gap-3 ${
+                            selected
+                              ? "bg-punch/10 border-punch"
+                              : teammateSelected
+                                ? "bg-surface/60 border-edge text-ink-dim/50"
+                                : "bg-surface/80 border-edge hover:border-edge-strong"
+                          }`}
+                          {...buttonTap}
+                        >
+                          <ModelIcon model={model} size={22} className="shrink-0" />
+                          <div className="min-w-0">
+                            <div className="flex items-baseline gap-2">
+                              <span className={`font-semibold text-sm truncate ${selected ? "text-punch" : "text-ink"}`}>
+                                {model.name}
+                              </span>
+                              <span className="text-xs text-ink-dim/60 shrink-0">
+                                {model.provider}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-ink-dim/60">
+                              Persona model only. Teammates use the funny prompt pool below.
+                            </p>
+                          </div>
+                          {selected && (
+                            <svg
+                              className="ml-auto shrink-0 text-punch"
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mb-6">
               <label className="block text-sm font-medium text-ink-dim mb-2">
                 Host Password
@@ -311,15 +494,17 @@ export default function HostPage() {
               <label className="text-sm font-medium text-ink-dim">
                 Add AI Players
               </label>
-              <span className="text-sm font-semibold tabular-nums text-ink-dim">
+                <span className="text-sm font-semibold tabular-nums text-ink-dim">
                 {activePlayerCount}
-                <span className="text-ink-dim/50">/{MAX_PLAYERS}</span>
+                <span className="text-ink-dim/50">/{selectedGameType.maxPlayers}</span>
                 <span className="text-xs font-normal text-ink-dim/50 ml-1">active players</span>
               </span>
             </div>
             <PlayerCountHint
               selectedCount={selectedModels.length}
               hostParticipation={hostParticipation}
+              minPlayers={selectedGameType.minPlayers}
+              maxPlayers={selectedGameType.maxPlayers}
             />
             <div className="grid grid-cols-1 gap-2">
               {AI_MODELS.map((model) => {
@@ -400,16 +585,27 @@ export default function HostPage() {
             )}
 
             <div className="mb-8">
-              <Toggle
-                checked={hostParticipation === "PLAYER"}
-                onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
-                label="Host Plays Too"
-                description={
-                  hostParticipation === "PLAYER"
-                    ? "Host joins as a player (great for remote games)"
-                    : "Host runs the game as a display/controller only (TV mode)"
-                }
-              />
+              {isMatchSlop ? (
+                <div className="rounded-xl border-2 border-dashed border-punch/30 bg-punch/5 p-4">
+                  <p className="text-sm font-medium text-punch mb-1">
+                    Host Plays Too
+                  </p>
+                  <p className="text-xs text-ink-dim/70">
+                    MatchSlop always runs in display-only TV mode. Everyone interacts from a phone, including the host if they want to join.
+                  </p>
+                </div>
+              ) : (
+                <Toggle
+                  checked={hostParticipation === "PLAYER"}
+                  onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
+                  label="Host Plays Too"
+                  description={
+                    hostParticipation === "PLAYER"
+                      ? "Host joins as a player (great for remote games)"
+                      : "Host runs the game as a display/controller only (TV mode)"
+                  }
+                />
+              )}
             </div>
 
             {selectedGameType.supportsNarrator && <div className="mb-8">

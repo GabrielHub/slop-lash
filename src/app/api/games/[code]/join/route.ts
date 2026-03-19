@@ -117,6 +117,7 @@ export async function POST(
     return NextResponse.json({
       playerId: existingPlayer.id,
       gameId: game.id,
+      gameType: game.gameType,
       playerType: existingPlayer.type === "SPECTATOR" ? "HUMAN" : existingPlayer.type,
       rejoinToken: newToken,
     });
@@ -187,6 +188,7 @@ export async function POST(
   return NextResponse.json({
     playerId: player.id,
     gameId: game.id,
+    gameType: game.gameType,
     playerType: player.type,
     rejoinToken: player.rejoinToken,
   });

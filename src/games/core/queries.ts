@@ -27,6 +27,7 @@ const responseSelect = {
   promptId: true,
   playerId: true,
   text: true,
+  metadata: true,
   pointsEarned: true,
   failReason: true,
   player: { select: responsePlayerSelect },
@@ -54,7 +55,7 @@ export const roundsIncludeWriting = {
     include: {
       assignments: { select: { promptId: true, playerId: true } },
       responses: {
-        select: { id: true, playerId: true, text: true },
+        select: { id: true, playerId: true, text: true, metadata: true },
       },
     },
   },

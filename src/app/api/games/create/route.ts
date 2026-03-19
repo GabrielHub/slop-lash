@@ -1,10 +1,11 @@
 import { NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { getGameDefinition, getAllGameTypes } from "@/games/registry";
 import type { GameType } from "@/games/core";
 import { generateUniqueRoomCode } from "@/games/core/room";
-import { selectUniqueModelsByProvider } from "@/lib/models";
+import { getModelByModelId, selectUniqueModelsByProvider } from "@/lib/models";
 import { sanitize } from "@/lib/sanitize";
 import { parseJsonBody } from "@/lib/http";
 import { cleanupOldGames } from "@/games/core/cleanup";
@@ -13,8 +14,17 @@ import type { TtsMode } from "@/lib/types";
 import { VOICE_NAMES } from "@/games/sloplash/voices";
 import { createHostControlToken, hashHostControlToken } from "@/lib/host-control";
 import { logGameEvent } from "@/games/core/observability";
+import { MATCHSLOP_TOTAL_TURNS } from "@/games/matchslop/config/game-config";
+import { createInitialModeState } from "@/games/matchslop/game-logic-core";
+import { MATCHSLOP_IDENTITIES, type MatchSlopIdentity } from "@/games/matchslop/identities";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
+
+function parseMatchSlopIdentity(value: unknown): MatchSlopIdentity | null {
+  return typeof value === "string" && MATCHSLOP_IDENTITIES.includes(value as MatchSlopIdentity)
+    ? value as MatchSlopIdentity
+    : null;
+}
 
 function parseTtsMode(value: unknown): TtsMode {
   if (value === "OFF" || value === "ON") {
@@ -39,6 +49,9 @@ export async function POST(request: Request) {
   const body = await parseJsonBody<{
     hostName?: unknown;
     aiModelIds?: unknown;
+    personaModelId?: unknown;
+    seekerIdentity?: unknown;
+    personaIdentity?: unknown;
     hostSecret?: unknown;
     hostParticipation?: unknown;
     timersDisabled?: unknown;
@@ -52,6 +65,9 @@ export async function POST(request: Request) {
   const {
     hostName,
     aiModelIds,
+    personaModelId,
+    seekerIdentity,
+    personaIdentity,
     hostSecret,
     hostParticipation,
     timersDisabled,
@@ -83,8 +99,33 @@ export async function POST(request: Request) {
     typeof rawGameType === "string" && validGameTypes.includes(rawGameType as GameType)
   ) ? rawGameType as GameType : "SLOPLASH";
   const def = getGameDefinition(gameType);
-  const hostMode = parseHostParticipation(hostParticipation);
+  const requestedHostMode = parseHostParticipation(hostParticipation);
+  const hostMode: HostParticipation =
+    gameType === "MATCHSLOP" ? "DISPLAY_ONLY" : requestedHostMode;
   const isHostPlayer = hostMode === "PLAYER";
+  const validPersonaModelId =
+    typeof personaModelId === "string" &&
+    personaModelId.trim().length > 0 &&
+    getModelByModelId(personaModelId) != null
+      ? personaModelId
+      : null;
+  const validSeekerIdentity = parseMatchSlopIdentity(seekerIdentity);
+  const validPersonaIdentity = parseMatchSlopIdentity(personaIdentity);
+
+  if (gameType === "MATCHSLOP") {
+    if (!validPersonaModelId) {
+      return NextResponse.json(
+        { error: "Persona model is required for MatchSlop" },
+        { status: 400 }
+      );
+    }
+    if (!validSeekerIdentity || !validPersonaIdentity) {
+      return NextResponse.json(
+        { error: "MatchSlop requires valid seeker and persona identities" },
+        { status: 400 }
+      );
+    }
+  }
 
   if (isHostPlayer && (!hostName || typeof hostName !== "string")) {
     return NextResponse.json(
@@ -118,10 +159,25 @@ export async function POST(request: Request) {
       ? randomBytes(12).toString("base64url")
       : null;
     const effectiveTtsMode = def.capabilities.supportsNarrator ? parseTtsMode(ttsMode) : ("OFF" as const);
+    const selectedAiModelIds = Array.isArray(aiModelIds)
+      ? aiModelIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const filteredAiModelIds = gameType === "MATCHSLOP" && validPersonaModelId
+      ? selectedAiModelIds.filter((id) => id !== validPersonaModelId)
+      : selectedAiModelIds;
     const game = await prisma.game.create({
       data: {
         roomCode,
         gameType,
+        totalRounds: gameType === "MATCHSLOP" ? MATCHSLOP_TOTAL_TURNS : undefined,
+        personaModelId: gameType === "MATCHSLOP" ? validPersonaModelId : null,
+        modeState:
+          gameType === "MATCHSLOP"
+            ? (createInitialModeState(
+                validSeekerIdentity!,
+                validPersonaIdentity!,
+              ) as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         timersDisabled: timersDisabled === true,
         ttsMode: effectiveTtsMode,
         ttsVoice: effectiveTtsMode === "ON" ? parseTtsVoice(ttsVoice) : "RANDOM",
@@ -137,11 +193,13 @@ export async function POST(request: Request) {
       },
       select: {
         id: true,
-        players: { select: { id: true } },
+        ...(isHostPlayer ? { players: { select: { id: true } } } : {}),
       },
     });
 
-    const createdHostPlayerId = game.players[0]?.id ?? null;
+    const createdHostPlayerId = isHostPlayer
+      ? (game as { players?: { id: string }[] }).players?.[0]?.id ?? null
+      : null;
     if (createdHostPlayerId) {
       await prisma.game.update({
         where: { id: game.id },
@@ -149,10 +207,9 @@ export async function POST(request: Request) {
       });
     }
 
-    if (Array.isArray(aiModelIds)) {
-      const validIds = aiModelIds.filter((id): id is string => typeof id === "string");
+    if (filteredAiModelIds.length > 0) {
       const maxAiPlayers = def.constants.maxPlayers - (isHostPlayer ? 1 : 0);
-      const aiPlayers = selectUniqueModelsByProvider(validIds)
+      const aiPlayers = selectUniqueModelsByProvider(filteredAiModelIds)
         .slice(0, maxAiPlayers)
         .map((model) => ({
           gameId: game.id,
@@ -168,7 +225,8 @@ export async function POST(request: Request) {
 
     logGameEvent("created", { gameType, gameId: game.id, roomCode }, {
       hostMode,
-      aiPlayers: Array.isArray(aiModelIds) ? aiModelIds.filter((id): id is string => typeof id === "string").length : 0,
+      aiPlayers: filteredAiModelIds.length,
+      personaModelId: validPersonaModelId,
       ttsMode: effectiveTtsMode,
     });
 

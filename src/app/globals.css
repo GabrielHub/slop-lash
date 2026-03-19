@@ -553,6 +553,175 @@ body::after {
   animation: cs-particle-rise ease-out forwards;
 }
 
+/* ============================================
+   MATCHSLOP THEME: "NEON ROMANCE"
+   A dating-app-meets-cocktail-bar aesthetic.
+   Rose + Coral + Electric Violet on deep plum.
+   ============================================ */
+
+[data-game="matchslop"] {
+  --ms-bg: #110B14;
+  --ms-surface: #1A1220;
+  --ms-raised: #24192E;
+  --ms-ink: #F4ECF8;
+  --ms-ink-dim: #9B8AAE;
+  --ms-rose: #F06292;
+  --ms-rose-soft: #F0629218;
+  --ms-rose-glow: #F0629240;
+  --ms-coral: #FF8A65;
+  --ms-coral-soft: #FF8A6518;
+  --ms-violet: #B388FF;
+  --ms-violet-soft: #B388FF18;
+  --ms-mint: #69F0AE;
+  --ms-mint-soft: #69F0AE18;
+  --ms-red: #FF5252;
+  --ms-red-soft: #FF525218;
+  --ms-bubble-player: #1E1428;
+  --ms-bubble-persona: #2A1424;
+  --ms-edge: #302040;
+  --ms-edge-strong: #4A3660;
+  --ms-glow: 0 0 40px #F0629215, 0 0 80px #B388FF08;
+  --ms-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --ms-gradient-romance: linear-gradient(135deg, #F06292, #FF8A65, #B388FF);
+}
+
+[data-theme="light"] [data-game="matchslop"],
+:root:not([data-theme="dark"]) [data-game="matchslop"] {
+  --ms-bg: #FFF5F7;
+  --ms-surface: #FFFFFF;
+  --ms-raised: #FFF0F3;
+  --ms-ink: #2D1B33;
+  --ms-ink-dim: #8A7090;
+  --ms-rose: #E91E63;
+  --ms-rose-soft: #E91E6318;
+  --ms-rose-glow: #E91E6340;
+  --ms-coral: #E65100;
+  --ms-coral-soft: #E6510018;
+  --ms-violet: #7C4DFF;
+  --ms-violet-soft: #7C4DFF18;
+  --ms-mint: #00C853;
+  --ms-mint-soft: #00C85318;
+  --ms-red: #D32F2F;
+  --ms-red-soft: #D32F2F18;
+  --ms-bubble-player: #FFF0F3;
+  --ms-bubble-persona: #F3E5F5;
+  --ms-edge: #E8D5E8;
+  --ms-edge-strong: #D0B8D0;
+  --ms-glow: 0 0 40px #E91E6312, 0 0 80px #7C4DFF08;
+  --ms-shadow: 0 2px 12px rgba(45, 27, 51, 0.1);
+  --ms-gradient-romance: linear-gradient(135deg, #E91E63, #E65100, #7C4DFF);
+}
+
+/* --- MatchSlop Heart Beat --- */
+@keyframes ms-heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.15); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.1); }
+  56% { transform: scale(1); }
+}
+
+.animate-ms-heartbeat {
+  animation: ms-heartbeat 1.4s ease-in-out infinite;
+}
+
+/* --- MatchSlop Match Sealed Celebration --- */
+@keyframes ms-match-sealed {
+  0% {
+    transform: scale(0) rotate(-20deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(5deg);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(0.9) rotate(-2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-ms-match-sealed {
+  animation: ms-match-sealed 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* --- MatchSlop Unmatched X Slam --- */
+@keyframes ms-unmatch-slam {
+  0% {
+    transform: scale(2.5) rotate(15deg);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(0.85) rotate(-3deg);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(1.05) rotate(1deg);
+  }
+  100% {
+    transform: scale(1) rotate(-2deg);
+    opacity: 0.9;
+  }
+}
+
+.animate-ms-unmatch-slam {
+  animation: ms-unmatch-slam 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* --- MatchSlop Bubble Float In --- */
+@keyframes ms-bubble-in {
+  0% {
+    transform: translateY(20px) scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-ms-bubble-in {
+  animation: ms-bubble-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* --- MatchSlop Profile Card Shimmer --- */
+@keyframes ms-profile-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.ms-profile-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(240, 98, 146, 0.06) 40%,
+    rgba(179, 136, 255, 0.1) 50%,
+    rgba(240, 98, 146, 0.06) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: ms-profile-shimmer 5s ease-in-out infinite;
+}
+
+/* --- MatchSlop Glow Pulse for active states --- */
+@keyframes ms-glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px var(--ms-rose-soft), var(--ms-shadow); }
+  50% { box-shadow: 0 0 40px var(--ms-rose-glow), 0 0 80px var(--ms-violet-soft), var(--ms-shadow); }
+}
+
+.animate-ms-glow-pulse {
+  animation: ms-glow-pulse 3s ease-in-out infinite;
+}
+
+/* --- MatchSlop Typing Dots --- */
+@keyframes ms-typing-dot {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   body::after {
     display: none;
@@ -569,9 +738,18 @@ body::after {
   .animate-heat-pulse,
   .animate-vs-glow,
   .animate-cs-particle-fall,
-  .animate-cs-particle-rise {
+  .animate-cs-particle-rise,
+  .animate-ms-heartbeat,
+  .animate-ms-match-sealed,
+  .animate-ms-unmatch-slam,
+  .animate-ms-bubble-in,
+  .animate-ms-glow-pulse {
     animation: none !important;
     opacity: 1 !important;
+  }
+
+  .ms-profile-shimmer {
+    animation: none !important;
   }
 
   .shimmer-sweep::after {

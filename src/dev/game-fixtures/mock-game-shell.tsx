@@ -192,6 +192,7 @@ export function MockGameShell({
             id: `resp-${Date.now()}`,
             promptId,
             playerId: responderId,
+            metadata: null,
             text,
             pointsEarned: 0,
             failReason: null,

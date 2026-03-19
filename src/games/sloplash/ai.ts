@@ -77,8 +77,8 @@ function getLowReasoningProviderOptions(
   const provider = modelId.split("/")[0];
   if (provider === "anthropic") return { anthropic: { effort: "low" } };
   if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
+  if (provider === "openai") return { openai: { reasoningEffort: "low" } };
   // xai: no documented low-effort reasoning options
-  // openai/gpt-5.2 is not a reasoning model (o3/o4-mini are)
   // deepseek: only enable/disable, no effort levels — leave default
   // moonshotai, minimax, zai, xiaomi, alibaba: no documented reasoning options
   return undefined;

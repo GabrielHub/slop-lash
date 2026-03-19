@@ -110,11 +110,13 @@ export async function POST(
     }
   }
 
-  // AI_CHAT_SHOWDOWN: all players respond AND vote (no abstains, self-vote disallowed)
-  // SLOPLASH: respondents cannot vote on their own prompt (abstains allowed)
-  const isAllPlayerVoting = game.gameType === "AI_CHAT_SHOWDOWN";
+  // AI_CHAT_SHOWDOWN and MATCHSLOP: all players respond AND vote, but only
+  // AI_CHAT_SHOWDOWN forbids abstains. SLOPLASH respondents cannot vote at all.
+  const isAllPlayerVoting =
+    game.gameType === "AI_CHAT_SHOWDOWN" || game.gameType === "MATCHSLOP";
+  const abstainForbidden = game.gameType === "AI_CHAT_SHOWDOWN";
 
-  if (isAllPlayerVoting && !validResponseId) {
+  if (abstainForbidden && !validResponseId) {
     return NextResponse.json(
       { error: "Abstaining is not allowed in this game mode" },
       { status: 400 }
@@ -192,6 +194,7 @@ export async function POST(
   logGameEvent("voted", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
     voterId: validVoterId,
     abstain: !validResponseId,
+    weighted: game.gameType === "MATCHSLOP",
   });
   await publishGameStateEvent(game.id);
 

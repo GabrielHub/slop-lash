@@ -7,12 +7,13 @@ describe("game registry", () => {
   it("resolves registered games and rejects unknown types", () => {
     expect(getGameDefinition("SLOPLASH").id).toBe("SLOPLASH");
     expect(getGameDefinition("AI_CHAT_SHOWDOWN").id).toBe("AI_CHAT_SHOWDOWN");
+    expect(getGameDefinition("MATCHSLOP").id).toBe("MATCHSLOP");
     expect(() => getGameDefinition("NOPE" as GameType)).toThrow(/unknown game type/i);
   });
 
   it("enumerates exactly the supported game types", () => {
     const types = getAllGameTypes().sort();
-    expect(types).toEqual(["AI_CHAT_SHOWDOWN", "SLOPLASH"]);
+    expect(types).toEqual(["AI_CHAT_SHOWDOWN", "MATCHSLOP", "SLOPLASH"]);
     for (const type of types) {
       expect(() => getGameDefinition(type)).not.toThrow();
     }
@@ -65,5 +66,16 @@ describe("game registry", () => {
     });
     expect(chatslop.constants.maxSpectators).toBe(0);
     expect(chatslop.displayName).toBe("ChatSlop");
+
+    const matchslop = getGameDefinition("MATCHSLOP");
+    expect(matchslop.capabilities).toMatchObject({
+      supportsNarrator: false,
+      supportsSfx: true,
+      supportsChatFeed: false,
+      supportsSpectators: false,
+      retainsCompletedData: false,
+    });
+    expect(matchslop.constants.maxSpectators).toBe(0);
+    expect(matchslop.displayName).toBe("MatchSlop");
   });
 });

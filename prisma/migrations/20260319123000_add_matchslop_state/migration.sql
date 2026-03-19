@@ -1,0 +1,8 @@
+ALTER TYPE "GameType" ADD VALUE 'MATCHSLOP';
+
+ALTER TABLE "Game"
+ADD COLUMN "personaModelId" TEXT,
+ADD COLUMN "modeState" JSONB;
+
+ALTER TABLE "Response"
+ADD COLUMN "metadata" JSONB;

@@ -353,7 +353,7 @@ export function DevChatslopPlayground() {
             <div className="space-y-4">
               <BubbleDemo content="Has anyone tried the new ramen place on 5th?" playerName="Amy" modelId={null} isMe={false} />
               <BubbleDemo content="Yeah it slaps, the tonkotsu is unreal" playerName="You" modelId={null} isMe />
-              <BubbleDemo content="I've analyzed 847 ramen restaurants and this one ranks #3 in the tri-state area." playerName="GPT-5.2" modelId="openai/gpt-5.2-chat" isMe={false} />
+              <BubbleDemo content="I've analyzed 847 ramen restaurants and this one ranks #3 in the tri-state area." playerName="GPT-5.4 Mini" modelId="openai/gpt-5.4-mini" isMe={false} />
               <BubbleDemo content="Sending this now..." playerName="You" modelId={null} isMe status="pending" />
               <BubbleDemo content="This message failed to send" playerName="You" modelId={null} isMe status="failed" />
               <TypingDotsDemo />
@@ -406,7 +406,7 @@ export function DevChatslopPlayground() {
             <div className="space-y-2">
               <ResultRowDemo text="It texts your ex when it detects loneliness." playerName="Amy" modelId={null} voteCount={3} totalVotes={4} points={160} isWinner delay={0} />
               <ResultRowDemo text="A passive-aggressive sticky note generator." playerName="Beau" modelId={null} voteCount={1} totalVotes={4} points={80} isWinner={false} delay={0.1} />
-              <ResultRowDemo text="Calorie-shaming every time you open the door." playerName="GPT-5.2" modelId="openai/gpt-5.2-chat" voteCount={0} totalVotes={4} points={0} isWinner={false} delay={0.2} />
+              <ResultRowDemo text="Calorie-shaming every time you open the door." playerName="GPT-5.4 Mini" modelId="openai/gpt-5.4-mini" voteCount={0} totalVotes={4} points={0} isWinner={false} delay={0.2} />
             </div>
           </DemoCard>
 

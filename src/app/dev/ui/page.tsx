@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   SLOPLASH_SCENARIOS,
   CHATSLOP_SCENARIOS,
+  MATCHSLOP_SCENARIOS,
   MOCK_SCENARIOS,
 } from "@/dev/game-fixtures/scenarios";
 import { DevThemeToggle } from "@/dev/dev-theme-toggle";
@@ -127,6 +128,27 @@ export default function DevUiIndexPage() {
                 scenario={scenario}
                 index={index}
                 badge="ChatSlop"
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <h2 className="font-display text-xl font-bold text-ink">
+              MatchSlop
+            </h2>
+          </div>
+          <p className="text-sm text-ink-dim mb-4">
+            TV-first dating persona fixtures for the shared stage shell.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {MATCHSLOP_SCENARIOS.map((scenario, index) => (
+              <ScenarioCard
+                key={scenario.slug}
+                scenario={scenario}
+                index={index}
+                badge="MatchSlop"
               />
             ))}
           </div>

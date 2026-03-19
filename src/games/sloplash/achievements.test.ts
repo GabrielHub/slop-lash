@@ -26,7 +26,7 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
     players: [
       { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
       { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-      { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 200, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+      { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 200, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
     ],
     rounds: [],
     ...overrides,
@@ -130,7 +130,7 @@ describe("computeAchievements", () => {
       players: [
         { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
       ],
     });
@@ -159,7 +159,7 @@ describe("computeAchievements", () => {
       players: [
         { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
       ],
     });
@@ -179,7 +179,7 @@ describe("computeAchievements", () => {
           "pr1",
           [
             { id: "resp1", playerId: "p1", text: "Human wins", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "ai1", text: "AI loses", playerType: "AI", modelId: "openai/gpt-5.2" },
+            { id: "resp2", playerId: "ai1", text: "AI loses", playerType: "AI", modelId: "openai/gpt-5.4-mini" },
           ],
           [
             { responseId: "resp1", voterId: "p2" },
@@ -193,7 +193,7 @@ describe("computeAchievements", () => {
         { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);
@@ -224,7 +224,7 @@ describe("computeAchievements", () => {
       players: [
         { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
       ],
@@ -252,7 +252,7 @@ describe("computeAchievements", () => {
             "pr2",
             [
               { id: "resp3", playerId: "p1", text: "Answer 2", playerType: "HUMAN", modelId: null },
-              { id: "resp4", playerId: "ai1", text: "AI answer", playerType: "AI", modelId: "openai/gpt-5.2" },
+              { id: "resp4", playerId: "ai1", text: "AI answer", playerType: "AI", modelId: "openai/gpt-5.4-mini" },
             ],
             [],
           ),
@@ -261,7 +261,7 @@ describe("computeAchievements", () => {
       players: [
         { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
         { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.2", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
       ],
     });
     const achievements = computeAchievements(game);

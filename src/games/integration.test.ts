@@ -30,6 +30,7 @@ vi.mock("@/lib/db", () => ({
     },
     round: { findFirst: vi.fn() },
     prompt: { findMany: vi.fn() },
+    promptAssignment: { findUnique: vi.fn() },
     response: { findFirst: vi.fn(), create: vi.fn() },
     vote: { findFirst: vi.fn(), create: vi.fn() },
     leaderboardProcessedGame: { deleteMany: vi.fn() },
@@ -77,6 +78,7 @@ import { deleteTransientGameData, cleanupOldGames } from "@/games/core/cleanup";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import { POST as createPOST } from "@/app/api/games/create/route";
 import { POST as joinPOST } from "@/app/api/games/[code]/join/route";
+import { POST as respondPOST } from "@/app/api/games/[code]/respond/route";
 import { POST as votePOST } from "@/app/api/games/[code]/vote/route";
 import { findControllerPayload } from "@/app/api/games/[code]/controller/controller-data";
 
@@ -92,6 +94,7 @@ const db = prisma as unknown as {
   player: { findFirst: Fn; findUnique: Fn; findMany: Fn; updateMany: Fn; count: Fn; create: Fn; createMany: Fn };
   round: { findFirst: Fn };
   prompt: { findMany: Fn };
+  promptAssignment: { findUnique: Fn };
   response: { findFirst: Fn; create: Fn };
   vote: { findFirst: Fn; create: Fn };
   leaderboardProcessedGame: { deleteMany: Fn };
@@ -288,6 +291,22 @@ describe("host creation", () => {
     expect(body.error).toMatch(/host name is required/i);
   });
 
+  it("requires a valid persona model for MatchSlop", async () => {
+    const res = await createPOST(
+      jsonRequest({
+        hostSecret: "test-secret",
+        gameType: "MATCHSLOP",
+        hostParticipation: "DISPLAY_ONLY",
+        seekerIdentity: "MAN",
+        personaIdentity: "WOMAN",
+      }),
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/persona model/i);
+  });
+
   afterAll(() => {
     process.env.HOST_SECRET = originalHostSecret;
   });
@@ -396,6 +415,36 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
       fn({
         response: {
           findFirst: vi.fn().mockResolvedValue(null), // voter is not a respondent
+        },
+        vote: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn(),
+        },
+        game: { update: vi.fn() },
+      } as never),
+    );
+
+    const res = await votePOST(
+      jsonRequest({
+        voterId: "voter1",
+        promptId: "prompt1",
+        responseId: null,
+      }),
+      routeParams(),
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("allows abstain for MATCHSLOP", async () => {
+    setupVotingGame("MATCHSLOP");
+
+    db.$transaction.mockImplementation(async (fn: (...args: never[]) => unknown) =>
+      fn({
+        response: {
+          findFirst: vi.fn().mockResolvedValue(null),
         },
         vote: {
           findFirst: vi.fn().mockResolvedValue(null),
@@ -673,6 +722,72 @@ describe("AI_CHAT_SHOWDOWN controller voting payload", () => {
       "r3",
       "r4",
     ]);
+  });
+});
+
+describe("MATCHSLOP response metadata", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("enriches opener submissions with the selected profile prompt text", async () => {
+    const createResponse = vi.fn().mockResolvedValue({ id: "resp1" });
+
+    db.game.findUnique.mockResolvedValue({
+      id: "g1",
+      gameType: "MATCHSLOP",
+      status: "WRITING",
+      currentRound: 1,
+      modeState: {
+        profile: {
+          displayName: "Nora",
+          age: 29,
+          location: "Echo Park",
+          bio: "Anchovy menace.",
+          tagline: "Be funny.",
+          prompts: [
+            { id: "m-p1", prompt: "Typical Sunday", answer: "Anchovies" },
+          ],
+        },
+      },
+    } as never);
+    db.player.findFirst.mockResolvedValue({
+      id: "player1",
+      type: "HUMAN",
+      participationStatus: "ACTIVE",
+    } as never);
+    db.promptAssignment.findUnique.mockResolvedValue({ id: "assign1" } as never);
+    db.$transaction.mockImplementation(async (fn: (...args: never[]) => unknown) =>
+      fn({
+        response: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: createResponse,
+        },
+        game: { update: vi.fn() },
+      } as never),
+    );
+
+    const res = await respondPOST(
+      jsonRequest({
+        playerId: "player1",
+        promptId: "prompt1",
+        text: "I respect a reckless anchovy.",
+        metadata: { selectedPromptId: "m-p1" },
+      }),
+      routeParams(),
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(createResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: {
+            selectedPromptId: "m-p1",
+            selectedPromptText: "Typical Sunday",
+          },
+        }),
+      }),
+    );
   });
 });
 

@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { getGameDefinition } from "@/games/registry";
 import { sanitize } from "@/lib/sanitize";
@@ -6,23 +7,71 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
 import { logGameEvent } from "@/games/core/observability";
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { parseModeState } from "@/games/matchslop/game-logic-core";
+
+function buildMatchSlopResponseMetadata(
+  currentRound: number,
+  modeStateRaw: unknown,
+  metadata: Record<string, unknown> | null,
+): Prisma.InputJsonValue | typeof Prisma.DbNull | { error: string } {
+  if (currentRound !== 1) {
+    return Prisma.DbNull;
+  }
+
+  const selectedPromptId =
+    typeof metadata?.selectedPromptId === "string"
+      ? metadata.selectedPromptId
+      : null;
+  if (!selectedPromptId) {
+    return { error: "MatchSlop openers must pick a profile prompt" };
+  }
+
+  const profile = parseModeState(modeStateRaw).profile;
+  const selectedPrompt = profile?.prompts.find((prompt) => prompt.id === selectedPromptId);
+  if (!selectedPrompt) {
+    return { error: "Selected MatchSlop prompt is invalid" };
+  }
+
+  return {
+    selectedPromptId: selectedPrompt.id,
+    selectedPromptText: selectedPrompt.prompt,
+  } satisfies Prisma.InputJsonValue;
+}
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ playerId?: unknown; promptId?: unknown; text?: unknown }>(request);
+  const body = await parseJsonBody<{
+    playerId?: unknown;
+    promptId?: unknown;
+    text?: unknown;
+    metadata?: unknown;
+  }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { playerId, promptId, text } = body;
+  const { playerId, promptId, text, metadata } = body;
   const validPlayerId = typeof playerId === "string" ? playerId : null;
   const validPromptId = typeof promptId === "string" ? promptId : null;
+
+  const validMetadata =
+    metadata == null
+      ? null
+      : typeof metadata === "object" && !Array.isArray(metadata)
+        ? metadata as Record<string, unknown>
+        : undefined;
 
   if (!validPlayerId || !validPromptId || !text || typeof text !== "string") {
     return NextResponse.json(
       { error: "playerId, promptId, and text are required" },
+      { status: 400 }
+    );
+  }
+  if (validMetadata === undefined) {
+    return NextResponse.json(
+      { error: "metadata must be an object when provided" },
       { status: 400 }
     );
   }
@@ -37,7 +86,7 @@ export async function POST(
 
   const game = await prisma.game.findUnique({
     where: { roomCode: code.toUpperCase() },
-    select: { id: true, gameType: true, status: true },
+    select: { id: true, gameType: true, status: true, currentRound: true, modeState: true },
   });
 
   if (!game) {
@@ -94,6 +143,18 @@ export async function POST(
     );
   }
 
+  const responseMetadata =
+    game.gameType === "MATCHSLOP"
+      ? buildMatchSlopResponseMetadata(game.currentRound, game.modeState, validMetadata)
+      : Prisma.DbNull;
+  if (
+    typeof responseMetadata === "object" &&
+    responseMetadata != null &&
+    "error" in responseMetadata
+  ) {
+    return NextResponse.json({ error: responseMetadata.error }, { status: 400 });
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.response.findFirst({
@@ -106,7 +167,12 @@ export async function POST(
       }
 
       await tx.response.create({
-        data: { promptId: validPromptId, playerId: validPlayerId, text: trimmed },
+        data: {
+          promptId: validPromptId,
+          playerId: validPlayerId,
+          text: trimmed,
+          metadata: responseMetadata,
+        },
       });
 
       await tx.game.update({

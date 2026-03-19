@@ -37,7 +37,7 @@ function player(
     id,
     name,
     type,
-    modelId: type === "AI" ? "openai/gpt-5.2-chat" : null,
+    modelId: type === "AI" ? "openai/gpt-5.4-mini" : null,
     idleRounds: 0,
     score: 0,
     humorRating: 1.0,
@@ -56,7 +56,7 @@ function basePlayers(): GamePlayer[] {
     player(AI_ID, "GPT Slopbot", "AI", {
       score: 77,
       humorRating: 1.02,
-      modelId: "openai/gpt-5.2-chat",
+      modelId: "openai/gpt-5.4-mini",
     }),
   ];
 }
@@ -64,7 +64,7 @@ function basePlayers(): GamePlayer[] {
 function modelUsages(): GameModelUsage[] {
   return [
     {
-      modelId: "openai/gpt-5.2-chat",
+      modelId: "openai/gpt-5.4-mini",
       inputTokens: 8421,
       outputTokens: 3912,
       costUsd: 0.0724,
@@ -99,6 +99,7 @@ function response(
     id,
     promptId,
     playerId,
+    metadata: null,
     text,
     pointsEarned,
     failReason: null,
@@ -159,6 +160,8 @@ function makeGame(overrides: Partial<GameState>): GameState {
     id: "game-mock-1",
     roomCode: "SLOP",
     gameType: "SLOPLASH",
+    personaModelId: null,
+    modeState: null,
     status: "LOBBY",
     currentRound: 1,
     totalRounds: 2,
@@ -494,7 +497,7 @@ function buildFinalResults(): MockScenario {
       aiCostUsd: 0.1448,
       modelUsages: [
         {
-          modelId: "openai/gpt-5.2-chat",
+          modelId: "openai/gpt-5.4-mini",
           inputTokens: 16842,
           outputTokens: 7824,
           costUsd: 0.1448,
@@ -536,7 +539,7 @@ function chatPlayer(
     id,
     name,
     type,
-    modelId: type === "AI" ? "openai/gpt-5.2-chat" : null,
+    modelId: type === "AI" ? "openai/gpt-5.4-mini" : null,
     idleRounds: 0,
     score: 0,
     humorRating: 1.0,
@@ -555,7 +558,7 @@ function chatBasePlayers(): GamePlayer[] {
     chatPlayer(CHAT_AI_ID, "Claude Bot", "AI", {
       score: 55,
       humorRating: 1.0,
-      modelId: "openai/gpt-5.2-chat",
+      modelId: "openai/gpt-5.4-mini",
     }),
   ];
 }
@@ -566,6 +569,8 @@ function makeChatGame(overrides: Partial<GameState>): GameState {
     id: "game-chat-mock",
     roomCode: "CHAT",
     gameType: "AI_CHAT_SHOWDOWN",
+    personaModelId: null,
+    modeState: null,
     status: "LOBBY",
     currentRound: 1,
     totalRounds: 3,
@@ -583,7 +588,7 @@ function makeChatGame(overrides: Partial<GameState>): GameState {
     aiCostUsd: 0.035,
     modelUsages: [
       {
-        modelId: "openai/gpt-5.2-chat",
+        modelId: "openai/gpt-5.4-mini",
         inputTokens: 4200,
         outputTokens: 1900,
         costUsd: 0.035,
@@ -609,6 +614,7 @@ function buildChatWritingRound(players: GamePlayer[], submitted: string[] = []):
       id: `cresp-w-${i}`,
       promptId: "cprompt-w-1",
       playerId: id,
+      metadata: null,
       text: id === CHAT_AI_ID
         ? "It judges you silently via Bluetooth."
         : `Response from ${p.get(id)!.name}`,
@@ -646,6 +652,7 @@ function buildChatVotingRound(players: GamePlayer[], voted: string[] = []): Game
     id: `cresp-v-${i}`,
     promptId: "cprompt-v-1",
     playerId: pl.id,
+    metadata: null,
     text: [
       "It texts your ex when it detects loneliness.",
       "A passive-aggressive sticky note generator.",
@@ -692,6 +699,7 @@ function buildChatRoundResultsRound(players: GamePlayer[]): GameRound {
     id: `cresp-r-${i}`,
     promptId: "cprompt-r-1",
     playerId: pl.id,
+    metadata: null,
     text: [
       "It texts your ex when it detects loneliness.",
       "A passive-aggressive sticky note generator.",
@@ -850,7 +858,7 @@ function buildChatFinalResults(): MockScenario {
       aiCostUsd: 0.105,
       modelUsages: [
         {
-          modelId: "openai/gpt-5.2-chat",
+          modelId: "openai/gpt-5.4-mini",
           inputTokens: 12600,
           outputTokens: 5700,
           costUsd: 0.105,
@@ -882,9 +890,205 @@ export const CHATSLOP_SCENARIOS: MockScenario[] = [
   buildChatFinalResults(),
 ];
 
+const MOCK_NORA_PROFILE = {
+  displayName: "Nora, 29",
+  age: 29,
+  location: "Echo Park",
+  bio: "Tarot decks, bike grease, and the kind of confidence that gets you banned from trivia night.",
+  tagline: "Looking for someone funny enough to survive brunch.",
+  prompts: [
+    { id: "m-p1", prompt: "Typical Sunday", answer: "Farmer's market, then a reckless amount of anchovies." },
+    { id: "m-p2", prompt: "The most unhinged thing about me", answer: "I once live-blogged a neighborhood coyote." },
+    { id: "m-p3", prompt: "We will get along if", answer: "You can commit to a bit longer than a situationship." },
+  ],
+};
+
+const BASE_MATCHSLOP_MODE_STATE = {
+  seekerIdentity: "MAN",
+  personaIdentity: "WOMAN",
+  outcome: "IN_PROGRESS",
+  humanVoteWeight: 2,
+  aiVoteWeight: 1,
+  selectedPersonaExampleIds: ["vinyl-doomprep", "tarot-coder"],
+  selectedPlayerExampleIds: ["museum-feral", "mall-mystic"],
+  profile: MOCK_NORA_PROFILE,
+  personaImage: { status: "PENDING", imageUrl: null },
+  transcript: [] as Record<string, unknown>[],
+  lastRoundResult: null as Record<string, unknown> | null,
+};
+
+function makeMatchSlopGame(overrides: Partial<GameState>): GameState {
+  const players = overrides.players ?? basePlayers();
+  return {
+    id: "game-match-mock",
+    roomCode: "DATE",
+    gameType: "MATCHSLOP",
+    personaModelId: "openai/gpt-5.4-mini",
+    modeState: { ...BASE_MATCHSLOP_MODE_STATE },
+    status: "LOBBY",
+    currentRound: 1,
+    totalRounds: 4,
+    hostPlayerId: null,
+    phaseDeadline: null,
+    timersDisabled: false,
+    ttsMode: "OFF",
+    ttsVoice: "RANDOM",
+    votingPromptIndex: 0,
+    votingRevealing: false,
+    nextGameCode: null,
+    version: 1,
+    aiInputTokens: 900,
+    aiOutputTokens: 420,
+    aiCostUsd: 0.011,
+    modelUsages: [
+      {
+        modelId: "openai/gpt-5.4-mini",
+        inputTokens: 900,
+        outputTokens: 420,
+        costUsd: 0.011,
+      },
+    ],
+    players,
+    rounds: [],
+    ...overrides,
+  };
+}
+
+function buildMatchSlopWriting(): MockScenario {
+  return {
+    slug: "matchslop-writing",
+    title: "MatchSlop Writing",
+    description: "TV-first profile view with the first opener round ready.",
+    playerId: null,
+    game: makeMatchSlopGame({
+      status: "WRITING",
+      phaseDeadline: futureDeadline(52),
+    }),
+  };
+}
+
+function buildMatchSlopResults(): MockScenario {
+  return {
+    slug: "matchslop-results",
+    title: "MatchSlop Results",
+    description: "Winning opener revealed and the persona replied.",
+    playerId: null,
+    game: makeMatchSlopGame({
+      status: "ROUND_RESULTS",
+      currentRound: 1,
+      phaseDeadline: futureDeadline(12),
+      modeState: {
+        ...BASE_MATCHSLOP_MODE_STATE,
+        transcript: [
+          {
+            id: "mt-1",
+            speaker: "PLAYERS",
+            text: "You had me at reckless anchovies. I too enjoy flirting with coastal danger.",
+            turn: 1,
+            outcome: null,
+            authorName: "Amy",
+          },
+          {
+            id: "mt-2",
+            speaker: "PERSONA",
+            text: "Finally, a man who respects the fish. What's your most suspicious grocery-store purchase?",
+            turn: 1,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+        ],
+        lastRoundResult: {
+          promptId: "match-prompt-1",
+          winnerResponseId: "match-response-1",
+          winnerPlayerId: HUMAN_2_ID,
+          winnerText: "You had me at reckless anchovies. I too enjoy flirting with coastal danger.",
+          authorName: "Amy",
+          weightedVotes: 5,
+          rawVotes: 3,
+          selectedPromptId: "m-p1",
+          selectedPromptText: "Typical Sunday",
+        },
+      },
+    }),
+  };
+}
+
+function buildMatchSlopFinal(): MockScenario {
+  return {
+    slug: "matchslop-final",
+    title: "MatchSlop Final",
+    description: "Conversation finished with a sealed date.",
+    playerId: null,
+    game: makeMatchSlopGame({
+      status: "FINAL_RESULTS",
+      currentRound: 2,
+      modeState: {
+        ...BASE_MATCHSLOP_MODE_STATE,
+        outcome: "DATE_SEALED",
+        personaImage: {
+          status: "READY",
+          imageUrl: "/images/dev/matchslop-placeholder.jpg",
+        },
+        transcript: [
+          {
+            id: "mt-1",
+            speaker: "PLAYERS",
+            text: "You had me at reckless anchovies. I too enjoy flirting with coastal danger.",
+            turn: 1,
+            outcome: null,
+            authorName: "Amy",
+          },
+          {
+            id: "mt-2",
+            speaker: "PERSONA",
+            text: "Finally, a man who respects the fish. What's your most suspicious grocery-store purchase?",
+            turn: 1,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "mt-3",
+            speaker: "PLAYERS",
+            text: "Candle wax and limes. I like my dinner plans to feel like a minor prophecy.",
+            turn: 2,
+            outcome: null,
+            authorName: "Ong",
+          },
+          {
+            id: "mt-4",
+            speaker: "PERSONA",
+            text: "Insane answer. Thursday, 7 PM. Bring the limes and no further explanation.",
+            turn: 2,
+            outcome: "DATE_SEALED",
+            authorName: "Nora, 29",
+          },
+        ],
+        lastRoundResult: {
+          promptId: "match-prompt-2",
+          winnerResponseId: "match-response-2",
+          winnerPlayerId: HOST_ID,
+          winnerText: "Candle wax and limes. I like my dinner plans to feel like a minor prophecy.",
+          authorName: "Ong",
+          weightedVotes: 6,
+          rawVotes: 4,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      },
+    }),
+  };
+}
+
+export const MATCHSLOP_SCENARIOS: MockScenario[] = [
+  buildMatchSlopWriting(),
+  buildMatchSlopResults(),
+  buildMatchSlopFinal(),
+];
+
 export const MOCK_SCENARIOS: MockScenario[] = [
   ...SLOPLASH_SCENARIOS,
   ...CHATSLOP_SCENARIOS,
+  ...MATCHSLOP_SCENARIOS,
 ];
 
 export function getMockScenario(slug: string): MockScenario | undefined {
