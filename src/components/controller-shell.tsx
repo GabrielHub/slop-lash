@@ -9,7 +9,7 @@ import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
-import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
+import { MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
@@ -279,9 +279,11 @@ export function ControllerShell({ code }: { code: string }) {
               <Timer
                 deadline={gameState.phaseDeadline}
                 total={
-                  gameState.status === "VOTING"
-                    ? (gameState.votingRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS)
-                    : undefined
+                  gameState.status === "WRITING"
+                    ? WRITING_DURATION_SECONDS
+                    : gameState.status === "VOTING"
+                      ? (gameState.votingRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS)
+                      : undefined
                 }
               />
             </div>

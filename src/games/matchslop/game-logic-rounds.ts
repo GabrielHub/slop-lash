@@ -6,6 +6,7 @@ import {
   buildResultsDeadline,
   buildWritingDeadline,
   buildRoundPromptText,
+  createInitialPendingPersonaReply,
   getActivePlayerIds,
   isComebackRound,
   parseModeState,
@@ -382,6 +383,7 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
         lastRoundResult: null,
         comebackRound: null,
         outcome: "IN_PROGRESS",
+        pendingPersonaReply: createInitialPendingPersonaReply(),
       }),
       version: { increment: 1 },
     },
@@ -468,15 +470,30 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     const transcriptWithWinner = [...claim.modeState.transcript, winnerEntry];
     const forceContinue = claim.currentRound === 1;
 
-    const { reply, outcome, moodDelta, usage } = await generatePersonaReply(
-      game.personaModelId,
-      claim.modeState.seekerIdentity,
-      claim.modeState.personaIdentity,
-      profile,
-      transcriptWithWinner,
-      { forceContinue, currentMood: claim.modeState.mood },
-    );
-    await accumulateUsage(gameId, [usage]);
+    // Use the cached reply from the background generation if available
+    const cached = claim.modeState.pendingPersonaReply;
+    let reply: string;
+    let outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
+    let moodDelta: number;
+
+    if (cached.status === "READY" && cached.reply && cached.outcome != null && cached.moodDelta != null) {
+      reply = cached.reply;
+      outcome = cached.outcome;
+      moodDelta = cached.moodDelta;
+    } else {
+      const generated = await generatePersonaReply(
+        game.personaModelId,
+        claim.modeState.seekerIdentity,
+        claim.modeState.personaIdentity,
+        profile,
+        transcriptWithWinner,
+        { forceContinue, currentMood: claim.modeState.mood },
+      );
+      reply = generated.reply;
+      outcome = generated.outcome;
+      moodDelta = generated.moodDelta;
+      await accumulateUsage(gameId, [generated.usage]);
+    }
 
     // Compute new mood deterministically from the AI's delta
     const newMood = clampMatchSlopMood(claim.modeState.mood + moodDelta);
@@ -502,7 +519,11 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       mood: newMood,
     };
     const nextTranscript = [...transcriptWithWinner, personaEntry];
-    const updatedModeState = { ...claim.modeState, mood: newMood };
+    const updatedModeState = {
+      ...claim.modeState,
+      mood: newMood,
+      pendingPersonaReply: createInitialPendingPersonaReply(),
+    };
 
     if (advancePlan.kind === "NEXT_ROUND") {
       return await transitionClaimedAdvanceToNextRound({

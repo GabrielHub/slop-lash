@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
+import { getMatchSlopTimerTotal } from "@/games/matchslop/config/game-config";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { PlayerAvatar } from "@/components/player-avatar";
 import {
@@ -123,6 +124,13 @@ type MatchSlopModeState = {
   personaImage?: MatchSlopPersonaImageState | null;
   lastRoundResult?: MatchSlopRoundResult | null;
   mood?: number;
+  pendingPersonaReply?: {
+    status?: "NOT_REQUESTED" | "GENERATING" | "READY" | "FAILED";
+    reply?: string | null;
+    outcome?: string | null;
+    moodDelta?: number | null;
+    generationId?: string | null;
+  } | null;
   postMortemGeneration?: MatchSlopPostMortemGenerationStateLocal | null;
   postMortemDraft?: PostMortemDataLocal | null;
   postMortem?: PostMortemDataLocal | null;
@@ -167,6 +175,23 @@ import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from 
 
 function asModeState(state: GameState["modeState"] | undefined): MatchSlopModeState {
   return (state ?? {}) as MatchSlopModeState;
+}
+
+function getTranscriptSignature(entries: MatchSlopTranscriptEntry[]): string {
+  return entries
+    .map((entry) =>
+      [
+        entry.id ?? "",
+        entry.speaker ?? "",
+        entry.turn ?? "",
+        entry.authorName ?? "",
+        entry.text ?? "",
+        entry.outcome ?? "",
+        entry.selectedPromptId ?? "",
+        entry.selectedPromptText ?? "",
+      ].join("::"),
+    )
+    .join("|");
 }
 
 
@@ -240,6 +265,50 @@ function SwipeLeftIcon({ size = 20 }: { size?: number }) {
 }
 
 /* ─── Sub-components ─── */
+
+function PersonaTypingBubble({ personaName }: { personaName: string }) {
+  return (
+    <motion.div
+      className="flex justify-start"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 24, delay: 0.3 }}
+    >
+      <div
+        className="rounded-2xl rounded-bl-md"
+        style={{
+          background: "var(--ms-bubble-persona)",
+          border: "1px solid var(--ms-rose-soft)",
+          padding: "clamp(0.75rem, 1.5vw, 1.25rem) clamp(1rem, 1.8vw, 1.5rem)",
+        }}
+      >
+        <span
+          className="block font-bold uppercase tracking-wider mb-1"
+          style={{
+            fontSize: "clamp(0.55rem, 0.7vw, 0.7rem)",
+            color: "var(--ms-rose)",
+          }}
+        >
+          {personaName}
+        </span>
+        <div className="flex items-center gap-1.5 py-1 px-1">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="rounded-full"
+              style={{
+                width: "clamp(0.4rem, 0.6vw, 0.5rem)",
+                height: "clamp(0.4rem, 0.6vw, 0.5rem)",
+                background: "var(--ms-ink-dim)",
+                animation: `ms-typing-dot 1.4s ease-in-out ${i * 0.2}s infinite`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function TypingIndicator() {
   return (
@@ -414,6 +483,7 @@ export function ProfileCard({
   outcome,
   mood,
   gameStarted,
+  compact = false,
 }: {
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState | null;
@@ -421,6 +491,7 @@ export function ProfileCard({
   outcome: Outcome;
   mood: number;
   gameStarted: boolean;
+  compact?: boolean;
 }) {
   const imageStatus = personaImage?.status ?? "NOT_REQUESTED";
   const isProfileStreaming =
@@ -441,7 +512,7 @@ export function ProfileCard({
       animate="visible"
     >
       {/* Profile image / placeholder */}
-      <div className="relative" style={{ aspectRatio: "4/3" }}>
+      <div className="relative" style={{ aspectRatio: compact ? "6/5" : "4/3" }}>
         {imageStatus === "READY" && personaImage?.imageUrl ? (
           <div
             className="absolute inset-0 bg-cover bg-center"
@@ -492,7 +563,7 @@ export function ProfileCard({
               <h1
                 className="font-display font-bold leading-tight"
                 style={{
-                  fontSize: "clamp(1.75rem, 3vw, 3.5rem)",
+                  fontSize: compact ? "clamp(1.5rem, 2.25vw, 2.6rem)" : "clamp(1.75rem, 3vw, 3.5rem)",
                   color: "var(--ms-ink)",
                 }}
               >
@@ -502,7 +573,7 @@ export function ProfileCard({
                 <div
                   className="flex items-center gap-2 mt-1"
                   style={{
-                    fontSize: "clamp(0.8rem, 1.2vw, 1.25rem)",
+                    fontSize: compact ? "clamp(0.75rem, 0.95vw, 1rem)" : "clamp(0.8rem, 1.2vw, 1.25rem)",
                     color: "var(--ms-ink-dim)",
                   }}
                 >
@@ -559,7 +630,7 @@ export function ProfileCard({
               <p
                 className="font-display font-semibold italic mb-3"
                 style={{
-                  fontSize: "clamp(0.9rem, 1.3vw, 1.4rem)",
+                  fontSize: compact ? "clamp(0.85rem, 1vw, 1.05rem)" : "clamp(0.9rem, 1.3vw, 1.4rem)",
                   color: "var(--ms-rose)",
                 }}
               >
@@ -570,8 +641,12 @@ export function ProfileCard({
               <p
                 className="leading-relaxed"
                 style={{
-                  fontSize: "clamp(0.85rem, 1.1vw, 1.2rem)",
+                  fontSize: compact ? "clamp(0.8rem, 0.9vw, 0.98rem)" : "clamp(0.85rem, 1.1vw, 1.2rem)",
                   color: "var(--ms-ink)",
+                  display: compact ? "-webkit-box" : undefined,
+                  WebkitBoxOrient: compact ? "vertical" : undefined,
+                  WebkitLineClamp: compact ? 4 : undefined,
+                  overflow: compact ? "hidden" : undefined,
                 }}
               >
                 {profile.bio}
@@ -628,7 +703,7 @@ export function ProfileCard({
             transition={{ duration: 0.3 }}
           >
             <motion.div
-              className="space-y-3"
+              className={compact ? "space-y-2" : "space-y-3"}
               variants={staggerContainerSlow}
               initial="hidden"
               animate="visible"
@@ -636,8 +711,9 @@ export function ProfileCard({
               {profile.prompts.slice(0, 3).map((prompt, i) => (
                 <motion.div
                   key={prompt.id ?? `prompt-${i}`}
-                  className="rounded-2xl p-[clamp(0.75rem,1.5vw,1.5rem)] ms-profile-shimmer"
+                  className="rounded-2xl ms-profile-shimmer"
                   style={{
+                    padding: compact ? "clamp(0.65rem, 1vw, 1rem)" : "clamp(0.75rem, 1.5vw, 1.5rem)",
                     background: "var(--ms-raised)",
                     border: "1px solid var(--ms-edge)",
                   }}
@@ -646,7 +722,7 @@ export function ProfileCard({
                   <p
                     className="font-display font-semibold"
                     style={{
-                      fontSize: "clamp(0.75rem, 1vw, 1rem)",
+                      fontSize: compact ? "clamp(0.72rem, 0.85vw, 0.9rem)" : "clamp(0.75rem, 1vw, 1rem)",
                       color: "var(--ms-rose)",
                     }}
                   >
@@ -656,8 +732,12 @@ export function ProfileCard({
                     <p
                       className="mt-1 leading-relaxed"
                       style={{
-                        fontSize: "clamp(0.8rem, 1.1vw, 1.15rem)",
+                        fontSize: compact ? "clamp(0.8rem, 0.92vw, 0.95rem)" : "clamp(0.8rem, 1.1vw, 1.15rem)",
                         color: "var(--ms-ink)",
+                        display: compact ? "-webkit-box" : undefined,
+                        WebkitBoxOrient: compact ? "vertical" : undefined,
+                        WebkitLineClamp: compact ? 3 : undefined,
+                        overflow: compact ? "hidden" : undefined,
                       }}
                     >
                       {prompt.answer}
@@ -1778,7 +1858,11 @@ function PhaseStatusCard({
         <AnimatePresence>
           {gameState.phaseDeadline && (
             <motion.div key="timer" className="mb-4" variants={collapseExpand} initial="hidden" animate="visible" exit="exit">
-              <Timer deadline={gameState.phaseDeadline} disabled={gameState.timersDisabled} />
+              <Timer
+                deadline={gameState.phaseDeadline}
+                disabled={gameState.timersDisabled}
+                total={getMatchSlopTimerTotal(gameState.status)}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -2147,7 +2231,15 @@ export function MatchSlopGameShell({
   const comebackRound = modeState.comebackRound ?? null;
   const personaImage = modeState.personaImage ?? null;
   const rawTranscript = modeState.transcript ?? EMPTY_TRANSCRIPT;
+  const rawTranscriptSignature = useMemo(() => getTranscriptSignature(rawTranscript), [rawTranscript]);
   const lastRoundResult = modeState.lastRoundResult ?? null;
+  const pendingReply = modeState.pendingPersonaReply ?? null;
+  const currentRoundData =
+    gameState?.rounds.find((round) => round.roundNumber === gameState.currentRound) ??
+    gameState?.rounds[0];
+  const currentPrompt =
+    currentRoundData?.prompts[gameState?.votingPromptIndex ?? 0] ??
+    currentRoundData?.prompts[0];
   const isInitialProfilePending =
     gameState?.status === "WRITING" &&
     gameState.currentRound === 1 &&
@@ -2158,10 +2250,11 @@ export function MatchSlopGameShell({
     gameState.currentRound === 1 &&
     profile == null &&
     profileGeneration?.status === "FAILED";
-  // During ROUND_RESULTS the winning response hasn't been persisted to the
-  // transcript yet (it's added when advancing to the next round). Append it
-  // to the displayed transcript so the player can see what won.
+  // During phase transitions the latest winner/persona line may not be
+  // persisted to transcript yet. Derive a display-ready conversation so the
+  // stage stays in sync with the controller prompt context.
   const transcript = useMemo(() => {
+    let result = rawTranscript;
     if (
       gameState?.status === "ROUND_RESULTS" &&
       lastRoundResult?.winnerText &&
@@ -2169,9 +2262,9 @@ export function MatchSlopGameShell({
     ) {
       const winnerId = `players-turn-${gameState.currentRound}`;
       // Don't double-add if already present
-      if (!rawTranscript.some((e) => e.id === winnerId)) {
-        return [
-          ...rawTranscript,
+      if (!result.some((e) => e.id === winnerId)) {
+        result = [
+          ...result,
           {
             id: winnerId,
             speaker: "PLAYERS" as const,
@@ -2190,18 +2283,66 @@ export function MatchSlopGameShell({
           },
         ];
       }
+
     }
-    return rawTranscript;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- use .length to avoid recomputing on every SSE tick (rawTranscript is a new reference each render)
-  }, [rawTranscript.length, lastRoundResult?.winnerText, gameState?.status, gameState?.currentRound]);
+
+    const latestPersonaEntry = [...result].reverse().find((entry) => entry.speaker === "PERSONA");
+
+    // While ROUND_RESULTS is still visible, show the freshly generated reply
+    // as soon as it's ready, even before the persisted transcript updates.
+    if (gameState?.status === "ROUND_RESULTS" && pendingReply?.status === "READY" && pendingReply.reply) {
+      const personaId = `persona-turn-${gameState.currentRound}`;
+      if (!result.some((entry) => entry.id === personaId)) {
+        result = [
+          ...result,
+          {
+            id: personaId,
+            speaker: "PERSONA" as const,
+            text: pendingReply.reply,
+            turn: gameState.currentRound,
+            outcome: null,
+            authorName: profile?.displayName ?? null,
+          },
+        ];
+      }
+    }
+
+    // Once the next WRITING phase begins, use the active prompt as a fallback
+    // persona message if transcript lags behind the new round prompt.
+    if (
+      gameState?.status === "WRITING" &&
+      (gameState.currentRound ?? 0) > 1 &&
+      currentPrompt?.text &&
+      latestPersonaEntry?.text !== currentPrompt.text
+    ) {
+      result = [
+        ...result,
+        {
+          id: `persona-prompt-${gameState.currentRound - 1}`,
+          speaker: "PERSONA" as const,
+          text: currentPrompt.text,
+          turn: gameState.currentRound - 1,
+          outcome: null,
+          authorName: profile?.displayName ?? profileDraft?.displayName ?? null,
+        },
+      ];
+    }
+
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on a stable transcript signature instead of object identity
+  }, [
+    rawTranscriptSignature,
+    lastRoundResult?.winnerText,
+    gameState?.status,
+    gameState?.currentRound,
+    pendingReply?.status,
+    pendingReply?.reply,
+    profile?.displayName,
+    profileDraft?.displayName,
+    currentPrompt?.text,
+  ]);
   const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
   const isActiveComebackRound = isComebackRound && gameState?.status !== "FINAL_RESULTS";
-  const currentRoundData =
-    gameState?.rounds.find((round) => round.roundNumber === gameState.currentRound) ??
-    gameState?.rounds[0];
-  const currentPrompt =
-    currentRoundData?.prompts[gameState?.votingPromptIndex ?? 0] ??
-    currentRoundData?.prompts[0];
   const activePlayers =
     gameState?.players.filter(
       (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
@@ -2209,15 +2350,18 @@ export function MatchSlopGameShell({
   useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
-    // In final results, scroll to top so the beginning of the conversation
-    // (with prompt context) is visible first. During live play, scroll to
-    // bottom so the newest message is always in view.
-    if (gameState?.status === "FINAL_RESULTS") {
-      el.scrollTop = 0;
-    } else {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [transcript.length, gameState?.status]);
+    const frame = window.requestAnimationFrame(() => {
+      // In final results, scroll to top so the beginning of the conversation
+      // (with prompt context) is visible first. During live play, scroll to
+      // bottom so the newest message is always in view.
+      if (gameState?.status === "FINAL_RESULTS") {
+        el.scrollTop = 0;
+        return;
+      }
+      transcriptEndRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [transcript.length, gameState?.status, currentPrompt?.text, rawTranscriptSignature]);
 
   useEffect(() => {
     window.addEventListener("pointerdown", preloadSounds, { once: true });
@@ -2592,6 +2736,7 @@ export function MatchSlopGameShell({
                   : MATCHSLOP_INITIAL_MOOD
               }
               gameStarted={gameState.status !== "LOBBY"}
+              compact={viewMode === "stage"}
             />
 
             {/* Persona controls in lobby */}
@@ -2732,6 +2877,14 @@ export function MatchSlopGameShell({
                         index={index}
                       />
                     ))}
+                    {/* Typing indicator while persona reply is generating */}
+                    {gameState.status === "ROUND_RESULTS" &&
+                      pendingReply?.status !== "READY" &&
+                      pendingReply?.status !== "FAILED" && (
+                      <PersonaTypingBubble
+                        personaName={profile?.displayName ?? "Persona"}
+                      />
+                    )}
                     <div ref={transcriptEndRef} />
                   </motion.div>
                 ) : (

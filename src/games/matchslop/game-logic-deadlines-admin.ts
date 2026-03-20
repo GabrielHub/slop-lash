@@ -135,7 +135,7 @@ export async function checkAndEnforceDeadline(gameId: string): Promise<PhaseAdva
 
   const claim = await prisma.game.updateMany({
     where: { id: gameId, phaseDeadline: game.phaseDeadline },
-    data: { phaseDeadline: null },
+    data: { phaseDeadline: null, version: { increment: 1 } },
   });
   if (claim.count === 0) return null;
 

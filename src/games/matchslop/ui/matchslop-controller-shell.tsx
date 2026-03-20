@@ -13,7 +13,11 @@ import { useControllerStream } from "@/hooks/use-controller-stream";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import type { MatchSlopProfilePromptOption, ControllerVoteOption, MatchSlopTranscriptEntry as ControllerTranscriptEntry } from "@/lib/controller-types";
-import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "@/games/matchslop/config/game-config";
+import {
+  MATCHSLOP_PHOTO_PROMPT_ID,
+  MATCHSLOP_PHOTO_PROMPT_TEXT,
+  getMatchSlopTimerTotal,
+} from "@/games/matchslop/config/game-config";
 
 import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
 
@@ -996,7 +1000,10 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                 animate="visible"
                 exit="exit"
               >
-                <Timer deadline={gameState.phaseDeadline} />
+                <Timer
+                  deadline={gameState.phaseDeadline}
+                  total={getMatchSlopTimerTotal(gameState.status)}
+                />
               </motion.div>
             )}
           </AnimatePresence>

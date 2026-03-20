@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "./config/game-config";
-import { simpleHash, ZERO_USAGE, type AiUsage } from "@/games/ai-chat-showdown/ai";
+import { classifyAiFailure, simpleHash, ZERO_USAGE, type AiUsage } from "@/games/ai-chat-showdown/ai";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { generateAiFollowup, generateAiFunnyVote, generateAiOpener } from "./ai";
 import {
@@ -29,8 +29,6 @@ function getAiPlayers<T extends { id: string; type: string; modelId: string | nu
 
 const inflightResponses = new Map<string, Promise<void>>();
 const inflightVotes = new Map<string, Promise<void>>();
-const AI_RESPONSE_TIMEOUT_MS = 20_000;
-const AI_VOTE_TIMEOUT_MS = 10_000;
 
 type PendingResponseWrite = {
   playerId: string;
@@ -48,38 +46,11 @@ type PendingVoteWrite = {
 };
 
 
-function getFailReason(error: unknown): "timeout" | "error" {
-  return error instanceof Error && error.name === "TimeoutError" ? "timeout" : "error";
-}
 
-function buildTimeoutError(label: string, timeoutMs: number): Error {
-  const error = new Error(`${label} timed out after ${timeoutMs}ms`);
-  error.name = "TimeoutError";
-  return error;
-}
+function getRemainingPhaseTimeoutMs(phaseDeadline: Date | null): number | undefined {
+  if (!phaseDeadline) return undefined;
 
-async function withTimeout<T>(
-  operation: (abortSignal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  label: string,
-): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort(buildTimeoutError(label, timeoutMs));
-  }, timeoutMs);
-
-  try {
-    return await operation(controller.signal);
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw controller.signal.reason instanceof Error
-        ? controller.signal.reason
-        : buildTimeoutError(label, timeoutMs);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return Math.max(phaseDeadline.getTime() - Date.now(), 1);
 }
 
 export async function generateAiResponses(gameId: string): Promise<void> {
@@ -97,7 +68,7 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
   const [game, players, round] = await Promise.all([
     prisma.game.findUnique({
       where: { id: gameId },
-      select: { status: true, currentRound: true, modeState: true },
+      select: { status: true, currentRound: true, modeState: true, phaseDeadline: true },
     }),
     prisma.player.findMany({
       where: { gameId },
@@ -144,28 +115,19 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
     .filter((player) => !existingResponders.has(player.id))
     .map(async (player): Promise<PendingResponseWrite> => {
       try {
+        const timeout = getRemainingPhaseTimeoutMs(game.phaseDeadline);
         const openerResult =
           game.currentRound === 1
-            ? await withTimeout(
-                (abortSignal) =>
-                  generateAiOpener(player.modelId, profile, playerExamples, {
-                    abortSignal,
-                  }),
-                AI_RESPONSE_TIMEOUT_MS,
-                `MatchSlop opener for ${player.id}`,
-              )
+            ? await generateAiOpener(player.modelId, profile, playerExamples, {
+                timeout,
+              })
             : null;
         const followupResult =
           game.currentRound === 1
             ? null
-            : await withTimeout(
-                (abortSignal) =>
-                  generateAiFollowup(player.modelId, context, playerExamples, {
-                    abortSignal,
-                  }),
-                AI_RESPONSE_TIMEOUT_MS,
-                `MatchSlop follow-up for ${player.id}`,
-              );
+            : await generateAiFollowup(player.modelId, context, playerExamples, {
+                timeout,
+              });
 
         const text = openerResult?.text ?? followupResult?.text ?? FORFEIT_MARKER;
         const usage = openerResult?.usage ?? followupResult?.usage ?? { ...ZERO_USAGE, modelId: player.modelId };
@@ -201,7 +163,7 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
                   selectedPromptText: profile.prompts[0]?.prompt ?? null,
                 } as Prisma.InputJsonValue)
               : Prisma.DbNull,
-          failReason: getFailReason(error),
+          failReason: classifyAiFailure(error),
           usage: { ...ZERO_USAGE, modelId: player.modelId },
         };
       }
@@ -261,7 +223,7 @@ async function doGenerateAiVotes(gameId: string): Promise<void> {
   const [game, players, round] = await Promise.all([
     prisma.game.findUnique({
       where: { id: gameId },
-      select: { status: true, currentRound: true, votingRevealing: true, modeState: true },
+      select: { status: true, currentRound: true, votingRevealing: true, modeState: true, phaseDeadline: true },
     }),
     prisma.player.findMany({
       where: { gameId },
@@ -316,17 +278,12 @@ async function doGenerateAiVotes(gameId: string): Promise<void> {
     }
 
     try {
-      const vote = await withTimeout(
-        (abortSignal) =>
-          generateAiFunnyVote(
-            player.modelId,
-            context,
-            options.map((response) => ({ id: response.id, text: response.text })),
-            simpleHash(`${gameId}:${round.roundNumber}:${player.id}`),
-            { abortSignal },
-          ),
-        AI_VOTE_TIMEOUT_MS,
-        `MatchSlop vote for ${player.id}`,
+      const vote = await generateAiFunnyVote(
+        player.modelId,
+        context,
+        options.map((response) => ({ id: response.id, text: response.text })),
+        simpleHash(`${gameId}:${round.roundNumber}:${player.id}`),
+        { timeout: getRemainingPhaseTimeoutMs(game.phaseDeadline) },
       );
 
       return {
@@ -341,7 +298,7 @@ async function doGenerateAiVotes(gameId: string): Promise<void> {
       return {
         voterId: player.id,
         responseId: null,
-        failReason: getFailReason(error),
+        failReason: classifyAiFailure(error),
         usage: { ...ZERO_USAGE, modelId: player.modelId },
       };
     }

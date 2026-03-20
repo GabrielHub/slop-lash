@@ -57,6 +57,7 @@ export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) 
 
   const remaining = computeRemaining(deadline);
   const pct = total > 0 ? (remaining / total) * 100 : 0;
+  const isAdvancing = remaining === 0 && deadline != null;
   const urgency = getUrgency(pct);
 
   const urgencyStyles = {
@@ -88,14 +89,14 @@ export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) 
         <span className="text-sm font-medium text-ui-muted">Time remaining</span>
         <AnimatePresence mode="wait">
           <motion.span
-            key={urgency}
-            className={`font-mono font-bold text-xl tabular-nums ${style.text}`}
+            key={isAdvancing ? "advancing" : urgency}
+            className={`font-mono font-bold text-xl ${isAdvancing ? "text-ui-faint" : `tabular-nums ${style.text}`}`}
             variants={popIn}
             initial="hidden"
             animate="visible"
             exit="exit"
           >
-            {remaining}s
+            {isAdvancing ? "Advancing..." : `${remaining}s`}
           </motion.span>
         </AnimatePresence>
       </div>

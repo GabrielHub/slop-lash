@@ -123,6 +123,20 @@ export interface MatchSlopRoundResult {
   selectedPromptText: string | null;
 }
 
+export type MatchSlopPersonaReplyStatus =
+  | "NOT_REQUESTED"
+  | "GENERATING"
+  | "READY"
+  | "FAILED";
+
+export interface MatchSlopPendingPersonaReply {
+  status: MatchSlopPersonaReplyStatus;
+  reply: string | null;
+  outcome: MatchSlopDecision | null;
+  moodDelta: number | null;
+  generationId: string | null;
+}
+
 export type MatchSlopPostMortemStatus =
   | "NOT_REQUESTED"
   | "STREAMING"
@@ -177,6 +191,7 @@ export interface MatchSlopModeState {
   personaImage: MatchSlopPersonaImageState;
   lastRoundResult: MatchSlopRoundResult | null;
   mood: number;
+  pendingPersonaReply: MatchSlopPendingPersonaReply;
   postMortemGeneration: MatchSlopPostMortemGenerationState;
   postMortemDraft: MatchSlopPostMortemDraft | null;
   postMortem: MatchSlopPostMortem | null;

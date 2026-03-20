@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
 import { PLAYER_TOKEN_KEY } from "@/lib/client-session";
 import { Timer } from "@/components/timer";
+import { WRITING_DURATION_SECONDS } from "@/games/sloplash/game-constants";
 import { CompletionCard } from "@/components/completion-card";
 import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
@@ -163,7 +164,7 @@ export function Writing({
           </div>
           {!game.timersDisabled && (
             <div className="mb-6">
-              <Timer deadline={game.phaseDeadline} />
+              <Timer deadline={game.phaseDeadline} total={WRITING_DURATION_SECONDS} />
             </div>
           )}
           {isHost && (
@@ -226,7 +227,7 @@ export function Writing({
         {/* Timer */}
         <div className="mb-8">
           {!game.timersDisabled && (
-            <Timer deadline={game.phaseDeadline} />
+            <Timer deadline={game.phaseDeadline} total={WRITING_DURATION_SECONDS} />
           )}
           {isHost && (
             <motion.button

@@ -4,7 +4,11 @@ const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks } = vi.hoiste
   prismaMock: {
     game: {
       findUnique: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn(),
+    },
+    round: {
+      create: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -24,6 +28,13 @@ const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks } = vi.hoiste
     buildResultsDeadline: vi.fn(),
     buildRoundPromptText: vi.fn(),
     buildWritingDeadline: vi.fn(),
+    createInitialPendingPersonaReply: vi.fn(() => ({
+      status: "NOT_REQUESTED",
+      reply: null,
+      outcome: null,
+      moodDelta: null,
+      generationId: null,
+    })),
     getActivePlayerIds: vi.fn(),
     isComebackRound: vi.fn(),
     parseModeState: vi.fn(),
@@ -41,7 +52,7 @@ vi.mock("@/games/sloplash/game-logic-ai", () => sloplashLogicMocks);
 vi.mock("./ai", () => aiMocks);
 vi.mock("./game-logic-core", () => coreMocks);
 
-import { advanceGame } from "./game-logic-rounds";
+import { advanceGame, startGame } from "./game-logic-rounds";
 
 describe("advanceGame", () => {
   beforeEach(() => {
@@ -50,6 +61,8 @@ describe("advanceGame", () => {
     prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof txMock) => unknown) =>
       callback(txMock),
     );
+    prismaMock.game.update.mockResolvedValue({});
+    prismaMock.round.create.mockResolvedValue({});
     txMock.game.update.mockResolvedValue({});
     txMock.round.create.mockResolvedValue({});
     sloplashLogicMocks.accumulateUsage.mockResolvedValue(undefined);
@@ -143,6 +156,13 @@ describe("advanceGame", () => {
       personaIdentity: "MAN",
       comebackRound: null,
       mood: 50,
+      pendingPersonaReply: {
+        status: "NOT_REQUESTED",
+        reply: null,
+        outcome: null,
+        moodDelta: null,
+        generationId: null,
+      },
     });
     prismaMock.game.updateMany.mockResolvedValue({ count: 1 });
     aiMocks.generatePersonaReply.mockResolvedValue({
@@ -232,6 +252,101 @@ describe("advanceGame", () => {
           },
           seekerIdentity: "WOMAN",
           personaIdentity: "MAN",
+          pendingPersonaReply: {
+            status: "NOT_REQUESTED",
+            reply: null,
+            outcome: null,
+            moodDelta: null,
+            generationId: null,
+          },
+        },
+        version: { increment: 1 },
+      },
+    });
+  });
+
+  it("resets pending persona reply state when starting a new game", async () => {
+    prismaMock.game.findUnique
+      .mockResolvedValueOnce({
+        personaModelId: "persona-model",
+        modeState: { seeded: true },
+        totalRounds: 0,
+      })
+      .mockResolvedValueOnce({
+        modeState: { refreshed: true },
+      })
+      .mockResolvedValueOnce({
+        timersDisabled: false,
+        modeState: { round: true },
+      });
+    coreMocks.parseModeState
+      .mockReturnValueOnce({
+        selectedPersonaExampleIds: [],
+        personaIdentity: "MAN",
+        selectedPlayerExamples: [],
+        profileGeneration: {
+          status: "NOT_REQUESTED",
+        },
+        pendingPersonaReply: {
+          status: "READY",
+          reply: "old reply",
+          outcome: "CONTINUE",
+          moodDelta: 3,
+          generationId: "gen-old",
+        },
+        transcript: [{ id: "persona-turn-2", speaker: "PERSONA", text: "old reply" }],
+        lastRoundResult: { winnerText: "old winner" },
+        comebackRound: 3,
+        outcome: "COMEBACK",
+      })
+      .mockReturnValueOnce({
+        profile: null,
+        profileGeneration: {
+          status: "NOT_REQUESTED",
+        },
+      })
+      .mockReturnValueOnce({
+        profile: { displayName: "Riley" },
+        transcript: [],
+      });
+    coreMocks.selectPersonaExamples.mockReturnValue([{ id: "persona-seed-1" }]);
+    coreMocks.selectPlayerExamples.mockReturnValue(["player-example"]);
+    coreMocks.getActivePlayerIds.mockResolvedValue(["human-1", "ai-1"]);
+    coreMocks.buildRoundPromptText.mockReturnValue("opening prompt");
+
+    await startGame("game-1", 1);
+
+    expect(prismaMock.game.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "game-1" },
+      data: {
+        totalRounds: 5,
+        modeState: {
+          selectedPersonaExampleIds: ["persona-seed-1"],
+          personaIdentity: "MAN",
+          selectedPlayerExamples: ["player-example"],
+          profileDraft: null,
+          profileGeneration: {
+            status: "NOT_REQUESTED",
+            updatedAt: expect.any(String),
+            generationId: null,
+          },
+          profile: null,
+          personaImage: {
+            status: "NOT_REQUESTED",
+            imageUrl: null,
+            updatedAt: expect.any(String),
+          },
+          transcript: [],
+          lastRoundResult: null,
+          comebackRound: null,
+          outcome: "IN_PROGRESS",
+          pendingPersonaReply: {
+            status: "NOT_REQUESTED",
+            reply: null,
+            outcome: null,
+            moodDelta: null,
+            generationId: null,
+          },
         },
         version: { increment: 1 },
       },

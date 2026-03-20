@@ -2,6 +2,8 @@ import { createGateway, generateText, NoObjectGeneratedError, Output, streamText
 import { z } from "zod";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import {
+  buildAiErrorLogDetails,
+  classifyAiFailure,
   LABELS,
   ZERO_USAGE,
   aiVoteNWay,
@@ -450,6 +452,7 @@ export async function generateAiOpener(
     )
     .join("\n");
   const examplesList = examples.map((e) => `- ${escapeXml(e)}`).join("\n");
+  const t0 = Date.now();
 
   try {
     const result = await generateText({
@@ -467,6 +470,7 @@ Respond with ONLY this JSON (no other text):
 {"selectedPromptId":"one of the provided prompt ids","line":"your opener"}`,
       prompt: `<tone-examples>\n${examplesList}\n</tone-examples>\n<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio>${promptsXml}</profile>`,
       abortSignal: options?.abortSignal,
+      timeout: options?.timeout,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -494,7 +498,16 @@ Respond with ONLY this JSON (no other text):
       failReason: parsed.line.trim() ? null : "empty",
     };
   } catch (err) {
-    console.error(`[matchslop:generateAiOpener] ${modelId} failed: ${describeError(err)}`);
+    const elapsed = Date.now() - t0;
+    const failReason = classifyAiFailure(err, options?.abortSignal);
+    console.error(
+      `[matchslop:generateAiOpener] ${modelId} failed in ${elapsed}ms: ${describeError(err)}`,
+      buildAiErrorLogDetails(err, {
+        abortSignal: options?.abortSignal,
+        elapsedMs: elapsed,
+        failReason,
+      }),
+    );
     return {
       selectedPromptId: profile.prompts[0]?.id ?? null,
       text: FORFEIT_MARKER,
@@ -502,7 +515,7 @@ Respond with ONLY this JSON (no other text):
         NoObjectGeneratedError.isInstance(err) && err.usage
           ? extractUsage(modelId, err.usage)
           : { ...ZERO_USAGE, modelId },
-      failReason: "error",
+      failReason,
     };
   }
 }
@@ -532,6 +545,7 @@ export async function generateAiFollowup(
   options?: AiCallOptions,
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const examplesList = examples.map((e) => `- ${escapeXml(e)}`).join("\n");
+  const t0 = Date.now();
 
   try {
     const result = await generateText({
@@ -548,6 +562,7 @@ Respond with ONLY this JSON (no other text):
 {"line":"your follow-up message"}`,
       prompt: `<tone-examples>\n${examplesList}\n</tone-examples>\n<conversation-context>${escapeXml(context)}</conversation-context>`,
       abortSignal: options?.abortSignal,
+      timeout: options?.timeout,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -570,14 +585,23 @@ Respond with ONLY this JSON (no other text):
       failReason: text ? null : "empty",
     };
   } catch (err) {
-    console.error(`[matchslop:generateAiFollowup] ${modelId} failed: ${describeError(err)}`);
+    const elapsed = Date.now() - t0;
+    const failReason = classifyAiFailure(err, options?.abortSignal);
+    console.error(
+      `[matchslop:generateAiFollowup] ${modelId} failed in ${elapsed}ms: ${describeError(err)}`,
+      buildAiErrorLogDetails(err, {
+        abortSignal: options?.abortSignal,
+        elapsedMs: elapsed,
+        failReason,
+      }),
+    );
     return {
       text: FORFEIT_MARKER,
       usage:
         NoObjectGeneratedError.isInstance(err) && err.usage
           ? extractUsage(modelId, err.usage)
           : { ...ZERO_USAGE, modelId },
-      failReason: "error",
+      failReason,
     };
   }
 }

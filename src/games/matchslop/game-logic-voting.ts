@@ -12,6 +12,7 @@ import {
   isComebackRound,
   parseModeState,
 } from "./game-logic-core";
+import { ensurePersonaReply } from "./persona-reply";
 import type { MatchSlopRoundResult } from "./types";
 
 function toJson(value: unknown): Prisma.InputJsonValue {
@@ -300,6 +301,10 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
       });
     }
   });
+
+  // Fire-and-forget: start generating the persona reply in the background
+  // so the UI can show a typing indicator and reveal the reply when ready.
+  void ensurePersonaReply(gameId);
 }
 
 export async function revealCurrentPrompt(gameId: string): Promise<boolean> {

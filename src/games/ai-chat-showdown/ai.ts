@@ -24,6 +24,14 @@ export function extractUsage(modelId: string, usage: { inputTokens?: number; out
 
 export type JSONish = Record<string, string | Record<string, string>>;
 
+type SerializedLogValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SerializedLogValue[]
+  | { [key: string]: SerializedLogValue };
+
 export function getLowReasoningProviderOptions(modelId: string): Record<string, JSONish> | undefined {
   const provider = modelId.split("/")[0];
   if (provider === "anthropic") return { anthropic: { effort: "low" } };
@@ -36,6 +44,117 @@ export function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
   const status = "status" in err ? ` [status=${(err as { status: unknown }).status}]` : "";
   return `${err.name}: ${err.message}${status}`;
+}
+
+function truncateLogText(value: string, maxLength = 500): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function serializeUnknownForLog(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0,
+): SerializedLogValue {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    return truncateLogText(value);
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (depth >= 3) {
+    return `[max-depth:${typeof value}]`;
+  }
+
+  if (value instanceof Error) {
+    const output: Record<string, SerializedLogValue> = {
+      name: value.name,
+      message: truncateLogText(value.message),
+    };
+
+    const stackLines = value.stack
+      ?.split("\n")
+      .slice(0, 6)
+      .map((line) => truncateLogText(line, 240));
+    if (stackLines && stackLines.length > 0) {
+      output.stack = stackLines;
+    }
+
+    const errorRecord = value as unknown as Record<string, unknown>;
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (key === "name" || key === "message" || key === "stack") continue;
+      output[key] = serializeUnknownForLog(
+        errorRecord[key],
+        seen,
+        depth + 1,
+      );
+    }
+
+    return output;
+  }
+
+  if (typeof value === "object") {
+    if (seen.has(value)) return "[circular]";
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      return value.slice(0, 10).map((entry) => serializeUnknownForLog(entry, seen, depth + 1));
+    }
+
+    const output: Record<string, SerializedLogValue> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      output[key] = serializeUnknownForLog(entry, seen, depth + 1);
+    }
+    return output;
+  }
+
+  return truncateLogText(String(value));
+}
+
+function isTimeoutLikeError(err: unknown): boolean {
+  return err instanceof Error && (
+    err.name === "TimeoutError" ||
+    err.name === "AbortError" ||
+    /\btimed out after \d+ms\b/i.test(err.message)
+  );
+}
+
+export function classifyAiFailure(
+  err: unknown,
+  abortSignal?: AbortSignal,
+): "timeout" | "error" {
+  if (abortSignal?.aborted && isTimeoutLikeError(abortSignal.reason)) {
+    return "timeout";
+  }
+
+  return isTimeoutLikeError(err) ? "timeout" : "error";
+}
+
+export function buildAiErrorLogDetails(
+  err: unknown,
+  options?: {
+    abortSignal?: AbortSignal;
+    elapsedMs?: number;
+    failReason?: string | null;
+  },
+): SerializedLogValue {
+  const abortSignal = options?.abortSignal;
+  return {
+    failReason: options?.failReason ?? null,
+    elapsedMs: options?.elapsedMs ?? null,
+    abortSignal: abortSignal
+      ? {
+          aborted: abortSignal.aborted,
+          reason: abortSignal.aborted ? serializeUnknownForLog(abortSignal.reason) : null,
+        }
+      : null,
+    error: serializeUnknownForLog(err),
+  };
 }
 
 export function escapeXml(s: string): string {
@@ -112,8 +231,13 @@ export async function generateJoke(
     console.log(`[chatslop:generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
     return { text, usage: extractUsage(modelId, result.usage), failReason: null };
   } catch (err) {
-    console.error(`[chatslop:generateJoke] ${modelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`);
-    return { text: FORFEIT_MARKER, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
+    const elapsed = Date.now() - t0;
+    const failReason = classifyAiFailure(err);
+    console.error(
+      `[chatslop:generateJoke] ${modelId} FAILED in ${elapsed}ms: ${describeError(err)}`,
+      buildAiErrorLogDetails(err, { elapsedMs: elapsed, failReason }),
+    );
+    return { text: FORFEIT_MARKER, usage: { ...ZERO_USAGE, modelId }, failReason };
   }
 }
 
@@ -133,6 +257,7 @@ export interface AiNWayVoteResult {
 
 export type AiCallOptions = {
   abortSignal?: AbortSignal;
+  timeout?: number;
 };
 
 const nWayVoteSchema = z.object({
@@ -182,6 +307,7 @@ export async function aiVoteNWay(
       system: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
       abortSignal: options?.abortSignal,
+      timeout: options?.timeout,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -217,9 +343,17 @@ export async function aiVoteNWay(
     };
   } catch (err) {
     const elapsed = Date.now() - t0;
-    console.error(`[chatslop:aiVoteNWay] ${modelId} FAILED in ${elapsed}ms: ${describeError(err)}, falling back`);
+    const failReason = classifyAiFailure(err, options?.abortSignal);
+    console.error(
+      `[chatslop:aiVoteNWay] ${modelId} FAILED in ${elapsed}ms: ${describeError(err)}, falling back`,
+      buildAiErrorLogDetails(err, {
+        abortSignal: options?.abortSignal,
+        elapsedMs: elapsed,
+        failReason,
+      }),
+    );
     const fallbackIdx = deterministicSeed % responses.length;
-    return { chosenResponseId: responses[fallbackIdx].id, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
+    return { chosenResponseId: responses[fallbackIdx].id, usage: { ...ZERO_USAGE, modelId }, failReason };
   }
 }
 

@@ -62,6 +62,7 @@ describe("MatchSlop AI phase flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-20T05:00:00.000Z"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     prismaMock.response.create.mockResolvedValue({});
@@ -82,6 +83,7 @@ describe("MatchSlop AI phase flow", () => {
         status: "WRITING",
         currentRound: 1,
         modeState: { profile: true },
+        phaseDeadline: new Date("2026-03-20T05:02:00.000Z"),
       })
       .mockResolvedValueOnce({
         status: "WRITING",
@@ -109,24 +111,22 @@ describe("MatchSlop AI phase flow", () => {
       transcript: [],
     });
     coreMocks.buildVoteContext.mockReturnValue("context");
-    let openerAbortSignal: AbortSignal | undefined;
-    aiMocks.generateAiOpener.mockImplementation(
-      (_modelId, _profile, _examples, options) =>
-        new Promise((_, reject) => {
-          openerAbortSignal = options?.abortSignal;
-          options?.abortSignal?.addEventListener("abort", () => {
-            reject(options.abortSignal?.reason);
-          });
-        }),
-    );
+    const timeoutError = new Error("timed out");
+    timeoutError.name = "TimeoutError";
+    aiMocks.generateAiOpener.mockRejectedValue(timeoutError);
     votingLogicMocks.checkAllResponsesIn.mockResolvedValue(true);
     votingLogicMocks.startVoting.mockResolvedValue(false);
 
-    const task = generateAiResponses("game-1");
-    await vi.advanceTimersByTimeAsync(20_000);
-    await task;
+    await generateAiResponses("game-1");
 
-    expect(openerAbortSignal?.aborted).toBe(true);
+    expect(aiMocks.generateAiOpener).toHaveBeenCalledWith(
+      "openai/test",
+      expect.any(Object),
+      expect.any(Array),
+      expect.objectContaining({
+        timeout: 120_000,
+      }),
+    );
     expect(prismaMock.response.create).toHaveBeenCalledWith({
       data: {
         promptId: "prompt-1",
@@ -150,6 +150,7 @@ describe("MatchSlop AI phase flow", () => {
         currentRound: 2,
         votingRevealing: false,
         modeState: { profile: true },
+        phaseDeadline: new Date("2026-03-20T05:01:00.000Z"),
       })
       .mockResolvedValueOnce({
         status: "VOTING",
@@ -197,5 +198,67 @@ describe("MatchSlop AI phase flow", () => {
     });
     expect(votingLogicMocks.checkAllVotesForCurrentPrompt).toHaveBeenCalledWith("game-1");
     expect(votingLogicMocks.revealCurrentPrompt).toHaveBeenCalledWith("game-1");
+  });
+
+  it("uses the remaining voting phase deadline as the AI vote timeout", async () => {
+    prismaMock.game.findUnique
+      .mockResolvedValueOnce({
+        status: "VOTING",
+        currentRound: 2,
+        votingRevealing: false,
+        modeState: { profile: true },
+        phaseDeadline: new Date("2026-03-20T05:01:00.000Z"),
+      })
+      .mockResolvedValueOnce({
+        status: "VOTING",
+        currentRound: 2,
+        votingRevealing: false,
+      });
+    prismaMock.player.findMany.mockResolvedValue([
+      { id: "human-1", type: "HUMAN", modelId: null },
+      { id: "human-2", type: "HUMAN", modelId: null },
+      { id: "ai-1", type: "AI", modelId: "openai/test" },
+    ]);
+    prismaMock.round.findFirst.mockResolvedValue({
+      roundNumber: 2,
+      prompts: [
+        {
+          id: "prompt-1",
+          text: "Best follow-up",
+          responses: [
+            { id: "response-1", playerId: "human-1", text: "A" },
+            { id: "response-2", playerId: "human-2", text: "B" },
+          ],
+          votes: [],
+        },
+      ],
+    });
+    coreMocks.parseModeState.mockReturnValue({
+      profile: { prompts: [] },
+      selectedPlayerExamples: [],
+      transcript: [],
+    });
+    coreMocks.buildVoteContext.mockReturnValue("context");
+    aiMocks.generateAiFunnyVote.mockResolvedValue({
+      chosenResponseId: "response-1",
+      usage: { modelId: "openai/test", inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      failReason: null,
+    });
+    votingLogicMocks.checkAllVotesForCurrentPrompt.mockResolvedValue(false);
+
+    await generateAiVotes("game-1");
+
+    expect(aiMocks.generateAiFunnyVote).toHaveBeenCalledWith(
+      "openai/test",
+      "context",
+      [
+        { id: "response-1", text: "A" },
+        { id: "response-2", text: "B" },
+      ],
+      expect.any(Number),
+      expect.objectContaining({
+        timeout: 60_000,
+      }),
+    );
   });
 });

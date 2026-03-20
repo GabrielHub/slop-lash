@@ -22,6 +22,7 @@ import type {
   MatchSlopPostMortemCallout,
   MatchSlopPostMortemDraft,
   MatchSlopPostMortemCalloutDraft,
+  MatchSlopPendingPersonaReply,
   MatchSlopPostMortemGenerationState,
   MatchSlopProfile,
   MatchSlopProfileDraft,
@@ -265,6 +266,16 @@ export function parsePostMortemDraft(value: unknown): MatchSlopPostMortemDraft |
   return Object.keys(draft).length > 0 ? draft : null;
 }
 
+export function createInitialPendingPersonaReply(): MatchSlopPendingPersonaReply {
+  return {
+    status: "NOT_REQUESTED",
+    reply: null,
+    outcome: null,
+    moodDelta: null,
+    generationId: null,
+  };
+}
+
 function createInitialImageState(): MatchSlopPersonaImageState {
   return {
     status: "NOT_REQUESTED",
@@ -309,6 +320,7 @@ export function createInitialModeState(
     personaImage: createInitialImageState(),
     lastRoundResult: null,
     mood: MATCHSLOP_INITIAL_MOOD,
+    pendingPersonaReply: createInitialPendingPersonaReply(),
     postMortemGeneration: createInitialPostMortemGenerationState(),
     postMortemDraft: null,
     postMortem: null,
@@ -366,6 +378,28 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
     },
     lastRoundResult: parseLastRoundResult(record?.lastRoundResult),
     mood: clampMatchSlopMood(asNumber(record?.mood) ?? MATCHSLOP_INITIAL_MOOD),
+    pendingPersonaReply: (() => {
+      const prRecord = asRecord(record?.pendingPersonaReply);
+      const defaultReply = createInitialPendingPersonaReply();
+      if (!prRecord) return defaultReply;
+      return {
+        status:
+          prRecord.status === "GENERATING" ||
+          prRecord.status === "READY" ||
+          prRecord.status === "FAILED"
+            ? prRecord.status
+            : defaultReply.status,
+        reply: asString(prRecord.reply) ?? null,
+        outcome:
+          prRecord.outcome === "CONTINUE" ||
+          prRecord.outcome === "DATE_SEALED" ||
+          prRecord.outcome === "UNMATCHED"
+            ? prRecord.outcome
+            : null,
+        moodDelta: asNumber(prRecord.moodDelta) ?? null,
+        generationId: asString(prRecord.generationId) ?? null,
+      };
+    })(),
     postMortemGeneration: (() => {
       const pmRecord = asRecord(record?.postMortemGeneration);
       const defaultPm = createInitialPostMortemGenerationState();
