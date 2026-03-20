@@ -1888,6 +1888,125 @@ function buildMatchSlopFinalTurnLimit(): MockScenario {
   };
 }
 
+function buildMatchSlopResultsLastTurnLong(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HOST_ID) return { ...player, score: 412, humorRating: 1.38, winStreak: 2 };
+    if (player.id === HUMAN_2_ID) return { ...player, score: 387, humorRating: 1.31 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 294, humorRating: 1.14 };
+    if (player.id === AI_ID) return { ...player, score: 261, humorRating: 1.01 };
+    return player;
+  });
+
+  return {
+    slug: "matchslop-results-last-turn-long",
+    title: "MatchSlop Results (Last Turn, Long Convo)",
+    description:
+      "Final round results with a long transcript — 5 turns of back-and-forth, danger warning, high scores.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "ROUND_RESULTS",
+      currentRound: 5,
+      totalRounds: 5,
+      rounds: [buildMatchSlopResultsRound(players)],
+      phaseDeadline: futureDeadline(12),
+      modeState: matchSlopModeState({
+        personaImage: {
+          status: "READY",
+          imageUrl: "/images/dev/matchslop-placeholder.jpg",
+          updatedAt: "2026-03-19T00:00:00.000Z",
+        },
+        transcript: [
+          {
+            id: "ml-1",
+            speaker: "PLAYERS",
+            text: "You had me at reckless anchovies. I too enjoy flirting with coastal danger.",
+            turn: 1,
+            outcome: null,
+            authorName: "Amy",
+          },
+          {
+            id: "ml-2",
+            speaker: "PERSONA",
+            text: "Coastal danger is my whole brand. Last Sunday I cured fish on my fire escape and the seagulls formed a queue.",
+            turn: 1,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "ml-3",
+            speaker: "PLAYERS",
+            text: "A seagull queue sounds like the start of a heist movie. Were you the ringleader or the distraction?",
+            turn: 2,
+            outcome: null,
+            authorName: "Ong",
+          },
+          {
+            id: "ml-4",
+            speaker: "PERSONA",
+            text: "Distraction, obviously. I was holding a baguette like a sword. The lead gull handled logistics.",
+            turn: 2,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "ml-5",
+            speaker: "PLAYERS",
+            text: "I respect anyone who outsources to seagulls. My management style is more 'negotiating with raccoons in the alley behind my apartment.'",
+            turn: 3,
+            outcome: null,
+            authorName: "Beau",
+          },
+          {
+            id: "ml-6",
+            speaker: "PERSONA",
+            text: "Raccoon diplomacy is underrated. Do they accept snacks as currency or are they strictly barter?",
+            turn: 3,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "ml-7",
+            speaker: "PLAYERS",
+            text: "Strictly barter. Last week I traded a rotisserie chicken leg for safe passage to the dumpster. Felt like a medieval toll road.",
+            turn: 4,
+            outcome: null,
+            authorName: "Amy",
+          },
+          {
+            id: "ml-8",
+            speaker: "PERSONA",
+            text: "A rotisserie toll road is the most romantic thing anyone has ever described to me. Keep going, you have one more chance to seal this.",
+            turn: 4,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "ml-9",
+            speaker: "PLAYERS",
+            text: "If the raccoons approve, I'd like to take you to the fire escape for a cured fish tasting and a seagull debrief. Thursday. I'll bring limes.",
+            turn: 5,
+            outcome: null,
+            authorName: "Ong",
+          },
+        ],
+        lastRoundResult: {
+          promptId: "match-prompt-5",
+          winnerResponseId: "match-response-5",
+          winnerPlayerId: HOST_ID,
+          winnerText:
+            "If the raccoons approve, I'd like to take you to the fire escape for a cured fish tasting and a seagull debrief. Thursday. I'll bring limes.",
+          authorName: "Ong",
+          weightedVotes: 7,
+          rawVotes: 4,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      }),
+    }),
+  };
+}
+
 export const MATCHSLOP_SCENARIOS: MockScenario[] = [
   buildMatchSlopLobby(),
   buildMatchSlopWriting(),
@@ -1903,6 +2022,7 @@ export const MATCHSLOP_SCENARIOS: MockScenario[] = [
   buildMatchSlopFinal(),
   buildMatchSlopFinalUnmatched(),
   buildMatchSlopFinalTurnLimit(),
+  buildMatchSlopResultsLastTurnLong(),
 ];
 
 export const MOCK_SCENARIOS: MockScenario[] = [

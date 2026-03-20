@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "./config/game-config";
-import { simpleHash, type AiUsage } from "@/games/ai-chat-showdown/ai";
+import { simpleHash, ZERO_USAGE, type AiUsage } from "@/games/ai-chat-showdown/ai";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { generateAiFollowup, generateAiFunnyVote, generateAiOpener } from "./ai";
 import {
@@ -29,6 +29,8 @@ function getAiPlayers<T extends { id: string; type: string; modelId: string | nu
 
 const inflightResponses = new Map<string, Promise<void>>();
 const inflightVotes = new Map<string, Promise<void>>();
+const AI_RESPONSE_TIMEOUT_MS = 20_000;
+const AI_VOTE_TIMEOUT_MS = 10_000;
 
 type PendingResponseWrite = {
   playerId: string;
@@ -44,6 +46,38 @@ type PendingVoteWrite = {
   failReason: string | null;
   usage: AiUsage;
 };
+
+
+function getFailReason(error: unknown): "timeout" | "error" {
+  return error instanceof Error && error.name === "TimeoutError" ? "timeout" : "error";
+}
+
+function buildTimeoutError(label: string, timeoutMs: number): Error {
+  const error = new Error(`${label} timed out after ${timeoutMs}ms`);
+  error.name = "TimeoutError";
+  return error;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(buildTimeoutError(label, timeoutMs));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 export async function generateAiResponses(gameId: string): Promise<void> {
   const existing = inflightResponses.get(gameId);
@@ -106,51 +140,69 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
     .filter((player): player is (typeof aiPlayers)[number] => player != null)
     .filter((player) => !existingResponders.has(player.id))
     .map(async (player): Promise<PendingResponseWrite> => {
-      const openerResult =
-        game.currentRound === 1
-          ? await generateAiOpener(player.modelId, profile, playerExamples)
-          : null;
-      const followupResult =
-        game.currentRound === 1
-          ? null
-          : await generateAiFollowup(player.modelId, context, playerExamples);
+      try {
+        const openerResult =
+          game.currentRound === 1
+            ? await withTimeout(
+                generateAiOpener(player.modelId, profile, playerExamples),
+                AI_RESPONSE_TIMEOUT_MS,
+                `MatchSlop opener for ${player.id}`,
+              )
+            : null;
+        const followupResult =
+          game.currentRound === 1
+            ? null
+            : await withTimeout(
+                generateAiFollowup(player.modelId, context, playerExamples),
+                AI_RESPONSE_TIMEOUT_MS,
+                `MatchSlop follow-up for ${player.id}`,
+              );
 
-      const text = openerResult?.text ?? followupResult?.text ?? FORFEIT_MARKER;
-      const usage = openerResult?.usage ?? followupResult?.usage ?? {
-        modelId: player.modelId,
-        inputTokens: 0,
-        outputTokens: 0,
-        costUsd: 0,
-      };
-      const failReason = openerResult?.failReason ?? followupResult?.failReason ?? null;
-      const metadata =
-        openerResult != null
-          ? ({
-              selectedPromptId: openerResult.selectedPromptId,
-              selectedPromptText:
-                openerResult.selectedPromptId === MATCHSLOP_PHOTO_PROMPT_ID
-                  ? MATCHSLOP_PHOTO_PROMPT_TEXT
-                  : profile.prompts.find((profilePrompt) => profilePrompt.id === openerResult.selectedPromptId)?.prompt ?? null,
-            } as Prisma.InputJsonValue)
-          : Prisma.DbNull;
+        const text = openerResult?.text ?? followupResult?.text ?? FORFEIT_MARKER;
+        const usage = openerResult?.usage ?? followupResult?.usage ?? { ...ZERO_USAGE, modelId: player.modelId };
+        const failReason = openerResult?.failReason ?? followupResult?.failReason ?? null;
+        const metadata =
+          openerResult != null
+            ? ({
+                selectedPromptId: openerResult.selectedPromptId,
+                selectedPromptText:
+                  openerResult.selectedPromptId === MATCHSLOP_PHOTO_PROMPT_ID
+                    ? MATCHSLOP_PHOTO_PROMPT_TEXT
+                    : profile.prompts.find((profilePrompt) => profilePrompt.id === openerResult.selectedPromptId)?.prompt ?? null,
+              } as Prisma.InputJsonValue)
+            : Prisma.DbNull;
 
-      return {
-        playerId: player.id,
-        text,
-        metadata,
-        failReason,
-        usage,
-      };
+        return {
+          playerId: player.id,
+          text,
+          metadata,
+          failReason,
+          usage,
+        };
+      } catch (error) {
+        console.error(`[matchslop:generateAiResponses] ${player.modelId} failed for ${player.id}`, error);
+
+        return {
+          playerId: player.id,
+          text: FORFEIT_MARKER,
+          metadata:
+            game.currentRound === 1
+              ? ({
+                  selectedPromptId: profile.prompts[0]?.id ?? null,
+                  selectedPromptText: profile.prompts[0]?.prompt ?? null,
+                } as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+          failReason: getFailReason(error),
+          usage: { ...ZERO_USAGE, modelId: player.modelId },
+        };
+      }
     });
 
-  const pendingWrites = await Promise.allSettled(responsePromises);
-  const successfulWrites = pendingWrites
-    .filter((result): result is PromiseFulfilledResult<PendingResponseWrite> => result.status === "fulfilled")
-    .map((result) => result.value);
+  const successfulWrites = await Promise.all(responsePromises);
+  if (successfulWrites.length === 0) return;
+
   const usages = successfulWrites.map((result) => result.usage);
   await accumulateUsage(gameId, usages);
-
-  if (successfulWrites.length === 0) return;
 
   const latestGame = await prisma.game.findUnique({
     where: { id: gameId },
@@ -250,33 +302,45 @@ async function doGenerateAiVotes(gameId: string): Promise<void> {
         voterId: player.id,
         responseId: null,
         failReason: null,
-        usage: { modelId: player.modelId, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+        usage: { ...ZERO_USAGE, modelId: player.modelId },
       };
     }
 
-    const vote = await generateAiFunnyVote(
-      player.modelId,
-      context,
-      options.map((response) => ({ id: response.id, text: response.text })),
-      simpleHash(`${gameId}:${round.roundNumber}:${player.id}`),
-    );
+    try {
+      const vote = await withTimeout(
+        generateAiFunnyVote(
+          player.modelId,
+          context,
+          options.map((response) => ({ id: response.id, text: response.text })),
+          simpleHash(`${gameId}:${round.roundNumber}:${player.id}`),
+        ),
+        AI_VOTE_TIMEOUT_MS,
+        `MatchSlop vote for ${player.id}`,
+      );
 
-    return {
-      voterId: player.id,
-      responseId: vote.chosenResponseId,
-      failReason: vote.failReason,
-      usage: vote.usage,
-    };
+      return {
+        voterId: player.id,
+        responseId: vote.chosenResponseId,
+        failReason: vote.failReason,
+        usage: vote.usage,
+      };
+    } catch (error) {
+      console.error(`[matchslop:generateAiVotes] ${player.modelId} failed for ${player.id}`, error);
+
+      return {
+        voterId: player.id,
+        responseId: null,
+        failReason: getFailReason(error),
+        usage: { ...ZERO_USAGE, modelId: player.modelId },
+      };
+    }
   });
 
-  const pendingVotes = await Promise.allSettled(votePromises);
-  const successfulVotes = pendingVotes
-    .filter((result): result is PromiseFulfilledResult<PendingVoteWrite> => result.status === "fulfilled")
-    .map((result) => result.value);
+  const successfulVotes = await Promise.all(votePromises);
+  if (successfulVotes.length === 0) return;
+
   const usages = successfulVotes.map((result) => result.usage);
   await accumulateUsage(gameId, usages);
-
-  if (successfulVotes.length === 0) return;
 
   const latestGame = await prisma.game.findUnique({
     where: { id: gameId },

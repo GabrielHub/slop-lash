@@ -276,7 +276,7 @@ export function GameShell({
   if (!gameState) {
     return (
       <div className="min-h-svh flex flex-col bg-base">
-        <div className="shrink-0 z-30 px-4 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
+        <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
           <div className="h-4 w-20 rounded bg-edge/40 animate-pulse" />
           <div className="h-4 w-px bg-edge-strong" />
           <div className="h-4 w-14 rounded bg-edge/40 animate-pulse" />
@@ -367,7 +367,7 @@ export function GameShell({
   }
 
   const gameHeader = (
-    <div className="shrink-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
+    <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
         <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
           SLOP-LASH

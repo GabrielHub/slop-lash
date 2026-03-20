@@ -220,6 +220,7 @@ function deriveControllerState(
                 ownVote != null &&
                 ownVote.responseId == null &&
                 ownVote.failReason == null,
+              forfeitCount: 0,
             },
           },
     matchslop: {

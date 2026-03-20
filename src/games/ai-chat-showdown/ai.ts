@@ -1,4 +1,4 @@
-import { generateText, Output, NoObjectGeneratedError, createGateway } from "ai";
+import { generateText, createGateway } from "ai";
 import { z } from "zod";
 import { calculateCostUsd } from "@/lib/models";
 import { FORFEIT_MARKER } from "@/games/core/constants";
@@ -14,7 +14,7 @@ export interface AiUsage {
   costUsd: number;
 }
 
-const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
+export const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 export function extractUsage(modelId: string, usage: { inputTokens?: number; outputTokens?: number }): AiUsage {
   const input = usage.inputTokens ?? 0;
@@ -28,10 +28,11 @@ export function getLowReasoningProviderOptions(modelId: string): Record<string, 
   const provider = modelId.split("/")[0];
   if (provider === "anthropic") return { anthropic: { effort: "low" } };
   if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
+  if (provider === "openai") return { openai: { reasoningEffort: "low" } };
   return undefined;
 }
 
-function describeError(err: unknown): string {
+export function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
   const status = "status" in err ? ` [status=${(err as { status: unknown }).status}]` : "";
   return `${err.name}: ${err.message}${status}`;
@@ -43,6 +44,29 @@ export function escapeXml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+export function cleanGeneratedText(text: string): string {
+  return text.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "").trim();
+}
+
+export function extractJsonObject(text: string): string | null {
+  const cleaned = cleanGeneratedText(text);
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  return jsonMatch?.[0] ?? null;
+}
+
+export function parseJsonText<T>(text: string, schema: z.ZodType<T>): T | null {
+  const jsonText = extractJsonObject(text);
+  if (!jsonText) return null;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    const result = schema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 const JOKE_SYSTEM_PROMPT = `<role>You are a contestant in a group comedy game. All players see the same prompt and each writes one funny answer. Everyone votes on the funniest.</role>
@@ -61,7 +85,10 @@ const VOTE_SYSTEM_PROMPT = `You are a judge in a comedy party game. Multiple pla
 Strong answers: unexpected twists, clever wordplay, specific and vivid, darkly funny.
 Weak answers: boring/predictable, restating the prompt, generic, try-hard.
 
-You will be given labeled answers (A, B, C, etc.). Return ONLY the object with the label of the funniest answer.` as const;
+You will be given labeled answers (A, B, C, etc.).
+
+Respond with ONLY this JSON (no other text):
+{"vote":"A"}` as const;
 
 /** Generate a joke response for a prompt. */
 export async function generateJoke(
@@ -104,6 +131,24 @@ export interface AiNWayVoteResult {
   failReason: string | null;
 }
 
+const nWayVoteSchema = z.object({
+  vote: z.string(),
+});
+
+function normalizeVoteLabel(raw: string | null, validLabels: string[]): string | null {
+  if (!raw) return null;
+
+  const exact = raw.toUpperCase().trim();
+  if (validLabels.includes(exact)) return exact;
+
+  const cleaned = cleanGeneratedText(raw).replace(/^["']|["']$/g, "").trim().toUpperCase();
+  if (validLabels.includes(cleaned)) return cleaned;
+
+  const regex = new RegExp(`\\b(${validLabels.join("|")})\\b`, "i");
+  const match = cleaned.match(regex);
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
 /** Generate an AI vote for an N-way prompt. Falls back to deterministic choice on failure. */
 export async function aiVoteNWay(
   modelId: string,
@@ -131,23 +176,30 @@ export async function aiVoteNWay(
       model: gateway(modelId),
       system: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
-      output: Output.object({
-        schema: z.object({
-          vote: z.string().describe(`The label of the funniest answer: one of ${validLabels.join(", ")}`),
-        }),
-        name: "vote_decision",
-        description: `Pick the funniest answer from labels: ${validLabels.join(", ")}`,
-      }),
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
     const elapsed = Date.now() - t0;
-    const chosen = result.output?.vote?.toUpperCase().trim();
+    const rawText = result.text;
+    const parsed = parseJsonText(rawText, nWayVoteSchema);
+    const chosen = normalizeVoteLabel(parsed?.vote ?? rawText, validLabels);
 
     if (chosen && validLabels.includes(chosen)) {
       const chosenResponse = responses.find((r) => r.label === chosen)!;
       console.log(`[chatslop:aiVoteNWay] ${modelId} chose ${chosen} in ${elapsed}ms`);
       return { chosenResponseId: chosenResponse.id, usage: extractUsage(modelId, result.usage), failReason: null };
+    }
+
+    if (!parsed) {
+      console.error(
+        `[chatslop:aiVoteNWay] ${modelId} PARSE FAILED in ${elapsed}ms. raw text: "${rawText.slice(0, 200)}", falling back`,
+      );
+      const fallbackIdx = deterministicSeed % responses.length;
+      return {
+        chosenResponseId: responses[fallbackIdx].id,
+        usage: extractUsage(modelId, result.usage),
+        failReason: "parse",
+      };
     }
 
     console.warn(`[chatslop:aiVoteNWay] ${modelId} returned invalid label "${chosen}" in ${elapsed}ms, falling back`);
@@ -159,13 +211,9 @@ export async function aiVoteNWay(
     };
   } catch (err) {
     const elapsed = Date.now() - t0;
-    let usage: AiUsage = { ...ZERO_USAGE, modelId };
-    if (NoObjectGeneratedError.isInstance(err) && err.usage) {
-      usage = extractUsage(modelId, err.usage);
-    }
     console.error(`[chatslop:aiVoteNWay] ${modelId} FAILED in ${elapsed}ms: ${describeError(err)}, falling back`);
     const fallbackIdx = deterministicSeed % responses.length;
-    return { chosenResponseId: responses[fallbackIdx].id, usage, failReason: "error" };
+    return { chosenResponseId: responses[fallbackIdx].id, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
   }
 }
 

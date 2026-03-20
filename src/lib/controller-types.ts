@@ -71,6 +71,7 @@ export interface ControllerVotingPrompt {
   isRespondent: boolean;
   hasVoted: boolean;
   hasAbstained: boolean;
+  forfeitCount: number;
 }
 
 export interface ControllerVotingState {

@@ -168,22 +168,24 @@ export async function findControllerPayload(
       const ownVote = currentPrompt.votes.find((v) => v.voterId === playerId) ?? null;
       voting = {
         totalPrompts: game.gameType === "MATCHSLOP" ? 1 : votablePrompts.length,
-        currentPrompt: {
-          id: currentPrompt.id,
-          text: currentPrompt.text,
-          responses: currentPrompt.responses
-            .filter((r) => r.text !== FORFEIT_MARKER)
-            .map((r) => ({
+        currentPrompt: (() => {
+          const votableResponses = currentPrompt.responses.filter((r) => r.text !== FORFEIT_MARKER);
+          return {
+            id: currentPrompt.id,
+            text: currentPrompt.text,
+            responses: votableResponses.map((r) => ({
               id: r.id,
               text: r.text,
             })),
-          isRespondent,
-          hasVoted: ownVote != null,
-          hasAbstained:
-            ownVote != null &&
-            ownVote.responseId == null &&
-            ownVote.failReason == null,
-        },
+            isRespondent,
+            hasVoted: ownVote != null,
+            hasAbstained:
+              ownVote != null &&
+              ownVote.responseId == null &&
+              ownVote.failReason == null,
+            forfeitCount: currentPrompt.responses.length - votableResponses.length,
+          };
+        })(),
       };
     } else {
       voting = {
@@ -238,6 +240,7 @@ export async function findControllerPayload(
           isRespondent: false,
           hasAbstained:
             currentVotePrompt.votes.some((v) => v.voterId === playerId && v.responseId == null && v.failReason == null),
+          forfeitCount: currentVotePrompt.responses.filter((r) => r.text === FORFEIT_MARKER).length,
         },
       };
     }

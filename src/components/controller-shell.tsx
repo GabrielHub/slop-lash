@@ -23,7 +23,7 @@ function ControllerHeader({
   roundLabel: string | null;
 }) {
   return (
-    <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
+    <div className="fixed top-0 left-0 right-0 z-30 pl-4 pr-16 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
         <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
           SLOP-LASH
@@ -315,7 +315,7 @@ export function ControllerShell({ code }: { code: string }) {
                 <div className="text-center py-3">
                   <PulsingDot>
                     {isDisplayOnlyHostMode
-                      ? "Waiting for the TV screen to start the game..."
+                      ? "Waiting for the host to start the game..."
                       : "Waiting for host to start..."}
                   </PulsingDot>
                 </div>

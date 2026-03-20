@@ -35,7 +35,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, late 20s, warm olive skin, long dark wavy hair with salt-spray texture, brown eyes, athletic-lean build from surfing, wearing a faded black wetsuit half-unzipped over a white tank top, relaxed half-smile, standing on a foggy beach at sunset",
     imagePrompt:
-      "Medium portrait of an adult woman in her late 20s with warm olive skin and long dark wavy hair with natural salt-spray texture. She has expressive brown eyes and an athletic-lean build. Wearing a faded black wetsuit half-unzipped over a white ribbed tank top. Relaxed half-smile with a hint of mischief. Standing on a misty Northern California beach at golden hour, gentle waves blurred in the background. Soft natural daylight, warm amber tones mixing with cool fog. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult woman in her late 20s with warm olive skin and long dark wavy hair with natural salt-spray texture. She has expressive brown eyes and an athletic-lean build. Wearing a faded black wetsuit half-unzipped over a white ribbed tank top. Relaxed half-smile with a hint of mischief. Standing on a misty Northern California beach at golden hour, gentle waves blurred in the background. Soft natural daylight, warm amber tones mixing with cool fog. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "I go crazy for",
       "My most irrational fear",
@@ -68,7 +68,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, early 30s, medium-brown skin, shoulder-length black hair in a messy low bun, round glasses, warm smile with a slight gap in front teeth, wearing a mustard-yellow apron over a grey crew-neck tee, standing in a home kitchen with stainless steel behind her",
     imagePrompt:
-      "Close-up portrait of an adult woman in her early 30s with medium-brown skin, shoulder-length black hair pulled into a messy low bun, and round tortoiseshell glasses. She has a warm wide smile showing a slight gap between her front teeth. Wearing a mustard-yellow canvas apron over a heather-grey crew-neck t-shirt. Leaning against a kitchen counter in a bright home kitchen, stainless steel appliances softly blurred behind her. Warm natural daylight from a window, golden tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult woman in her early 30s with medium-brown skin, shoulder-length black hair pulled into a messy low bun, and round tortoiseshell glasses. She has a warm wide smile showing a slight gap between her front teeth. Wearing a mustard-yellow canvas apron over a heather-grey crew-neck t-shirt. Leaning against a kitchen counter in a bright home kitchen, stainless steel appliances softly blurred behind her. Warm natural daylight from a window, golden tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "A hill I will die on",
       "Typical Sunday",
@@ -101,7 +101,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, mid-late 20s, pale skin with freckles, auburn hair in a loose french braid, green eyes, tall and angular, wearing a long black linen dress with a dried flower pinned to the collar, serene expression, standing in a sun-dappled old cemetery with mossy headstones",
     imagePrompt:
-      "Three-quarter portrait of an adult woman in her late 20s with pale freckled skin and auburn hair in a loose french braid draped over one shoulder. She has striking green eyes and a tall angular frame. Wearing a long black linen dress with a small dried lavender sprig pinned to the collar. Calm serene expression, looking slightly off-camera. Standing in a sun-dappled old cemetery, mossy headstones and overgrown wildflowers softly blurred in the background. Warm golden-hour light filtering through old trees, muted green and amber tones. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Three-quarter portrait of an adult woman in her late 20s with pale freckled skin and auburn hair in a loose french braid draped over one shoulder. She has striking green eyes and a tall angular frame. Wearing a long black linen dress with a small dried lavender sprig pinned to the collar. Calm serene expression, looking slightly off-camera. Standing in a sun-dappled old cemetery, mossy headstones and overgrown wildflowers softly blurred in the background. Warm golden-hour light filtering through old trees, muted green and amber tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My simple pleasures",
       "A shower thought I still stand by",
@@ -135,7 +135,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, late 20s, warm brown skin, long dark hair with caramel highlights worn straight, bright brown eyes, petite build, wearing a fitted olive satin blouse and gold hoop earrings, confident direct gaze, sitting at an outdoor restaurant table on a Brooklyn sidewalk at night",
     imagePrompt:
-      "Close-up portrait of an adult woman in her late 20s with warm brown skin and long dark hair with caramel highlights worn straight past her shoulders. She has bright expressive brown eyes and a petite frame. Wearing a fitted olive satin blouse and small gold hoop earrings. Confident direct gaze with a slight knowing smile. Sitting at an outdoor restaurant table on a Brooklyn sidewalk, string lights and brownstones softly blurred behind her. Warm evening tungsten and ambient light, golden and cool urban tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult woman in her late 20s with warm brown skin and long dark hair with caramel highlights worn straight past her shoulders. She has bright expressive brown eyes and a petite frame. Wearing a fitted olive satin blouse and small gold hoop earrings. Confident direct gaze with a slight knowing smile. Sitting at an outdoor restaurant table on a Brooklyn sidewalk, string lights and brownstones softly blurred behind her. Warm evening tungsten and ambient light, golden and cool urban tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "The best way to ask me out is by",
       "My love language is",
@@ -168,7 +168,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, mid 30s, East Asian features, light skin, sleek black hair in a low ponytail, minimal makeup, sharp cheekbones, lean build, wearing a tailored navy blazer over a white tee and thin gold necklace, focused half-smile, standing in a bright modern co-working space with a laptop open behind her",
     imagePrompt:
-      "Medium portrait of an adult woman in her mid 30s with East Asian features, light skin, and sleek black hair pulled into a neat low ponytail. She has sharp cheekbones, minimal makeup, and a lean build. Wearing a tailored navy blazer over a plain white crew-neck t-shirt and a thin gold chain necklace. Focused half-smile, looking directly at camera. Standing in a bright modern co-working space, a laptop and coffee cup softly blurred on a table behind her. Clean natural daylight from floor-to-ceiling windows, cool and warm neutral tones. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult woman in her mid 30s with East Asian features, light skin, and sleek black hair pulled into a neat low ponytail. She has sharp cheekbones, minimal makeup, and a lean build. Wearing a tailored navy blazer over a plain white crew-neck t-shirt and a thin gold chain necklace. Focused half-smile, looking directly at camera. Standing in a bright modern co-working space, a laptop and coffee cup softly blurred on a table behind her. Clean natural daylight from floor-to-ceiling windows, cool and warm neutral tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My simple pleasures",
       "I recently discovered that",
@@ -202,7 +202,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, early 20s, dark-brown skin, long black box braids with gold cuffs, bright wide smile showing a slight gap, round glasses, medium build, wearing an oversized vintage band tee and layered silver necklaces, laughing mid-sentence, standing outside a neon-lit bar at night",
     imagePrompt:
-      "Close-up portrait of an adult woman in her early 20s with dark-brown skin and long black box braids adorned with small gold cuffs. She has a bright wide smile showing a slight gap between her front teeth and wears round wire-rimmed glasses. Medium build, wearing an oversized vintage black band t-shirt and layered thin silver necklaces. Laughing mid-sentence, caught in a candid moment. Standing outside at night, colorful neon bar signs and warm street light softly blurred behind her. Warm tungsten and neon light, vibrant and moody tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult woman in her early 20s with dark-brown skin and long black box braids adorned with small gold cuffs. She has a bright wide smile showing a slight gap between her front teeth and wears round wire-rimmed glasses. Medium build, wearing an oversized vintage black band t-shirt and layered thin silver necklaces. Laughing mid-sentence, caught in a candid moment. Standing outside at night, colorful neon bar signs and warm street light softly blurred behind her. Warm tungsten and neon light, vibrant and moody tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My patronus is",
       "What if I told you that",
@@ -235,7 +235,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Woman, early 20s, fair skin with light freckles, blonde hair in a messy low bun, sharp blue-grey eyes, slim build, wearing an oversized black blazer over a white tee, holding a phone as if about to take a mirror selfie, dry amused expression, standing in a modern university hallway with glass walls",
     imagePrompt:
-      "Medium portrait of an adult woman in her early 20s with fair skin, light freckles, and blonde hair in a messy low bun. She has sharp blue-grey eyes and a slim build. Wearing an oversized black blazer over a plain white crew-neck t-shirt. Dry amused expression, slight raised eyebrow. Standing in a modern university hallway with glass walls and fluorescent lighting, lab equipment barely visible through a doorway behind her. Cool even indoor lighting, muted neutral and blue tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult woman in her early 20s with fair skin, light freckles, and blonde hair in a messy low bun. She has sharp blue-grey eyes and a slim build. Wearing an oversized black blazer over a plain white crew-neck t-shirt. Dry amused expression, slight raised eyebrow. Standing in a modern university hallway with glass walls and fluorescent lighting, lab equipment barely visible through a doorway behind her. Cool even indoor lighting, muted neutral and blue tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My happy place is",
       "A social cause I care about",
@@ -270,7 +270,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, late 20s, fair skin, short dirty-blonde hair under a black baseball cap, clean-shaven, light blue eyes, lean fit build, wearing a black crewneck sweater and black joggers with white sneakers, sitting on a metal cafe chair on a city sidewalk with a goldendoodle at his feet, relaxed expression holding a to-go coffee",
     imagePrompt:
-      "Medium portrait of an adult man in his late 20s with fair skin and short dirty-blonde hair visible under a black baseball cap. He has light blue eyes, is clean-shaven, and has a lean fit build. Wearing a black crewneck sweater and black joggers with white sneakers. Sitting casually on a metal cafe chair on a city sidewalk, a goldendoodle sitting at his feet. Relaxed easy expression, holding a white to-go coffee cup. Sandstone building facade and urban street scene softly blurred behind him. Soft overcast daylight, cool and muted urban tones. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult man in his late 20s with fair skin and short dirty-blonde hair visible under a black baseball cap. He has light blue eyes, is clean-shaven, and has a lean fit build. Wearing a black crewneck sweater and black joggers with white sneakers. Sitting casually on a metal cafe chair on a city sidewalk, a goldendoodle sitting at his feet. Relaxed easy expression, holding a white to-go coffee cup. Sandstone building facade and urban street scene softly blurred behind him. Soft overcast daylight, cool and muted urban tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "Green flags I look for",
       "We'll get along if",
@@ -303,7 +303,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, early 30s, white skin with a ruddy complexion, curly dark-brown hair kept short, neatly trimmed beard, hazel eyes, average build, wearing a grey linen button-up with sleeves rolled to the elbows and a dark canvas apron, standing behind a marble counter with cheese wheels in a warmly lit shop",
     imagePrompt:
-      "Three-quarter portrait of an adult man in his early 30s with white skin, a ruddy complexion, short curly dark-brown hair, and a neatly trimmed beard. He has calm hazel eyes and an average build. Wearing a grey linen button-up shirt with sleeves rolled to the elbows and a dark canvas apron. Standing behind a marble counter, artisan cheese wheels and wooden boards arranged nearby. Deadpan half-smile, looking directly at camera. Warm tungsten shop lighting, rich golden and cream tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Three-quarter portrait of an adult man in his early 30s with white skin, a ruddy complexion, short curly dark-brown hair, and a neatly trimmed beard. He has calm hazel eyes and an average build. Wearing a grey linen button-up shirt with sleeves rolled to the elbows and a dark canvas apron. Standing behind a marble counter, artisan cheese wheels and wooden boards arranged nearby. Deadpan half-smile, looking directly at camera. Warm tungsten shop lighting, rich golden and cream tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "You should leave a comment if",
       "My most irrational fear",
@@ -336,7 +336,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, early 20s, tanned white skin, shaggy dark-blonde hair, scruffy chin stubble, warm hazel eyes, lean athletic build, wearing a faded black baseball cap and a dark green flannel shirt unbuttoned over a grey tee, lying on grass looking up at the camera with a lazy grin",
     imagePrompt:
-      "Medium portrait of an adult man in his early 20s with tanned skin and shaggy dark-blonde hair, some strands falling across his forehead. He has scruffy chin stubble, warm hazel eyes, and a lean athletic build. Wearing a faded black baseball cap backwards and a dark green flannel shirt unbuttoned over a heather-grey t-shirt. Lying on green grass looking up at the camera with a lazy relaxed grin. Soft natural daylight filtering through trees above, warm golden and green tones. Realistic photography, 35mm lens, moderate depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult man in his early 20s with tanned skin and shaggy dark-blonde hair, some strands falling across his forehead. He has scruffy chin stubble, warm hazel eyes, and a lean athletic build. Wearing a faded black baseball cap backwards and a dark green flannel shirt unbuttoned over a heather-grey t-shirt. Lying on green grass looking up at the camera with a lazy relaxed grin. Soft natural daylight filtering through trees above, warm golden and green tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "Typical Sunday",
       "My simple pleasures",
@@ -369,7 +369,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, early 20s, medium-brown skin, short tight curls, bright open smile, dark brown eyes, slim build, wearing a yellow Hufflepuff scarf over a navy crewneck sweater and jeans, animated expression gesturing with both hands, standing on a college campus quad with brick buildings behind him",
     imagePrompt:
-      "Three-quarter portrait of an adult man in his early 20s with medium-brown skin, short tight curls, and a bright enthusiastic smile. He has dark brown eyes and a slim build. Wearing a mustard-yellow knit scarf over a navy crewneck sweater. Animated expression, caught mid-gesture with both hands. Standing on a college campus quad, red brick buildings and autumn trees softly blurred behind him. Bright overcast daylight, warm gold and cool blue tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Three-quarter portrait of an adult man in his early 20s with medium-brown skin, short tight curls, and a bright enthusiastic smile. He has dark brown eyes and a slim build. Wearing a mustard-yellow knit scarf over a navy crewneck sweater. Animated expression, caught mid-gesture with both hands. Standing on a college campus quad, red brick buildings and autumn trees softly blurred behind him. Bright overcast daylight, warm gold and cool blue tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My patronus is",
       "The dorkiest thing about me",
@@ -402,7 +402,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, early 30s, tanned white skin, sandy-brown wavy hair pushed back by sea salt, strong jaw, warm brown eyes, lean athletic build, wearing a faded navy henley with rolled sleeves and khaki shorts, confident but slightly melancholy smile, leaning against a small sailboat hull at a marina",
     imagePrompt:
-      "Medium portrait of an adult man in his early 30s with tanned skin and sandy-brown wavy hair pushed back by sea salt. He has a strong jaw, warm brown eyes, and a lean athletic build. Wearing a faded navy henley shirt with rolled sleeves and khaki shorts. Leaning against the white hull of a small sailboat at a marina, ropes and cleats visible nearby. Confident but slightly wistful smile. Late afternoon golden light reflecting off calm harbor water, warm amber and nautical blue tones. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult man in his early 30s with tanned skin and sandy-brown wavy hair pushed back by sea salt. He has a strong jaw, warm brown eyes, and a lean athletic build. Wearing a faded navy henley shirt with rolled sleeves and khaki shorts. Leaning against the white hull of a small sailboat at a marina, ropes and cleats visible nearby. Confident but slightly wistful smile. Late afternoon golden light reflecting off calm harbor water, warm amber and nautical blue tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "I know the best spot in town for",
       "My simple pleasures",
@@ -435,7 +435,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, late 20s, dark-brown skin, short fade haircut with a subtle part, bright white smile, muscular build, wearing a fitted black compression tee and grey joggers, confident open stance with arms crossed, standing in a modern gym with warm overhead lighting",
     imagePrompt:
-      "Close-up portrait of an adult man in his late 20s with rich dark-brown skin, a short fade haircut with a subtle part line, and a bright confident smile. He has a muscular athletic build. Wearing a fitted black compression t-shirt. Arms loosely crossed with a relaxed confident stance. Standing in a modern gym, weight racks and mirrors softly blurred behind him. Warm overhead tungsten lighting, muted cool and warm tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult man in his late 20s with rich dark-brown skin, a short fade haircut with a subtle part line, and a bright confident smile. He has a muscular athletic build. Wearing a fitted black compression t-shirt. Arms loosely crossed with a relaxed confident stance. Standing in a modern gym, weight racks and mirrors softly blurred behind him. Warm overhead tungsten lighting, muted cool and warm tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My greatest strength",
       "The way to win me over is",
@@ -468,7 +468,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Man, mid 30s, olive skin, short dark curly hair with some grey at the temples, stubble, deep-set brown eyes, stocky solid build, wearing a white chef coat with the sleeves pushed up revealing forearm tattoos, warm open laugh, standing in a commercial kitchen with copper pots hanging behind him",
     imagePrompt:
-      "Medium portrait of an adult man in his mid 30s with olive skin, short dark curly hair with early grey at the temples, and dark stubble. He has deep-set warm brown eyes and a stocky solid build. Wearing a slightly unbuttoned white chef coat with sleeves pushed up, revealing simple forearm tattoos. Warm open laugh, caught mid-expression. Standing in a professional kitchen, copper pots and steel shelving softly blurred behind him. Warm tungsten kitchen lighting, rich golden and earthy tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult man in his mid 30s with olive skin, short dark curly hair with early grey at the temples, and dark stubble. He has deep-set warm brown eyes and a stocky solid build. Wearing a slightly unbuttoned white chef coat with sleeves pushed up, revealing simple forearm tattoos. Warm open laugh, caught mid-expression. Standing in a professional kitchen, copper pots and steel shelving softly blurred behind him. Warm tungsten kitchen lighting, rich golden and earthy tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "I go crazy for",
       "The most unhinged thing about me",
@@ -503,7 +503,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Non-binary person, mid 20s, light skin with a warm undertone, short asymmetrical dark-brown hair with one side shaved and dyed teal at the tips, wire-rimmed glasses, slight build, wearing an oversized sage-green cardigan over a band tee, thoughtful expression, sitting in a cozy room with plants and a glowing monitor behind them",
     imagePrompt:
-      "Close-up portrait of an adult non-binary person in their mid 20s with light skin and a warm undertone, short asymmetrical dark-brown hair with one side shaved and teal-dyed tips, and thin wire-rimmed glasses. They have a slight build and a thoughtful knowing expression. Wearing an oversized sage-green cardigan over a faded black band t-shirt. Sitting in a cozy room, lush houseplants and the soft glow of a computer monitor visible behind them. Soft warm indoor light mixing with cool monitor glow, muted green and amber tones. Realistic photography, 35mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult non-binary person in their mid 20s with light skin and a warm undertone, short asymmetrical dark-brown hair with one side shaved and teal-dyed tips, and thin wire-rimmed glasses. They have a slight build and a thoughtful knowing expression. Wearing an oversized sage-green cardigan over a faded black band t-shirt. Sitting in a cozy room, lush houseplants and the soft glow of a computer monitor visible behind them. Soft warm indoor light mixing with cool monitor glow, muted green and amber tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My most controversial opinion",
       "We'll get along if",
@@ -536,7 +536,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Non-binary person, around 30, light-brown skin, long box braids with blonde ends pulled into a loose top-knot, multiple ear piercings, warm open face, medium build, wearing a cream cable-knit sweater over ripped black jeans, crouching in a cluttered record store aisle with crates of vinyl around them",
     imagePrompt:
-      "Three-quarter portrait of an adult non-binary person around 30 with light-brown skin and long box braids with blonde ends gathered in a loose top-knot. They have multiple small ear piercings and a warm open face. Medium build, wearing a cream cable-knit sweater over ripped black jeans. Crouching in a cluttered record store aisle, wooden crates of vinyl records surrounding them. Warm tungsten overhead light mixing with soft daylight from a storefront window, warm amber and muted vintage tones. Realistic photography, 35mm lens, moderate depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Three-quarter portrait of an adult non-binary person around 30 with light-brown skin and long box braids with blonde ends gathered in a loose top-knot. They have multiple small ear piercings and a warm open face. Medium build, wearing a cream cable-knit sweater over ripped black jeans. Crouching in a cluttered record store aisle, wooden crates of vinyl records surrounding them. Warm tungsten overhead light mixing with soft daylight from a storefront window, warm amber and muted vintage tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "Typical Sunday",
       "A shower thought I still stand by",
@@ -570,7 +570,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Non-binary person, late 20s, medium-brown skin, curly dark-brown hair in a loose afro, warm brown eyes behind chunky tortoiseshell glasses, friendly round face, average build, wearing a rust-colored corduroy jacket over a cream turtleneck, warm open smile, sitting in a cozy library corner surrounded by film books and DVDs",
     imagePrompt:
-      "Close-up portrait of an adult non-binary person in their late 20s with medium-brown skin, a loose curly dark-brown afro, and warm brown eyes behind chunky tortoiseshell glasses. They have a friendly round face and an average build. Wearing a rust-colored corduroy jacket over a cream turtleneck. Warm genuine smile. Sitting in a cozy library corner, shelves of film books and DVD cases softly blurred behind them. Warm indoor lighting mixing with soft daylight from a window, rich amber and cream tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult non-binary person in their late 20s with medium-brown skin, a loose curly dark-brown afro, and warm brown eyes behind chunky tortoiseshell glasses. They have a friendly round face and an average build. Wearing a rust-colored corduroy jacket over a cream turtleneck. Warm genuine smile. Sitting in a cozy library corner, shelves of film books and DVD cases softly blurred behind them. Warm indoor lighting mixing with soft daylight from a window, rich amber and cream tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "The dorkiest thing about me",
       "My love language is",
@@ -604,7 +604,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Non-binary person, early 20s, warm tan skin, shaggy dark hair poking out from under a grey beanie, dark brown eyes, wiry build, wearing a faded grey 'COLLEGE' sweatshirt and ripped jeans, holding a skateboard under one arm, slight smirk, standing on a concrete sidewalk outside a skate park",
     imagePrompt:
-      "Medium portrait of an adult non-binary person in their early 20s with warm tan skin and shaggy dark hair poking out from under a grey knit beanie. They have dark brown eyes and a wiry athletic build. Wearing a faded grey crewneck sweatshirt and ripped dark jeans, holding a scuffed skateboard under one arm. Slight knowing smirk. Standing on a concrete sidewalk outside a skate park, chain-link fence and graffiti softly blurred behind them. Overcast Pacific Northwest daylight, cool grey and muted green tones. Realistic photography, 35mm lens, moderate depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult non-binary person in their early 20s with warm tan skin and shaggy dark hair poking out from under a grey knit beanie. They have dark brown eyes and a wiry athletic build. Wearing a faded grey crewneck sweatshirt and ripped dark jeans, holding a scuffed skateboard under one arm. Slight knowing smirk. Standing on a concrete sidewalk outside a skate park, chain-link fence and graffiti softly blurred behind them. Overcast Pacific Northwest daylight, cool grey and muted green tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My simple pleasures",
       "I bet you can't",
@@ -639,7 +639,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Person with soft feminine presentation, early 20s, warm brown skin, long dark wavy hair, bright wide smile with dimples, round face, average build, wearing a maroon college sweatshirt and small gold stud earrings, laughing with sunglasses pushed up on their head, standing outside in bright sunlight near a park",
     imagePrompt:
-      "Close-up portrait of an adult person in their early 20s with warm brown skin, long dark wavy hair, and a bright wide smile showing dimples. They have a round friendly face and an average build. Wearing a maroon crewneck college sweatshirt and small gold stud earrings, sunglasses pushed up on top of their head. Laughing genuinely, caught in a candid moment. Standing outdoors in bright sunlight, a green park and blue sky softly blurred behind them. Bright natural daylight, warm golden tones. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult person in their early 20s with warm brown skin, long dark wavy hair, and a bright wide smile showing dimples. They have a round friendly face and an average build. Wearing a maroon crewneck college sweatshirt and small gold stud earrings, sunglasses pushed up on top of their head. Laughing genuinely, caught in a candid moment. Standing outdoors in bright sunlight, a green park and blue sky softly blurred behind them. Bright natural daylight, warm golden tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "I value",
       "The way to win me over is",
@@ -672,7 +672,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Person with fluid gender presentation, mid 20s, warm medium skin with sun freckles, shoulder-length wavy auburn hair tied back loosely, hazel-green eyes, athletic build from fieldwork, wearing a faded blue marine research t-shirt and cargo shorts, thoughtful amused expression, standing on a sunny research dock with the ocean behind them",
     imagePrompt:
-      "Medium portrait of an adult person in their mid 20s with warm medium skin dotted with sun freckles and shoulder-length wavy auburn hair tied back in a loose ponytail. They have bright hazel-green eyes and an athletic build. Wearing a faded blue marine research t-shirt and khaki cargo shorts. Thoughtful amused expression, slight squint from the sun. Standing on a weathered wooden research dock, calm blue ocean and a distant boat softly blurred behind them. Bright natural daylight, warm golden sun tones with cool ocean blues. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult person in their mid 20s with warm medium skin dotted with sun freckles and shoulder-length wavy auburn hair tied back in a loose ponytail. They have bright hazel-green eyes and an athletic build. Wearing a faded blue marine research t-shirt and khaki cargo shorts. Thoughtful amused expression, slight squint from the sun. Standing on a weathered wooden research dock, calm blue ocean and a distant boat softly blurred behind them. Bright natural daylight, warm golden sun tones with cool ocean blues. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My most irrational fear",
       "A random fact I love",
@@ -705,7 +705,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Person of ambiguous gender presentation, early 30s, East Asian features, warm golden-tan skin, chin-length black hair slightly tousled and damp, thoughtful dark eyes, lean build, wearing a moss-green rain jacket over a cream henley and brown canvas pants, calm knowing smile, standing in a misty temperate rainforest with ferns and old-growth trees",
     imagePrompt:
-      "Medium portrait of an adult person in their early 30s with East Asian features, warm golden-tan skin, and chin-length black hair that's slightly tousled and damp from mist. They have thoughtful dark eyes and a lean build. Wearing a moss-green rain jacket over a cream henley shirt and brown canvas pants. Calm knowing half-smile. Standing in a misty Pacific Northwest temperate rainforest, giant ferns and moss-covered old-growth trees softly blurred behind them. Overcast diffused daylight, rich green and earthy brown tones. Realistic photography, 85mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Medium portrait of an adult person in their early 30s with East Asian features, warm golden-tan skin, and chin-length black hair that's slightly tousled and damp from mist. They have thoughtful dark eyes and a lean build. Wearing a moss-green rain jacket over a cream henley shirt and brown canvas pants. Calm knowing half-smile. Standing in a misty Pacific Northwest temperate rainforest, giant ferns and moss-covered old-growth trees softly blurred behind them. Overcast diffused daylight, rich green and earthy brown tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "My simple pleasures",
       "A random fact I love",
@@ -738,7 +738,7 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     appearance:
       "Person with androgynous presentation, early-mid 20s, light skin with under-eye circles (affectionate), short bleached-blonde buzzcut, expressive blue-grey eyes, compact wiry build, wearing a baggy olive-green work shirt with the sleeves cuffed, coffee-stained cream apron, animated mid-laugh expression, standing behind a worn espresso machine in a small cafe",
     imagePrompt:
-      "Close-up portrait of an adult person in their early-mid 20s with an androgynous presentation, light skin with faint under-eye circles, a short bleached-blonde buzzcut, and expressive blue-grey eyes. Compact wiry build. Wearing a baggy olive-green button-up work shirt with cuffed sleeves and a coffee-stained cream canvas apron. Animated mid-laugh expression, caught in a genuine moment. Standing behind a worn brass espresso machine in a small independent cafe, warm wood and chalkboard menus blurred behind them. Soft warm morning light coming through a cafe window, golden and muted brown tones. Realistic photography, 50mm lens, shallow depth of field. Sharp focus, fully clothed, no text, no watermark, safe for work.",
+      "Close-up portrait of an adult person in their early-mid 20s with an androgynous presentation, light skin with faint under-eye circles, a short bleached-blonde buzzcut, and expressive blue-grey eyes. Compact wiry build. Wearing a baggy olive-green button-up work shirt with cuffed sleeves and a coffee-stained cream canvas apron. Animated mid-laugh expression, caught in a genuine moment. Standing behind a worn brass espresso machine in a small independent cafe, warm wood and chalkboard menus blurred behind them. Soft warm morning light coming through a cafe window, golden and muted brown tones. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
     promptExamples: [
       "I bet you can't",
       "My most irrational fear",

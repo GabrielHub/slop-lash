@@ -7,7 +7,6 @@ import {
   useEffect,
   useCallback,
 } from "react";
-import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 
 type Theme = "light" | "dark";
@@ -68,15 +67,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function ThemeToggle() {
   const { theme, toggle, mounted } = useTheme();
-  const pathname = usePathname();
-  const hideOnImmersiveRoute =
-    pathname.startsWith("/game/") ||
-    pathname.startsWith("/controller/") ||
-    pathname.startsWith("/stage/");
-
-  if (hideOnImmersiveRoute) {
-    return null;
-  }
 
   // Don't render until mounted to avoid hydration mismatch
   if (!mounted) {

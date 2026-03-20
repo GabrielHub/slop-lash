@@ -7,13 +7,13 @@ import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { PulsingDot } from "@/components/pulsing-dot";
-import { ScoreBarChart } from "@/components/score-bar-chart";
+import { PlayerAvatar } from "@/components/player-avatar";
 import {
   fadeInUp,
-  floatIn,
   popIn,
   slideInLeft,
   slideInRight,
+  springGentle,
   staggerContainer,
   staggerContainerSlow,
   buttonTap,
@@ -67,6 +67,14 @@ type MatchSlopTranscriptEntry = {
   authorName?: string | null;
 };
 
+type MatchSlopRoundResult = {
+  winnerText?: string;
+  authorName?: string | null;
+  winnerPlayerId?: string;
+  weightedVotes?: number;
+  rawVotes?: number;
+};
+
 type MatchSlopModeState = {
   seekerIdentity?: MatchSlopIdentity | string | null;
   personaIdentity?: MatchSlopIdentity | string | null;
@@ -79,6 +87,7 @@ type MatchSlopModeState = {
   profile?: MatchSlopProfile | null;
   transcript?: MatchSlopTranscriptEntry[];
   personaImage?: MatchSlopPersonaImageState | null;
+  lastRoundResult?: MatchSlopRoundResult | null;
 };
 
 type Outcome = "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
@@ -141,6 +150,14 @@ function SparkleIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+    </svg>
+  );
+}
+
+function CrownIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2 19h20v2H2v-2zm1.2-5.6L2 5l4.8 4.8L12 2l5.2 7.8L22 5l-1.2 8.4H3.2z" />
     </svg>
   );
 }
@@ -512,6 +529,262 @@ function TranscriptBubble({
   );
 }
 
+function EmptyConversationState({
+  status,
+  isComebackRound,
+  lastRoundResult,
+}: {
+  status: GameState["status"];
+  isComebackRound: boolean;
+  lastRoundResult: MatchSlopRoundResult | null;
+}) {
+  if (status === "ROUND_RESULTS") {
+    return (
+      <div
+        className="py-[clamp(1.5rem,3vw,3rem)]"
+        style={{ color: "var(--ms-ink-dim)" }}
+      >
+        {lastRoundResult?.winnerText ? (
+          <motion.div
+            className="mx-auto max-w-[40rem]"
+            variants={popIn}
+            initial="hidden"
+            animate="visible"
+          >
+            {/* Winner showcase card */}
+            <div
+              className="relative rounded-[1.25rem] overflow-hidden"
+              style={{
+                background: "var(--ms-raised)",
+                border: "1.5px solid var(--gold)",
+                boxShadow: "0 0 24px color-mix(in srgb, var(--gold) 15%, transparent), 0 2px 12px color-mix(in srgb, var(--gold) 8%, transparent) inset",
+              }}
+            >
+              {/* Gold accent bar at top */}
+              <div
+                style={{
+                  height: 3,
+                  background: "linear-gradient(90deg, transparent 0%, var(--gold) 30%, var(--gold) 70%, transparent 100%)",
+                  opacity: 0.7,
+                }}
+              />
+
+              <div style={{ padding: "clamp(1rem, 2vw, 1.75rem)" }}>
+                {/* Header: crown + label + votes */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <motion.div
+                      animate={{ rotate: [0, -8, 8, 0] }}
+                      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ color: "var(--gold)" }}
+                    >
+                      <CrownIcon size={20} />
+                    </motion.div>
+                    <span
+                      className="font-display font-bold uppercase tracking-wider"
+                      style={{
+                        fontSize: "clamp(0.65rem, 0.85vw, 0.8rem)",
+                        color: "var(--gold)",
+                      }}
+                    >
+                      Winning line
+                    </span>
+                  </div>
+                  {lastRoundResult.weightedVotes != null && (
+                    <span
+                      className="font-mono font-bold px-2.5 py-0.5 rounded-full"
+                      style={{
+                        fontSize: "clamp(0.6rem, 0.75vw, 0.7rem)",
+                        color: "var(--gold)",
+                        background: "var(--gold-soft)",
+                      }}
+                    >
+                      {lastRoundResult.weightedVotes} vote{lastRoundResult.weightedVotes !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+
+                {/* The winning text */}
+                <p
+                  className="leading-relaxed"
+                  style={{
+                    fontSize: "clamp(1rem, 1.4vw, 1.3rem)",
+                    color: "var(--ms-ink)",
+                  }}
+                >
+                  &ldquo;{lastRoundResult.winnerText}&rdquo;
+                </p>
+
+                {/* Author attribution */}
+                {lastRoundResult.authorName && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <div
+                      className="w-1 rounded-full"
+                      style={{ height: "1.1em", background: "var(--gold)", opacity: 0.5 }}
+                    />
+                    <span
+                      className="font-display font-bold"
+                      style={{
+                        fontSize: "clamp(0.8rem, 1vw, 0.95rem)",
+                        color: "var(--gold)",
+                      }}
+                    >
+                      {lastRoundResult.authorName}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Waiting message below the card */}
+            <div className="text-center mt-4">
+              <motion.div
+                className="mx-auto mb-2 flex justify-center"
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                style={{ color: "var(--ms-coral)" }}
+              >
+                <SparkleIcon size={20} />
+              </motion.div>
+              <p
+                className="font-display font-medium"
+                style={{ fontSize: "clamp(0.75rem, 0.95vw, 0.9rem)", color: "var(--ms-ink-dim)" }}
+              >
+                {isComebackRound
+                  ? "Waiting to see if the comeback worked..."
+                  : "Waiting for the persona's reply..."}
+              </p>
+            </div>
+          </motion.div>
+        ) : (
+          <div className="text-center">
+            <motion.div
+              className="mx-auto mb-3 flex justify-center"
+              animate={{ y: [0, -8, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              style={{ color: "var(--ms-coral)" }}
+            >
+              <SparkleIcon size={32} />
+            </motion.div>
+            <p
+              className="font-display font-semibold"
+              style={{ fontSize: "clamp(0.85rem, 1.1vw, 1.1rem)" }}
+            >
+              {isComebackRound
+                ? "Waiting to see if the comeback worked..."
+                : "Waiting for the persona's reply..."}
+            </p>
+            <p
+              className="mt-1"
+              style={{ fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)", opacity: 0.7 }}
+            >
+              {isComebackRound
+                ? "The winning rescue line has been sent. The persona is deciding whether to give the room another chance."
+                : "The winning line has been sent. The persona is composing the next message now."}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="text-center py-[clamp(2rem,4vw,4rem)]"
+      style={{ color: "var(--ms-ink-dim)" }}
+    >
+      <motion.div
+        animate={{ y: [0, -8, 0] }}
+        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <HeartIcon size={32} className="mx-auto mb-3" />
+      </motion.div>
+      <p
+        className="font-display font-semibold"
+        style={{ fontSize: "clamp(0.85rem, 1.1vw, 1.1rem)" }}
+      >
+        Waiting for the first move...
+      </p>
+      <p
+        className="mt-1"
+        style={{ fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)", opacity: 0.7 }}
+      >
+        Players will write openers to impress the persona.
+      </p>
+    </div>
+  );
+}
+
+function CompactScoreboard({ game, isFinal }: { game: GameState; isFinal: boolean }) {
+  const sorted = [...game.players].sort((a, b) => b.score - a.score);
+
+  return (
+    <div className="mt-2">
+      <span
+        className="font-display font-bold uppercase tracking-wider block mb-2"
+        style={{
+          fontSize: "clamp(0.55rem, 0.7vw, 0.65rem)",
+          color: "var(--ms-ink-dim)",
+        }}
+      >
+        {isFinal ? "Final scores" : "Leaderboard"}
+      </span>
+      <motion.div
+        className="flex flex-wrap gap-1.5"
+        initial="hidden"
+        animate="visible"
+        variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06 } } }}
+      >
+        {sorted.map((player, idx) => {
+          const isLeader = idx === 0;
+          return (
+            <motion.div
+              key={player.id}
+              className="flex items-center gap-1.5 rounded-full"
+              style={{
+                padding: "clamp(0.2rem, 0.4vw, 0.3rem) clamp(0.5rem, 0.8vw, 0.7rem) clamp(0.2rem, 0.4vw, 0.3rem) clamp(0.25rem, 0.4vw, 0.3rem)",
+                background: isLeader ? "var(--gold-soft)" : "var(--ms-raised)",
+                border: `1px solid ${isLeader ? "var(--gold)" : "var(--ms-edge)"}`,
+                ...(isLeader
+                  ? { boxShadow: "0 0 8px color-mix(in srgb, var(--gold) 15%, transparent)" }
+                  : {}),
+              }}
+              variants={{
+                hidden: { opacity: 0, scale: 0.85 },
+                visible: { opacity: 1, scale: 1, transition: springGentle },
+              }}
+            >
+              {isLeader && (
+                <CrownIcon size={10} />
+              )}
+              <PlayerAvatar name={player.name} modelId={player.modelId} size={18} />
+              <span
+                className="font-semibold truncate"
+                style={{
+                  fontSize: "clamp(0.6rem, 0.8vw, 0.75rem)",
+                  color: isLeader ? "var(--gold)" : "var(--ms-ink)",
+                  maxWidth: "clamp(3rem, 6vw, 5rem)",
+                }}
+              >
+                {player.name}
+              </span>
+              <span
+                className="font-mono font-bold tabular-nums"
+                style={{
+                  fontSize: "clamp(0.6rem, 0.8vw, 0.75rem)",
+                  color: isLeader ? "var(--gold)" : "var(--ms-ink-dim)",
+                }}
+              >
+                {player.score}
+              </span>
+            </motion.div>
+          );
+        })}
+      </motion.div>
+    </div>
+  );
+}
+
 function PhaseStatusCard({
   gameState,
   outcome,
@@ -601,50 +874,127 @@ function PhaseStatusCard({
     color: "var(--ms-rose)",
   };
 
+  const isCompact = gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS";
+
   return (
-    <motion.div
-      className="rounded-[1.5rem] overflow-hidden"
-      style={{
-        background: "var(--ms-surface)",
-        border: "1px solid var(--ms-edge)",
-        boxShadow: "var(--ms-shadow)",
-      }}
-      variants={slideInRight}
-      initial="hidden"
-      animate="visible"
-    >
+    <div>
       <div className="p-[clamp(1rem,2vw,2rem)]">
-        <div className="flex items-start gap-3 mb-4">
-          <div
-            className="shrink-0 flex items-center justify-center w-[clamp(2.5rem,3.5vw,4rem)] h-[clamp(2.5rem,3.5vw,4rem)] rounded-2xl"
-            style={{
-              background: `${phaseConfig.color}18`,
-              color: phaseConfig.color,
-            }}
-          >
-            {phaseConfig.icon}
-          </div>
-          <div className="min-w-0">
+        {isCompact ? (
+          /* Compact inline header for results phases */
+          <div className="flex items-center gap-2 mb-3">
+            <div
+              className="shrink-0 flex items-center justify-center w-7 h-7 rounded-lg"
+              style={{
+                background: `${phaseConfig.color}18`,
+                color: phaseConfig.color,
+              }}
+            >
+              {phaseConfig.icon}
+            </div>
             <h2
               className="font-display font-bold"
               style={{
-                fontSize: "clamp(1.1rem, 1.8vw, 2rem)",
+                fontSize: "clamp(0.9rem, 1.2vw, 1.15rem)",
                 color: "var(--ms-ink)",
               }}
             >
               {phaseConfig.title}
             </h2>
-            <p
-              className="mt-0.5"
+            <span
               style={{
-                fontSize: "clamp(0.8rem, 1vw, 1rem)",
+                fontSize: "clamp(0.7rem, 0.85vw, 0.85rem)",
                 color: "var(--ms-ink-dim)",
               }}
             >
-              {phaseConfig.subtitle}
-            </p>
+              — {phaseConfig.subtitle}
+            </span>
           </div>
-        </div>
+        ) : (
+          /* Full header for lobby/writing/voting */
+          <div className="flex items-start gap-3 mb-4">
+            <div
+              className="shrink-0 flex items-center justify-center w-[clamp(2.5rem,3.5vw,4rem)] h-[clamp(2.5rem,3.5vw,4rem)] rounded-2xl"
+              style={{
+                background: `${phaseConfig.color}18`,
+                color: phaseConfig.color,
+              }}
+            >
+              {phaseConfig.icon}
+            </div>
+            <div className="min-w-0">
+              <h2
+                className="font-display font-bold"
+                style={{
+                  fontSize: "clamp(1.1rem, 1.8vw, 2rem)",
+                  color: "var(--ms-ink)",
+                }}
+              >
+                {phaseConfig.title}
+              </h2>
+              <p
+                className="mt-0.5"
+                style={{
+                  fontSize: "clamp(0.8rem, 1vw, 1rem)",
+                  color: "var(--ms-ink-dim)",
+                }}
+              >
+                {phaseConfig.subtitle}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Turn-limit warning */}
+        {(() => {
+          const turnsLeft = gameState.totalRounds - gameState.currentRound;
+          const showWarning =
+            !isComebackRound &&
+            turnsLeft >= 0 &&
+            turnsLeft <= 2 &&
+            (gameState.status === "WRITING" || gameState.status === "VOTING" || gameState.status === "ROUND_RESULTS");
+          if (!showWarning) return null;
+          const isDanger = turnsLeft <= 0;
+          const color = isDanger ? "var(--ms-red)" : "var(--ms-coral)";
+          const bg = isDanger ? "var(--ms-red-soft)" : "var(--ms-coral-soft)";
+          return (
+            <motion.div
+              className="flex items-center gap-2 rounded-xl mb-4"
+              style={{
+                padding: "clamp(0.5rem, 1vw, 0.75rem) clamp(0.75rem, 1.2vw, 1rem)",
+                background: bg,
+                border: `1px solid ${color}30`,
+              }}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24 }}
+            >
+              {isDanger ? (
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+                  style={{ color }}
+                >
+                  <BrokenHeartIcon size={16} />
+                </motion.div>
+              ) : (
+                <SparkleIcon size={14} />
+              )}
+              <span
+                className="font-display font-bold"
+                style={{
+                  fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)",
+                  color,
+                }}
+              >
+                {isDanger
+                  ? "Last turn to seal the deal!"
+                  : turnsLeft === 1
+                    ? "1 turn left to seal the deal"
+                    : `${turnsLeft} turns left to seal the deal`}
+              </span>
+            </motion.div>
+          );
+        })()}
 
         {/* Timer */}
         {gameState.phaseDeadline && (
@@ -735,17 +1085,18 @@ function PhaseStatusCard({
           </div>
         )}
 
-        {gameState.status === "FINAL_RESULTS" && (
-          <div className="mt-2">
-            <ScoreBarChart game={gameState} />
-          </div>
+        {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
+          <CompactScoreboard
+            game={gameState}
+            isFinal={gameState.status === "FINAL_RESULTS"}
+          />
         )}
       </div>
 
       {/* Host controls */}
       {isHost && (
         <div
-          className="p-[clamp(1rem,2vw,2rem)] pt-0 space-y-2"
+          className={`p-[clamp(1rem,2vw,2rem)] pt-0 ${isCompact ? "flex gap-2" : "space-y-2"}`}
         >
           {gameState.status === "LOBBY" && (
             <motion.button
@@ -775,13 +1126,13 @@ function PhaseStatusCard({
                 void postHostAction("next");
               }}
               disabled={hostActionBusy}
-              className="w-full rounded-2xl font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`${isCompact ? "flex-1" : "w-full"} rounded-2xl font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               style={{
                 background: "var(--ms-raised)",
                 border: "1px solid var(--ms-edge)",
                 color: "var(--ms-ink-dim)",
-                padding: "clamp(0.75rem, 1.2vw, 1rem)",
-                fontSize: "clamp(0.85rem, 1.1vw, 1rem)",
+                padding: isCompact ? "clamp(0.5rem, 0.8vw, 0.65rem) clamp(0.75rem, 1vw, 1rem)" : "clamp(0.75rem, 1.2vw, 1rem)",
+                fontSize: isCompact ? "clamp(0.75rem, 0.9vw, 0.85rem)" : "clamp(0.85rem, 1.1vw, 1rem)",
               }}
               {...buttonTap}
             >
@@ -802,13 +1153,13 @@ function PhaseStatusCard({
                 void handleEndGame();
               }}
               disabled={endingGame}
-              className="w-full rounded-2xl font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`${isCompact ? "" : "w-full"} rounded-2xl font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               style={{
                 border: "1px solid var(--ms-red-soft)",
                 color: "var(--ms-red)",
                 background: "transparent",
-                padding: "clamp(0.75rem, 1.2vw, 1rem)",
-                fontSize: "clamp(0.85rem, 1.1vw, 1rem)",
+                padding: isCompact ? "clamp(0.5rem, 0.8vw, 0.65rem) clamp(0.75rem, 1vw, 1rem)" : "clamp(0.75rem, 1.2vw, 1rem)",
+                fontSize: isCompact ? "clamp(0.75rem, 0.9vw, 0.85rem)" : "clamp(0.85rem, 1.1vw, 1rem)",
               }}
               {...buttonTap}
             >
@@ -823,7 +1174,7 @@ function PhaseStatusCard({
           <PulsingDot>Waiting for the game to start...</PulsingDot>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -960,6 +1311,7 @@ export function MatchSlopGameShell({
   const [hostActionBusy, setHostActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const prevStatusRef = useRef<GameState["status"] | null>(null);
   const prevPlayerIdsRef = useRef<Set<string> | null>(null);
   const prevRoundRef = useRef<number | undefined>(undefined);
@@ -984,6 +1336,7 @@ export function MatchSlopGameShell({
   const comebackRound = modeState.comebackRound ?? null;
   const personaImage = modeState.personaImage ?? null;
   const transcript = modeState.transcript ?? EMPTY_TRANSCRIPT;
+  const lastRoundResult = modeState.lastRoundResult ?? null;
   const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
   const isActiveComebackRound = isComebackRound && gameState?.status !== "FINAL_RESULTS";
   const currentRoundData =
@@ -997,8 +1350,9 @@ export function MatchSlopGameShell({
       (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
     ) ?? [];
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [transcript.length]);
+    const el = transcriptScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [transcript.length, gameState?.status]);
 
   useEffect(() => {
     window.addEventListener("pointerdown", preloadSounds, { once: true });
@@ -1088,7 +1442,7 @@ export function MatchSlopGameShell({
   }, [transcript]);
 
   useEffect(() => {
-    const nextVoteCount = currentPrompt?.votes.length ?? 0;
+    const nextVoteCount = currentPrompt?.votes?.length ?? 0;
     const previousVoteCount = prevVoteCountRef.current;
     prevVoteCountRef.current = nextVoteCount;
     if (
@@ -1100,7 +1454,7 @@ export function MatchSlopGameShell({
       return;
     }
     playSound("vote-cast");
-  }, [currentPrompt?.votes.length, gameState?.status, gameState?.votingRevealing]);
+  }, [currentPrompt?.votes?.length, gameState?.status, gameState?.votingRevealing]);
 
   // Set data-game attribute
   useEffect(() => {
@@ -1216,7 +1570,10 @@ export function MatchSlopGameShell({
       <div
         className="shrink-0 z-30 flex items-center justify-between backdrop-blur-md"
         style={{
-          padding: "clamp(0.5rem, 1vw, 1rem) clamp(1rem, 2vw, 2rem)",
+          paddingTop: "clamp(0.5rem, 1vw, 1rem)",
+          paddingBottom: "clamp(0.5rem, 1vw, 1rem)",
+          paddingLeft: "clamp(1rem, 2vw, 2rem)",
+          paddingRight: "clamp(4rem, 5vw, 5.5rem)",
           background: `color-mix(in srgb, var(--ms-bg) 85%, transparent)`,
           borderBottom: "1px solid var(--ms-edge)",
         }}
@@ -1297,23 +1654,8 @@ export function MatchSlopGameShell({
 
           </div>
 
-          {/* Right: Conversation + Phase Status */}
+          {/* Right: Combined Phase Status + Conversation */}
           <div className="space-y-[clamp(0.75rem,1.5vw,1.5rem)]">
-            {/* Phase status card */}
-            <PhaseStatusCard
-              gameState={gameState}
-              outcome={outcome}
-              isComebackRound={isActiveComebackRound}
-              isHost={isHost}
-              hostActionBusy={hostActionBusy}
-              endingGame={endingGame}
-              triggerElement={triggerElement}
-              postHostAction={(path) => void postHostAction(path)}
-              handleEndGame={() => void handleEndGame()}
-              canEndGame={canEndGame}
-            />
-
-            {/* Conversation transcript */}
             <motion.div
               className="rounded-[1.5rem] overflow-hidden relative"
               style={{
@@ -1321,15 +1663,30 @@ export function MatchSlopGameShell({
                 border: "1px solid var(--ms-edge)",
                 boxShadow: "var(--ms-shadow)",
               }}
-              variants={floatIn}
+              variants={slideInRight}
               initial="hidden"
               animate="visible"
             >
+              {/* Phase status header */}
+              <PhaseStatusCard
+                gameState={gameState}
+                outcome={outcome}
+                isComebackRound={isActiveComebackRound}
+                isHost={isHost}
+                hostActionBusy={hostActionBusy}
+                endingGame={endingGame}
+                triggerElement={triggerElement}
+                postHostAction={(path) => void postHostAction(path)}
+                handleEndGame={() => void handleEndGame()}
+                canEndGame={canEndGame}
+              />
+
+              {/* Conversation divider + header */}
               <div
                 className="flex items-center justify-between"
                 style={{
                   padding: "clamp(0.75rem, 1.5vw, 1.25rem) clamp(1rem, 2vw, 1.5rem)",
-                  borderBottom: "1px solid var(--ms-edge)",
+                  borderTop: "1px solid var(--ms-edge)",
                 }}
               >
                 <div className="flex items-center gap-2">
@@ -1357,10 +1714,12 @@ export function MatchSlopGameShell({
                 )}
               </div>
 
+              {/* Conversation transcript */}
               <div
+                ref={transcriptScrollRef}
                 className="overflow-y-auto"
                 style={{
-                  padding: "clamp(0.75rem, 1.5vw, 1.25rem)",
+                  padding: "0 clamp(0.75rem, 1.5vw, 1.25rem) clamp(0.75rem, 1.5vw, 1.25rem)",
                   maxHeight: "clamp(20rem, 50vh, 50rem)",
                 }}
               >
@@ -1381,29 +1740,11 @@ export function MatchSlopGameShell({
                     <div ref={transcriptEndRef} />
                   </motion.div>
                 ) : (
-                  <div
-                    className="text-center py-[clamp(2rem,4vw,4rem)]"
-                    style={{ color: "var(--ms-ink-dim)" }}
-                  >
-                    <motion.div
-                      animate={{ y: [0, -8, 0] }}
-                      transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                    >
-                      <HeartIcon size={32} className="mx-auto mb-3" />
-                    </motion.div>
-                    <p
-                      className="font-display font-semibold"
-                      style={{ fontSize: "clamp(0.85rem, 1.1vw, 1.1rem)" }}
-                    >
-                      Waiting for the first move...
-                    </p>
-                    <p
-                      className="mt-1"
-                      style={{ fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)", opacity: 0.7 }}
-                    >
-                      Players will write openers to impress the persona.
-                    </p>
-                  </div>
+                  <EmptyConversationState
+                    status={gameState.status}
+                    isComebackRound={isActiveComebackRound}
+                    lastRoundResult={lastRoundResult}
+                  />
                 )}
               </div>
 
@@ -1415,7 +1756,7 @@ export function MatchSlopGameShell({
             {gameState.status === "FINAL_RESULTS" && (
               <motion.div variants={fadeInUp} initial="hidden" animate="visible">
                 <Link
-                  href="/join"
+                  href={isHost ? "/host" : "/join"}
                   className="block text-center rounded-2xl font-display font-semibold transition-all"
                   style={{
                     background: "var(--ms-raised)",
@@ -1425,7 +1766,7 @@ export function MatchSlopGameShell({
                     fontSize: "clamp(0.85rem, 1.1vw, 1rem)",
                   }}
                 >
-                  Join Another Game
+                  {isHost ? "Host Another Game" : "Join Another Game"}
                 </Link>
               </motion.div>
             )}

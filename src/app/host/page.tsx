@@ -126,6 +126,7 @@ export default function HostPage() {
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
   const [ttsVoice, setTtsVoice] = useState("RANDOM");
+  const [gameModePickerOpen, setGameModePickerOpen] = useState(false);
   const [personaModelPickerOpen, setPersonaModelPickerOpen] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -283,7 +284,7 @@ export default function HostPage() {
           Back
         </Link>
 
-        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-10 text-ink">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-8 text-ink">
           Host a Game
         </h1>
 
@@ -292,42 +293,113 @@ export default function HostPage() {
             e.preventDefault();
             createGame();
           }}
-          className={`flex flex-col lg:grid lg:grid-rows-[auto_1fr] lg:items-start ${isMatchSlop ? "lg:grid-cols-2 xl:grid-cols-3 lg:gap-x-8" : "lg:grid-cols-2 lg:gap-x-12"}`}
+          className="flex flex-col lg:flex-row lg:gap-x-12 lg:items-start"
         >
-          <div>
-            <div className="mb-8">
-              <label className="block text-sm font-medium text-ink-dim mb-3">
+          <div className="flex-1 min-w-0">
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-ink-dim mb-2">
                 Game Mode
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {GAME_TYPE_OPTIONS.map((option) => {
-                  const selected = gameType === option.id;
-                  return (
-                    <motion.button
-                      type="button"
-                      key={option.id}
-                      onClick={() => setGameType(option.id)}
-                      className={`p-3 rounded-xl border-2 text-left transition-colors cursor-pointer ${
-                        selected
-                          ? "bg-punch/10 border-punch"
-                          : "bg-surface/80 backdrop-blur-sm border-edge hover:border-edge-strong"
-                      }`}
-                      {...buttonTap}
+              <div>
+                <motion.button
+                  type="button"
+                  onClick={() => setGameModePickerOpen((open) => !open)}
+                  className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
+                    gameModePickerOpen
+                      ? "border-punch bg-punch/10 text-punch"
+                      : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
+                  }`}
+                  {...buttonTap}
+                >
+                  <span className="flex items-center justify-between">
+                    <span className="min-w-0">
+                      <span className={`text-sm font-semibold block ${gameModePickerOpen ? "text-punch" : "text-ink"}`}>
+                        {selectedGameType.displayName}
+                      </span>
+                      <span className={`text-[11px] leading-snug block mt-0.5 ${gameModePickerOpen ? "text-punch/70" : "text-ink-dim/60"}`}>
+                        {selectedGameType.description}
+                      </span>
+                    </span>
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="shrink-0 ml-3 transition-transform duration-200"
+                      style={{ transform: gameModePickerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
                     >
-                      <span className={`font-semibold text-sm block ${selected ? "text-punch" : "text-ink"}`}>
-                        {option.displayName}
-                      </span>
-                      <span className="text-[11px] text-ink-dim/60 leading-snug block mt-0.5">
-                        {option.description}
-                      </span>
-                    </motion.button>
-                  );
-                })}
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </span>
+                </motion.button>
+
+                <AnimatePresence>
+                  {gameModePickerOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-2 rounded-xl border-2 border-edge bg-surface">
+                        {GAME_TYPE_OPTIONS.map((option) => {
+                          const selected = gameType === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => {
+                                setGameType(option.id);
+                                setGameModePickerOpen(false);
+                              }}
+                              className={`w-full border-b border-edge/40 px-4 py-3 text-left transition-colors cursor-pointer last:border-b-0 ${
+                                selected
+                                  ? "bg-punch/10"
+                                  : "hover:bg-raised/60"
+                              }`}
+                            >
+                              <span className="flex items-center justify-between">
+                                <span className="min-w-0">
+                                  <span className={`font-semibold text-sm block ${selected ? "text-punch" : "text-ink"}`}>
+                                    {option.displayName}
+                                  </span>
+                                  <span className="text-[11px] text-ink-dim/60 leading-snug block mt-0.5">
+                                    {option.description}
+                                  </span>
+                                </span>
+                                {selected && (
+                                  <svg
+                                    className="shrink-0 text-punch ml-3"
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
             {isMatchSlop && (
-              <div className="mb-8">
+              <div className="mb-6">
                 <label className="block text-sm font-medium text-ink-dim mb-1">
                   Dating Setup
                 </label>
@@ -404,7 +476,7 @@ export default function HostPage() {
               />
             </div>
 
-            <div className="mb-8">
+            <div className="mb-6">
               {hostParticipation === "PLAYER" ? (
                 <>
                   <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
@@ -433,10 +505,9 @@ export default function HostPage() {
                 </div>
               )}
             </div>
-          </div>
 
           {isMatchSlop && (
-            <div className="mb-8 lg:mb-0 lg:col-start-1 xl:col-start-2 xl:row-start-1 xl:row-span-2">
+            <div className="mb-6">
               <label className="block text-sm font-medium text-ink-dim mb-3">
                 Persona Model
               </label>
@@ -572,92 +643,8 @@ export default function HostPage() {
             </div>
           )}
 
-          <div className={`mb-8 lg:mb-0 ${isMatchSlop ? "lg:col-start-2 lg:row-start-1 lg:row-span-3 xl:col-start-3 xl:row-span-2" : "lg:col-start-2 lg:row-start-1 lg:row-span-2"}`}>
-            <div className="flex items-baseline justify-between mb-3">
-              <label className="text-sm font-medium text-ink-dim">
-                Add AI Players
-              </label>
-                <span className="text-sm font-semibold tabular-nums text-ink-dim">
-                {activePlayerCount}
-                <span className="text-ink-dim/50">/{selectedGameType.maxPlayers}</span>
-                <span className="text-xs font-normal text-ink-dim/50 ml-1">active players</span>
-              </span>
-            </div>
-            <PlayerCountHint
-              selectedCount={selectedModels.length}
-              hostParticipation={hostParticipation}
-              minPlayers={selectedGameType.minPlayers}
-              maxPlayers={selectedGameType.maxPlayers}
-            />
-            <div className="grid grid-cols-1 gap-2">
-              {AI_MODELS.map((model) => {
-                const selected = selectedModels.includes(model.id);
-                const replacesSameProvider = !selected && selectedModels.some((id) => {
-                  const selectedModel = getModelByModelId(id);
-                  return selectedModel?.provider === model.provider;
-                });
-                const atLimit =
-                  selectedModels.length >= maxAiPlayers &&
-                  !selected &&
-                  !replacesSameProvider;
-
-                let stateClass: string;
-                if (selected) {
-                  stateClass = "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
-                } else if (atLimit) {
-                  stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
-                } else {
-                  stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
-                }
-
-                return (
-                  <motion.button
-                    type="button"
-                    key={model.id}
-                    onClick={() => toggleModel(model.id)}
-                    disabled={atLimit}
-                    className={`p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed ${stateClass}`}
-                    layout
-                    {...buttonTap}
-                  >
-                    <ModelIcon model={model} size={24} className="shrink-0" />
-                    <div className="min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-semibold text-sm truncate">
-                          {model.name}
-                        </span>
-                        <span className="text-xs text-ink-dim/60 shrink-0">
-                          {model.provider}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-ink-dim/50 font-mono">
-                        {getCostTier(model)}
-                      </span>
-                    </div>
-                    {selected && (
-                      <svg
-                        className="ml-auto shrink-0 text-ai"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </motion.button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
             {gameType === "SLOPLASH" && (
-              <div className="mb-8">
+              <div className="mb-6">
                 <Toggle
                   checked={timersDisabled}
                   onChange={setTimersDisabled}
@@ -668,7 +655,7 @@ export default function HostPage() {
             )}
 
             {!isMatchSlop && (
-              <div className="mb-8">
+              <div className="mb-6">
                 <Toggle
                   checked={hostParticipation === "PLAYER"}
                   onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
@@ -682,7 +669,7 @@ export default function HostPage() {
               </div>
             )}
 
-            {selectedGameType.supportsNarrator && <div className="mb-8">
+            {selectedGameType.supportsNarrator && <div className="mb-6">
               <Toggle
                 checked={ttsMode === "ON"}
                 onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
@@ -842,6 +829,89 @@ export default function HostPage() {
                 </span>
               ) : "Create Game"}
             </motion.button>
+          </div>
+
+          <div className="mb-8 lg:mb-0 lg:w-[340px] xl:w-[380px] shrink-0">
+            <div className="flex items-baseline justify-between mb-3">
+              <label className="text-sm font-medium text-ink-dim">
+                Add AI Players
+              </label>
+                <span className="text-sm font-semibold tabular-nums text-ink-dim">
+                {activePlayerCount}
+                <span className="text-ink-dim/50">/{selectedGameType.maxPlayers}</span>
+                <span className="text-xs font-normal text-ink-dim/50 ml-1">active players</span>
+              </span>
+            </div>
+            <PlayerCountHint
+              selectedCount={selectedModels.length}
+              hostParticipation={hostParticipation}
+              minPlayers={selectedGameType.minPlayers}
+              maxPlayers={selectedGameType.maxPlayers}
+            />
+            <div className="grid grid-cols-1 gap-2">
+              {AI_MODELS.map((model) => {
+                const selected = selectedModels.includes(model.id);
+                const replacesSameProvider = !selected && selectedModels.some((id) => {
+                  const selectedModel = getModelByModelId(id);
+                  return selectedModel?.provider === model.provider;
+                });
+                const atLimit =
+                  selectedModels.length >= maxAiPlayers &&
+                  !selected &&
+                  !replacesSameProvider;
+
+                let stateClass: string;
+                if (selected) {
+                  stateClass = "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
+                } else if (atLimit) {
+                  stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
+                } else {
+                  stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
+                }
+
+                return (
+                  <motion.button
+                    type="button"
+                    key={model.id}
+                    onClick={() => toggleModel(model.id)}
+                    disabled={atLimit}
+                    className={`p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed ${stateClass}`}
+                    layout
+                    {...buttonTap}
+                  >
+                    <ModelIcon model={model} size={24} className="shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-semibold text-sm truncate">
+                          {model.name}
+                        </span>
+                        <span className="text-xs text-ink-dim/60 shrink-0">
+                          {model.provider}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-ink-dim/50 font-mono">
+                        {getCostTier(model)}
+                      </span>
+                    </div>
+                    {selected && (
+                      <svg
+                        className="ml-auto shrink-0 text-ai"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
           </div>
         </form>
       </motion.div>

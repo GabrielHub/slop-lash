@@ -266,7 +266,7 @@ export function Lobby({
                 <PulsingDot>
                   <span className={compactStage ? "text-base" : "text-sm"}>
                     {isDisplayOnlyHostMode
-                      ? "Waiting for the TV screen to start the game..."
+                      ? "Waiting for the host to start the game..."
                       : "Waiting for host to start..."}
                   </span>
                 </PulsingDot>

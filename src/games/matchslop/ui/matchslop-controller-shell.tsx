@@ -323,6 +323,7 @@ function OpenerWriteStep({
 function OpenerVotingList({
   responses,
   openerPromptById,
+  forfeitCount,
   votingBusy,
   onVote,
   onPass,
@@ -330,6 +331,7 @@ function OpenerVotingList({
 }: {
   responses: ControllerVoteOption[];
   openerPromptById: Map<string, string>;
+  forfeitCount: number;
   votingBusy: boolean;
   onVote: (responseId: string) => void;
   onPass: () => void;
@@ -529,6 +531,12 @@ function OpenerVotingList({
       >
         Pass
       </motion.button>
+
+      {forfeitCount > 0 && (
+        <p className="text-xs text-center" style={{ color: "var(--ms-ink-dim)", opacity: 0.6 }}>
+          {forfeitCount} {forfeitCount === 1 ? "model" : "models"} failed to respond
+        </p>
+      )}
     </div>
   );
 }
@@ -833,7 +841,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                   </motion.button>
                 ) : (
                   <div className="text-center py-3">
-                    <PulsingDot>Waiting for the TV screen to start the game...</PulsingDot>
+                    <PulsingDot>Waiting for the host to start the game...</PulsingDot>
                   </div>
                 )}
               </div>
@@ -983,6 +991,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                   <OpenerVotingList
                     responses={currentVotePrompt.responses}
                     openerPromptById={openerPromptById}
+                    forfeitCount={currentVotePrompt.forfeitCount}
                     votingBusy={votingBusy}
                     onVote={(responseId) => void castVote(currentVotePrompt.id, responseId)}
                     onPass={() => void castVote(currentVotePrompt.id, null)}
@@ -1115,10 +1124,10 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
 
                 {gameState.status === "FINAL_RESULTS" && (
                   <Link
-                    href="/join"
+                    href={isHost ? "/host" : "/join"}
                     className="block text-center py-3 rounded-2xl border border-edge text-ink-dim hover:text-ink hover:bg-surface/60 transition-colors"
                   >
-                    Join Another Game
+                    {isHost ? "Host Another Game" : "Join Another Game"}
                   </Link>
                 )}
               </div>

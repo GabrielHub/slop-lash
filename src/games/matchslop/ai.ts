@@ -3,10 +3,15 @@ import { z } from "zod";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import {
   LABELS,
+  ZERO_USAGE,
   aiVoteNWay,
+  cleanGeneratedText,
+  describeError,
   escapeXml,
+  extractJsonObject,
   extractUsage,
   getLowReasoningProviderOptions,
+  parseJsonText,
   type AiUsage,
 } from "@/games/ai-chat-showdown/ai";
 import type { MatchSlopPersonaSeed } from "./config/persona-examples";
@@ -23,18 +28,6 @@ const gateway = createGateway({
 const FAL_IMAGE_MODEL_ID = "fal-ai/z-image/turbo";
 const FAL_IMAGE_API_URL = `https://fal.run/${FAL_IMAGE_MODEL_ID}`;
 
-const ZERO_USAGE: AiUsage = {
-  modelId: "",
-  inputTokens: 0,
-  outputTokens: 0,
-  costUsd: 0,
-};
-
-function describeError(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const status = "status" in err ? ` [status=${(err as { status: unknown }).status}]` : "";
-  return `${err.name}: ${err.message}${status}`;
-}
 
 function identityLabel(identity: MatchSlopIdentity): string {
   switch (identity) {
@@ -147,9 +140,9 @@ function buildFallbackPortraitPrompt(
     `Photorealistic dating-app portrait of ${profile.displayName}.`,
     detailBits.join(", "),
     profile.backstory ?? profile.bio,
-    "Single adult subject, chest-up framing, natural candid pose, expressive face, modern lifestyle styling, detailed skin texture, shallow depth of field, flattering natural light.",
+    "Single adult, casual chest-up framing, natural candid pose, expressive face. Shot on iPhone, portrait mode, ambient lighting.",
     languageBit,
-    "No text, no watermark, no collage, no extra people, no phone in frame.",
+    "Fully clothed, no text, no watermark, no collage, no extra people.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -179,19 +172,17 @@ export async function generatePersonaProfile(
 
   const result = await generateText({
     model: gateway(modelId),
-    system: `You create fake dating-app personas for a party game called MatchSlop.
+    system: `You create dating-app personas for MatchSlop, a comedy party game.
 
-Create one dating persona with a rich backstory. Start with the backstory (3-5 sentences defining who this person really is — personality, contradictions, specific obsessions, how they talk). Then derive everything else from that backstory.
+The persona is a ${identityLabel(personaIdentity)}. The players collectively roleplay as a ${identityLabel(seekerIdentity)} trying to match.
 
-Rules:
-- The persona is a ${identityLabel(personaIdentity)}
-- The players are collectively roleplaying as a ${identityLabel(seekerIdentity)} trying to match with this persona
-- Keep the persona playful, specific, and a little cursed
-- Do not produce hateful or sexual content
-- Write exactly 3 dating-app prompts with short, punchy answers
-- Keep the bio under 220 characters
-- Include profile details: job, height, and languages (at least 1). school is optional (null if omitted)
-- The backstory drives the persona's voice in multi-round conversations — make it specific enough to sustain a character`,
+Start with a backstory (3-5 sentences: personality, contradictions, obsessions, voice). Derive everything else from it.
+
+- Bio under 220 characters
+- 3 profile prompts with short, punchy answers
+- Include job, height, and languages (at least 1). school is optional (null if omitted)
+- Playful, specific, a little cursed — no hateful or sexual content
+- Backstory must sustain the character across multiple conversation rounds`,
     prompt: `<persona-seeds>${examplesXml}</persona-seeds>`,
     output: Output.object({
       schema: personaProfileGenerationSchema,
@@ -215,19 +206,13 @@ export async function generatePersonaPortraitPrompt(
   try {
     const result = await generateText({
       model: gateway(modelId),
-      system: `You write image-generation prompts for MatchSlop, a comedy dating-app game.
+      system: `Write a dating-app portrait prompt from the given persona profile. The photo should look like a friend took it on their phone — candid, natural, not professionally lit or posed.
 
-Turn the persona profile into one prompt for a photorealistic dating-app portrait.
-
-Rules:
-- Describe exactly one adult person
-- Make the appearance feel grounded in the backstory, bio, and profile details
-- Favor concrete visual traits, clothing, styling, setting, and camera framing over vague mood words
-- Keep it suitable for a dating-app profile photo: chest-up or waist-up, believable, attractive, candid, not glamour-shot overkill
-- Add a few camera/lighting details that help realism
-- Do not mention text, UI, split screens, collages, watermarks, usernames, or extra people
-- Do not invent anything sexual, hateful, or violent
-- Return only the final prompt string`,
+- One adult, chest-up or waist-up, caught in a natural moment
+- Ground appearance in the backstory, bio, and profile details
+- Concrete visual traits, clothing, and real-world setting over vague mood words
+- Natural ambient lighting only — no studio setups or professional rigs
+- End with: shot on iPhone, portrait mode. Fully clothed, no text, no watermark`,
       prompt: `<persona-identity>${escapeXml(identityLabel(personaIdentity))}</persona-identity>\n${buildProfileXml(profile)}`,
       output: Output.object({
         schema: portraitPromptSchema,
@@ -322,6 +307,58 @@ const openerSchema = z.object({
   line: z.string(),
 });
 
+function parseLooseJsonObject(text: string): Record<string, unknown> | null {
+  const jsonText = extractJsonObject(text);
+  if (!jsonText) return null;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readStringField(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
+function fallbackPlainTextLine(text: string): string | null {
+  const cleaned = cleanGeneratedText(text).replace(/^["']|["']$/g, "").trim();
+  if (!cleaned || (cleaned.includes("{") && cleaned.includes("}"))) return null;
+  return cleaned;
+}
+
+export function parseAiOpenerResponse(
+  text: string,
+): {
+  selectedPromptId: string | null;
+  line: string;
+} | null {
+  const parsed = parseJsonText(text, openerSchema);
+  if (parsed) return parsed;
+
+  const loose = parseLooseJsonObject(text);
+  if (loose) {
+    const line = readStringField(loose, ["line", "opener", "text", "reply"]);
+    if (line) {
+      return {
+        selectedPromptId: readStringField(loose, ["selectedPromptId", "selected_prompt_id", "promptId", "prompt_id"]),
+        line,
+      };
+    }
+  }
+
+  const fallbackLine = fallbackPlainTextLine(text);
+  return fallbackLine ? { selectedPromptId: null, line: fallbackLine } : null;
+}
+
 export async function generateAiOpener(
   modelId: string,
   profile: MatchSlopProfile,
@@ -343,41 +380,43 @@ export async function generateAiOpener(
   try {
     const result = await generateText({
       model: gateway(modelId),
-      system: `You are an AI player in MatchSlop, a party game where players compete to write the funniest dating-app opener. Players vote on the funniest line — not the most charming or romantic. You win by being the one everyone wishes they'd written.
+      system: `You are an AI player in MatchSlop, a party game where players compete to write the funniest dating-app opener. Players vote on the funniest line — not the most charming or romantic.
 
-Pick one profile prompt to answer, then write a single line.
+Pick one profile prompt to answer, then write a single line under 300 characters.
 
-Constraints:
-- Under 300 characters — short punchy one-liners and longer unhinged monologues are both great
-- Be specific and absurd over generic and clever
-- Reference something concrete from the profile when possible
+- Specific and absurd over generic and clever
+- Reference something concrete from the profile
+- No sincere flirting, generic pickup lines, or actual dating advice
+- Weird and funny, not edgy or mean
 
-Avoid:
-- Sincere compliments or genuine flirting
-- Generic pickup lines or puns
-- Anything that sounds like actual dating advice
-- Being edgy for shock value — the humor should be weird, not mean
-
-Example lines (tone reference only — do not copy these):
-${examplesList}`,
-      prompt: `<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio>${promptsXml}</profile>`,
-      output: Output.object({
-        schema: openerSchema,
-        name: "matchslop_ai_opener",
-        description: "An opener and the prompt it answers",
-      }),
+Respond with ONLY this JSON (no other text):
+{"selectedPromptId":"one of the provided prompt ids","line":"your opener"}`,
+      prompt: `<tone-examples>\n${examplesList}\n</tone-examples>\n<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio>${promptsXml}</profile>`,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
-    const selectedPromptId = profile.prompts.some((prompt) => prompt.id === result.output.selectedPromptId)
-      ? result.output.selectedPromptId
+    const parsed = parseAiOpenerResponse(result.text);
+    if (!parsed) {
+      console.error(
+        `[matchslop:generateAiOpener] ${modelId} parse failed. raw text: "${result.text.slice(0, 200)}"`,
+      );
+      return {
+        selectedPromptId: profile.prompts[0]?.id ?? null,
+        text: FORFEIT_MARKER,
+        usage: extractUsage(modelId, result.usage),
+        failReason: "parse",
+      };
+    }
+
+    const selectedPromptId = profile.prompts.some((prompt) => prompt.id === parsed.selectedPromptId)
+      ? parsed.selectedPromptId
       : profile.prompts[0]?.id ?? null;
 
     return {
       selectedPromptId,
-      text: result.output.line.trim() || FORFEIT_MARKER,
+      text: parsed.line.trim() || FORFEIT_MARKER,
       usage: extractUsage(modelId, result.usage),
-      failReason: null,
+      failReason: parsed.line.trim() ? null : "empty",
     };
   } catch (err) {
     console.error(`[matchslop:generateAiOpener] ${modelId} failed: ${describeError(err)}`);
@@ -397,6 +436,20 @@ const followupSchema = z.object({
   line: z.string(),
 });
 
+export function parseAiFollowupResponse(text: string): { line: string } | null {
+  const parsed = parseJsonText(text, followupSchema);
+  if (parsed) return parsed;
+
+  const loose = parseLooseJsonObject(text);
+  if (loose) {
+    const line = readStringField(loose, ["line", "text", "reply", "message"]);
+    if (line) return { line };
+  }
+
+  const fallbackLine = fallbackPlainTextLine(text);
+  return fallbackLine ? { line: fallbackLine } : null;
+}
+
 export async function generateAiFollowup(
   modelId: string,
   context: string,
@@ -407,34 +460,33 @@ export async function generateAiFollowup(
   try {
     const result = await generateText({
       model: gateway(modelId),
-      system: `You are an AI player in MatchSlop, a party game where players compete to write the funniest dating-app messages. Players vote on who makes the room laugh — charm is irrelevant, comedy is everything.
+      system: `You are an AI player in MatchSlop, a party game where players compete to write the funniest dating-app messages. Players vote on the funniest line — charm is irrelevant.
 
-Write the single funniest next message in this conversation.
+Write one message under 300 characters that escalates or builds on the conversation so far.
 
-Constraints:
-- Under 300 characters — a quick escalation or a full committed bit, either works
-- One message only
-- Escalate or build on what's already happening — do not restart the conversation or change the subject
-- Be specific and committed to the bit
+- Specific and committed to the bit — do not restart or change the subject
+- No sincere pivots, restating what was said, or generic humor
+- Weird and absurd, not mean-spirited
 
-Avoid:
-- Sincere or wholesome pivots
-- Restating what was already said
-- Generic humor that could work in any conversation
-- Being mean-spirited — weird and absurd beats edgy
-
-Example lines (tone reference only — do not copy these):
-${examplesList}`,
-      prompt: `<conversation-context>${escapeXml(context)}</conversation-context>`,
-      output: Output.object({
-        schema: followupSchema,
-        name: "matchslop_ai_followup",
-        description: "A funny follow-up message",
-      }),
+Respond with ONLY this JSON (no other text):
+{"line":"your follow-up message"}`,
+      prompt: `<tone-examples>\n${examplesList}\n</tone-examples>\n<conversation-context>${escapeXml(context)}</conversation-context>`,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
-    const text = result.output.line.trim();
+    const parsed = parseAiFollowupResponse(result.text);
+    if (!parsed) {
+      console.error(
+        `[matchslop:generateAiFollowup] ${modelId} parse failed. raw text: "${result.text.slice(0, 200)}"`,
+      );
+      return {
+        text: FORFEIT_MARKER,
+        usage: extractUsage(modelId, result.usage),
+        failReason: "parse",
+      };
+    }
+
+    const text = parsed.line.trim();
     return {
       text: text || FORFEIT_MARKER,
       usage: extractUsage(modelId, result.usage),
@@ -472,30 +524,49 @@ const personaReplySchema = z.object({
   outcome: z.enum(["CONTINUE", "DATE_SEALED", "UNMATCHED"]),
 });
 
+export function parsePersonaReplyResponse(
+  text: string,
+): {
+  reply: string;
+  outcome: MatchSlopDecision;
+} | null {
+  const parsed = parseJsonText(text, personaReplySchema);
+  if (parsed && parsed.reply.trim()) return parsed;
+
+  const loose = parseLooseJsonObject(text);
+  if (loose) {
+    const reply = readStringField(loose, ["reply", "text", "message", "line"]);
+    const outcome = readStringField(loose, ["outcome", "decision", "status"])?.toUpperCase();
+    if (!reply) return null;
+    if (outcome === "CONTINUE" || outcome === "DATE_SEALED" || outcome === "UNMATCHED") {
+      return { reply, outcome };
+    }
+    return { reply, outcome: "CONTINUE" };
+  }
+
+  const fallbackReply = fallbackPlainTextLine(text);
+  return fallbackReply ? { reply: fallbackReply, outcome: "CONTINUE" } : null;
+}
+
 export function buildPersonaReplySystemPrompt(
   seekerIdentity: MatchSlopIdentity,
   personaIdentity: MatchSlopIdentity,
   forceContinue = false,
 ): string {
-  return `You are roleplaying as the AI dating persona in MatchSlop.
+  return `You are a ${identityLabel(personaIdentity)} on a dating app. You just matched with a ${identityLabel(seekerIdentity)} and are chatting with them.
 
-Stay consistent with the persona profile. Reply like a real app conversation, not a narrator.
-
-Rules:
-- The persona is a ${identityLabel(personaIdentity)}
-- The players are collectively messaging as a ${identityLabel(seekerIdentity)}
-- Reply with one short dating-app style message
+Your profile and backstory are provided — stay consistent with who you are. Reply the way you'd actually text on a dating app: short, natural, in your own voice.
 ${
   forceContinue
-    ? `- This is the opening exchange after a successful match
-- The conversation must continue from here
-- Outcome must be CONTINUE for this turn
-- Do not unmatch or seal the date yet`
-    : `- Decide whether the conversation should continue, the date is sealed, or the persona unmatches
-- DATE_SEALED means the conversation genuinely landed
-- UNMATCHED means the players flopped or got too weird
-- CONTINUE means there is enough spark for one more exchange`
-}`;
+    ? `This is the opening exchange — keep the conversation going. outcome must be CONTINUE.`
+    : `After replying, decide what happens next:
+- CONTINUE: you're interested enough to keep talking
+- DATE_SEALED: you're genuinely into this and ready to meet up
+- UNMATCHED: this isn't working — you're done`
+}
+
+Respond with ONLY this JSON (no other text):
+{"reply":"your message","outcome":"CONTINUE"}`;
 }
 
 export function normalizePersonaReplyOutcome(
@@ -503,6 +574,16 @@ export function normalizePersonaReplyOutcome(
   forceContinue = false,
 ): MatchSlopDecision {
   return forceContinue ? "CONTINUE" : outcome;
+}
+
+function buildFallbackPersonaReply(forceContinue: boolean): {
+  reply: string;
+  outcome: MatchSlopDecision;
+} {
+  return {
+    reply: forceContinue ? "okay, that was weirdly bold. keep going." : "hmm. that bought you one more message.",
+    outcome: "CONTINUE",
+  };
 }
 
 export async function generatePersonaReply(
@@ -522,21 +603,50 @@ export async function generatePersonaReply(
     })
     .join("\n");
 
-  const result = await generateText({
-    model: gateway(modelId),
-    system: buildPersonaReplySystemPrompt(seekerIdentity, personaIdentity, forceContinue),
-    prompt: `<profile><name>${escapeXml(profile.displayName)}</name>${profile.backstory ? `<backstory>${escapeXml(profile.backstory)}</backstory>` : ""}<bio>${escapeXml(profile.bio)}</bio><tagline>${escapeXml(profile.tagline ?? "")}</tagline></profile>\n<transcript>${transcriptXml}</transcript>`,
-    output: Output.object({
-      schema: personaReplySchema,
-      name: "matchslop_persona_reply",
-      description: "The persona's next reply and match outcome",
-    }),
-    providerOptions: getLowReasoningProviderOptions(modelId),
-  });
+  try {
+    const result = await generateText({
+      model: gateway(modelId),
+      system: buildPersonaReplySystemPrompt(seekerIdentity, personaIdentity, forceContinue),
+      prompt: `<profile><name>${escapeXml(profile.displayName)}</name>${profile.backstory ? `<backstory>${escapeXml(profile.backstory)}</backstory>` : ""}<bio>${escapeXml(profile.bio)}</bio><tagline>${escapeXml(profile.tagline ?? "")}</tagline></profile>\n<transcript>${transcriptXml}</transcript>`,
+      providerOptions: getLowReasoningProviderOptions(modelId),
+    });
 
-  return {
-    reply: result.output.reply.trim(),
-    outcome: normalizePersonaReplyOutcome(result.output.outcome, forceContinue),
-    usage: extractUsage(modelId, result.usage),
-  };
+    const parsed = parsePersonaReplyResponse(result.text);
+    if (!parsed) {
+      console.error(
+        `[matchslop:generatePersonaReply] ${modelId} parse failed. raw text: "${result.text.slice(0, 200)}"`,
+      );
+      const fallback = buildFallbackPersonaReply(forceContinue);
+      return {
+        ...fallback,
+        usage: extractUsage(modelId, result.usage),
+      };
+    }
+
+    const reply = parsed.reply.trim();
+    if (!reply) {
+      console.error(`[matchslop:generatePersonaReply] ${modelId} returned an empty reply, falling back`);
+      const fallback = buildFallbackPersonaReply(forceContinue);
+      return {
+        ...fallback,
+        usage: extractUsage(modelId, result.usage),
+      };
+    }
+
+    return {
+      reply,
+      outcome: normalizePersonaReplyOutcome(parsed.outcome, forceContinue),
+      usage: extractUsage(modelId, result.usage),
+    };
+  } catch (err) {
+    console.error(`[matchslop:generatePersonaReply] ${modelId} failed: ${describeError(err)}`);
+    const fallback = buildFallbackPersonaReply(forceContinue);
+    return {
+      ...fallback,
+      usage:
+        NoObjectGeneratedError.isInstance(err) && err.usage
+          ? extractUsage(modelId, err.usage)
+          : { ...ZERO_USAGE, modelId },
+    };
+  }
 }
