@@ -90,6 +90,9 @@ async function claimReplyGeneration(gameId: string) {
             outcome: null,
             moodDelta: null,
             generationId,
+            signalCategory: null,
+            sideComment: null,
+            nextSignal: null,
           },
         }),
         version: { increment: 1 },
@@ -116,6 +119,7 @@ async function finalizeReply(
   reply: string,
   outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED",
   moodDelta: number,
+  signals?: { signalCategory?: string | null; sideComment?: string | null; nextSignal?: string | null },
 ): Promise<boolean> {
   return updateModeState(gameId, (modeState) => {
     if (modeState.pendingPersonaReply.status !== "GENERATING") return null;
@@ -129,6 +133,9 @@ async function finalizeReply(
         outcome,
         moodDelta,
         generationId,
+        signalCategory: signals?.signalCategory ?? null,
+        sideComment: signals?.sideComment ?? null,
+        nextSignal: signals?.nextSignal ?? null,
       },
     };
   });
@@ -150,6 +157,9 @@ async function markReplyFailed(
         outcome: null,
         moodDelta: null,
         generationId,
+        signalCategory: null,
+        sideComment: null,
+        nextSignal: null,
       },
     };
   });
@@ -203,7 +213,7 @@ async function doEnsurePersonaReply(gameId: string): Promise<void> {
     const transcriptWithWinner = [...modeState.transcript, winnerEntry];
     const forceContinue = claim.currentRound === 1;
 
-    const { reply, outcome, moodDelta, usage } = await generatePersonaReply(
+    const { reply, outcome, moodDelta, signalCategory, sideComment, nextSignal, usage } = await generatePersonaReply(
       claim.personaModelId,
       modeState.seekerIdentity,
       modeState.personaIdentity,
@@ -213,7 +223,7 @@ async function doEnsurePersonaReply(gameId: string): Promise<void> {
     );
     const [, finalized] = await Promise.all([
       accumulateUsage(gameId, [usage]),
-      finalizeReply(gameId, generationId, reply, outcome, moodDelta),
+      finalizeReply(gameId, generationId, reply, outcome, moodDelta, { signalCategory, sideComment, nextSignal }),
     ]);
     if (!finalized) return;
 

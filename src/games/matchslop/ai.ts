@@ -625,6 +625,9 @@ const personaReplySchema = z.object({
   reply: z.string(),
   outcome: z.enum(["CONTINUE", "DATE_SEALED", "UNMATCHED"]),
   moodDelta: z.number().int().min(-50).max(50),
+  signalCategory: z.string().optional(),
+  sideComment: z.string().optional(),
+  nextSignal: z.string().optional(),
 });
 
 function clampMoodDelta(delta: number): number {
@@ -649,16 +652,30 @@ function readNumberField(obj: Record<string, unknown>, keys: string[]): number |
   return null;
 }
 
-export function parsePersonaReplyResponse(
-  text: string,
-  currentMood: number = MATCHSLOP_INITIAL_MOOD,
-): {
+type PersonaReplyParsed = {
   reply: string;
   outcome: MatchSlopDecision;
   moodDelta: number;
-} | null {
+  signalCategory: string | null;
+  sideComment: string | null;
+  nextSignal: string | null;
+};
+
+export function parsePersonaReplyResponse(
+  text: string,
+  currentMood: number = MATCHSLOP_INITIAL_MOOD,
+): PersonaReplyParsed | null {
   const parsed = parseJsonText(text, personaReplySchema);
-  if (parsed && parsed.reply.trim()) return parsed;
+  if (parsed && parsed.reply.trim()) {
+    return {
+      reply: parsed.reply,
+      outcome: parsed.outcome,
+      moodDelta: parsed.moodDelta,
+      signalCategory: parsed.signalCategory?.trim() || null,
+      sideComment: parsed.sideComment?.trim() || null,
+      nextSignal: parsed.nextSignal?.trim() || null,
+    };
+  }
 
   const loose = parseLooseJsonObject(text);
   if (loose) {
@@ -675,10 +692,15 @@ export function parsePersonaReplyResponse(
       moodDelta = clampMoodDelta(rawAbsoluteMood - currentMood);
     }
     if (!reply) return null;
+
+    const signalCategory = readStringField(loose, ["signalCategory", "signal_category", "category"])?.trim() || null;
+    const sideComment = readStringField(loose, ["sideComment", "side_comment", "comment"])?.trim() || null;
+    const nextSignal = readStringField(loose, ["nextSignal", "next_signal", "signal", "guidance"])?.trim() || null;
+
     if (outcome === "CONTINUE" || outcome === "DATE_SEALED" || outcome === "UNMATCHED") {
-      return { reply, outcome, moodDelta: moodDelta ?? inferMoodDeltaFromOutcome(outcome) };
+      return { reply, outcome, moodDelta: moodDelta ?? inferMoodDeltaFromOutcome(outcome), signalCategory, sideComment, nextSignal };
     }
-    return { reply, outcome: "CONTINUE", moodDelta: moodDelta ?? 0 };
+    return { reply, outcome: "CONTINUE", moodDelta: moodDelta ?? 0, signalCategory, sideComment, nextSignal };
   }
 
   const fallbackReply = fallbackPlainTextLine(text);
@@ -687,6 +709,9 @@ export function parsePersonaReplyResponse(
         reply: fallbackReply,
         outcome: "CONTINUE",
         moodDelta: 0,
+        signalCategory: null,
+        sideComment: null,
+        nextSignal: null,
       }
     : null;
 }
@@ -702,29 +727,13 @@ export function buildPersonaReplySystemPrompt(
 
 Your profile and backstory define who you are AND how you text. Your backstory includes your texting style — follow it closely. This is a dating app chat, not an interview.
 
-How real people actually text on dating apps:
-- 1-3 sentences max. Most messages are short.
-- Lowercase is normal. Abbreviations are normal (lol, omg, ngl, tbh, idk, rn, haha, etc).
-- People trail off... use fragments... don't always finish
-- Emojis sometimes, not every message
-- No bullet points. No lists. No structured responses.
-- Nobody says "I appreciate that", "that's a great point", "I love that for you" — that's therapist-speak, not texting
-- Nobody says "haha that's hilarious" to something that's actually weird — they say "what" or "lol what"
-- Sometimes "lol" or "haha what" or "um" IS the whole response
-- People don't use semicolons in texts. Or colons. Or em dashes (unless that's specifically their style).
-- If something is weird, just say it's weird. Don't intellectualize it.
-
-You have standards. Weird, creepy, boring, or off-putting messages get the reaction they deserve — confusion, a short reply, or an unmatch. You don't owe anyone enthusiasm.
-
-DO NOT:
-- Sound like a chatbot or customer service rep ("That's such a great question!")
-- Mirror weird energy just to keep things going
-- Use filler phrases to be polite ("I really appreciate you sharing that")
-- Write more than 3 sentences unless you're genuinely excited
-- Use perfect grammar and punctuation if your character's texting style is casual
-- Start with greetings like "Hey!" or "Hi there!" mid-conversation
-- Repeat back what they said ("So you're saying...")
-- Use "interesting" as a standalone response unless you're being dry about it
+Write like an actual dating-app message from this person:
+- 1-3 sentences max
+- short, natural texting cadence
+- casual spelling and punctuation when it fits the character
+- direct reactions when something is weird, boring, or off-putting
+- genuine enthusiasm only when the line actually earns it
+- stay grounded in the transcript and profile instead of drifting into generic banter
 
 Your current vibe is: ${moodLabel}.
 
@@ -743,8 +752,13 @@ ${
 - UNMATCHED: done. weird, boring, or creepy.`
 }
 
+Also produce:
+- signalCategory: 2-4 word label describing what the message needs (e.g. "too generic", "be specific", "more real", "follow up")
+- sideComment: one short reaction to the winning line (e.g. "okay that was actually kind of funny", "too intense too fast")
+- nextSignal: one short line of guidance for the next message (e.g. "try being more specific instead of louder", "ask about something from my profile")
+
 Respond with ONLY this JSON:
-{"reply":"your message","outcome":"CONTINUE","moodDelta":0}`;
+{"reply":"your message","outcome":"CONTINUE","moodDelta":0,"signalCategory":"label","sideComment":"reaction","nextSignal":"guidance"}`;
 }
 
 export function normalizePersonaReplyOutcome(
@@ -756,19 +770,42 @@ export function normalizePersonaReplyOutcome(
 
 function buildFallbackPersonaReply(
   forceContinue: boolean,
-): {
-  reply: string;
-  outcome: MatchSlopDecision;
-  moodDelta: number;
-} {
+): PersonaReplyParsed {
   return {
     reply: forceContinue ? "okay, that was weirdly bold. keep going." : "hmm. that bought you one more message.",
     outcome: "CONTINUE",
     moodDelta: forceContinue ? -5 : 0,
+    signalCategory: null,
+    sideComment: null,
+    nextSignal: null,
   };
 }
 
+export function deriveFallbackSignal(
+  moodDelta: number,
+  mood: number,
+  outcome: MatchSlopDecision,
+): { signalCategory: string; nextSignal: string } {
+  if (outcome === "DATE_SEALED") return { signalCategory: "nailed it", nextSignal: "you actually pulled it off" };
+  if (outcome === "UNMATCHED") return { signalCategory: "too much", nextSignal: "that was the last straw" };
+  if (moodDelta >= 15) return { signalCategory: "keep going", nextSignal: "more of that energy" };
+  if (moodDelta >= 5) return { signalCategory: "solid", nextSignal: "stay specific and committed" };
+  if (moodDelta > -5) return { signalCategory: "meh", nextSignal: "say something that feels real for once" };
+  if (mood <= 30) return { signalCategory: "danger zone", nextSignal: "last chance, make it count" };
+  return { signalCategory: "try harder", nextSignal: "be more specific instead of louder" };
+}
+
 const PERSONA_REPLY_TIMEOUT_MS = 12_000;
+
+export type PersonaReplyResult = {
+  reply: string;
+  outcome: MatchSlopDecision;
+  moodDelta: number;
+  signalCategory: string | null;
+  sideComment: string | null;
+  nextSignal: string | null;
+  usage: AiUsage;
+};
 
 export async function generatePersonaReply(
   modelId: string,
@@ -777,7 +814,7 @@ export async function generatePersonaReply(
   profile: MatchSlopProfile,
   transcript: Array<{ speaker: "PLAYERS" | "PERSONA"; text: string; authorName: string | null }>,
   options?: { forceContinue?: boolean; currentMood?: number; abortSignal?: AbortSignal },
-): Promise<{ reply: string; outcome: MatchSlopDecision; moodDelta: number; usage: AiUsage }> {
+): Promise<PersonaReplyResult> {
   const forceContinue = options?.forceContinue === true;
   const currentMood = options?.currentMood ?? MATCHSLOP_INITIAL_MOOD;
   const timeoutSignal = AbortSignal.timeout(PERSONA_REPLY_TIMEOUT_MS);
@@ -827,6 +864,9 @@ export async function generatePersonaReply(
       reply,
       outcome: normalizePersonaReplyOutcome(parsed.outcome, forceContinue),
       moodDelta: parsed.moodDelta,
+      signalCategory: parsed.signalCategory,
+      sideComment: parsed.sideComment,
+      nextSignal: parsed.nextSignal,
       usage: extractUsage(modelId, result.usage),
     };
   } catch (err) {

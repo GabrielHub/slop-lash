@@ -23,6 +23,10 @@ const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks } = vi.hoiste
   },
   aiMocks: {
     generatePersonaReply: vi.fn(),
+    deriveFallbackSignal: vi.fn(() => ({
+      signalCategory: "fallback",
+      nextSignal: "fallback guidance",
+    })),
   },
   coreMocks: {
     buildResultsDeadline: vi.fn(),
@@ -34,6 +38,9 @@ const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks } = vi.hoiste
       outcome: null,
       moodDelta: null,
       generationId: null,
+      signalCategory: null,
+      sideComment: null,
+      nextSignal: null,
     })),
     getActivePlayerIds: vi.fn(),
     isComebackRound: vi.fn(),
@@ -258,11 +265,93 @@ describe("advanceGame", () => {
             outcome: null,
             moodDelta: null,
             generationId: null,
+            signalCategory: null,
+            sideComment: null,
+            nextSignal: null,
           },
+          latestSignalCategory: "fallback",
+          latestSideComment: undefined,
+          latestNextSignal: "fallback guidance",
+          latestMoodDelta: 5,
         },
         version: { increment: 1 },
       },
     });
+  });
+
+  it("uses comeback-safe fallback guidance when an unmatch becomes a comeback round", async () => {
+    prismaMock.game.findUnique.mockResolvedValue({
+      status: "ROUND_RESULTS",
+      currentRound: 2,
+      totalRounds: 5,
+      personaModelId: "persona-model",
+      timersDisabled: false,
+      votingRevealing: false,
+      modeState: { ok: true },
+      version: 21,
+    });
+    coreMocks.parseModeState.mockReturnValue({
+      transcript: [],
+      lastRoundResult: {
+        winnerText: "winning line",
+        authorName: "Casey",
+        selectedPromptId: null,
+        selectedPromptText: null,
+      },
+      profile: {
+        displayName: "Riley",
+      },
+      seekerIdentity: "WOMAN",
+      personaIdentity: "MAN",
+      comebackRound: null,
+      mood: 35,
+      pendingPersonaReply: {
+        status: "NOT_REQUESTED",
+        reply: null,
+        outcome: null,
+        moodDelta: null,
+        generationId: null,
+        signalCategory: null,
+        sideComment: null,
+        nextSignal: null,
+      },
+    });
+    prismaMock.game.updateMany.mockResolvedValue({ count: 1 });
+    aiMocks.generatePersonaReply.mockResolvedValue({
+      reply: "yeah no",
+      outcome: "UNMATCHED",
+      moodDelta: -15,
+      signalCategory: null,
+      sideComment: null,
+      nextSignal: null,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        reasoningTokens: 0,
+        cachedInputTokens: 0,
+        modelId: "persona-model",
+      },
+    });
+    txMock.game.findUnique.mockResolvedValue({
+      status: "ROUND_RESULTS",
+      votingRevealing: true,
+    });
+
+    const advanced = await advanceGame("game-1");
+
+    expect(advanced).toBe(true);
+    expect(txMock.game.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          modeState: expect.objectContaining({
+            comebackRound: 3,
+            latestSignalCategory: "danger zone",
+            latestNextSignal: "last chance, make it count",
+          }),
+        }),
+      }),
+    );
   });
 
   it("resets pending persona reply state when starting a new game", async () => {
@@ -346,7 +435,14 @@ describe("advanceGame", () => {
             outcome: null,
             moodDelta: null,
             generationId: null,
+            signalCategory: null,
+            sideComment: null,
+            nextSignal: null,
           },
+          latestSignalCategory: null,
+          latestSideComment: null,
+          latestNextSignal: null,
+          latestMoodDelta: null,
         },
         version: { increment: 1 },
       },

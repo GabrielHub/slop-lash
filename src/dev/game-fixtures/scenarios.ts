@@ -932,6 +932,10 @@ const BASE_MATCHSLOP_MODE_STATE = {
   transcript: [] as Record<string, unknown>[],
   lastRoundResult: null as Record<string, unknown> | null,
   mood: 50,
+  latestSignalCategory: null as string | null,
+  latestSideComment: null as string | null,
+  latestNextSignal: null as string | null,
+  latestMoodDelta: null as number | null,
 };
 
 const MATCHSLOP_OPENING_TEXT =
@@ -1394,6 +1398,10 @@ const MATCHSLOP_FOLLOW_UP_MODE_STATE = matchSlopModeState({
   },
   transcript: MATCHSLOP_ROUND_1_TRANSCRIPT,
   mood: 58,
+  latestSignalCategory: "be specific",
+  latestSideComment: "okay that was actually kind of funny",
+  latestNextSignal: "try being more specific instead of louder",
+  latestMoodDelta: 8,
 });
 
 const MATCHSLOP_COMEBACK_MODE_STATE = matchSlopModeState({
@@ -1495,6 +1503,11 @@ function buildMatchSlopResults(): MockScenario {
           selectedPromptId: "m-p1",
           selectedPromptText: "Typical Sunday",
         },
+        latestSignalCategory: "solid",
+        latestSideComment: "okay that was actually kind of funny",
+        latestMoodDelta: 12,
+        latestNextSignal: "keep the fish energy going but say something real",
+        mood: 62,
       }),
     }),
   };

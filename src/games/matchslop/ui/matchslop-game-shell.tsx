@@ -130,7 +130,14 @@ type MatchSlopModeState = {
     outcome?: string | null;
     moodDelta?: number | null;
     generationId?: string | null;
+    signalCategory?: string | null;
+    sideComment?: string | null;
+    nextSignal?: string | null;
   } | null;
+  latestSignalCategory?: string | null;
+  latestSideComment?: string | null;
+  latestNextSignal?: string | null;
+  latestMoodDelta?: number | null;
   postMortemGeneration?: MatchSlopPostMortemGenerationStateLocal | null;
   postMortemDraft?: PostMortemDataLocal | null;
   postMortem?: PostMortemDataLocal | null;
@@ -138,10 +145,12 @@ type MatchSlopModeState = {
 
 import {
   MATCHSLOP_INITIAL_MOOD,
+  MATCHSLOP_MOOD_THRESHOLD_UNMATCH,
   clampMatchSlopMood,
   getMoodLabel,
   type MatchSlopMoodLabel,
 } from "../types";
+import { DeltaBadge, ProgressCount, TypingIndicator } from "./matchslop-shared-ui";
 
 const MOOD_CONFIG: Record<MatchSlopMoodLabel, { emoji: string }> = {
   done:      { emoji: "\u{1F480}" },
@@ -310,23 +319,6 @@ function PersonaTypingBubble({ personaName }: { personaName: string }) {
   );
 }
 
-function TypingIndicator() {
-  return (
-    <div className="flex items-center gap-1.5 px-1">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="w-2 h-2 rounded-full"
-          style={{
-            background: "var(--ms-rose)",
-            animation: `ms-typing-dot 1.4s ease-in-out ${i * 0.2}s infinite`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
   if (outcome === "IN_PROGRESS") return null;
 
@@ -371,11 +363,11 @@ export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
   );
 }
 
-export function MoodMeter({ mood }: { mood: number }) {
+export function MoodMeter({ mood, moodDelta }: { mood: number; moodDelta?: number | null }) {
   const normalizedMood = clampMatchSlopMood(mood);
   const label = getMoodLabel(normalizedMood);
   const config = getMoodConfig(normalizedMood);
-  const isDanger = normalizedMood <= 20;
+  const isDanger = normalizedMood <= MATCHSLOP_MOOD_THRESHOLD_UNMATCH;
 
   return (
     <motion.div
@@ -417,15 +409,24 @@ export function MoodMeter({ mood }: { mood: number }) {
       {/* Bar track */}
       <div className="flex-1 relative">
         <div
-          className="w-full rounded-full overflow-hidden"
+          className="w-full rounded-full overflow-hidden relative"
           style={{
             height: "clamp(6px, 0.5vw, 8px)",
             background: "color-mix(in srgb, var(--ms-edge) 50%, transparent)",
           }}
         >
+          {/* Critical zone fill (0-20%) */}
+          <div
+            className="absolute inset-y-0 left-0 rounded-l-full"
+            style={{
+              width: `${MATCHSLOP_MOOD_THRESHOLD_UNMATCH}%`,
+              background: "color-mix(in srgb, var(--ms-red) 12%, transparent)",
+            }}
+          />
+
           {/* Fill */}
           <motion.div
-            className="h-full rounded-full"
+            className="h-full rounded-full relative z-[1]"
             initial={false}
             animate={{
               width: `${Math.max(normalizedMood, 2)}%`,
@@ -443,6 +444,18 @@ export function MoodMeter({ mood }: { mood: number }) {
           />
         </div>
 
+        {/* Critical zone threshold marker */}
+        <div
+          className="absolute top-[-2px] bottom-[-2px] pointer-events-none z-[2]"
+          style={{
+            left: `${MATCHSLOP_MOOD_THRESHOLD_UNMATCH}%`,
+            width: "2px",
+            background: "var(--ms-red)",
+            opacity: normalizedMood > MATCHSLOP_MOOD_THRESHOLD_UNMATCH ? 0.4 : 0.8,
+            borderRadius: "1px",
+          }}
+        />
+
         {/* Glow pulse overlay — re-mounts on mood value change */}
         <motion.div
           key={normalizedMood}
@@ -456,22 +469,26 @@ export function MoodMeter({ mood }: { mood: number }) {
         />
       </div>
 
-      {/* Numeric value */}
-      <motion.span
-        className="shrink-0 font-mono font-bold tabular-nums"
-        style={{
-          fontSize: "clamp(0.6rem, 0.8vw, 0.75rem)",
-          color: config.color,
-          minWidth: "2ch",
-          textAlign: "right",
-        }}
-        key={normalizedMood}
-        initial={{ scale: 1.3, opacity: 0.5 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: "spring", stiffness: 400, damping: 20 }}
-      >
-        {normalizedMood}
-      </motion.span>
+      {/* Numeric value + delta badge */}
+      <div className="shrink-0 flex items-center gap-1">
+        <motion.span
+          className="font-mono font-bold tabular-nums"
+          style={{
+            fontSize: "clamp(0.6rem, 0.8vw, 0.75rem)",
+            color: config.color,
+            minWidth: "2ch",
+            textAlign: "right",
+          }}
+          key={normalizedMood}
+          initial={{ scale: 1.3, opacity: 0.5 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
+        >
+          {normalizedMood}
+        </motion.span>
+
+        <DeltaBadge moodDelta={moodDelta} badgeKey={`delta-${moodDelta}-${normalizedMood}`} />
+      </div>
     </motion.div>
   );
 }
@@ -482,6 +499,7 @@ export function ProfileCard({
   profileGeneration,
   outcome,
   mood,
+  moodDelta,
   gameStarted,
   compact = false,
 }: {
@@ -490,6 +508,7 @@ export function ProfileCard({
   profileGeneration: MatchSlopProfileGenerationState | null;
   outcome: Outcome;
   mood: number;
+  moodDelta?: number | null;
   gameStarted: boolean;
   compact?: boolean;
 }) {
@@ -609,7 +628,7 @@ export function ProfileCard({
             animate="visible"
             exit="exit"
           >
-            <MoodMeter mood={mood} />
+            <MoodMeter mood={mood} moodDelta={moodDelta} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -1653,6 +1672,11 @@ function PhaseStatusCard({
   handleEndGame,
   canEndGame,
   canAdvancePhase,
+  progressCount,
+  voteProgressCount,
+  sideComment,
+  signalCategory,
+  moodDelta,
 }: {
   gameState: GameState;
   outcome: Outcome;
@@ -1665,6 +1689,11 @@ function PhaseStatusCard({
   handleEndGame: () => void;
   canEndGame: boolean;
   canAdvancePhase: boolean;
+  progressCount?: { submitted: number; total: number } | null;
+  voteProgressCount?: { voted: number; total: number } | null;
+  sideComment?: string | null;
+  signalCategory?: string | null;
+  moodDelta?: number | null;
 }) {
   const phaseConfig = {
     LOBBY: {
@@ -1802,6 +1831,57 @@ function PhaseStatusCard({
           </div>
         )}
 
+        {/* Persona signal row — visible during ROUND_RESULTS */}
+        <AnimatePresence>
+          {gameState.status === "ROUND_RESULTS" &&
+            (sideComment || signalCategory || (moodDelta != null && moodDelta !== 0)) && (
+            <motion.div
+              className="flex items-center gap-2 flex-wrap mb-3"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24, delay: 0.2 }}
+            >
+              {signalCategory && (
+                <span
+                  className="font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  style={{
+                    fontSize: "clamp(0.45rem, 0.55vw, 0.55rem)",
+                    color: "var(--ms-coral)",
+                    background: "var(--ms-coral-soft)",
+                    border: "1px solid color-mix(in srgb, var(--ms-coral) 25%, transparent)",
+                  }}
+                >
+                  {signalCategory}
+                </span>
+              )}
+              {sideComment && (
+                <span
+                  className="font-display italic"
+                  style={{
+                    fontSize: "clamp(0.7rem, 0.85vw, 0.8rem)",
+                    color: "var(--ms-ink-dim)",
+                  }}
+                >
+                  &ldquo;{sideComment}&rdquo;
+                </span>
+              )}
+              {moodDelta != null && moodDelta !== 0 && (
+                <span
+                  className="font-mono font-bold tabular-nums px-1.5 py-0.5 rounded-md"
+                  style={{
+                    fontSize: "clamp(0.5rem, 0.65vw, 0.6rem)",
+                    color: moodDelta > 0 ? "var(--ms-mint)" : "var(--ms-red)",
+                    background: moodDelta > 0 ? "var(--ms-mint-soft)" : "var(--ms-red-soft)",
+                  }}
+                >
+                  {moodDelta > 0 ? `+${moodDelta}` : moodDelta}
+                </span>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Turn-limit warning */}
         {(() => {
           const turnsLeft = gameState.totalRounds - gameState.currentRound;
@@ -1854,15 +1934,27 @@ function PhaseStatusCard({
           );
         })()}
 
-        {/* Timer */}
+        {/* Timer + progress */}
         <AnimatePresence>
-          {gameState.phaseDeadline && (
+          {(gameState.phaseDeadline || progressCount || voteProgressCount) && (
             <motion.div key="timer" className="mb-4" variants={collapseExpand} initial="hidden" animate="visible" exit="exit">
-              <Timer
-                deadline={gameState.phaseDeadline}
-                disabled={gameState.timersDisabled}
-                total={getMatchSlopTimerTotal(gameState.status)}
-              />
+              <div className="flex items-center gap-3">
+                {gameState.phaseDeadline && (
+                  <div className="flex-1">
+                    <Timer
+                      deadline={gameState.phaseDeadline}
+                      disabled={gameState.timersDisabled}
+                      total={getMatchSlopTimerTotal(gameState.status)}
+                    />
+                  </div>
+                )}
+                {gameState.status === "WRITING" && progressCount && (
+                  <ProgressCount count={progressCount.submitted} total={progressCount.total} label="submitted" />
+                )}
+                {gameState.status === "VOTING" && voteProgressCount && (
+                  <ProgressCount count={voteProgressCount.voted} total={voteProgressCount.total} label="voted" />
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -2343,10 +2435,44 @@ export function MatchSlopGameShell({
   ]);
   const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
   const isActiveComebackRound = isComebackRound && gameState?.status !== "FINAL_RESULTS";
-  const activePlayers =
-    gameState?.players.filter(
-      (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
-    ) ?? [];
+  const activePlayers = useMemo(
+    () =>
+      gameState?.players.filter(
+        (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
+      ) ?? [],
+    [gameState?.players],
+  );
+  const activePlayerIdSet = useMemo(() => new Set(activePlayers.map((player) => player.id)), [activePlayers]);
+  const stageProgressCount = useMemo(() => {
+    if (gameState?.status !== "WRITING" || !currentPrompt) return null;
+    const submitted = new Set(
+      currentPrompt.responses
+        .map((response) => response.playerId)
+        .filter((playerId) => activePlayerIdSet.has(playerId)),
+    ).size;
+    return { submitted, total: activePlayers.length };
+  }, [activePlayerIdSet, activePlayers.length, currentPrompt, gameState?.status]);
+  const stageVoteProgressCount = useMemo(() => {
+    if (gameState?.status !== "VOTING" || !currentPrompt) return null;
+    const voted = new Set(
+      currentPrompt.votes
+        .map((vote) => vote.voterId)
+        .filter((playerId) => activePlayerIdSet.has(playerId)),
+    ).size;
+    return { voted, total: activePlayers.length };
+  }, [activePlayerIdSet, activePlayers.length, currentPrompt, gameState?.status]);
+  const displaySignalCategory =
+    gameState?.status === "ROUND_RESULTS" && pendingReply?.status === "READY"
+      ? (pendingReply.signalCategory ?? modeState.latestSignalCategory)
+      : modeState.latestSignalCategory;
+  const displaySideComment =
+    gameState?.status === "ROUND_RESULTS" && pendingReply?.status === "READY"
+      ? (pendingReply.sideComment ?? modeState.latestSideComment)
+      : modeState.latestSideComment;
+  const displayMoodDelta =
+    gameState?.status === "ROUND_RESULTS" && pendingReply?.status === "READY"
+      ? (pendingReply.moodDelta ?? modeState.latestMoodDelta)
+      : modeState.latestMoodDelta;
   useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
@@ -2406,13 +2532,13 @@ export function MatchSlopGameShell({
   useEffect(() => {
     if (!gameState || gameState.status !== "WRITING" || !currentPrompt) return;
     if (activePlayers.length < 2) return;
-    const allSubmitted = currentPrompt.responses.length >= activePlayers.length;
+    const allSubmitted = (stageProgressCount?.submitted ?? 0) >= activePlayers.length;
     const key = `${gameState.currentRound}`;
     if (allSubmitted && allInRef.current !== key) {
       allInRef.current = key;
       playSound("all-in");
     }
-  }, [activePlayers.length, currentPrompt, gameState]);
+  }, [activePlayers.length, currentPrompt, gameState, stageProgressCount?.submitted]);
 
   useEffect(() => {
     const status = gameState?.status;
@@ -2735,6 +2861,7 @@ export function MatchSlopGameShell({
                   ? clampMatchSlopMood(modeState.mood)
                   : MATCHSLOP_INITIAL_MOOD
               }
+              moodDelta={displayMoodDelta}
               gameStarted={gameState.status !== "LOBBY"}
               compact={viewMode === "stage"}
             />
@@ -2809,6 +2936,11 @@ export function MatchSlopGameShell({
                 handleEndGame={() => void handleEndGame()}
                 canEndGame={canEndGame}
                 canAdvancePhase={canAdvancePhase}
+                progressCount={stageProgressCount}
+                voteProgressCount={stageVoteProgressCount}
+                sideComment={displaySideComment}
+                signalCategory={displaySignalCategory}
+                moodDelta={displayMoodDelta}
               />
 
               {/* Conversation — hidden during lobby and final results */}

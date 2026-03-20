@@ -15,6 +15,7 @@ import {
   type MatchSlopProfile,
   type MatchSlopTranscriptEntry,
 } from "@/games/matchslop/ui/matchslop-game-shell";
+import { ProgressCount } from "@/games/matchslop/ui/matchslop-shared-ui";
 
 /* ─── Demo wrapper (matches shared playground card style) ─── */
 
@@ -85,6 +86,7 @@ const FIXTURE_TRANSCRIPT: MatchSlopTranscriptEntry[] = [
 export function DevMatchslopPlayground() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [sliderMood, setSliderMood] = useState(55);
+  const [demoDelta, setDemoDelta] = useState<number | null>(12);
 
   return (
     <main className="min-h-svh px-6 py-10">
@@ -118,9 +120,9 @@ export function DevMatchslopPlayground() {
 
         {/* Mood Meter — interactive slider */}
         <section className="mb-10 grid gap-5 lg:grid-cols-2">
-          <DemoCard title="Mood Meter — Interactive">
+          <DemoCard title="Mood Meter — Interactive (with Delta)">
             <div className="space-y-4">
-              <MoodMeter mood={sliderMood} />
+              <MoodMeter mood={sliderMood} moodDelta={demoDelta} />
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -141,13 +143,31 @@ export function DevMatchslopPlayground() {
                   {sliderMood}
                 </span>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono" style={{ color: "var(--ms-ink-dim)" }}>Delta:</span>
+                {[-20, -10, -5, 0, 5, 10, 20].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDemoDelta(d === 0 ? null : d)}
+                    className="px-2 py-0.5 rounded text-xs font-mono cursor-pointer"
+                    style={{
+                      background: demoDelta === d || (d === 0 && demoDelta == null) ? "var(--ms-violet-soft)" : "var(--ms-raised)",
+                      border: "1px solid var(--ms-edge)",
+                      color: d > 0 ? "var(--ms-mint)" : d < 0 ? "var(--ms-red)" : "var(--ms-ink-dim)",
+                    }}
+                  >
+                    {d > 0 ? `+${d}` : d}
+                  </button>
+                ))}
+              </div>
             </div>
           </DemoCard>
 
-          <DemoCard title="Mood Meter — All Tiers">
+          <DemoCard title="Mood Meter — All Tiers (with Critical Zone)">
             <div className="space-y-1">
               {[10, 30, 55, 75, 95].map((value) => (
-                <MoodMeter key={value} mood={value} />
+                <MoodMeter key={value} mood={value} moodDelta={value <= 20 ? -15 : value >= 80 ? 18 : 5} />
               ))}
             </div>
           </DemoCard>
@@ -227,6 +247,59 @@ export function DevMatchslopPlayground() {
 
           <DemoCard title="Outcome Verdict — Comeback">
             <OutcomeVerdict outcome="COMEBACK" />
+          </DemoCard>
+        </section>
+
+        {/* Progress Counts + Signal Display */}
+        <section className="mb-10 grid gap-5 lg:grid-cols-2">
+          <DemoCard title="Progress Counts">
+            <div className="space-y-3">
+              <ProgressCount count={2} total={5} label="submitted" />
+              <ProgressCount count={5} total={5} label="submitted" />
+              <ProgressCount count={3} total={5} label="voted" />
+              <ProgressCount count={5} total={5} label="voted" />
+            </div>
+          </DemoCard>
+
+          <DemoCard title="Persona Signal Card (Controller)">
+            <div className="space-y-3">
+              <div
+                className="rounded-xl flex items-start gap-2"
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "color-mix(in srgb, var(--ms-coral) 8%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--ms-coral) 20%, transparent)",
+                }}
+              >
+                <span
+                  className="font-mono font-bold uppercase tracking-wider shrink-0 px-1.5 py-0.5 rounded-md"
+                  style={{ fontSize: "9px", color: "var(--ms-coral)", background: "var(--ms-coral-soft)" }}
+                >
+                  too generic
+                </span>
+                <p className="text-xs leading-snug italic" style={{ color: "var(--ms-ink-dim)" }}>
+                  try being more specific instead of louder
+                </p>
+              </div>
+              <div
+                className="rounded-xl flex items-start gap-2"
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "color-mix(in srgb, var(--ms-coral) 8%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--ms-coral) 20%, transparent)",
+                }}
+              >
+                <span
+                  className="font-mono font-bold uppercase tracking-wider shrink-0 px-1.5 py-0.5 rounded-md"
+                  style={{ fontSize: "9px", color: "var(--ms-coral)", background: "var(--ms-coral-soft)" }}
+                >
+                  more real
+                </span>
+                <p className="text-xs leading-snug italic" style={{ color: "var(--ms-ink-dim)" }}>
+                  say something that feels real for once
+                </p>
+              </div>
+            </div>
           </DemoCard>
         </section>
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import {
   buildPersonaReplySystemPrompt,
+  deriveFallbackSignal,
   normalizePersonaReplyOutcome,
   parseAiFollowupResponse,
   parseAiOpenerResponse,
@@ -148,6 +149,9 @@ describe("matchslop AI response parsing", () => {
       reply: "you are alarmingly confident for someone holding a rotisserie chicken",
       outcome: "CONTINUE",
       moodDelta: 0,
+      signalCategory: null,
+      sideComment: null,
+      nextSignal: null,
     });
   });
 
@@ -156,10 +160,42 @@ describe("matchslop AI response parsing", () => {
       reply: "that is the most suspiciously confident soup pitch i have ever heard",
       outcome: "CONTINUE",
       moodDelta: 0,
+      signalCategory: null,
+      sideComment: null,
+      nextSignal: null,
+    });
+  });
+
+  it("parses persona signal fields when present", () => {
+    expect(
+      parsePersonaReplyResponse('{"reply":"lol okay","outcome":"CONTINUE","moodDelta":7,"signalCategory":"be specific","sideComment":"okay that was actually kind of funny","nextSignal":"ask about something real"}'),
+    ).toEqual({
+      reply: "lol okay",
+      outcome: "CONTINUE",
+      moodDelta: 7,
+      signalCategory: "be specific",
+      sideComment: "okay that was actually kind of funny",
+      nextSignal: "ask about something real",
     });
   });
 
   it("rejects persona replies with an empty message", () => {
     expect(parsePersonaReplyResponse('{"reply":"   ","outcome":"DATE_SEALED"}')).toBeNull();
+  });
+});
+
+describe("deriveFallbackSignal", () => {
+  it("returns compact guidance for neutral rounds", () => {
+    expect(deriveFallbackSignal(0, 50, "CONTINUE")).toEqual({
+      signalCategory: "meh",
+      nextSignal: "say something that feels real for once",
+    });
+  });
+
+  it("returns critical guidance when mood is low", () => {
+    expect(deriveFallbackSignal(-12, 25, "CONTINUE")).toEqual({
+      signalCategory: "danger zone",
+      nextSignal: "last chance, make it count",
+    });
   });
 });

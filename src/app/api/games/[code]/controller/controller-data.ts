@@ -236,6 +236,32 @@ function projectControllerPayload(
         ? imageStatus
         : "NOT_REQUESTED" as const;
 
+    // Derive progress counts from existing player list (already fetched above)
+    let progressCount: { submitted: number; total: number } | null = null;
+    let voteProgressCount: { voted: number; total: number } | null = null;
+    const activePlayerIdSet = new Set(
+      players
+        .filter((p) => p.type !== "SPECTATOR" && p.participationStatus === "ACTIVE")
+        .map((p) => p.id),
+    );
+    const activeTotal = activePlayerIdSet.size;
+
+    if (game.status === "WRITING" && currentRound) {
+      const prompt = currentRound.prompts[0];
+      const activeSubmitted = prompt
+        ? new Set(prompt.responses.map((r) => r.playerId).filter((id) => activePlayerIdSet.has(id))).size
+        : 0;
+      progressCount = { submitted: activeSubmitted, total: activeTotal };
+    }
+
+    if (game.status === "VOTING" && currentRound) {
+      const votePrompt = currentRound.prompts[game.votingPromptIndex] ?? currentRound.prompts[0];
+      const activeVoted = votePrompt
+        ? new Set(votePrompt.votes.map((v) => v.voterId).filter((id) => activePlayerIdSet.has(id))).size
+        : 0;
+      voteProgressCount = { voted: activeVoted, total: activeTotal };
+    }
+
     matchslop = {
       seekerIdentity: asString(modeState?.seekerIdentity),
       personaIdentity: asString(modeState?.personaIdentity),
@@ -261,6 +287,13 @@ function projectControllerPayload(
       profileGeneration,
       transcript: asTranscript(modeState?.transcript),
       writing: matchslopWriting,
+      latestSignalCategory: asString(modeState?.latestSignalCategory) ?? null,
+      latestSideComment: asString(modeState?.latestSideComment) ?? null,
+      latestNextSignal: asString(modeState?.latestNextSignal) ?? null,
+      latestMoodDelta: asNumber(modeState?.latestMoodDelta) ?? null,
+      mood: asNumber(modeState?.mood) ?? null,
+      progressCount,
+      voteProgressCount,
     };
   }
 

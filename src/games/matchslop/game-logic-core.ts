@@ -273,6 +273,9 @@ export function createInitialPendingPersonaReply(): MatchSlopPendingPersonaReply
     outcome: null,
     moodDelta: null,
     generationId: null,
+    signalCategory: null,
+    sideComment: null,
+    nextSignal: null,
   };
 }
 
@@ -321,6 +324,10 @@ export function createInitialModeState(
     lastRoundResult: null,
     mood: MATCHSLOP_INITIAL_MOOD,
     pendingPersonaReply: createInitialPendingPersonaReply(),
+    latestSignalCategory: null,
+    latestSideComment: null,
+    latestNextSignal: null,
+    latestMoodDelta: null,
     postMortemGeneration: createInitialPostMortemGenerationState(),
     postMortemDraft: null,
     postMortem: null,
@@ -398,8 +405,15 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
             : null,
         moodDelta: asNumber(prRecord.moodDelta) ?? null,
         generationId: asString(prRecord.generationId) ?? null,
+        signalCategory: asString(prRecord.signalCategory) ?? null,
+        sideComment: asString(prRecord.sideComment) ?? null,
+        nextSignal: asString(prRecord.nextSignal) ?? null,
       };
     })(),
+    latestSignalCategory: asString(record?.latestSignalCategory) ?? null,
+    latestSideComment: asString(record?.latestSideComment) ?? null,
+    latestNextSignal: asString(record?.latestNextSignal) ?? null,
+    latestMoodDelta: asNumber(record?.latestMoodDelta) ?? null,
     postMortemGeneration: (() => {
       const pmRecord = asRecord(record?.postMortemGeneration);
       const defaultPm = createInitialPostMortemGenerationState();

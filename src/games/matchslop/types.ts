@@ -135,6 +135,9 @@ export interface MatchSlopPendingPersonaReply {
   outcome: MatchSlopDecision | null;
   moodDelta: number | null;
   generationId: string | null;
+  signalCategory: string | null;
+  sideComment: string | null;
+  nextSignal: string | null;
 }
 
 export type MatchSlopPostMortemStatus =
@@ -192,6 +195,10 @@ export interface MatchSlopModeState {
   lastRoundResult: MatchSlopRoundResult | null;
   mood: number;
   pendingPersonaReply: MatchSlopPendingPersonaReply;
+  latestSignalCategory: string | null;
+  latestSideComment: string | null;
+  latestNextSignal: string | null;
+  latestMoodDelta: number | null;
   postMortemGeneration: MatchSlopPostMortemGenerationState;
   postMortemDraft: MatchSlopPostMortemDraft | null;
   postMortem: MatchSlopPostMortem | null;

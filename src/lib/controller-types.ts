@@ -117,5 +117,12 @@ export interface ControllerGameState {
     profileGeneration?: MatchSlopProfileGenerationState | null;
     transcript: MatchSlopTranscriptEntry[];
     writing: MatchSlopWritingState | null;
+    latestSignalCategory?: string | null;
+    latestSideComment?: string | null;
+    latestNextSignal?: string | null;
+    latestMoodDelta?: number | null;
+    mood?: number | null;
+    progressCount?: { submitted: number; total: number } | null;
+    voteProgressCount?: { voted: number; total: number } | null;
   } | null;
 }

@@ -58,6 +58,11 @@ type MatchSlopModeState = {
     text?: string;
     turn?: number;
   }>;
+  latestSignalCategory?: string | null;
+  latestSideComment?: string | null;
+  latestNextSignal?: string | null;
+  latestMoodDelta?: number | null;
+  mood?: number;
 };
 
 function cloneGame(game: GameState): GameState {
@@ -135,6 +140,12 @@ function deriveControllerState(
   const me = playerId ? players.find((player) => player.id === playerId) ?? null : null;
   const currentRound = game.rounds[0] ?? null;
   const modeState = asMatchSlopModeState(game);
+  const activePlayerIds = new Set(
+    game.players
+      .filter((player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE")
+      .map((player) => player.id),
+  );
+  const activeTotal = activePlayerIds.size;
   const profile = modeState.profile ?? null;
   const profilePrompts = profile?.prompts?.flatMap((prompt) => {
     if (!prompt.id || !prompt.prompt || !prompt.answer) return [];
@@ -267,6 +278,31 @@ function deriveControllerState(
           ];
         }) ?? [],
       writing: writingPrompt,
+      latestSignalCategory: modeState.latestSignalCategory ?? null,
+      latestSideComment: modeState.latestSideComment ?? null,
+      latestNextSignal: modeState.latestNextSignal ?? null,
+      latestMoodDelta: modeState.latestMoodDelta ?? null,
+      mood: modeState.mood ?? null,
+      progressCount: game.status === "WRITING" && currentRound
+        ? {
+            submitted: new Set(
+              (currentRound.prompts[0]?.responses ?? [])
+                .map((response) => response.playerId)
+                .filter((currentPlayerId) => activePlayerIds.has(currentPlayerId)),
+            ).size,
+            total: activeTotal,
+          }
+        : null,
+      voteProgressCount: game.status === "VOTING" && currentRound
+        ? {
+            voted: new Set(
+              (currentRound.prompts[game.votingPromptIndex]?.votes ?? [])
+                .map((vote) => vote.voter.id)
+                .filter((currentPlayerId) => activePlayerIds.has(currentPlayerId)),
+            ).size,
+            total: activeTotal,
+          }
+        : null,
     },
   };
 }

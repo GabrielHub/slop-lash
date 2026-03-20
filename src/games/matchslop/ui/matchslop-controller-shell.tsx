@@ -18,6 +18,7 @@ import {
   MATCHSLOP_PHOTO_PROMPT_TEXT,
   getMatchSlopTimerTotal,
 } from "@/games/matchslop/config/game-config";
+import { TypingIndicator, ProgressCount } from "./matchslop-shared-ui";
 
 import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
 
@@ -991,7 +992,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
           </div>
 
           <AnimatePresence>
-            {gameState.phaseDeadline && !gameState.timersDisabled && (
+            {((
+              gameState.phaseDeadline && !gameState.timersDisabled
+            ) ||
+              (gameState.status === "WRITING" && !!matchslop?.progressCount) ||
+              (gameState.status === "VOTING" && !!matchslop?.voteProgressCount)) && (
               <motion.div
                 key="timer"
                 className="mb-4"
@@ -1000,10 +1005,22 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                 animate="visible"
                 exit="exit"
               >
-                <Timer
-                  deadline={gameState.phaseDeadline}
-                  total={getMatchSlopTimerTotal(gameState.status)}
-                />
+                <div className="flex items-center gap-2">
+                  {gameState.phaseDeadline && !gameState.timersDisabled && (
+                    <div className="flex-1">
+                      <Timer
+                        deadline={gameState.phaseDeadline}
+                        total={getMatchSlopTimerTotal(gameState.status)}
+                      />
+                    </div>
+                  )}
+                  {gameState.status === "WRITING" && matchslop?.progressCount && (
+                    <ProgressCount count={matchslop.progressCount.submitted} total={matchslop.progressCount.total} label="in" />
+                  )}
+                  {gameState.status === "VOTING" && matchslop?.voteProgressCount && (
+                    <ProgressCount count={matchslop.voteProgressCount.voted} total={matchslop.voteProgressCount.total} label="voted" />
+                  )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1131,6 +1148,50 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                         {matchslop?.writing?.text ?? "Write the funniest reply."}
                       </p>
                     </div>
+
+                    {/* Persona signal card */}
+                    {matchslop?.latestNextSignal && (
+                      <motion.div
+                        className="rounded-xl flex items-start gap-2"
+                        style={{
+                          padding: "0.5rem 0.75rem",
+                          background: "color-mix(in srgb, var(--ms-coral) 8%, transparent)",
+                          border: "1px solid color-mix(in srgb, var(--ms-coral) 20%, transparent)",
+                        }}
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 24, delay: 0.15 }}
+                      >
+                        {matchslop.latestSignalCategory && (
+                          <span
+                            className="font-mono font-bold uppercase tracking-wider shrink-0 px-1.5 py-0.5 rounded-md"
+                            style={{
+                              fontSize: "9px",
+                              color: "var(--ms-coral)",
+                              background: "var(--ms-coral-soft)",
+                            }}
+                          >
+                            {matchslop.latestSignalCategory}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          {matchslop.latestSideComment && (
+                            <p
+                              className="text-[11px] leading-snug mb-1 italic"
+                              style={{ color: "var(--ms-ink-dim)", opacity: 0.85 }}
+                            >
+                              &ldquo;{matchslop.latestSideComment}&rdquo;
+                            </p>
+                          )}
+                          <p
+                            className="text-xs leading-snug italic"
+                            style={{ color: "var(--ms-ink-dim)" }}
+                          >
+                            {matchslop.latestNextSignal}
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
                     <div className="space-y-3">
                       <input
                         type="text"
@@ -1185,8 +1246,33 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
               <motion.div key="phase-voting" className="space-y-4" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                 <AnimatePresence mode="wait">
                 {gameState.votingRevealing ? (
-                  <motion.div key="vote-revealing" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
-                    <CompletionCard title="Revealing" subtitle="The main screen is calculating results." />
+                  <motion.div
+                    key="vote-revealing"
+                    className="rounded-2xl p-6 text-center"
+                    style={{
+                      background: "var(--ms-raised)",
+                      border: "1px solid var(--ms-edge)",
+                    }}
+                    variants={phaseTransition}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    <div className="flex items-center justify-center mb-2">
+                      <TypingIndicator />
+                    </div>
+                    <p
+                      className="font-display font-bold text-sm"
+                      style={{ color: "var(--ms-ink)" }}
+                    >
+                      Resolving...
+                    </p>
+                    <p
+                      className="text-xs mt-1"
+                      style={{ color: "var(--ms-ink-dim)" }}
+                    >
+                      Tallying votes and sending the winning line
+                    </p>
                   </motion.div>
                 ) : !currentVotePrompt ? (
                   <motion.div key="vote-waiting" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
@@ -1317,6 +1403,43 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                       ? "The main screen is revealing whether the room saved it."
                       : "Round results are on the main screen."}
                   </PulsingDot>
+
+                  {(matchslop?.latestSignalCategory || matchslop?.latestSideComment || (matchslop?.latestMoodDelta != null && matchslop.latestMoodDelta !== 0)) && (
+                    <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+                      {matchslop?.latestSignalCategory && (
+                        <span
+                          className="font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                          style={{
+                            fontSize: "10px",
+                            color: "var(--ms-coral)",
+                            background: "var(--ms-coral-soft)",
+                          }}
+                        >
+                          {matchslop.latestSignalCategory}
+                        </span>
+                      )}
+                      {matchslop?.latestSideComment && (
+                        <span
+                          className="text-xs italic"
+                          style={{ color: "var(--ms-ink-dim)" }}
+                        >
+                          &ldquo;{matchslop.latestSideComment}&rdquo;
+                        </span>
+                      )}
+                      {matchslop?.latestMoodDelta != null && matchslop.latestMoodDelta !== 0 && (
+                        <span
+                          className="font-mono font-bold tabular-nums px-1.5 py-0.5 rounded-md"
+                          style={{
+                            fontSize: "10px",
+                            color: matchslop.latestMoodDelta > 0 ? "var(--ms-mint)" : "var(--ms-red)",
+                            background: matchslop.latestMoodDelta > 0 ? "var(--ms-mint-soft)" : "var(--ms-red-soft)",
+                          }}
+                        >
+                          {matchslop.latestMoodDelta > 0 ? `+${matchslop.latestMoodDelta}` : matchslop.latestMoodDelta}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {isHost ? (

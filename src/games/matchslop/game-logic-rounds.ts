@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
-import { generatePersonaReply } from "./ai";
+import { generatePersonaReply, deriveFallbackSignal } from "./ai";
 import {
   buildResultsDeadline,
   buildWritingDeadline,
@@ -384,6 +384,10 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
         comebackRound: null,
         outcome: "IN_PROGRESS",
         pendingPersonaReply: createInitialPendingPersonaReply(),
+        latestSignalCategory: null,
+        latestSideComment: null,
+        latestNextSignal: null,
+        latestMoodDelta: null,
       }),
       version: { increment: 1 },
     },
@@ -475,11 +479,17 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     let reply: string;
     let outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
     let moodDelta: number;
+    let signalCategory: string | null = null;
+    let sideComment: string | null = null;
+    let nextSignal: string | null = null;
 
     if (cached.status === "READY" && cached.reply && cached.outcome != null && cached.moodDelta != null) {
       reply = cached.reply;
       outcome = cached.outcome;
       moodDelta = cached.moodDelta;
+      signalCategory = cached.signalCategory ?? null;
+      sideComment = cached.sideComment ?? null;
+      nextSignal = cached.nextSignal ?? null;
     } else {
       const generated = await generatePersonaReply(
         game.personaModelId,
@@ -492,6 +502,9 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       reply = generated.reply;
       outcome = generated.outcome;
       moodDelta = generated.moodDelta;
+      signalCategory = generated.signalCategory;
+      sideComment = generated.sideComment;
+      nextSignal = generated.nextSignal;
       await accumulateUsage(gameId, [generated.usage]);
     }
 
@@ -519,10 +532,24 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       mood: newMood,
     };
     const nextTranscript = [...transcriptWithWinner, personaEntry];
+    // Derive fallback signals if the AI didn't provide them. When an unmatch
+    // transitions into a comeback round, keep the fallback guidance consistent
+    // with the fact that the game is still continuing.
+    const fallbackSignals =
+      effectiveOutcome === "UNMATCHED" && advancePlan.kind === "NEXT_ROUND"
+        ? { signalCategory: "danger zone", nextSignal: "last chance, make it count" }
+        : deriveFallbackSignal(moodDelta, newMood, effectiveOutcome);
+    const resolvedSignalCategory = signalCategory ?? fallbackSignals.signalCategory;
+    const resolvedNextSignal = nextSignal ?? fallbackSignals.nextSignal;
+
     const updatedModeState = {
       ...claim.modeState,
       mood: newMood,
       pendingPersonaReply: createInitialPendingPersonaReply(),
+      latestMoodDelta: moodDelta,
+      latestSignalCategory: resolvedSignalCategory,
+      latestSideComment: sideComment,
+      latestNextSignal: resolvedNextSignal,
     };
 
     if (advancePlan.kind === "NEXT_ROUND") {
