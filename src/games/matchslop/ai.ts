@@ -23,6 +23,11 @@ import type {
   MatchSlopProfile,
   MatchSlopProfileDraft,
 } from "./types";
+import {
+  MATCHSLOP_INITIAL_MOOD,
+  clampMatchSlopMood,
+  getMoodLabel,
+} from "./types";
 
 const gateway = createGateway({
   apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
@@ -592,13 +597,37 @@ export async function generateAiFunnyVote(
 const personaReplySchema = z.object({
   reply: z.string(),
   outcome: z.enum(["CONTINUE", "DATE_SEALED", "UNMATCHED"]),
+  mood: z.number().int().min(0).max(100),
 });
+
+function inferMoodFromOutcome(
+  outcome: MatchSlopDecision,
+  currentMood: number = MATCHSLOP_INITIAL_MOOD,
+): number {
+  if (outcome === "DATE_SEALED") return Math.max(85, clampMatchSlopMood(currentMood));
+  if (outcome === "UNMATCHED") return Math.min(20, clampMatchSlopMood(currentMood));
+  return clampMatchSlopMood(currentMood);
+}
+
+function readNumberField(obj: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
 
 export function parsePersonaReplyResponse(
   text: string,
+  currentMood: number = MATCHSLOP_INITIAL_MOOD,
 ): {
   reply: string;
   outcome: MatchSlopDecision;
+  mood: number;
 } | null {
   const parsed = parseJsonText(text, personaReplySchema);
   if (parsed && parsed.reply.trim()) return parsed;
@@ -607,38 +636,60 @@ export function parsePersonaReplyResponse(
   if (loose) {
     const reply = readStringField(loose, ["reply", "text", "message", "line"]);
     const outcome = readStringField(loose, ["outcome", "decision", "status"])?.toUpperCase();
+    const rawMood = readNumberField(loose, ["mood"]);
+    const mood = rawMood != null ? clampMatchSlopMood(rawMood) : null;
     if (!reply) return null;
     if (outcome === "CONTINUE" || outcome === "DATE_SEALED" || outcome === "UNMATCHED") {
-      return { reply, outcome };
+      return { reply, outcome, mood: mood ?? inferMoodFromOutcome(outcome, currentMood) };
     }
-    return { reply, outcome: "CONTINUE" };
+    return { reply, outcome: "CONTINUE", mood: mood ?? clampMatchSlopMood(currentMood) };
   }
 
   const fallbackReply = fallbackPlainTextLine(text);
-  return fallbackReply ? { reply: fallbackReply, outcome: "CONTINUE" } : null;
+  return fallbackReply
+    ? {
+        reply: fallbackReply,
+        outcome: "CONTINUE",
+        mood: clampMatchSlopMood(currentMood),
+      }
+    : null;
 }
 
 export function buildPersonaReplySystemPrompt(
   seekerIdentity: MatchSlopIdentity,
   personaIdentity: MatchSlopIdentity,
   forceContinue = false,
+  currentMood: number = MATCHSLOP_INITIAL_MOOD,
 ): string {
+  const moodLabel = getMoodLabel(currentMood);
   return `You are a ${identityLabel(personaIdentity)} on a dating app. You just matched with a ${identityLabel(seekerIdentity)} and are chatting with them.
 
 Your profile and backstory are provided — stay consistent with who you are. Reply the way you'd actually text on a dating app: short, natural, in your own voice.
 
 You are a normal person with standards. You don't have to be nice about everything. If someone sends you something weird, creepy, nonsensical, or off-putting, react the way a real person would — with confusion, discomfort, a short reply, or by unmatching. You are NOT obligated to keep the conversation going. Not everyone deserves a response.
+
+IMPORTANT: Your reply should reflect your current mood and willingness to continue the conversation. Do NOT state the outcome directly in your message — just respond naturally as someone in your current mood would. Let your tone and enthusiasm (or lack thereof) speak for itself.
+
+Your current mood is ${currentMood}/100 (${moodLabel}).
+Mood is a number from 0 to 100 representing how interested you are:
+- 0-20 (done): checked out, over it, about to unmatch
+- 21-40 (skeptical): guarded, minimal effort, not sold yet
+- 41-60 (amused): entertained but noncommittal, casual banter
+- 61-80 (intrigued): genuinely interested, asking questions, flirty
+- 81-100 (obsessed): all-in, very enthusiastic, ready to meet
+
+Set your new mood based on how the conversation just went. Mood can shift up or down — a great message might jump it +20, a terrible one might drop it -30. Be honest and reactive.
 ${
   forceContinue
-    ? `This is the opening exchange — keep the conversation going. outcome must be CONTINUE.`
+    ? `This is the opening exchange — keep the conversation going. outcome must be CONTINUE. Set mood between 35 and 60 based on how the opener lands.`
     : `After replying, decide what happens next:
-- CONTINUE: the conversation is going well enough to keep talking
-- DATE_SEALED: you're genuinely into this person and ready to meet up — only if they've been actually charming
-- UNMATCHED: they said something weird, creepy, boring, or off-putting — you're done. Real people unmatch all the time. Don't be afraid to do it.`
+- CONTINUE: the conversation is going well enough to keep talking (mood above 20)
+- DATE_SEALED: you're genuinely into this person and ready to meet up — only if mood is 85+ and they've been actually charming
+- UNMATCHED: they said something weird, creepy, boring, or off-putting — you're done (mood should be 20 or below)`
 }
 
 Respond with ONLY this JSON (no other text):
-{"reply":"your message","outcome":"CONTINUE"}`;
+{"reply":"your message","outcome":"CONTINUE","mood":50}`;
 }
 
 export function normalizePersonaReplyOutcome(
@@ -648,13 +699,18 @@ export function normalizePersonaReplyOutcome(
   return forceContinue ? "CONTINUE" : outcome;
 }
 
-function buildFallbackPersonaReply(forceContinue: boolean): {
+function buildFallbackPersonaReply(
+  forceContinue: boolean,
+  currentMood: number,
+): {
   reply: string;
   outcome: MatchSlopDecision;
+  mood: number;
 } {
   return {
     reply: forceContinue ? "okay, that was weirdly bold. keep going." : "hmm. that bought you one more message.",
     outcome: "CONTINUE",
+    mood: clampMatchSlopMood(forceContinue ? Math.max(currentMood, 35) : currentMood),
   };
 }
 
@@ -664,9 +720,10 @@ export async function generatePersonaReply(
   personaIdentity: MatchSlopIdentity,
   profile: MatchSlopProfile,
   transcript: Array<{ speaker: "PLAYERS" | "PERSONA"; text: string; authorName: string | null }>,
-  options?: { forceContinue?: boolean },
-): Promise<{ reply: string; outcome: MatchSlopDecision; usage: AiUsage }> {
+  options?: { forceContinue?: boolean; currentMood?: number },
+): Promise<{ reply: string; outcome: MatchSlopDecision; mood: number; usage: AiUsage }> {
   const forceContinue = options?.forceContinue === true;
+  const currentMood = options?.currentMood ?? MATCHSLOP_INITIAL_MOOD;
   const transcriptXml = transcript
     .map((entry) => {
       const tag = entry.speaker === "PERSONA" ? "persona" : "players";
@@ -678,17 +735,17 @@ export async function generatePersonaReply(
   try {
     const result = await generateText({
       model: gateway(modelId),
-      system: buildPersonaReplySystemPrompt(seekerIdentity, personaIdentity, forceContinue),
+      system: buildPersonaReplySystemPrompt(seekerIdentity, personaIdentity, forceContinue, currentMood),
       prompt: `<profile><name>${escapeXml(profile.displayName)}</name>${profile.backstory ? `<backstory>${escapeXml(profile.backstory)}</backstory>` : ""}<bio>${escapeXml(profile.bio)}</bio><tagline>${escapeXml(profile.tagline ?? "")}</tagline></profile>\n<transcript>${transcriptXml}</transcript>`,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
-    const parsed = parsePersonaReplyResponse(result.text);
+    const parsed = parsePersonaReplyResponse(result.text, currentMood);
     if (!parsed) {
       console.error(
         `[matchslop:generatePersonaReply] ${modelId} parse failed. raw text: "${result.text.slice(0, 200)}"`,
       );
-      const fallback = buildFallbackPersonaReply(forceContinue);
+      const fallback = buildFallbackPersonaReply(forceContinue, currentMood);
       return {
         ...fallback,
         usage: extractUsage(modelId, result.usage),
@@ -698,7 +755,7 @@ export async function generatePersonaReply(
     const reply = parsed.reply.trim();
     if (!reply) {
       console.error(`[matchslop:generatePersonaReply] ${modelId} returned an empty reply, falling back`);
-      const fallback = buildFallbackPersonaReply(forceContinue);
+      const fallback = buildFallbackPersonaReply(forceContinue, currentMood);
       return {
         ...fallback,
         usage: extractUsage(modelId, result.usage),
@@ -708,11 +765,12 @@ export async function generatePersonaReply(
     return {
       reply,
       outcome: normalizePersonaReplyOutcome(parsed.outcome, forceContinue),
+      mood: parsed.mood,
       usage: extractUsage(modelId, result.usage),
     };
   } catch (err) {
     console.error(`[matchslop:generatePersonaReply] ${modelId} failed: ${describeError(err)}`);
-    const fallback = buildFallbackPersonaReply(forceContinue);
+    const fallback = buildFallbackPersonaReply(forceContinue, currentMood);
     return {
       ...fallback,
       usage:

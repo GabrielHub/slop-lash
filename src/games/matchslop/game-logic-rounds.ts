@@ -18,6 +18,7 @@ import type {
   MatchSlopTranscriptEntry,
   MatchSlopTranscriptOutcome,
 } from "./types";
+import { MATCHSLOP_MOOD_THRESHOLD_UNMATCH } from "./types";
 import { DEFAULT_TOTAL_ROUNDS } from "./game-constants";
 
 function toJson(value: unknown): Prisma.InputJsonValue {
@@ -437,21 +438,26 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     const transcriptWithWinner = [...claim.modeState.transcript, winnerEntry];
     const forceContinue = claim.currentRound === 1;
 
-    const { reply, outcome, usage } = await generatePersonaReply(
+    const { reply, outcome, mood, usage } = await generatePersonaReply(
       game.personaModelId,
       claim.modeState.seekerIdentity,
       claim.modeState.personaIdentity,
       profile,
       transcriptWithWinner,
-      { forceContinue },
+      { forceContinue, currentMood: claim.modeState.mood },
     );
     await accumulateUsage(gameId, [usage]);
+
+    // Override outcome based on mood threshold
+    const effectiveOutcome = !forceContinue && mood <= MATCHSLOP_MOOD_THRESHOLD_UNMATCH
+      ? "UNMATCHED" as const
+      : outcome;
 
     const advancePlan = resolveAdvancePlan({
       currentRound: claim.currentRound,
       totalRounds: claim.totalRounds,
       comebackRound: claim.modeState.comebackRound,
-      personaOutcome: outcome,
+      personaOutcome: effectiveOutcome,
     });
     const personaEntry: MatchSlopTranscriptEntry = {
       id: `persona-turn-${claim.currentRound}`,
@@ -460,8 +466,10 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       turn: claim.currentRound,
       outcome: advancePlan.transcriptOutcome,
       authorName: profile.displayName,
+      mood,
     };
     const nextTranscript = [...transcriptWithWinner, personaEntry];
+    const updatedModeState = { ...claim.modeState, mood };
 
     if (advancePlan.kind === "NEXT_ROUND") {
       return await transitionClaimedAdvanceToNextRound({
@@ -469,7 +477,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
         nextRound: advancePlan.nextRound,
         promptText: personaEntry.text,
         timersDisabled: claim.timersDisabled,
-        modeState: claim.modeState,
+        modeState: updatedModeState,
         transcript: nextTranscript,
         outcome: advancePlan.nextOutcome,
         comebackRound: advancePlan.comebackRound,
@@ -478,7 +486,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
 
     await finalizeClaimedAdvance({
       gameId,
-      modeState: claim.modeState,
+      modeState: updatedModeState,
       transcript: nextTranscript,
       lastRoundResult: result,
       outcome: advancePlan.nextOutcome,

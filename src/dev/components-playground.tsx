@@ -345,6 +345,17 @@ export function DevComponentsPlayground() {
               Chat bubbles, chat bar, vote options, result rows, progress pills, game cards.
             </p>
           </Link>
+
+          <Link
+            href="/dev/components/matchslop"
+            className="rounded-xl border-2 border-edge bg-surface/80 p-5 transition-colors hover:border-edge-strong"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <h2 className="font-display text-lg font-bold text-ink">MatchSlop Components</h2>
+            <p className="mt-1 text-sm text-ink-dim">
+              Mood meter, profile card, transcript bubbles, outcome badges, outcome verdicts, scoreboard.
+            </p>
+          </Link>
         </section>
       </div>
     </main>

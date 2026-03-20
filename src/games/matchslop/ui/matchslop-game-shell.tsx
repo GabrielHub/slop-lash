@@ -29,30 +29,30 @@ import type { GameState } from "@/lib/types";
 
 type MatchSlopIdentity = "MAN" | "WOMAN" | "NON_BINARY" | "OTHER";
 
-type MatchSlopPersonaImageState = {
+export type MatchSlopPersonaImageState = {
   status?: "NOT_REQUESTED" | "PENDING" | "PROCESSING" | "READY" | "FAILED";
   imageUrl?: string | null;
 };
 
-type MatchSlopProfileGenerationState = {
+export type MatchSlopProfileGenerationState = {
   status?: "NOT_REQUESTED" | "STREAMING" | "READY" | "FAILED";
   updatedAt?: string;
 };
 
-type MatchSlopProfilePrompt = {
+export type MatchSlopProfilePrompt = {
   id?: string;
   prompt?: string;
   answer?: string;
 };
 
-type MatchSlopPersonaDetails = {
+export type MatchSlopPersonaDetails = {
   job?: string | null;
   school?: string | null;
   height?: string | null;
   languages?: string[];
 };
 
-type MatchSlopProfile = {
+export type MatchSlopProfile = {
   displayName?: string;
   age?: number | null;
   location?: string | null;
@@ -63,7 +63,7 @@ type MatchSlopProfile = {
   image?: MatchSlopPersonaImageState | null;
 };
 
-type MatchSlopTranscriptEntry = {
+export type MatchSlopTranscriptEntry = {
   id?: string;
   speaker?: string;
   text?: string;
@@ -99,9 +99,40 @@ type MatchSlopModeState = {
   transcript?: MatchSlopTranscriptEntry[];
   personaImage?: MatchSlopPersonaImageState | null;
   lastRoundResult?: MatchSlopRoundResult | null;
+  mood?: number;
 };
 
-type Outcome = "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
+import {
+  MATCHSLOP_INITIAL_MOOD,
+  clampMatchSlopMood,
+  getMoodLabel,
+  type MatchSlopMoodLabel,
+} from "../types";
+
+const MOOD_CONFIG: Record<MatchSlopMoodLabel, { emoji: string }> = {
+  done:      { emoji: "\u{1F480}" },
+  skeptical: { emoji: "\u{1F612}" },
+  amused:    { emoji: "\u{1F60F}" },
+  intrigued: { emoji: "\u{1F60D}" },
+  obsessed:  { emoji: "\u{1F525}" },
+};
+
+/** Cold-to-hot color: blue (0) → cyan → yellow → orange → red (100) */
+export function getMoodColor(mood: number): string {
+  const t = clampMatchSlopMood(mood) / 100;
+  // HSL hue: 220 (blue) → 0 (red)
+  const hue = Math.round(220 * (1 - t));
+  const sat = Math.round(70 + 20 * Math.abs(t - 0.5) * 2); // boost saturation at extremes
+  return `hsl(${hue}, ${sat}%, 55%)`;
+}
+
+export function getMoodConfig(mood: number) {
+  const label = getMoodLabel(mood);
+  const color = getMoodColor(mood);
+  return { color, emoji: MOOD_CONFIG[label].emoji };
+}
+
+export type Outcome = "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
 const EMPTY_TRANSCRIPT: MatchSlopTranscriptEntry[] = [];
 
 /* ─── Helpers ─── */
@@ -115,7 +146,7 @@ function asModeState(state: GameState["modeState"] | undefined): MatchSlopModeSt
 
 /* ─── SVG Icons ─── */
 
-function HeartIcon({ className = "", size = 24 }: { className?: string; size?: number }) {
+export function HeartIcon({ className = "", size = 24 }: { className?: string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
@@ -123,7 +154,7 @@ function HeartIcon({ className = "", size = 24 }: { className?: string; size?: n
   );
 }
 
-function BrokenHeartIcon({ className = "", size = 24 }: { className?: string; size?: number }) {
+export function BrokenHeartIcon({ className = "", size = 24 }: { className?: string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
       <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.53L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zM12.1 18.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5 18.5 5 20 6.5 20 8.5c0 2.89-3.14 5.74-7.9 10.05z" />
@@ -131,7 +162,7 @@ function BrokenHeartIcon({ className = "", size = 24 }: { className?: string; si
   );
 }
 
-function LocationIcon({ size = 16 }: { size?: number }) {
+export function LocationIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
@@ -157,7 +188,7 @@ function VoteIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-function SparkleIcon({ size = 16 }: { size?: number }) {
+export function SparkleIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
@@ -192,7 +223,7 @@ function TypingIndicator() {
   );
 }
 
-function OutcomeBadge({ outcome }: { outcome: Outcome }) {
+export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
   if (outcome === "IN_PROGRESS") return null;
 
   const config = {
@@ -236,16 +267,123 @@ function OutcomeBadge({ outcome }: { outcome: Outcome }) {
   );
 }
 
-function ProfileCard({
+export function MoodMeter({ mood }: { mood: number }) {
+  const normalizedMood = clampMatchSlopMood(mood);
+  const label = getMoodLabel(normalizedMood);
+  const config = getMoodConfig(normalizedMood);
+  const isDanger = normalizedMood <= 20;
+
+  return (
+    <motion.div
+      className="flex items-center gap-3"
+      style={{ padding: "clamp(0.6rem, 1vw, 0.8rem) 0" }}
+      animate={
+        isDanger
+          ? { x: [0, -2, 2, -1.5, 1.5, -0.5, 0.5, 0] }
+          : { x: 0 }
+      }
+      transition={
+        isDanger
+          ? { duration: 0.5, repeat: 3, repeatDelay: 2.5 }
+          : { duration: 0.2 }
+      }
+    >
+      {/* Label + emoji */}
+      <div className="shrink-0 flex items-center gap-1.5">
+        <motion.span
+          key={label}
+          style={{ fontSize: "clamp(0.85rem, 1.1vw, 1rem)" }}
+          initial={{ scale: 1.4, rotate: -10 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+        >
+          {config.emoji}
+        </motion.span>
+        <span
+          className="font-display font-bold uppercase tracking-wider"
+          style={{
+            fontSize: "clamp(0.55rem, 0.7vw, 0.65rem)",
+            color: config.color,
+          }}
+        >
+          {label}
+        </span>
+      </div>
+
+      {/* Bar track */}
+      <div className="flex-1 relative">
+        <div
+          className="w-full rounded-full overflow-hidden"
+          style={{
+            height: "clamp(6px, 0.5vw, 8px)",
+            background: "color-mix(in srgb, var(--ms-edge) 50%, transparent)",
+          }}
+        >
+          {/* Fill */}
+          <motion.div
+            className="h-full rounded-full"
+            initial={false}
+            animate={{
+              width: `${Math.max(normalizedMood, 2)}%`,
+            }}
+            transition={{
+              type: "spring",
+              stiffness: 200,
+              damping: 22,
+              mass: 0.8,
+            }}
+            style={{
+              background: config.color,
+              boxShadow: `0 0 6px color-mix(in srgb, ${config.color} 40%, transparent)`,
+            }}
+          />
+        </div>
+
+        {/* Glow pulse overlay — re-mounts on mood value change */}
+        <motion.div
+          key={normalizedMood}
+          className="absolute inset-0 rounded-full pointer-events-none"
+          initial={{ opacity: 0.6 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          style={{
+            boxShadow: `0 0 16px ${config.color}, 0 0 32px color-mix(in srgb, ${config.color} 30%, transparent)`,
+          }}
+        />
+      </div>
+
+      {/* Numeric value */}
+      <motion.span
+        className="shrink-0 font-mono font-bold tabular-nums"
+        style={{
+          fontSize: "clamp(0.6rem, 0.8vw, 0.75rem)",
+          color: config.color,
+          minWidth: "2ch",
+          textAlign: "right",
+        }}
+        key={normalizedMood}
+        initial={{ scale: 1.3, opacity: 0.5 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      >
+        {normalizedMood}
+      </motion.span>
+    </motion.div>
+  );
+}
+
+export function ProfileCard({
   profile,
   personaImage,
   profileGeneration,
   outcome,
+  mood,
 }: {
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState | null;
   profileGeneration: MatchSlopProfileGenerationState | null;
   outcome: Outcome;
+  mood: number;
 }) {
   const imageStatus = personaImage?.status ?? "NOT_REQUESTED";
   const isProfileStreaming =
@@ -351,6 +489,18 @@ function ProfileCard({
           </div>
         </div>
       </div>
+
+      {/* Mood Meter */}
+      {outcome === "IN_PROGRESS" && (
+        <div
+          style={{
+            padding: "0 clamp(1rem, 2vw, 2rem)",
+            borderTop: "1px solid var(--ms-edge)",
+          }}
+        >
+          <MoodMeter mood={mood} />
+        </div>
+      )}
 
       {/* Bio + Tagline */}
       <div className="p-[clamp(1rem,2vw,2rem)]" style={{ borderTop: "1px solid var(--ms-edge)" }}>
@@ -530,7 +680,7 @@ function PromptContextBanner({
   );
 }
 
-function TranscriptBubble({
+export function TranscriptBubble({
   entry,
   index,
 }: {
@@ -1437,7 +1587,7 @@ function PhaseStatusCard({
 
 /* ─── Outcome Verdict ─── */
 
-function OutcomeVerdict({ outcome }: { outcome: Outcome }) {
+export function OutcomeVerdict({ outcome }: { outcome: Outcome }) {
   if (outcome === "IN_PROGRESS") return null;
 
   const config = {
@@ -1965,6 +2115,11 @@ export function MatchSlopGameShell({
               personaImage={personaImage}
               profileGeneration={profileGeneration}
               outcome={outcome}
+              mood={
+                typeof modeState.mood === "number"
+                  ? clampMatchSlopMood(modeState.mood)
+                  : MATCHSLOP_INITIAL_MOOD
+              }
             />
 
           </div>
