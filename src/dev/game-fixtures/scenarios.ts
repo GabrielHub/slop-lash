@@ -948,6 +948,8 @@ const MATCHSLOP_ROUND_1_TRANSCRIPT: Record<string, unknown>[] = [
     turn: 1,
     outcome: null,
     authorName: "Amy",
+    selectedPromptText: "Most reckless thing I've done for love",
+    selectedPromptId: "profile-prompt-1",
   },
   {
     id: "mt-t2",
@@ -1646,6 +1648,8 @@ function buildMatchSlopFinal(): MockScenario {
             turn: 1,
             outcome: null,
             authorName: "Amy",
+            selectedPromptText: "Most reckless thing I've done for love",
+            selectedPromptId: "profile-prompt-1",
           },
           {
             id: "mt-2",
@@ -1846,6 +1850,8 @@ function buildMatchSlopFinalTurnLimit(): MockScenario {
             turn: 1,
             outcome: null,
             authorName: "Amy",
+            selectedPromptText: "Their photo",
+            selectedPromptId: "__photo__",
           },
           {
             id: "mt-t2",

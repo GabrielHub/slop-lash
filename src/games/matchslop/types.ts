@@ -15,6 +15,12 @@ export type MatchSlopPersonaImageStatus =
   | "READY"
   | "FAILED";
 
+export type MatchSlopProfileGenerationStatus =
+  | "NOT_REQUESTED"
+  | "STREAMING"
+  | "READY"
+  | "FAILED";
+
 export interface MatchSlopPersonaImageState {
   status: MatchSlopPersonaImageStatus;
   imageUrl: string | null;
@@ -27,11 +33,24 @@ export interface MatchSlopProfilePrompt {
   answer: string;
 }
 
+export interface MatchSlopProfilePromptDraft {
+  id?: string;
+  prompt?: string;
+  answer?: string;
+}
+
 export interface MatchSlopPersonaDetails {
   job: string | null;
   school: string | null;
   height: string | null;
   languages: string[];
+}
+
+export interface MatchSlopPersonaDetailsDraft {
+  job?: string | null;
+  school?: string | null;
+  height?: string | null;
+  languages?: string[];
 }
 
 export interface MatchSlopProfile {
@@ -45,6 +64,22 @@ export interface MatchSlopProfile {
   details: MatchSlopPersonaDetails | null;
 }
 
+export interface MatchSlopProfileDraft {
+  displayName?: string;
+  backstory?: string | null;
+  age?: number | null;
+  location?: string | null;
+  bio?: string | null;
+  tagline?: string | null;
+  prompts?: MatchSlopProfilePromptDraft[];
+  details?: MatchSlopPersonaDetailsDraft | null;
+}
+
+export interface MatchSlopProfileGenerationState {
+  status: MatchSlopProfileGenerationStatus;
+  updatedAt: string;
+}
+
 export interface MatchSlopTranscriptEntry {
   id: string;
   speaker: "PLAYERS" | "PERSONA";
@@ -52,6 +87,8 @@ export interface MatchSlopTranscriptEntry {
   turn: number;
   outcome: MatchSlopTranscriptOutcome | null;
   authorName: string | null;
+  selectedPromptText?: string | null;
+  selectedPromptId?: string | null;
 }
 
 export interface MatchSlopRoundResult {
@@ -76,6 +113,8 @@ export interface MatchSlopModeState {
   selectedPlayerExamples: string[];
   comebackRound: number | null;
   transcript: MatchSlopTranscriptEntry[];
+  profileDraft: MatchSlopProfileDraft | null;
+  profileGeneration: MatchSlopProfileGenerationState;
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState;
   lastRoundResult: MatchSlopRoundResult | null;

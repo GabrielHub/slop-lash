@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
@@ -34,6 +34,11 @@ type MatchSlopPersonaImageState = {
   imageUrl?: string | null;
 };
 
+type MatchSlopProfileGenerationState = {
+  status?: "NOT_REQUESTED" | "STREAMING" | "READY" | "FAILED";
+  updatedAt?: string;
+};
+
 type MatchSlopProfilePrompt = {
   id?: string;
   prompt?: string;
@@ -65,6 +70,8 @@ type MatchSlopTranscriptEntry = {
   turn?: number;
   outcome?: string | null;
   authorName?: string | null;
+  selectedPromptText?: string | null;
+  selectedPromptId?: string | null;
 };
 
 type MatchSlopRoundResult = {
@@ -73,6 +80,8 @@ type MatchSlopRoundResult = {
   winnerPlayerId?: string;
   weightedVotes?: number;
   rawVotes?: number;
+  selectedPromptText?: string | null;
+  selectedPromptId?: string | null;
 };
 
 type MatchSlopModeState = {
@@ -84,6 +93,8 @@ type MatchSlopModeState = {
   selectedPersonaExampleIds?: string[];
   selectedPlayerExamples?: string[];
   comebackRound?: number | null;
+  profileDraft?: MatchSlopProfile | null;
+  profileGeneration?: MatchSlopProfileGenerationState | null;
   profile?: MatchSlopProfile | null;
   transcript?: MatchSlopTranscriptEntry[];
   personaImage?: MatchSlopPersonaImageState | null;
@@ -228,13 +239,24 @@ function OutcomeBadge({ outcome }: { outcome: Outcome }) {
 function ProfileCard({
   profile,
   personaImage,
+  profileGeneration,
   outcome,
 }: {
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState | null;
+  profileGeneration: MatchSlopProfileGenerationState | null;
   outcome: Outcome;
 }) {
   const imageStatus = personaImage?.status ?? "NOT_REQUESTED";
+  const isProfileStreaming =
+    profileGeneration?.status === "STREAMING" ||
+    (profileGeneration?.status !== "FAILED" && !profile?.displayName);
+  const bioText =
+    profile?.bio ??
+    (isProfileStreaming
+      ? "As the model fills in the details, the profile will build itself here in real time."
+      : "The persona profile is being generated...");
+  const displayName = profile?.displayName ?? (isProfileStreaming ? "Building persona" : "AI Persona");
 
   return (
     <motion.div
@@ -302,9 +324,9 @@ function ProfileCard({
                   color: "var(--ms-ink)",
                 }}
               >
-                {profile?.displayName ?? "AI Persona"}
+                {displayName}
               </h1>
-              {(profile?.age || profile?.location) && (
+              {(profile?.age != null || profile?.location) && (
                 <div
                   className="flex items-center gap-2 mt-1"
                   style={{
@@ -350,7 +372,7 @@ function ProfileCard({
             color: "var(--ms-ink)",
           }}
         >
-          {profile?.bio ?? "The persona profile is being generated..."}
+          {bioText}
         </p>
 
         {/* Detail badges */}
@@ -360,7 +382,7 @@ function ProfileCard({
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {"\uD83D\uDCBC"} {profile.details.job}
+              {profile.details.job}
             </span>
           )}
           {profile?.details?.school && (
@@ -368,7 +390,7 @@ function ProfileCard({
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {"\uD83C\uDF93"} {profile.details.school}
+              {profile.details.school}
             </span>
           )}
           {profile?.details?.height && (
@@ -376,7 +398,7 @@ function ProfileCard({
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {"\uD83D\uDCCF"} {profile.details.height}
+              {profile.details.height}
             </span>
           )}
           {profile?.details?.languages && profile.details.languages.length > 0 && (
@@ -384,7 +406,7 @@ function ProfileCard({
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {"\uD83D\uDCAC"} {profile.details.languages.join(", ")}
+              {profile.details.languages.join(", ")}
             </span>
           )}
         </div>
@@ -438,6 +460,76 @@ function ProfileCard({
   );
 }
 
+function PromptContextBanner({
+  promptText,
+  isPhoto,
+}: {
+  promptText: string;
+  isPhoto: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1.5 mb-2 rounded-lg"
+      style={{
+        padding: "clamp(0.35rem, 0.6vw, 0.5rem) clamp(0.5rem, 0.8vw, 0.7rem)",
+        background: "color-mix(in srgb, var(--ms-violet) 8%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--ms-violet) 15%, transparent)",
+      }}
+    >
+      {isPhoto ? (
+        <svg
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ color: "var(--ms-violet)", opacity: 0.7, flexShrink: 0 }}
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      ) : (
+        <svg
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ color: "var(--ms-violet)", opacity: 0.7, flexShrink: 0 }}
+        >
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      )}
+      <span
+        className="font-display font-semibold"
+        style={{
+          fontSize: "clamp(0.5rem, 0.65vw, 0.6rem)",
+          color: "var(--ms-violet)",
+          opacity: 0.8,
+        }}
+      >
+        Replied to:
+      </span>
+      <span
+        className="font-display font-bold truncate"
+        style={{
+          fontSize: "clamp(0.5rem, 0.65vw, 0.6rem)",
+          color: "var(--ms-violet)",
+        }}
+      >
+        {isPhoto ? "Their photo" : `"${promptText}"`}
+      </span>
+    </div>
+  );
+}
+
 function TranscriptBubble({
   entry,
   index,
@@ -446,6 +538,13 @@ function TranscriptBubble({
   index: number;
 }) {
   const isPersona = entry.speaker === "PERSONA";
+  const displayName = isPersona
+    ? (entry.authorName ?? "Persona")
+    : (entry.authorName ?? "Players");
+
+  const isFirstPlayerMessage =
+    !isPersona && entry.turn === 1 && entry.selectedPromptText;
+  const isPhotoPrompt = entry.selectedPromptId === "__photo__";
 
   return (
     <motion.div
@@ -461,6 +560,14 @@ function TranscriptBubble({
           animationDelay: `${index * 0.1}s`,
         }}
       >
+        {/* Prompt context banner for first player message */}
+        {isFirstPlayerMessage && (
+          <PromptContextBanner
+            promptText={entry.selectedPromptText!}
+            isPhoto={isPhotoPrompt}
+          />
+        )}
+
         <div className="flex items-center justify-between gap-3 mb-1">
           <span
             className="font-bold uppercase tracking-wider"
@@ -469,7 +576,7 @@ function TranscriptBubble({
               color: isPersona ? "var(--ms-rose)" : "var(--ms-violet)",
             }}
           >
-            {isPersona ? entry.authorName ?? "Persona" : entry.authorName ?? "Players"}
+            {displayName}
           </span>
           <span
             className="font-mono"
@@ -785,6 +892,149 @@ function CompactScoreboard({ game, isFinal }: { game: GameState; isFinal: boolea
   );
 }
 
+function FinalScoreChart({ game }: { game: GameState }) {
+  const sorted = [...game.players].sort((a, b) => b.score - a.score);
+  const maxScore = sorted[0]?.score || 1;
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-4">
+        <CrownIcon size={16} />
+        <span
+          className="font-display font-bold uppercase tracking-wider"
+          style={{
+            fontSize: "clamp(0.65rem, 0.85vw, 0.8rem)",
+            color: "var(--gold)",
+          }}
+        >
+          Final Standings
+        </span>
+        <div
+          className="flex-1 h-px"
+          style={{
+            background:
+              "linear-gradient(90deg, color-mix(in srgb, var(--gold) 30%, transparent), transparent)",
+          }}
+        />
+      </div>
+
+      <motion.div
+        className="space-y-2.5"
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: {},
+          visible: { transition: { staggerChildren: 0.12 } },
+        }}
+      >
+        {sorted.map((player, idx) => {
+          const pct = maxScore > 0 ? (player.score / maxScore) * 100 : 0;
+          const isWinner = idx === 0;
+
+          return (
+            <motion.div
+              key={player.id}
+              className="flex items-center gap-3"
+              variants={{
+                hidden: { opacity: 0, x: -16 },
+                visible: { opacity: 1, x: 0, transition: springGentle },
+              }}
+            >
+              {/* Rank */}
+              <span
+                className="shrink-0 font-mono font-bold tabular-nums"
+                style={{
+                  width: "clamp(1.2rem, 1.5vw, 1.5rem)",
+                  textAlign: "center",
+                  fontSize: "clamp(0.85rem, 1.1vw, 1.1rem)",
+                  color: isWinner ? "var(--gold)" : "var(--ms-ink-dim)",
+                  ...(isWinner
+                    ? {
+                        textShadow:
+                          "0 0 10px color-mix(in srgb, var(--gold) 40%, transparent)",
+                      }
+                    : {}),
+                }}
+              >
+                {idx + 1}
+              </span>
+
+              {/* Avatar */}
+              <PlayerAvatar
+                name={player.name}
+                modelId={player.modelId}
+                size={28}
+              />
+
+              {/* Name */}
+              <span
+                className="shrink-0 font-display font-bold truncate"
+                style={{
+                  width: "clamp(3.5rem, 7vw, 6rem)",
+                  fontSize: "clamp(0.8rem, 1vw, 1rem)",
+                  color: isWinner ? "var(--gold)" : "var(--ms-ink)",
+                }}
+              >
+                {player.name}
+              </span>
+
+              {/* Bar track */}
+              <div
+                className="flex-1 relative overflow-hidden rounded-lg"
+                style={{
+                  height: "clamp(1.5rem, 2vw, 2rem)",
+                  background:
+                    "color-mix(in srgb, var(--ms-edge) 40%, transparent)",
+                }}
+              >
+                <motion.div
+                  className="absolute inset-y-0 left-0 rounded-lg"
+                  initial={{ width: "0%" }}
+                  animate={{ width: `${Math.max(pct, 3)}%` }}
+                  transition={{
+                    ...springGentle,
+                    delay: 0.25 + idx * 0.12,
+                  }}
+                  style={
+                    isWinner
+                      ? {
+                          background:
+                            "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 65%, var(--ms-coral)) 100%)",
+                          boxShadow:
+                            "0 0 16px color-mix(in srgb, var(--gold) 30%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 15%, transparent) inset",
+                        }
+                      : {
+                          background:
+                            "linear-gradient(90deg, var(--ms-violet) 20%, color-mix(in srgb, var(--ms-violet) 40%, transparent) 100%)",
+                          opacity: 0.4,
+                        }
+                  }
+                />
+              </div>
+
+              {/* Score */}
+              <motion.span
+                className="shrink-0 font-mono font-bold tabular-nums"
+                style={{
+                  width: "clamp(2rem, 3vw, 3rem)",
+                  textAlign: "right",
+                  fontSize: "clamp(0.85rem, 1.1vw, 1.1rem)",
+                  color: isWinner ? "var(--gold)" : "var(--ms-ink-dim)",
+                }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 + idx * 0.12 }}
+              >
+                {player.score}
+              </motion.span>
+            </motion.div>
+          );
+        })}
+      </motion.div>
+    </div>
+  );
+}
+
 function PhaseStatusCard({
   gameState,
   outcome,
@@ -796,6 +1046,7 @@ function PhaseStatusCard({
   postHostAction,
   handleEndGame,
   canEndGame,
+  canAdvancePhase,
 }: {
   gameState: GameState;
   outcome: Outcome;
@@ -807,6 +1058,7 @@ function PhaseStatusCard({
   postHostAction: (path: "start" | "next") => void;
   handleEndGame: () => void;
   canEndGame: boolean;
+  canAdvancePhase: boolean;
 }) {
   const phaseConfig = {
     LOBBY: {
@@ -1085,11 +1337,14 @@ function PhaseStatusCard({
           </div>
         )}
 
-        {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
+        {gameState.status === "ROUND_RESULTS" && (
           <CompactScoreboard
             game={gameState}
-            isFinal={gameState.status === "FINAL_RESULTS"}
+            isFinal={false}
           />
+        )}
+        {gameState.status === "FINAL_RESULTS" && (
+          <FinalScoreChart game={gameState} />
         )}
       </div>
 
@@ -1125,7 +1380,7 @@ function PhaseStatusCard({
                 triggerElement(e.currentTarget);
                 void postHostAction("next");
               }}
-              disabled={hostActionBusy}
+              disabled={hostActionBusy || !canAdvancePhase}
               className={`${isCompact ? "flex-1" : "w-full"} rounded-2xl font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               style={{
                 background: "var(--ms-raised)",
@@ -1138,6 +1393,8 @@ function PhaseStatusCard({
             >
               {hostActionBusy
                 ? "Working..."
+                : !canAdvancePhase
+                  ? "Building Profile..."
                 : gameState.status === "ROUND_RESULTS"
                   ? isComebackRound
                     ? "Show Ending"
@@ -1331,12 +1588,60 @@ export function MatchSlopGameShell({
 
   // Auto-scroll transcript
   const modeState = asModeState(gameState?.modeState);
+  const profileDraft = modeState.profileDraft ?? null;
   const profile = modeState.profile ?? null;
+  const profileGeneration = modeState.profileGeneration ?? null;
   const outcome = (modeState.outcome ?? "IN_PROGRESS") as Outcome;
   const comebackRound = modeState.comebackRound ?? null;
   const personaImage = modeState.personaImage ?? null;
-  const transcript = modeState.transcript ?? EMPTY_TRANSCRIPT;
+  const rawTranscript = modeState.transcript ?? EMPTY_TRANSCRIPT;
   const lastRoundResult = modeState.lastRoundResult ?? null;
+  const isInitialProfilePending =
+    gameState?.status === "WRITING" &&
+    gameState.currentRound === 1 &&
+    profile == null &&
+    profileGeneration?.status !== "FAILED";
+  const isInitialProfileFailed =
+    gameState?.status === "WRITING" &&
+    gameState.currentRound === 1 &&
+    profile == null &&
+    profileGeneration?.status === "FAILED";
+  // During ROUND_RESULTS the winning response hasn't been persisted to the
+  // transcript yet (it's added when advancing to the next round). Append it
+  // to the displayed transcript so the player can see what won.
+  const transcript = useMemo(() => {
+    if (
+      gameState?.status === "ROUND_RESULTS" &&
+      lastRoundResult?.winnerText &&
+      gameState.currentRound != null
+    ) {
+      const winnerId = `players-turn-${gameState.currentRound}`;
+      // Don't double-add if already present
+      if (!rawTranscript.some((e) => e.id === winnerId)) {
+        return [
+          ...rawTranscript,
+          {
+            id: winnerId,
+            speaker: "PLAYERS" as const,
+            text: lastRoundResult.winnerText,
+            turn: gameState.currentRound,
+            outcome: null,
+            authorName: lastRoundResult.authorName ?? null,
+            selectedPromptText:
+              gameState.currentRound === 1
+                ? (lastRoundResult.selectedPromptText ?? null)
+                : null,
+            selectedPromptId:
+              gameState.currentRound === 1
+                ? (lastRoundResult.selectedPromptId ?? null)
+                : null,
+          },
+        ];
+      }
+    }
+    return rawTranscript;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- use .length to avoid recomputing on every SSE tick (rawTranscript is a new reference each render)
+  }, [rawTranscript.length, lastRoundResult?.winnerText, gameState?.status, gameState?.currentRound]);
   const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
   const isActiveComebackRound = isComebackRound && gameState?.status !== "FINAL_RESULTS";
   const currentRoundData =
@@ -1351,7 +1656,15 @@ export function MatchSlopGameShell({
     ) ?? [];
   useEffect(() => {
     const el = transcriptScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    // In final results, scroll to top so the beginning of the conversation
+    // (with prompt context) is visible first. During live play, scroll to
+    // bottom so the newest message is always in view.
+    if (gameState?.status === "FINAL_RESULTS") {
+      el.scrollTop = 0;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [transcript.length, gameState?.status]);
 
   useEffect(() => {
@@ -1472,6 +1785,7 @@ export function MatchSlopGameShell({
     (gameState?.status === "WRITING" ||
       gameState?.status === "VOTING" ||
       gameState?.status === "ROUND_RESULTS");
+  const canAdvancePhase = !isInitialProfilePending && !isInitialProfileFailed;
 
   async function postHostAction(path: "start" | "next") {
     const token = localStorage.getItem("hostControlToken");
@@ -1647,8 +1961,9 @@ export function MatchSlopGameShell({
           {/* Left: Profile Card */}
           <div className="sticky top-4 self-start">
             <ProfileCard
-              profile={profile}
+              profile={profile ?? profileDraft}
               personaImage={personaImage}
+              profileGeneration={profileGeneration}
               outcome={outcome}
             />
 
@@ -1679,6 +1994,7 @@ export function MatchSlopGameShell({
                 postHostAction={(path) => void postHostAction(path)}
                 handleEndGame={() => void handleEndGame()}
                 canEndGame={canEndGame}
+                canAdvancePhase={canAdvancePhase}
               />
 
               {/* Conversation divider + header */}

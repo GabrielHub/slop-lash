@@ -1,14 +1,16 @@
-import type { Prisma } from "@/generated/prisma/client";
+import type { GameStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import type { ControllerGameState } from "@/lib/controller-types";
 import { asRecord, asString, asNumber } from "@/lib/json-guards";
 import { parseDetails } from "@/games/matchslop/game-logic-core";
-import { createTimedCache } from "@/lib/timed-cache";
 import { isPromptVotable } from "../route-helpers";
-
-const CONTROLLER_PAYLOAD_CACHE_TTL_MS = 30_000;
-const controllerPayloadCache = createTimedCache(300);
+import {
+  findGameMeta,
+  findGamePayloadByStatus,
+  normalizePayload,
+  type GameRoutePayload,
+} from "../route-data";
 
 function asPromptOptions(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -82,66 +84,21 @@ export function findControllerMeta(roomCode: string) {
   });
 }
 
-export async function findControllerPayload(
-  roomCode: string,
+function projectControllerPayload(
+  game: GameRoutePayload,
   playerId: string | null,
-  version?: number,
-): Promise<ControllerGameState | null> {
-  const controllerGameSelect = {
-    id: true,
-    roomCode: true,
-    gameType: true,
-    status: true,
-    personaModelId: true,
-    modeState: true,
-    currentRound: true,
-    totalRounds: true,
-    hostPlayerId: true,
-    phaseDeadline: true,
-    timersDisabled: true,
-    votingPromptIndex: true,
-    votingRevealing: true,
-    nextGameCode: true,
-    version: true,
-    players: {
-      select: { id: true, name: true, type: true, participationStatus: true },
-      orderBy: { name: "asc" as const },
-    },
-    rounds: {
-      orderBy: { roundNumber: "desc" as const },
-      take: 1,
-      select: {
-        roundNumber: true,
-        prompts: {
-          orderBy: { id: "asc" as const },
-          select: {
-            id: true,
-            text: true,
-            assignments: { select: { playerId: true } },
-            responses: {
-              select: { id: true, playerId: true, text: true, metadata: true },
-              orderBy: { id: "asc" as const },
-            },
-            votes: {
-              select: { voterId: true, responseId: true, failReason: true },
-            },
-          },
-        },
-      },
-    },
-  } as const;
-
-  const cacheKey = version == null ? null : `${roomCode}:${playerId ?? "_"}:${version}`;
-  const load = () => prisma.game.findUnique({ where: { roomCode }, select: controllerGameSelect });
-  const game = cacheKey
-    ? await controllerPayloadCache.getOrLoad(cacheKey, CONTROLLER_PAYLOAD_CACHE_TTL_MS, load)
-    : await load();
-
-  if (!game) return null;
-
-  const { players } = game;
+): ControllerGameState {
+  const players = game.players
+    .map((player) => ({
+      id: player.id,
+      name: player.name,
+      type: player.type,
+      participationStatus: player.participationStatus,
+    }))
+    .toSorted((a, b) => a.name.localeCompare(b.name));
   const me = playerId ? players.find((p) => p.id === playerId) ?? null : null;
-  const currentRound = game.rounds[0];
+  const currentRound =
+    game.rounds.find((round) => round.roundNumber === game.currentRound) ?? game.rounds[0] ?? null;
   const modeState = asRecord(game.modeState);
 
   let writing: ControllerGameState["writing"] = null;
@@ -254,6 +211,22 @@ export async function findControllerPayload(
         ? outcomeRaw
         : "IN_PROGRESS" as const;
 
+    const profileGenerationStatusRaw = asString(asRecord(modeState?.profileGeneration)?.status);
+    const profileGenerationStatus =
+      profileGenerationStatusRaw === "STREAMING" ||
+      profileGenerationStatusRaw === "READY" ||
+      profileGenerationStatusRaw === "FAILED"
+        ? profileGenerationStatusRaw
+        : "NOT_REQUESTED";
+    const profileGeneration: NonNullable<
+      NonNullable<ControllerGameState["matchslop"]>["profileGeneration"]
+    > = {
+      status: profileGenerationStatus,
+      updatedAt:
+        asString(asRecord(modeState?.profileGeneration)?.updatedAt) ??
+        new Date(0).toISOString(),
+    };
+
     const imageStatus = asString(image?.status);
     const resolvedImageStatus =
       imageStatus === "PENDING" ||
@@ -285,6 +258,7 @@ export async function findControllerPayload(
             },
           }
         : null,
+      profileGeneration,
       transcript: asTranscript(modeState?.transcript),
       writing: matchslopWriting,
     };
@@ -310,4 +284,23 @@ export async function findControllerPayload(
     voting,
     matchslop,
   };
+}
+
+export async function findControllerPayload(
+  roomCode: string,
+  playerId: string | null,
+  version?: number,
+  status?: GameStatus,
+): Promise<ControllerGameState | null> {
+  const resolvedStatus = status ?? (await findGameMeta(roomCode))?.status;
+  if (!resolvedStatus) return null;
+
+  const rawGame = await findGamePayloadByStatus(
+    roomCode,
+    resolvedStatus,
+    version == null ? undefined : `controller:${version}`,
+  );
+  if (!rawGame) return null;
+
+  return projectControllerPayload(normalizePayload(rawGame), playerId);
 }

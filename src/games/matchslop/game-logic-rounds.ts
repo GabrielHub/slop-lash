@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
-import { generatePersonaProfile, generatePersonaReply } from "./ai";
+import { generatePersonaReply } from "./ai";
 import {
   buildWritingDeadline,
   buildRoundPromptText,
@@ -102,7 +102,11 @@ export function resolveAdvancePlan(args: {
   };
 }
 
-async function createTurnRound(gameId: string, roundNumber: number): Promise<void> {
+async function createTurnRound(
+  gameId: string,
+  roundNumber: number,
+  options?: { startDeadline?: boolean },
+): Promise<void> {
   const [activePlayerIds, game] = await Promise.all([
     getActivePlayerIds(gameId),
     prisma.game.findUnique({
@@ -139,7 +143,8 @@ async function createTurnRound(gameId: string, roundNumber: number): Promise<voi
       status: "WRITING",
       votingPromptIndex: 0,
       votingRevealing: false,
-      phaseDeadline: buildWritingDeadline(game.timersDisabled),
+      phaseDeadline:
+        options?.startDeadline === false ? null : buildWritingDeadline(game.timersDisabled),
       version: { increment: 1 },
     },
   });
@@ -169,14 +174,6 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
       ? modeState.selectedPlayerExamples
       : selectPlayerExamples();
 
-  const { profile, usage } = await generatePersonaProfile(
-    game.personaModelId,
-    modeState.seekerIdentity,
-    modeState.personaIdentity,
-    sampledPersonaExamples,
-  );
-  await accumulateUsage(gameId, [usage]);
-
   await prisma.game.update({
     where: { id: gameId },
     data: {
@@ -185,9 +182,14 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
         ...modeState,
         selectedPersonaExampleIds: sampledPersonaExamples.map((example) => example.id),
         selectedPlayerExamples: sampledPlayerExamples,
-        profile,
+        profileDraft: null,
+        profileGeneration: {
+          status: "NOT_REQUESTED",
+          updatedAt: new Date().toISOString(),
+        },
+        profile: null,
         personaImage: {
-          status: "PENDING",
+          status: "NOT_REQUESTED",
           imageUrl: null,
           updatedAt: new Date().toISOString(),
         },
@@ -200,7 +202,7 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
     },
   });
 
-  await createTurnRound(gameId, roundNumber);
+  await createTurnRound(gameId, roundNumber, { startDeadline: false });
 }
 
 export async function advanceGame(gameId: string): Promise<boolean> {
@@ -246,6 +248,8 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     turn: game.currentRound,
     outcome: null,
     authorName: result.authorName,
+    selectedPromptText: game.currentRound === 1 ? (result.selectedPromptText ?? null) : null,
+    selectedPromptId: game.currentRound === 1 ? (result.selectedPromptId ?? null) : null,
   };
   const transcriptWithWinner = [...modeState.transcript, winnerEntry];
   const forceContinue = game.currentRound === 1;

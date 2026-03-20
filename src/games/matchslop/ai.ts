@@ -1,4 +1,4 @@
-import { createGateway, generateText, NoObjectGeneratedError, Output } from "ai";
+import { createGateway, generateText, NoObjectGeneratedError, Output, streamText } from "ai";
 import { z } from "zod";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import {
@@ -12,13 +12,16 @@ import {
   extractUsage,
   getLowReasoningProviderOptions,
   parseJsonText,
+  type AiCallOptions,
   type AiUsage,
 } from "@/games/ai-chat-showdown/ai";
 import type { MatchSlopPersonaSeed } from "./config/persona-examples";
+import { parseProfileDraft } from "./game-logic-core";
 import type {
   MatchSlopDecision,
   MatchSlopIdentity,
   MatchSlopProfile,
+  MatchSlopProfileDraft,
 } from "./types";
 
 const gateway = createGateway({
@@ -86,6 +89,13 @@ const falImageResponseSchema = z.object({
   has_nsfw_concepts: z.array(z.boolean()).optional(),
 });
 
+type PersonaProfileGenerationArgs = {
+  modelId: string;
+  seekerIdentity: MatchSlopIdentity;
+  personaIdentity: MatchSlopIdentity;
+  personaExamples: MatchSlopPersonaSeed[];
+};
+
 function getFalApiKey(): string {
   const apiKey = process.env.FAL_KEY ?? process.env.FAL_API_KEY;
   if (!apiKey) {
@@ -148,13 +158,8 @@ function buildFallbackPortraitPrompt(
     .join(" ");
 }
 
-export async function generatePersonaProfile(
-  modelId: string,
-  seekerIdentity: MatchSlopIdentity,
-  personaIdentity: MatchSlopIdentity,
-  personaExamples: MatchSlopPersonaSeed[],
-): Promise<{ profile: MatchSlopProfile; usage: AiUsage }> {
-  const examplesXml = personaExamples
+function buildPersonaExamplesXml(personaExamples: MatchSlopPersonaSeed[]): string {
+  return personaExamples
     .map(
       (example) => `<example id="${escapeXml(example.id)}">
 <backstory>${escapeXml(example.backstory)}</backstory>
@@ -169,8 +174,17 @@ export async function generatePersonaProfile(
 </example>`,
     )
     .join("\n");
+}
 
-  const result = await generateText({
+function buildPersonaProfileRequest({
+  modelId,
+  seekerIdentity,
+  personaIdentity,
+  personaExamples,
+}: PersonaProfileGenerationArgs) {
+  const examplesXml = buildPersonaExamplesXml(personaExamples);
+
+  return {
     model: gateway(modelId),
     system: `You create dating-app personas for MatchSlop, a comedy party game.
 
@@ -190,11 +204,58 @@ Start with a backstory (3-5 sentences: personality, contradictions, obsessions, 
       description: "A fake dating-app profile for MatchSlop",
     }),
     providerOptions: getLowReasoningProviderOptions(modelId),
-  });
+  } as const;
+}
+
+export async function generatePersonaProfile(
+  modelId: string,
+  seekerIdentity: MatchSlopIdentity,
+  personaIdentity: MatchSlopIdentity,
+  personaExamples: MatchSlopPersonaSeed[],
+): Promise<{ profile: MatchSlopProfile; usage: AiUsage }> {
+  const result = await generateText(
+    buildPersonaProfileRequest({
+      modelId,
+      seekerIdentity,
+      personaIdentity,
+      personaExamples,
+    }),
+  );
 
   return {
     profile: result.output.profile,
     usage: extractUsage(modelId, result.usage),
+  };
+}
+
+export async function streamPersonaProfile(
+  modelId: string,
+  seekerIdentity: MatchSlopIdentity,
+  personaIdentity: MatchSlopIdentity,
+  personaExamples: MatchSlopPersonaSeed[],
+  options?: {
+    onPartialProfile?: (profileDraft: MatchSlopProfileDraft) => Promise<void> | void;
+  },
+): Promise<{ profile: MatchSlopProfile; usage: AiUsage }> {
+  const result = streamText(
+    buildPersonaProfileRequest({
+      modelId,
+      seekerIdentity,
+      personaIdentity,
+      personaExamples,
+    }),
+  );
+
+  for await (const partialOutput of result.partialOutputStream) {
+    const profileDraft = parseProfileDraft(partialOutput?.profile);
+    if (!profileDraft) continue;
+    await options?.onPartialProfile?.(profileDraft);
+  }
+
+  const [output, usage] = await Promise.all([result.output, result.usage]);
+  return {
+    profile: output.profile,
+    usage: extractUsage(modelId, usage),
   };
 }
 
@@ -363,6 +424,7 @@ export async function generateAiOpener(
   modelId: string,
   profile: MatchSlopProfile,
   examples: string[],
+  options?: AiCallOptions,
 ): Promise<{
   selectedPromptId: string | null;
   text: string;
@@ -392,6 +454,7 @@ Pick one profile prompt to answer, then write a single line under 300 characters
 Respond with ONLY this JSON (no other text):
 {"selectedPromptId":"one of the provided prompt ids","line":"your opener"}`,
       prompt: `<tone-examples>\n${examplesList}\n</tone-examples>\n<profile><name>${escapeXml(profile.displayName)}</name><bio>${escapeXml(profile.bio)}</bio>${promptsXml}</profile>`,
+      abortSignal: options?.abortSignal,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -454,6 +517,7 @@ export async function generateAiFollowup(
   modelId: string,
   context: string,
   examples: string[],
+  options?: AiCallOptions,
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const examplesList = examples.map((e) => `- ${escapeXml(e)}`).join("\n");
 
@@ -471,6 +535,7 @@ Write one message under 300 characters that escalates or builds on the conversat
 Respond with ONLY this JSON (no other text):
 {"line":"your follow-up message"}`,
       prompt: `<tone-examples>\n${examplesList}\n</tone-examples>\n<conversation-context>${escapeXml(context)}</conversation-context>`,
+      abortSignal: options?.abortSignal,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -510,13 +575,14 @@ export async function generateAiFunnyVote(
   context: string,
   responses: Array<{ id: string; text: string }>,
   seed: number,
+  options?: AiCallOptions,
 ): Promise<{ chosenResponseId: string; usage: AiUsage; failReason: string | null }> {
   const labeledResponses = responses.map((response, index) => ({
     id: response.id,
     label: LABELS[index] ?? String(index),
     text: response.text,
   }));
-  return aiVoteNWay(modelId, context, labeledResponses, seed);
+  return aiVoteNWay(modelId, context, labeledResponses, seed, options);
 }
 
 const personaReplySchema = z.object({

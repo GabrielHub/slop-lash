@@ -6,7 +6,7 @@ import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
 import { publishGameStateEvent } from "@/lib/realtime-events";
-import { ensurePersonaImage } from "@/games/matchslop/persona-image";
+import { ensurePersonaProfile } from "@/games/matchslop/persona-profile";
 
 export async function POST(
   request: Request,
@@ -80,16 +80,17 @@ export async function POST(
     });
     await publishGameStateEvent(game.id);
     after(async () => {
+      if (game.gameType === "MATCHSLOP") {
+        await ensurePersonaProfile(game.id);
+        return;
+      }
+
       const tasks: Promise<unknown>[] = [
         (async () => {
           await def.handlers.generateAiResponses(game.id);
           await publishGameStateEvent(game.id);
         })(),
       ];
-
-      if (game.gameType === "MATCHSLOP") {
-        tasks.push(ensurePersonaImage(game.id));
-      }
 
       await Promise.allSettled(tasks);
     });

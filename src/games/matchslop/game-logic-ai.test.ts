@@ -109,8 +109,15 @@ describe("MatchSlop AI phase flow", () => {
       transcript: [],
     });
     coreMocks.buildVoteContext.mockReturnValue("context");
+    let openerAbortSignal: AbortSignal | undefined;
     aiMocks.generateAiOpener.mockImplementation(
-      () => new Promise(() => undefined),
+      (_modelId, _profile, _examples, options) =>
+        new Promise((_, reject) => {
+          openerAbortSignal = options?.abortSignal;
+          options?.abortSignal?.addEventListener("abort", () => {
+            reject(options.abortSignal?.reason);
+          });
+        }),
     );
     votingLogicMocks.checkAllResponsesIn.mockResolvedValue(true);
     votingLogicMocks.startVoting.mockResolvedValue(false);
@@ -119,6 +126,7 @@ describe("MatchSlop AI phase flow", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     await task;
 
+    expect(openerAbortSignal?.aborted).toBe(true);
     expect(prismaMock.response.create).toHaveBeenCalledWith({
       data: {
         promptId: "prompt-1",

@@ -94,12 +94,15 @@ async function fillMissingVotes(gameId: string): Promise<void> {
 export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceResult> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
-    select: { status: true, votingRevealing: true },
+    select: { status: true, votingRevealing: true, currentRound: true, modeState: true },
   });
   if (!game) return null;
 
   switch (game.status) {
     case "WRITING": {
+      if (game.currentRound === 1 && parseModeState(game.modeState).profile == null) {
+        return null;
+      }
       await fillPlaceholderResponses(gameId);
       const claimed = await startVoting(gameId);
       if (claimed) {

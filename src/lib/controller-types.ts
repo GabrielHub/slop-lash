@@ -24,6 +24,11 @@ export interface MatchSlopPersonaImageState {
   imageUrl: string | null;
 }
 
+export interface MatchSlopProfileGenerationState {
+  status: "NOT_REQUESTED" | "STREAMING" | "READY" | "FAILED";
+  updatedAt: string;
+}
+
 export interface MatchSlopPersonaDetailsState {
   job: string | null;
   school: string | null;
@@ -109,6 +114,7 @@ export interface ControllerGameState {
     aiVoteWeight: number;
     comebackRound: number | null;
     profile: MatchSlopProfileState | null;
+    profileGeneration?: MatchSlopProfileGenerationState | null;
     transcript: MatchSlopTranscriptEntry[];
     writing: MatchSlopWritingState | null;
   } | null;

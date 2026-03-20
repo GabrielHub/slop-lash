@@ -16,9 +16,13 @@ import type {
   MatchSlopIdentity,
   MatchSlopModeState,
   MatchSlopPersonaDetails,
+  MatchSlopPersonaDetailsDraft,
   MatchSlopPersonaImageState,
   MatchSlopProfile,
+  MatchSlopProfileDraft,
+  MatchSlopProfileGenerationState,
   MatchSlopProfilePrompt,
+  MatchSlopProfilePromptDraft,
   MatchSlopRoundResult,
   MatchSlopTranscriptOutcome,
   MatchSlopTranscriptEntry,
@@ -39,6 +43,22 @@ function parseProfilePrompt(value: unknown): MatchSlopProfilePrompt | null {
   return { id, prompt, answer };
 }
 
+function parseProfilePromptDraft(value: unknown): MatchSlopProfilePromptDraft | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const promptDraft: MatchSlopProfilePromptDraft = {};
+  const id = asString(record.id);
+  const prompt = asString(record.prompt);
+  const answer = asString(record.answer);
+
+  if (id) promptDraft.id = id;
+  if (prompt) promptDraft.prompt = prompt;
+  if (answer) promptDraft.answer = answer;
+
+  return Object.keys(promptDraft).length > 0 ? promptDraft : null;
+}
+
 export function parseDetails(value: unknown): MatchSlopPersonaDetails | null {
   const record = asRecord(value);
   if (!record) return null;
@@ -48,6 +68,24 @@ export function parseDetails(value: unknown): MatchSlopPersonaDetails | null {
     height: asString(record.height) ?? null,
     languages: asStringArray(record.languages),
   };
+}
+
+function parseDetailsDraft(value: unknown): MatchSlopPersonaDetailsDraft | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const detailsDraft: MatchSlopPersonaDetailsDraft = {};
+  const job = asString(record.job);
+  const school = asString(record.school);
+  const height = asString(record.height);
+  const languages = asStringArray(record.languages);
+
+  if (job != null) detailsDraft.job = job;
+  if (school != null) detailsDraft.school = school;
+  if (height != null) detailsDraft.height = height;
+  if (languages.length > 0) detailsDraft.languages = languages;
+
+  return Object.keys(detailsDraft).length > 0 ? detailsDraft : null;
 }
 
 function parseProfile(value: unknown): MatchSlopProfile | null {
@@ -76,6 +114,36 @@ function parseProfile(value: unknown): MatchSlopProfile | null {
   };
 }
 
+export function parseProfileDraft(value: unknown): MatchSlopProfileDraft | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const draft: MatchSlopProfileDraft = {};
+  const displayName = asString(record.displayName);
+  const backstory = asString(record.backstory);
+  const age = asNumber(record.age);
+  const location = asString(record.location);
+  const bio = asString(record.bio);
+  const tagline = asString(record.tagline);
+  const prompts = Array.isArray(record.prompts)
+    ? record.prompts
+        .map(parseProfilePromptDraft)
+        .filter((prompt): prompt is MatchSlopProfilePromptDraft => prompt != null)
+    : [];
+  const details = parseDetailsDraft(record.details);
+
+  if (displayName) draft.displayName = displayName;
+  if (backstory != null) draft.backstory = backstory;
+  if (age != null) draft.age = age;
+  if (location != null) draft.location = location;
+  if (bio != null) draft.bio = bio;
+  if (tagline != null) draft.tagline = tagline;
+  if (prompts.length > 0) draft.prompts = prompts;
+  if (details) draft.details = details;
+
+  return Object.keys(draft).length > 0 ? draft : null;
+}
+
 function parseTranscriptEntry(value: unknown, index: number): MatchSlopTranscriptEntry | null {
   const record = asRecord(value);
   if (!record) return null;
@@ -102,6 +170,8 @@ function parseTranscriptEntry(value: unknown, index: number): MatchSlopTranscrip
         ? outcome
         : null,
     authorName: asString(record.authorName),
+    selectedPromptText: asString(record.selectedPromptText) ?? null,
+    selectedPromptId: asString(record.selectedPromptId) ?? null,
   };
 }
 
@@ -134,6 +204,13 @@ function createInitialImageState(): MatchSlopPersonaImageState {
   };
 }
 
+function createInitialProfileGenerationState(): MatchSlopProfileGenerationState {
+  return {
+    status: "NOT_REQUESTED",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function createInitialModeState(
   seekerIdentity: MatchSlopIdentity,
   personaIdentity: MatchSlopIdentity,
@@ -148,6 +225,8 @@ export function createInitialModeState(
     selectedPlayerExamples: [],
     comebackRound: null,
     transcript: [],
+    profileDraft: null,
+    profileGeneration: createInitialProfileGenerationState(),
     profile: null,
     personaImage: createInitialImageState(),
     lastRoundResult: null,
@@ -159,7 +238,9 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
   const seekerIdentity = isIdentity(record?.seekerIdentity) ? record.seekerIdentity : "OTHER";
   const personaIdentity = isIdentity(record?.personaIdentity) ? record.personaIdentity : "OTHER";
   const imageRecord = asRecord(record?.personaImage);
+  const profileGenerationRecord = asRecord(record?.profileGeneration);
   const defaultImage = createInitialImageState();
+  const defaultProfileGeneration = createInitialProfileGenerationState();
 
   return {
     seekerIdentity,
@@ -181,6 +262,19 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
           .map((value, index) => parseTranscriptEntry(value, index))
           .filter((value): value is MatchSlopTranscriptEntry => value != null)
       : [],
+    profileDraft: parseProfileDraft(record?.profileDraft),
+    profileGeneration: {
+      ...defaultProfileGeneration,
+      ...profileGenerationRecord,
+      status:
+        profileGenerationRecord?.status === "STREAMING" ||
+        profileGenerationRecord?.status === "READY" ||
+        profileGenerationRecord?.status === "FAILED"
+          ? profileGenerationRecord.status
+          : defaultProfileGeneration.status,
+      updatedAt:
+        asString(profileGenerationRecord?.updatedAt) ?? defaultProfileGeneration.updatedAt,
+    },
     profile: parseProfile(record?.profile),
     personaImage: {
       ...defaultImage,

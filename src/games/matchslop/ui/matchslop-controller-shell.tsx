@@ -633,6 +633,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const isHost = !!(gameState && playerId && gameState.hostPlayerId === playerId);
   const activePlayerCount = gameState?.players.filter((p) => p.type !== "SPECTATOR").length ?? 0;
   const matchslop = gameState?.matchslop ?? null;
+  const profileGeneration = matchslop?.profileGeneration ?? null;
   const promptOptions = matchslop?.writing?.openerOptions ?? [];
   const prompts = matchslop?.profile?.prompts;
   const openerPromptById = useMemo(
@@ -650,7 +651,17 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const hasSubmittedCurrent = matchslop?.writing?.submitted || (matchslop?.writing?.promptId ? submittedPromptIds.has(matchslop.writing.promptId) : false);
   const comebackRound = matchslop?.comebackRound ?? null;
   const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
-  const isOpenerRound = promptOptions.length > 0;
+  const isOpenerRound = gameState?.currentRound === 1;
+  const isInitialProfilePending =
+    gameState?.status === "WRITING" &&
+    gameState.currentRound === 1 &&
+    matchslop?.profile == null &&
+    profileGeneration?.status !== "FAILED";
+  const isInitialProfileFailed =
+    gameState?.status === "WRITING" &&
+    gameState.currentRound === 1 &&
+    matchslop?.profile == null &&
+    profileGeneration?.status === "FAILED";
   const isOpenerVoting = currentVotePrompt?.responses.some((r) => r.openerPromptId) ?? false;
   const selectedOption = promptOptions.find((o) => o.id === selectedPromptId) ?? null;
   const personaName = matchslop?.profile?.displayName ?? "the persona";
@@ -777,7 +788,9 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
     isHost &&
     (gameState.status === "WRITING" ||
       gameState.status === "VOTING" ||
-      gameState.status === "ROUND_RESULTS");
+      gameState.status === "ROUND_RESULTS") &&
+    !isInitialProfilePending &&
+    !isInitialProfileFailed;
 
   return (
     <>
@@ -849,7 +862,17 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
 
             {gameState.status === "WRITING" && (
               <div className="space-y-4">
-                {hasSubmittedCurrent ? (
+                {isInitialProfilePending ? (
+                  <CompletionCard
+                    title="Building profile"
+                    subtitle="The persona is still generating. Writing opens as soon as the prompts are ready."
+                  />
+                ) : isInitialProfileFailed ? (
+                  <CompletionCard
+                    title="Profile failed"
+                    subtitle="The persona could not be generated. Ask the host to end the game and start again."
+                  />
+                ) : hasSubmittedCurrent ? (
                   <CompletionCard
                     title="Submitted!"
                     subtitle={isComebackRound

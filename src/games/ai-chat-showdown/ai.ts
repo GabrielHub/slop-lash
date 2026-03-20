@@ -131,6 +131,10 @@ export interface AiNWayVoteResult {
   failReason: string | null;
 }
 
+export type AiCallOptions = {
+  abortSignal?: AbortSignal;
+};
+
 const nWayVoteSchema = z.object({
   vote: z.string(),
 });
@@ -155,6 +159,7 @@ export async function aiVoteNWay(
   promptText: string,
   responses: VotableResponse[],
   deterministicSeed: number,
+  options?: AiCallOptions,
 ): Promise<AiNWayVoteResult> {
   if (responses.length === 0) {
     return { chosenResponseId: "", usage: { ...ZERO_USAGE, modelId }, failReason: "no-candidates" };
@@ -176,6 +181,7 @@ export async function aiVoteNWay(
       model: gateway(modelId),
       system: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
+      abortSignal: options?.abortSignal,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 

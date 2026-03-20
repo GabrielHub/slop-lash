@@ -36,6 +36,9 @@ function buildMatchSlopResponseMetadata(
   }
 
   const profile = parseModeState(modeStateRaw).profile;
+  if (!profile) {
+    return { error: "The MatchSlop profile is still generating" };
+  }
   const selectedPrompt = profile?.prompts.find((prompt) => prompt.id === selectedPromptId);
   if (!selectedPrompt) {
     return { error: "Selected MatchSlop prompt is invalid" };

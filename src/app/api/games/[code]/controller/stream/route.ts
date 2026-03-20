@@ -182,7 +182,12 @@ export async function GET(
           return true;
         }
 
-        const payload = await findControllerPayload(roomCode, resolvedPlayerId, meta.version);
+        const payload = await findControllerPayload(
+          roomCode,
+          resolvedPlayerId,
+          meta.version,
+          meta.status,
+        );
         if (!payload) {
           enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
           return false;

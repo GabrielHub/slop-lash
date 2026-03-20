@@ -59,23 +59,26 @@ function buildTimeoutError(label: string, timeoutMs: number): Error {
 }
 
 async function withTimeout<T>(
-  promise: Promise<T>,
+  operation: (abortSignal: AbortSignal) => Promise<T>,
   timeoutMs: number,
   label: string,
 ): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(buildTimeoutError(label, timeoutMs));
+  }, timeoutMs);
 
   try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(buildTimeoutError(label, timeoutMs));
-        }, timeoutMs);
-      }),
-    ]);
+    return await operation(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw controller.signal.reason instanceof Error
+        ? controller.signal.reason
+        : buildTimeoutError(label, timeoutMs);
+    }
+    throw error;
   } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
   }
 }
 
@@ -144,7 +147,10 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
         const openerResult =
           game.currentRound === 1
             ? await withTimeout(
-                generateAiOpener(player.modelId, profile, playerExamples),
+                (abortSignal) =>
+                  generateAiOpener(player.modelId, profile, playerExamples, {
+                    abortSignal,
+                  }),
                 AI_RESPONSE_TIMEOUT_MS,
                 `MatchSlop opener for ${player.id}`,
               )
@@ -153,7 +159,10 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
           game.currentRound === 1
             ? null
             : await withTimeout(
-                generateAiFollowup(player.modelId, context, playerExamples),
+                (abortSignal) =>
+                  generateAiFollowup(player.modelId, context, playerExamples, {
+                    abortSignal,
+                  }),
                 AI_RESPONSE_TIMEOUT_MS,
                 `MatchSlop follow-up for ${player.id}`,
               );
@@ -308,12 +317,14 @@ async function doGenerateAiVotes(gameId: string): Promise<void> {
 
     try {
       const vote = await withTimeout(
-        generateAiFunnyVote(
-          player.modelId,
-          context,
-          options.map((response) => ({ id: response.id, text: response.text })),
-          simpleHash(`${gameId}:${round.roundNumber}:${player.id}`),
-        ),
+        (abortSignal) =>
+          generateAiFunnyVote(
+            player.modelId,
+            context,
+            options.map((response) => ({ id: response.id, text: response.text })),
+            simpleHash(`${gameId}:${round.roundNumber}:${player.id}`),
+            { abortSignal },
+          ),
         AI_VOTE_TIMEOUT_MS,
         `MatchSlop vote for ${player.id}`,
       );
