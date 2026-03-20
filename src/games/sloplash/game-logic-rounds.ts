@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { WRITING_DURATION_SECONDS } from "./game-constants";
 import { assignPrompts } from "./game-logic-core";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
+import { resolveWinnerTaglinePlaceholder } from "./winner-tagline";
 
 /**
  * Create the round and set the game to WRITING. Fast DB-only operation.
@@ -54,7 +55,15 @@ export async function startRound(gameId: string, roundNumber: number): Promise<v
 export async function advanceGame(gameId: string): Promise<boolean> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
-    select: { currentRound: true, totalRounds: true },
+    select: {
+      currentRound: true,
+      totalRounds: true,
+      players: {
+        take: 1,
+        orderBy: [{ score: "desc" }, { id: "asc" }],
+        select: { id: true, score: true, type: true, modelId: true },
+      },
+    },
   });
 
   if (!game) return false;
@@ -62,7 +71,11 @@ export async function advanceGame(gameId: string): Promise<boolean> {
   if (game.currentRound >= game.totalRounds) {
     await prisma.game.update({
       where: { id: gameId },
-      data: { status: "FINAL_RESULTS", winnerTagline: null, version: { increment: 1 } },
+      data: {
+        status: "FINAL_RESULTS",
+        winnerTagline: resolveWinnerTaglinePlaceholder(game.players),
+        version: { increment: 1 },
+      },
     });
     return false;
   }

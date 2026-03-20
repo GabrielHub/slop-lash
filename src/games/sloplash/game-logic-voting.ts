@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getActivePlayerIds } from "./game-logic-core";
 import { FORFEIT_TEXT } from "./ai";
 import { REVEAL_SECONDS, VOTE_PER_PROMPT_SECONDS } from "./game-constants";
 
@@ -84,13 +85,17 @@ export async function checkAllVotesForCurrentPrompt(gameId: string): Promise<boo
   const currentPrompt = votablePrompts[game.votingPromptIndex];
   if (!currentPrompt) return false;
 
-  const playerCount = await prisma.player.count({
-    where: { gameId, type: { not: "SPECTATOR" } },
-  });
-  const respondentCount = currentPrompt.responses.length;
-  const eligibleVoterCount = playerCount - respondentCount;
+  const activePlayerIds = await getActivePlayerIds(gameId);
+  const respondentIds = new Set(currentPrompt.responses.map((response) => response.playerId));
+  const eligibleVoterIds = activePlayerIds.filter((playerId) => !respondentIds.has(playerId));
+  const eligibleVoterIdSet = new Set(eligibleVoterIds);
+  const castVoterIds = new Set(
+    currentPrompt.votes
+      .map((vote) => vote.voterId)
+      .filter((voterId) => eligibleVoterIdSet.has(voterId)),
+  );
 
-  return currentPrompt.votes.length >= eligibleVoterCount;
+  return castVoterIds.size >= eligibleVoterIds.length;
 }
 
 /**
@@ -108,22 +113,19 @@ export async function fillAbstainVotes(gameId: string): Promise<void> {
   const currentPrompt = votablePrompts[game.votingPromptIndex];
   if (!currentPrompt) return;
 
-  const players = await prisma.player.findMany({
-    where: { gameId, type: { not: "SPECTATOR" } },
-    select: { id: true },
-  });
+  const activePlayerIds = await getActivePlayerIds(gameId);
   const respondentIds = new Set(currentPrompt.responses.map((r) => r.playerId));
   const existingVoterIds = new Set(currentPrompt.votes.map((v) => v.voterId));
 
-  const missingVoters = players.filter(
-    (p) => !respondentIds.has(p.id) && !existingVoterIds.has(p.id),
+  const missingVoters = activePlayerIds.filter(
+    (playerId) => !respondentIds.has(playerId) && !existingVoterIds.has(playerId),
   );
 
   if (missingVoters.length > 0) {
     await prisma.vote.createMany({
-      data: missingVoters.map((p) => ({
+      data: missingVoters.map((playerId) => ({
         promptId: currentPrompt.id,
-        voterId: p.id,
+        voterId: playerId,
       })),
       skipDuplicates: true,
     });

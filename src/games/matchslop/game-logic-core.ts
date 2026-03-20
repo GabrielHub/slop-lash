@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getActivePlayerIds as getSharedActivePlayerIds } from "@/games/core/active-players";
 import {
   MATCHSLOP_AI_VOTE_WEIGHT,
   MATCHSLOP_HUMAN_VOTE_WEIGHT,
@@ -476,8 +477,7 @@ export async function getActivePlayers(gameId: string) {
 }
 
 export async function getActivePlayerIds(gameId: string): Promise<string[]> {
-  const players = await getActivePlayers(gameId);
-  return players.map((player) => player.id);
+  return getSharedActivePlayerIds(gameId);
 }
 
 function sampleItems<T>(items: T[], count: number): T[] {

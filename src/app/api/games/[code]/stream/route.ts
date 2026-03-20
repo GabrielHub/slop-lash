@@ -1,4 +1,5 @@
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { shouldEndGameStream } from "@/lib/game-stream-lifecycle";
 import type { GameMetaPayload } from "../route-data";
 import { findGameMeta, findGamePayloadByStatus, normalizePayload } from "../route-data";
 import { stripUnrevealedVotes } from "../route-helpers";
@@ -10,16 +11,6 @@ export const dynamic = "force-dynamic";
 
 function getStateKey(meta: GameMetaPayload): string {
   return `${meta.version}:${meta.reactionsVersion}`;
-}
-
-function shouldEndGameStream(state: ReturnType<typeof normalizePayload>): boolean {
-  if (state.status !== "FINAL_RESULTS") return false;
-
-  const postMortemGeneration = (state.modeState as Record<string, unknown> | undefined)
-    ?.postMortemGeneration as Record<string, unknown> | undefined;
-  const status = postMortemGeneration?.status;
-
-  return status !== "NOT_REQUESTED" && status !== "STREAMING";
 }
 
 export async function GET(

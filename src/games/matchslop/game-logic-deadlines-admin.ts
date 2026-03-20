@@ -9,7 +9,6 @@ import {
   revealCurrentPrompt,
   startVoting,
 } from "./game-logic-voting";
-import { generateAiVotes } from "./game-logic-ai";
 import { HOST_STALE_MS } from "./game-constants";
 
 function toJson(value: unknown): Prisma.InputJsonValue {
@@ -105,9 +104,6 @@ export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceRes
       }
       await fillPlaceholderResponses(gameId);
       const claimed = await startVoting(gameId);
-      if (claimed) {
-        await generateAiVotes(gameId);
-      }
       return claimed ? "VOTING" : null;
     }
     case "VOTING": {

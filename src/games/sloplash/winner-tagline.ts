@@ -1,10 +1,23 @@
 import { prisma } from "@/lib/db";
 import { withGameOperationLock } from "@/lib/game-operation-lock";
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import {
+  pickTopScoringPlayer,
+  sortPlayersByScore,
+} from "@/games/core/player-rankings";
+import type { PlayerType } from "@/lib/types";
 import { FORFEIT_TEXT, generateWinnerTagline } from "./ai";
 import { accumulateUsage } from "./game-logic-ai";
 
 export const WINNER_TAGLINE_GENERATING = "__generating__";
+
+type WinnerTaglineCandidate = {
+  id: string;
+  name?: string;
+  score: number;
+  type: PlayerType;
+  modelId: string | null;
+};
 
 export function normalizeWinnerTagline(value: string | null | undefined): string | null {
   if (value == null || value === WINNER_TAGLINE_GENERATING) {
@@ -12,6 +25,16 @@ export function normalizeWinnerTagline(value: string | null | undefined): string
   }
 
   return value;
+}
+
+export function resolveWinnerTaglinePlaceholder(
+  players: WinnerTaglineCandidate[],
+): string | null {
+  const leader = pickTopScoringPlayer(players);
+
+  return leader?.type === "AI" && leader.modelId
+    ? WINNER_TAGLINE_GENERATING
+    : null;
 }
 
 export async function ensureWinnerTagline(gameId: string): Promise<boolean> {
@@ -24,7 +47,6 @@ export async function ensureWinnerTagline(gameId: string): Promise<boolean> {
         status: true,
         winnerTagline: true,
         players: {
-          orderBy: { score: "desc" },
           select: {
             id: true,
             name: true,
@@ -64,7 +86,7 @@ export async function ensureWinnerTagline(gameId: string): Promise<boolean> {
     if (game.status !== "ROUND_RESULTS" && game.status !== "FINAL_RESULTS") return false;
     if (game.winnerTagline && game.winnerTagline !== WINNER_TAGLINE_GENERATING) return false;
 
-    const leader = game.players[0];
+    const leader = pickTopScoringPlayer(game.players);
     if (!leader || leader.type !== "AI" || !leader.modelId) return false;
 
     const isFinal = game.status === "FINAL_RESULTS";
@@ -80,7 +102,7 @@ export async function ensureWinnerTagline(gameId: string): Promise<boolean> {
       });
     }
 
-    const scoreBoard = game.players
+    const scoreBoard = sortPlayersByScore(game.players)
       .map((player, index) => `${index + 1}. ${player.name} (${player.type}) - ${player.score} pts`)
       .join("\n");
 

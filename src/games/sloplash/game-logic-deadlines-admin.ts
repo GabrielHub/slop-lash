@@ -4,12 +4,14 @@ import { applyScoreResult, FORFEIT_MARKER, scorePrompt, type PlayerState } from 
 import type { PlayerType } from "@/lib/types";
 import type { PhaseAdvanceResult } from "@/games/core";
 import { advanceGame } from "./game-logic-rounds";
+import { getActivePlayerIds } from "./game-logic-core";
 import {
   fillAbstainVotes,
   getVotablePrompts,
   revealCurrentPrompt,
   startVoting,
 } from "./game-logic-voting";
+import { resolveWinnerTaglinePlaceholder } from "./winner-tagline";
 
 function toPlayerType(value: string): PlayerType {
   if (value === "AI" || value === "SPECTATOR") return value;
@@ -57,7 +59,7 @@ export async function advanceToNextPrompt(gameId: string): Promise<"VOTING_SUBPH
   return "VOTING_SUBPHASE";
 }
 
-async function applyRoundScores(gameId: string): Promise<void> {
+async function applyRoundScores(gameId: string): Promise<string | null> {
   const [round, players] = await Promise.all([
     prisma.round.findFirst({
       where: { gameId },
@@ -81,11 +83,11 @@ async function applyRoundScores(gameId: string): Promise<void> {
     }),
     prisma.player.findMany({
       where: { gameId, type: { not: "SPECTATOR" } },
-      select: { id: true, type: true, score: true, humorRating: true, winStreak: true },
+      select: { id: true, type: true, modelId: true, score: true, humorRating: true, winStreak: true },
     }),
   ]);
 
-  if (!round) return;
+  if (!round) return null;
 
   const playerStates = new Map<string, PlayerState>(
     players.map((p) => [p.id, { score: p.score, humorRating: p.humorRating, winStreak: p.winStreak }]),
@@ -142,6 +144,15 @@ async function applyRoundScores(gameId: string): Promise<void> {
       }),
     ),
   ]);
+
+  return resolveWinnerTaglinePlaceholder(
+    players.map((player) => ({
+      id: player.id,
+      score: playerStates.get(player.id)?.score ?? player.score,
+      type: player.type,
+      modelId: player.modelId,
+    })),
+  );
 }
 
 function getRoundResultsDeadline(params: {
@@ -178,12 +189,15 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
   });
   if (claim.count === 0) return;
 
-  await applyRoundScores(gameId);
+  const winnerTagline = await applyRoundScores(gameId);
 
   // Bump version so pollers see the updated scores
   await prisma.game.update({
     where: { id: gameId },
-    data: { version: { increment: 1 } },
+    data: {
+      version: { increment: 1 },
+      winnerTagline,
+    },
   });
 }
 
@@ -324,44 +338,69 @@ export async function checkAndEnforceDeadline(gameId: string): Promise<PhaseAdva
 export async function endGameEarly(gameId: string): Promise<void> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
-    select: { status: true },
+    select: {
+      status: true,
+      players: {
+        take: 1,
+        orderBy: [{ score: "desc" }, { id: "asc" }],
+        select: { id: true, score: true, type: true, modelId: true },
+      },
+    },
   });
   if (!game || game.status === "LOBBY" || game.status === "FINAL_RESULTS") return;
 
+  const initialWinnerTagline =
+    game.status === "ROUND_RESULTS"
+      ? resolveWinnerTaglinePlaceholder(game.players)
+      : null;
+
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: game.status },
-    data: { status: "FINAL_RESULTS", phaseDeadline: null, winnerTagline: null, version: { increment: 1 } },
+    data: {
+      status: "FINAL_RESULTS",
+      phaseDeadline: null,
+      winnerTagline: initialWinnerTagline,
+      version: { increment: 1 },
+    },
   });
   if (claim.count === 0) return;
 
+  let finalWinnerTagline = initialWinnerTagline;
   if (game.status === "WRITING" || game.status === "VOTING") {
     await fillPlaceholderResponses(gameId);
     if (game.status === "VOTING") {
       await fillAbstainVotesForAllPrompts(gameId);
     }
-    await applyRoundScores(gameId);
+    finalWinnerTagline = await applyRoundScores(gameId);
+  }
+
+  if (game.status !== "ROUND_RESULTS" && finalWinnerTagline !== initialWinnerTagline) {
+    await prisma.game.update({
+      where: { id: gameId },
+      data: {
+        winnerTagline: finalWinnerTagline,
+        version: { increment: 1 },
+      },
+    });
   }
 }
 
 /** Record non-voters as abstentions across all votable prompts. */
 async function fillAbstainVotesForAllPrompts(gameId: string): Promise<void> {
-  const [votablePrompts, allPlayers] = await Promise.all([
+  const [votablePrompts, activePlayerIds] = await Promise.all([
     getVotablePrompts(gameId),
-    prisma.player.findMany({
-      where: { gameId, type: { not: "SPECTATOR" } },
-      select: { id: true },
-    }),
+    getActivePlayerIds(gameId),
   ]);
 
   for (const prompt of votablePrompts) {
     const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
     const existingVoterIds = new Set(prompt.votes.map((v) => v.voterId));
-    const missing = allPlayers.filter(
-      (p) => !respondentIds.has(p.id) && !existingVoterIds.has(p.id),
+    const missing = activePlayerIds.filter(
+      (playerId) => !respondentIds.has(playerId) && !existingVoterIds.has(playerId),
     );
     if (missing.length > 0) {
       await prisma.vote.createMany({
-        data: missing.map((p) => ({ promptId: prompt.id, voterId: p.id })),
+        data: missing.map((playerId) => ({ promptId: prompt.id, voterId: playerId })),
         skipDuplicates: true,
       });
     }

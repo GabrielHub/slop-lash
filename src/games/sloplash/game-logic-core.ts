@@ -1,3 +1,4 @@
+export { getActivePlayerIds } from "@/games/core/active-players";
 import { getRandomPrompts } from "@/games/core/prompts";
 import { FORFEIT_TEXT, type RoundHistoryEntry } from "./ai";
 

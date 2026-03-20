@@ -1,5 +1,6 @@
 import type { GameStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { sortPlayersByScore } from "@/games/core/player-rankings";
 import { modelUsagesInclude, roundsInclude, roundsIncludeWriting, roundsIncludeActive } from "@/games/core/queries";
 import { createTimedCache } from "@/lib/timed-cache";
 import {
@@ -124,6 +125,7 @@ export function normalizePayload(game: unknown): NormalizedGameRoutePayload {
     aiOutputTokens: (g.aiOutputTokens as number) ?? 0,
     aiCostUsd: (g.aiCostUsd as number) ?? 0,
     modelUsages: (g.modelUsages as GameRoutePayload["modelUsages"]) ?? [],
+    players: sortPlayersByScore((g.players as GameRoutePayload["players"]) ?? []),
     rounds: (g.rounds as GameRoutePayload["rounds"]) ?? [],
   } as NormalizedGameRoutePayload;
 }

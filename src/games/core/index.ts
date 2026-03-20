@@ -8,6 +8,12 @@ export type {
 } from "./types";
 
 export { resolveGameType } from "./resolve-game-type";
+export { getActivePlayerIds } from "./active-players";
+export {
+  comparePlayersByScore,
+  sortPlayersByScore,
+  pickTopScoringPlayer,
+} from "./player-rankings";
 
 export { LEADERBOARD_TAG, FORFEIT_MARKER } from "./constants";
 export { getRandomPrompts } from "./prompts";

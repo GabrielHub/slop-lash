@@ -2,18 +2,8 @@
 
 import { useCallback } from "react";
 import type { GameState } from "@/lib/types";
+import { shouldKeepGameStreamAlive } from "@/lib/game-stream-lifecycle";
 import { useStateStream } from "./use-state-stream";
-
-function shouldKeepGameStreamAlive(state: GameState | null): boolean {
-  if (!state) return true;
-  if (state.status !== "FINAL_RESULTS") return true;
-
-  const modeState = state.modeState as Record<string, unknown> | undefined;
-  const postMortemGeneration = modeState?.postMortemGeneration as Record<string, unknown> | undefined;
-  const status = postMortemGeneration?.status;
-
-  return status === "NOT_REQUESTED" || status === "STREAMING";
-}
 
 export function useGameStream(
   code: string,
