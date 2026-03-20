@@ -5,8 +5,10 @@ import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
+import { runAiResponsesGeneration } from "@/games/core/runtime";
 import { publishGameStateEvent } from "@/lib/realtime-events";
-import { ensurePersonaProfile } from "@/games/matchslop/persona-profile";
+import { ensurePersonaProfile, runPostProfileTasks } from "@/games/matchslop/persona-profile";
+import { buildWritingDeadline, parseModeState } from "@/games/matchslop/game-logic-core";
 
 export async function POST(
   request: Request,
@@ -33,6 +35,7 @@ export async function POST(
       status: true,
       hostPlayerId: true,
       hostControlTokenHash: true,
+      modeState: true,
       players: { select: { type: true } },
     },
   });
@@ -81,14 +84,52 @@ export async function POST(
     await publishGameStateEvent(game.id);
     after(async () => {
       if (game.gameType === "MATCHSLOP") {
+        const latestGame = await prisma.game.findUnique({
+          where: { id: game.id },
+          select: {
+            currentRound: true,
+            modeState: true,
+            phaseDeadline: true,
+            status: true,
+            timersDisabled: true,
+          },
+        });
+        if (!latestGame) return;
+
+        const modeState = parseModeState(latestGame.modeState);
+        const profileReady =
+          modeState.profile != null || modeState.profileGeneration.status === "READY";
+
+        if (profileReady) {
+          if (
+            latestGame.status === "WRITING" &&
+            latestGame.currentRound === 1 &&
+            latestGame.phaseDeadline == null
+          ) {
+            await prisma.game.update({
+              where: { id: game.id },
+              data: {
+                phaseDeadline: buildWritingDeadline(latestGame.timersDisabled),
+                version: { increment: 1 },
+              },
+            });
+            await publishGameStateEvent(game.id);
+          }
+
+          await runPostProfileTasks(game.id);
+          return;
+        }
+
         await ensurePersonaProfile(game.id);
         return;
       }
 
       const tasks: Promise<unknown>[] = [
         (async () => {
-          await def.handlers.generateAiResponses(game.id);
-          await publishGameStateEvent(game.id);
+          const ran = await runAiResponsesGeneration(game.id, game.gameType);
+          if (ran) {
+            await publishGameStateEvent(game.id);
+          }
         })(),
       ];
 

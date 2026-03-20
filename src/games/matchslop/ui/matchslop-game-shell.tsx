@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { PulsingDot } from "@/components/pulsing-dot";
@@ -11,8 +11,11 @@ import { PlayerAvatar } from "@/components/player-avatar";
 import {
   fadeInUp,
   popIn,
+  phaseTransition,
+  collapseExpand,
   slideInLeft,
   slideInRight,
+  springDefault,
   springGentle,
   staggerContainer,
   staggerContainerSlow,
@@ -37,6 +40,7 @@ export type MatchSlopPersonaImageState = {
 export type MatchSlopProfileGenerationState = {
   status?: "NOT_REQUESTED" | "STREAMING" | "READY" | "FAILED";
   updatedAt?: string;
+  generationId?: string | null;
 };
 
 export type MatchSlopProfilePrompt = {
@@ -84,6 +88,25 @@ type MatchSlopRoundResult = {
   selectedPromptId?: string | null;
 };
 
+type PostMortemCalloutLocal = {
+  playerName?: string;
+  verdict?: string;
+  favoriteLine?: string | null;
+};
+
+type PostMortemDataLocal = {
+  opening?: string;
+  playerCallouts?: PostMortemCalloutLocal[];
+  favoriteMoment?: string;
+  finalThought?: string;
+};
+
+type MatchSlopPostMortemGenerationStateLocal = {
+  status?: "NOT_REQUESTED" | "STREAMING" | "READY" | "FAILED";
+  updatedAt?: string;
+  generationId?: string | null;
+};
+
 type MatchSlopModeState = {
   seekerIdentity?: MatchSlopIdentity | string | null;
   personaIdentity?: MatchSlopIdentity | string | null;
@@ -100,6 +123,9 @@ type MatchSlopModeState = {
   personaImage?: MatchSlopPersonaImageState | null;
   lastRoundResult?: MatchSlopRoundResult | null;
   mood?: number;
+  postMortemGeneration?: MatchSlopPostMortemGenerationStateLocal | null;
+  postMortemDraft?: PostMortemDataLocal | null;
+  postMortem?: PostMortemDataLocal | null;
 };
 
 import {
@@ -200,6 +226,15 @@ function CrownIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M2 19h20v2H2v-2zm1.2-5.6L2 5l4.8 4.8L12 2l5.2 7.8L22 5l-1.2 8.4H3.2z" />
+    </svg>
+  );
+}
+
+function SwipeLeftIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5" />
+      <path d="M12 19l-7-7 7-7" />
     </svg>
   );
 }
@@ -378,22 +413,19 @@ export function ProfileCard({
   profileGeneration,
   outcome,
   mood,
+  gameStarted,
 }: {
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState | null;
   profileGeneration: MatchSlopProfileGenerationState | null;
   outcome: Outcome;
   mood: number;
+  gameStarted: boolean;
 }) {
   const imageStatus = personaImage?.status ?? "NOT_REQUESTED";
   const isProfileStreaming =
     profileGeneration?.status === "STREAMING" ||
     (profileGeneration?.status !== "FAILED" && !profile?.displayName);
-  const bioText =
-    profile?.bio ??
-    (isProfileStreaming
-      ? "As the model fills in the details, the profile will build itself here in real time."
-      : "The persona profile is being generated...");
   const displayName = profile?.displayName ?? (isProfileStreaming ? "Building persona" : "AI Persona");
 
   return (
@@ -437,7 +469,9 @@ export function ProfileCard({
               >
                 {imageStatus === "PENDING" || imageStatus === "PROCESSING"
                   ? "Generating portrait..."
-                  : "Awaiting portrait"}
+                  : isProfileStreaming
+                    ? "Building persona first..."
+                    : "Awaiting portrait"}
               </p>
             </div>
           </div>
@@ -490,122 +524,151 @@ export function ProfileCard({
         </div>
       </div>
 
-      {/* Mood Meter */}
-      {outcome === "IN_PROGRESS" && (
-        <div
-          style={{
-            padding: "0 clamp(1rem, 2vw, 2rem)",
-            borderTop: "1px solid var(--ms-edge)",
-          }}
-        >
-          <MoodMeter mood={mood} />
-        </div>
-      )}
-
-      {/* Bio + Tagline */}
-      <div className="p-[clamp(1rem,2vw,2rem)]" style={{ borderTop: "1px solid var(--ms-edge)" }}>
-        {profile?.tagline && (
-          <p
-            className="font-display font-semibold italic mb-3"
-            style={{
-              fontSize: "clamp(0.9rem, 1.3vw, 1.4rem)",
-              color: "var(--ms-rose)",
-            }}
-          >
-            &ldquo;{profile.tagline}&rdquo;
-          </p>
-        )}
-        <p
-          className="leading-relaxed"
-          style={{
-            fontSize: "clamp(0.85rem, 1.1vw, 1.2rem)",
-            color: "var(--ms-ink)",
-          }}
-        >
-          {bioText}
-        </p>
-
-        {/* Detail badges */}
-        <div className="flex flex-wrap items-center gap-2 mt-4">
-          {profile?.details?.job && (
-            <span
-              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
-              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
-            >
-              {profile.details.job}
-            </span>
-          )}
-          {profile?.details?.school && (
-            <span
-              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
-              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
-            >
-              {profile.details.school}
-            </span>
-          )}
-          {profile?.details?.height && (
-            <span
-              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
-              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
-            >
-              {profile.details.height}
-            </span>
-          )}
-          {profile?.details?.languages && profile.details.languages.length > 0 && (
-            <span
-              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
-              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
-            >
-              {profile.details.languages.join(", ")}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Prompt cards */}
-      {profile?.prompts && profile.prompts.length > 0 && (
-        <div className="p-[clamp(1rem,2vw,2rem)] pt-0">
+      {/* Mood Meter — only after game starts */}
+      <AnimatePresence>
+        {outcome === "IN_PROGRESS" && gameStarted && (
           <motion.div
-            className="space-y-3"
-            variants={staggerContainerSlow}
+            key="mood-meter"
+            style={{
+              padding: "0 clamp(1rem, 2vw, 2rem)",
+              borderTop: "1px solid var(--ms-edge)",
+            }}
+            variants={collapseExpand}
             initial="hidden"
             animate="visible"
+            exit="exit"
           >
-            {profile.prompts.slice(0, 3).map((prompt, i) => (
-              <motion.div
-                key={prompt.id ?? `prompt-${i}`}
-                className="rounded-2xl p-[clamp(0.75rem,1.5vw,1.5rem)] ms-profile-shimmer"
+            <MoodMeter mood={mood} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bio + Tagline — only show when there's actual content */}
+      <AnimatePresence>
+        {(profile?.tagline || profile?.bio || profile?.details) && (
+          <motion.div
+            key="bio-section"
+            className="p-[clamp(1rem,2vw,2rem)]"
+            style={{ borderTop: "1px solid var(--ms-edge)" }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+          >
+            {profile?.tagline && (
+              <p
+                className="font-display font-semibold italic mb-3"
                 style={{
-                  background: "var(--ms-raised)",
-                  border: "1px solid var(--ms-edge)",
+                  fontSize: "clamp(0.9rem, 1.3vw, 1.4rem)",
+                  color: "var(--ms-rose)",
                 }}
-                variants={fadeInUp}
               >
-                <p
-                  className="font-display font-semibold"
-                  style={{
-                    fontSize: "clamp(0.75rem, 1vw, 1rem)",
-                    color: "var(--ms-rose)",
-                  }}
+                &ldquo;{profile.tagline}&rdquo;
+              </p>
+            )}
+            {profile?.bio && (
+              <p
+                className="leading-relaxed"
+                style={{
+                  fontSize: "clamp(0.85rem, 1.1vw, 1.2rem)",
+                  color: "var(--ms-ink)",
+                }}
+              >
+                {profile.bio}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              {profile?.details?.job && (
+                <span
+                  className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+                  style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
                 >
-                  {prompt.prompt ?? "Prompt"}
-                </p>
-                {prompt.answer && (
+                  {profile.details.job}
+                </span>
+              )}
+              {profile?.details?.school && (
+                <span
+                  className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+                  style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+                >
+                  {profile.details.school}
+                </span>
+              )}
+              {profile?.details?.height && (
+                <span
+                  className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+                  style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+                >
+                  {profile.details.height}
+                </span>
+              )}
+              {profile?.details?.languages && profile.details.languages.length > 0 && (
+                <span
+                  className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+                  style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+                >
+                  {profile.details.languages.join(", ")}
+                </span>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Prompt cards */}
+      <AnimatePresence>
+        {profile?.prompts && profile.prompts.length > 0 && (
+          <motion.div
+            key="prompt-cards"
+            className="p-[clamp(1rem,2vw,2rem)] pt-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <motion.div
+              className="space-y-3"
+              variants={staggerContainerSlow}
+              initial="hidden"
+              animate="visible"
+            >
+              {profile.prompts.slice(0, 3).map((prompt, i) => (
+                <motion.div
+                  key={prompt.id ?? `prompt-${i}`}
+                  className="rounded-2xl p-[clamp(0.75rem,1.5vw,1.5rem)] ms-profile-shimmer"
+                  style={{
+                    background: "var(--ms-raised)",
+                    border: "1px solid var(--ms-edge)",
+                  }}
+                  variants={fadeInUp}
+                >
                   <p
-                    className="mt-1 leading-relaxed"
+                    className="font-display font-semibold"
                     style={{
-                      fontSize: "clamp(0.8rem, 1.1vw, 1.15rem)",
-                      color: "var(--ms-ink)",
+                      fontSize: "clamp(0.75rem, 1vw, 1rem)",
+                      color: "var(--ms-rose)",
                     }}
                   >
-                    {prompt.answer}
+                    {prompt.prompt ?? "Prompt"}
                   </p>
-                )}
-              </motion.div>
-            ))}
+                  {prompt.answer && (
+                    <p
+                      className="mt-1 leading-relaxed"
+                      style={{
+                        fontSize: "clamp(0.8rem, 1.1vw, 1.15rem)",
+                        color: "var(--ms-ink)",
+                      }}
+                    >
+                      {prompt.answer}
+                    </p>
+                  )}
+                </motion.div>
+              ))}
+            </motion.div>
           </motion.div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -1042,6 +1105,261 @@ function CompactScoreboard({ game, isFinal }: { game: GameState; isFinal: boolea
   );
 }
 
+/* ─── Post-Mortem Panel ─── */
+
+function PersonaPostMortemPanel({
+  postMortem,
+  postMortemDraft,
+  postMortemStatus,
+  personaName,
+}: {
+  postMortem: PostMortemDataLocal | null;
+  postMortemDraft: PostMortemDataLocal | null;
+  postMortemStatus: string;
+  personaName: string;
+}) {
+  const data = postMortem ?? postMortemDraft;
+  const isStreaming = postMortemStatus === "STREAMING";
+  const isWaiting = postMortemStatus === "NOT_REQUESTED" || (isStreaming && !data);
+
+  if (postMortemStatus === "FAILED") {
+    return (
+      <motion.div
+        className="rounded-2xl p-[clamp(1rem,2vw,1.5rem)]"
+        style={{
+          background: "var(--ms-surface)",
+          border: "1px solid var(--ms-edge)",
+        }}
+        variants={fadeInUp}
+        initial="hidden"
+        animate="visible"
+      >
+        <p
+          className="text-center"
+          style={{
+            fontSize: "clamp(0.8rem, 1vw, 0.95rem)",
+            color: "var(--ms-ink-dim)",
+          }}
+        >
+          {personaName} had nothing to say.
+        </p>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      className="rounded-[1.5rem] overflow-hidden"
+      style={{
+        background: "var(--ms-surface)",
+        border: "1px solid var(--ms-edge)",
+        boxShadow: "var(--ms-shadow)",
+      }}
+      variants={fadeInUp}
+      initial="hidden"
+      animate="visible"
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-2"
+        style={{
+          padding: "clamp(1rem,2vw,1.5rem)",
+          borderBottom: data ? "1px solid var(--ms-edge)" : "none",
+        }}
+      >
+        <div
+          className="shrink-0 flex items-center justify-center rounded-lg"
+          style={{
+            width: "clamp(1.5rem, 2vw, 2rem)",
+            height: "clamp(1.5rem, 2vw, 2rem)",
+            background: "var(--ms-rose-soft)",
+            color: "var(--ms-rose)",
+          }}
+        >
+          <HeartIcon size={14} />
+        </div>
+        <h3
+          className="font-display font-bold"
+          style={{
+            fontSize: "clamp(0.85rem, 1.2vw, 1.15rem)",
+            color: "var(--ms-ink)",
+          }}
+        >
+          {personaName}&apos;s take
+        </h3>
+        {isStreaming && (
+          <span
+            className="font-mono uppercase tracking-wider"
+            style={{
+              fontSize: "clamp(0.5rem, 0.65vw, 0.6rem)",
+              color: "var(--ms-ink-dim)",
+            }}
+          >
+            typing...
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: "clamp(1rem,2vw,1.5rem)" }}>
+        {isWaiting ? (
+          <div className="flex items-center justify-center py-4">
+            <TypingIndicator />
+          </div>
+        ) : data ? (
+          <motion.div
+            className="space-y-[clamp(1rem,1.5vw,1.5rem)]"
+            variants={staggerContainerSlow}
+            initial="hidden"
+            animate="visible"
+          >
+            {/* Opening quote */}
+            {data.opening && (
+              <motion.div variants={fadeInUp}>
+                <p
+                  className="font-display leading-relaxed"
+                  style={{
+                    fontSize: "clamp(1rem, 1.4vw, 1.35rem)",
+                    color: "var(--ms-ink)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  &ldquo;{data.opening}&rdquo;
+                </p>
+                <p
+                  className="font-bold uppercase tracking-wider mt-2"
+                  style={{
+                    fontSize: "clamp(0.55rem, 0.7vw, 0.7rem)",
+                    color: "var(--ms-rose)",
+                  }}
+                >
+                  &mdash; {personaName}
+                </p>
+              </motion.div>
+            )}
+
+            {/* Player callouts */}
+            {data.playerCallouts && data.playerCallouts.length > 0 && (
+              <motion.div className="space-y-2" variants={fadeInUp}>
+                {data.playerCallouts.map((callout, i) => (
+                  <motion.div
+                    key={callout.playerName ?? i}
+                    className="rounded-xl"
+                    style={{
+                      background: "var(--ms-raised)",
+                      border: "1px solid var(--ms-edge)",
+                      padding: "clamp(0.75rem, 1.2vw, 1rem) clamp(1rem, 1.5vw, 1.25rem)",
+                    }}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ ...springDefault, delay: i * 0.08 }}
+                  >
+                    {callout.playerName && (
+                      <span
+                        className="font-display font-bold"
+                        style={{
+                          fontSize: "clamp(0.75rem, 0.95vw, 0.95rem)",
+                          color: "var(--ms-violet)",
+                        }}
+                      >
+                        {callout.playerName}
+                      </span>
+                    )}
+                    {callout.verdict && (
+                      <p
+                        className="leading-relaxed mt-0.5"
+                        style={{
+                          fontSize: "clamp(0.8rem, 1vw, 1rem)",
+                          color: "var(--ms-ink)",
+                        }}
+                      >
+                        {callout.verdict}
+                      </p>
+                    )}
+                    {callout.favoriteLine && (
+                      <p
+                        className="mt-1.5 pl-3 leading-relaxed"
+                        style={{
+                          fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)",
+                          color: "var(--ms-ink-dim)",
+                          borderLeft: "2px solid var(--ms-violet)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        &ldquo;{callout.favoriteLine}&rdquo;
+                      </p>
+                    )}
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+
+            {/* Favorite moment */}
+            {data.favoriteMoment && (
+              <motion.div
+                className="flex items-start gap-2.5"
+                variants={fadeInUp}
+              >
+                <span
+                  className="shrink-0 mt-0.5"
+                  style={{ color: "var(--ms-coral)" }}
+                >
+                  <SparkleIcon size={14} />
+                </span>
+                <div>
+                  <span
+                    className="font-bold uppercase tracking-wider"
+                    style={{
+                      fontSize: "clamp(0.55rem, 0.7vw, 0.65rem)",
+                      color: "var(--ms-coral)",
+                    }}
+                  >
+                    Standout moment
+                  </span>
+                  <p
+                    className="leading-relaxed mt-0.5"
+                    style={{
+                      fontSize: "clamp(0.85rem, 1.1vw, 1.05rem)",
+                      color: "var(--ms-ink)",
+                    }}
+                  >
+                    {data.favoriteMoment}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Final thought */}
+            {data.finalThought && (
+              <motion.div
+                className="pt-2"
+                style={{
+                  borderTop: "1px solid var(--ms-edge)",
+                }}
+                variants={fadeInUp}
+              >
+                <p
+                  className="leading-relaxed"
+                  style={{
+                    fontSize: "clamp(0.85rem, 1.1vw, 1.05rem)",
+                    color: "var(--ms-ink-dim)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {data.finalThought}
+                </p>
+              </motion.div>
+            )}
+
+            {/* Streaming cursor */}
+            {isStreaming && <TypingIndicator />}
+          </motion.div>
+        ) : null}
+      </div>
+    </motion.div>
+  );
+}
+
 function FinalScoreChart({ game }: { game: GameState }) {
   const sorted = [...game.players].sort((a, b) => b.score - a.score);
   const maxScore = sorted[0]?.score || 1;
@@ -1182,6 +1500,64 @@ function FinalScoreChart({ game }: { game: GameState }) {
         })}
       </motion.div>
     </div>
+  );
+}
+
+function CopyRoomCode({ code }: { code: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current != null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, [code]);
+
+  const handleCopy = useCallback(async () => {
+    if (resetTimerRef.current != null) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopyState("success");
+    } catch {
+      setCopyState("error");
+    }
+
+    resetTimerRef.current = window.setTimeout(() => {
+      setCopyState("idle");
+      resetTimerRef.current = null;
+    }, 1500);
+  }, [code]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="font-mono font-black tracking-[0.3em] cursor-pointer transition-opacity hover:opacity-80 active:opacity-60"
+      style={{
+        fontSize: "clamp(2rem, 4vw, 4rem)",
+        color:
+          copyState === "success"
+            ? "var(--ms-coral)"
+            : copyState === "error"
+              ? "var(--ms-red)"
+              : "var(--ms-rose)",
+        background: "none",
+        border: "none",
+        padding: 0,
+        margin: 0,
+        display: "block",
+        width: "100%",
+      }}
+      title={copyState === "error" ? "Clipboard unavailable" : "Click to copy room code"}
+    >
+      {copyState === "success" ? "Copied!" : copyState === "error" ? "Copy failed" : code}
+    </button>
   );
 }
 
@@ -1399,28 +1775,23 @@ function PhaseStatusCard({
         })()}
 
         {/* Timer */}
-        {gameState.phaseDeadline && (
-          <div className="mb-4">
-            <Timer deadline={gameState.phaseDeadline} disabled={gameState.timersDisabled} />
-          </div>
-        )}
+        <AnimatePresence>
+          {gameState.phaseDeadline && (
+            <motion.div key="timer" className="mb-4" variants={collapseExpand} initial="hidden" animate="visible" exit="exit">
+              <Timer deadline={gameState.phaseDeadline} disabled={gameState.timersDisabled} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Phase-specific content */}
+        <AnimatePresence mode="wait">
         {gameState.status === "LOBBY" && (
-          <div className="space-y-3">
+          <motion.div key="phase-lobby" className="space-y-3" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
             <div
               className="rounded-2xl p-4 text-center"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)" }}
             >
-              <p
-                className="font-mono font-black tracking-[0.3em]"
-                style={{
-                  fontSize: "clamp(2rem, 4vw, 4rem)",
-                  color: "var(--ms-rose)",
-                }}
-              >
-                {gameState.roomCode}
-              </p>
+              <CopyRoomCode code={gameState.roomCode} />
               <p
                 className="mt-1"
                 style={{
@@ -1452,13 +1823,18 @@ function PhaseStatusCard({
                 {gameState.players.map((p) => p.name).join(" · ")}
               </p>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {gameState.status === "WRITING" && (
-          <div
+          <motion.div
+            key="phase-writing"
             className="rounded-2xl p-4 flex items-center gap-3"
             style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)" }}
+            variants={phaseTransition}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             <TypingIndicator />
             <p style={{ fontSize: "clamp(0.8rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}>
@@ -1466,13 +1842,18 @@ function PhaseStatusCard({
                 ? "Players are firing off one last save..."
                 : "Players are typing their best lines..."}
             </p>
-          </div>
+          </motion.div>
         )}
 
         {gameState.status === "VOTING" && (
-          <div
+          <motion.div
+            key="phase-voting"
             className="rounded-2xl p-4 flex items-center gap-3"
             style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)" }}
+            variants={phaseTransition}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             <motion.div
               animate={{ rotate: [0, 10, -10, 0] }}
@@ -1484,24 +1865,35 @@ function PhaseStatusCard({
             <p style={{ fontSize: "clamp(0.8rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}>
               {isComebackRound ? "Votes are deciding the comeback..." : "Votes are coming in..."}
             </p>
-          </div>
+          </motion.div>
         )}
 
         {gameState.status === "ROUND_RESULTS" && (
-          <CompactScoreboard
-            game={gameState}
-            isFinal={false}
-          />
+          <motion.div key="phase-round-results" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+            <CompactScoreboard
+              game={gameState}
+              isFinal={false}
+            />
+          </motion.div>
         )}
         {gameState.status === "FINAL_RESULTS" && (
-          <FinalScoreChart game={gameState} />
+          <motion.div key="phase-final-results" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+            <FinalScoreChart game={gameState} />
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
 
       {/* Host controls */}
+      <AnimatePresence>
       {isHost && (
-        <div
+        <motion.div
+          key="host-controls"
           className={`p-[clamp(1rem,2vw,2rem)] pt-0 ${isCompact ? "flex gap-2" : "space-y-2"}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={springDefault}
         >
           {gameState.status === "LOBBY" && (
             <motion.button
@@ -1573,14 +1965,24 @@ function PhaseStatusCard({
               {endingGame ? "Ending..." : "End Game"}
             </motion.button>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
+      <AnimatePresence>
       {!isHost && gameState.status === "LOBBY" && (
-        <div className="p-[clamp(1rem,2vw,2rem)] pt-0">
+        <motion.div
+          key="non-host-lobby"
+          className="p-[clamp(1rem,2vw,2rem)] pt-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
           <PulsingDot>Waiting for the game to start...</PulsingDot>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1936,6 +2338,75 @@ export function MatchSlopGameShell({
       gameState?.status === "VOTING" ||
       gameState?.status === "ROUND_RESULTS");
   const canAdvancePhase = !isInitialProfilePending && !isInitialProfileFailed;
+  const [personaAction, setPersonaAction] = useState<"generate" | "skip" | null>(null);
+  const lobbyGenerationTriggeredRef = useRef(false);
+  const personaStatus = profileGeneration?.status ?? "NOT_REQUESTED";
+  const personaLobbyAction =
+    personaStatus === "STREAMING" || personaStatus === "READY" ? "skip" : "generate";
+
+  // Auto-trigger persona generation when host enters lobby
+  useEffect(() => {
+    if (
+      !isHost ||
+      gameState?.status !== "LOBBY" ||
+      lobbyGenerationTriggeredRef.current
+    ) {
+      return;
+    }
+
+    const genStatus = profileGeneration?.status;
+    // Only trigger if not already generating or done
+    if (genStatus && genStatus !== "NOT_REQUESTED") return;
+
+    lobbyGenerationTriggeredRef.current = true;
+
+    const token = localStorage.getItem("hostControlToken");
+    if (!playerId && !token) return;
+
+    fetch(`/api/games/${code}/persona`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "generate", playerId, hostToken: token }),
+    })
+      .then(async (response) => {
+        if (response.ok) return;
+        lobbyGenerationTriggeredRef.current = false;
+        const payload = await response.json().catch(() => null);
+        setActionError(payload?.error ?? "Could not start persona generation");
+      })
+      .catch(() => {
+        lobbyGenerationTriggeredRef.current = false;
+        setActionError("Could not start persona generation");
+      });
+  }, [isHost, gameState?.status, profileGeneration?.status, playerId, code]);
+
+  async function postPersonaAction(action: "generate" | "skip") {
+    const token = localStorage.getItem("hostControlToken");
+    if (!playerId && !token) return;
+    setPersonaAction(action);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/games/${code}/persona`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, playerId, hostToken: token }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        setActionError(payload?.error ?? "Persona action failed");
+        if (action === "generate") {
+          lobbyGenerationTriggeredRef.current = false;
+        }
+      }
+    } catch {
+      setActionError("Persona action failed");
+      if (action === "generate") {
+        lobbyGenerationTriggeredRef.current = false;
+      }
+    } finally {
+      setPersonaAction(null);
+    }
+  }
 
   async function postHostAction(path: "start" | "next") {
     const token = localStorage.getItem("hostControlToken");
@@ -2109,7 +2580,7 @@ export function MatchSlopGameShell({
           }}
         >
           {/* Left: Profile Card */}
-          <div className="sticky top-4 self-start">
+          <div className="sticky top-4 self-start space-y-3">
             <ProfileCard
               profile={profile ?? profileDraft}
               personaImage={personaImage}
@@ -2120,8 +2591,51 @@ export function MatchSlopGameShell({
                   ? clampMatchSlopMood(modeState.mood)
                   : MATCHSLOP_INITIAL_MOOD
               }
+              gameStarted={gameState.status !== "LOBBY"}
             />
 
+            {/* Persona controls in lobby */}
+            <AnimatePresence>
+              {isHost && gameState.status === "LOBBY" && (
+                <motion.button
+                  key={`persona-${personaLobbyAction}-${personaStatus}`}
+                  type="button"
+                  onClick={() => void postPersonaAction(personaLobbyAction)}
+                  disabled={personaAction != null}
+                  className="w-full rounded-2xl font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  style={{
+                    background: "var(--ms-surface)",
+                    border: "1px solid var(--ms-edge)",
+                    color: "var(--ms-ink-dim)",
+                    padding: "clamp(0.75rem, 1.2vw, 1rem)",
+                    fontSize: "clamp(0.85rem, 1.1vw, 1rem)",
+                    boxShadow: "var(--ms-shadow)",
+                  }}
+                  {...buttonTap}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8, transition: { duration: 0.2 } }}
+                  transition={{ delay: 0.3 }}
+                >
+                  {personaLobbyAction === "skip" ? (
+                    <SwipeLeftIcon size={18} />
+                  ) : (
+                    <PenIcon size={18} />
+                  )}
+                  {personaAction === "skip"
+                    ? "Skipping..."
+                    : personaAction === "generate" && personaStatus === "FAILED"
+                      ? "Retrying..."
+                      : personaAction === "generate"
+                        ? "Generating..."
+                        : personaLobbyAction === "skip"
+                          ? "Skip Persona"
+                          : personaStatus === "FAILED"
+                            ? "Retry Persona"
+                            : "Generate Persona"}
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Right: Combined Phase Status + Conversation */}
@@ -2152,6 +2666,16 @@ export function MatchSlopGameShell({
                 canAdvancePhase={canAdvancePhase}
               />
 
+              {/* Conversation — hidden during lobby and final results */}
+              <AnimatePresence>
+              {gameState.status !== "LOBBY" && gameState.status !== "FINAL_RESULTS" && (
+              <motion.div
+                key="conversation-section"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
               {/* Conversation divider + header */}
               <div
                 className="flex items-center justify-between"
@@ -2221,7 +2745,30 @@ export function MatchSlopGameShell({
 
               {/* Outcome verdict footer */}
               <OutcomeVerdict outcome={outcome} />
+              </motion.div>
+              )}
+              </AnimatePresence>
             </motion.div>
+
+            {/* Post-mortem panel */}
+            {gameState.status === "FINAL_RESULTS" && (
+              <PersonaPostMortemPanel
+                postMortem={
+                  (modeState.postMortem as PostMortemDataLocal | undefined) ?? null
+                }
+                postMortemDraft={
+                  (modeState.postMortemDraft as PostMortemDataLocal | undefined) ?? null
+                }
+                postMortemStatus={
+                  (
+                    modeState.postMortemGeneration as
+                      | { status?: string }
+                      | undefined
+                  )?.status ?? "NOT_REQUESTED"
+                }
+                personaName={profile?.displayName ?? "The persona"}
+              />
+            )}
 
             {/* Final results link */}
             {gameState.status === "FINAL_RESULTS" && (
@@ -2242,7 +2789,13 @@ export function MatchSlopGameShell({
               </motion.div>
             )}
 
-            <ErrorBanner error={actionError} />
+            <AnimatePresence>
+              {actionError && (
+                <motion.div key="error" variants={collapseExpand} initial="hidden" animate="visible" exit="exit">
+                  <ErrorBanner error={actionError} />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </main>

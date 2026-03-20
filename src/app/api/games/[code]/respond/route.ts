@@ -1,12 +1,12 @@
 import { NextResponse, after } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { getGameDefinition } from "@/games/registry";
 import { sanitize } from "@/lib/sanitize";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseJsonBody } from "@/lib/http";
 import { logGameEvent } from "@/games/core/observability";
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { runGameStateMaintenance } from "@/games/core/runtime";
 import { parseModeState } from "@/games/matchslop/game-logic-core";
 import { findAuthenticatedPlayer, readPlayerToken } from "@/lib/player-auth";
 import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "@/games/matchslop/config/game-config";
@@ -199,23 +199,13 @@ export async function POST(
     throw e;
   }
 
-  const def = getGameDefinition(game.gameType);
-
   logGameEvent("responded", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
     playerId: player.id,
   });
   await publishGameStateEvent(game.id);
 
   after(async () => {
-    const allIn = await def.handlers.checkAllResponsesIn(game.id);
-    if (allIn) {
-      const claimed = await def.handlers.startVoting(game.id);
-      if (claimed) {
-        await publishGameStateEvent(game.id);
-        await def.handlers.generateAiVotes(game.id);
-        await publishGameStateEvent(game.id);
-      }
-    }
+    await runGameStateMaintenance(game.id, game.gameType);
   });
 
   return NextResponse.json({ success: true });

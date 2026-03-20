@@ -8,11 +8,11 @@ import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
-import { fadeInUp, buttonTap, buttonTapPrimary, springDefault } from "@/lib/animations";
+import { fadeInUp, phaseTransition, collapseExpand, buttonTap, buttonTapPrimary, springDefault } from "@/lib/animations";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
-import type { MatchSlopProfilePromptOption, ControllerVoteOption } from "@/lib/controller-types";
+import type { MatchSlopProfilePromptOption, ControllerVoteOption, MatchSlopTranscriptEntry as ControllerTranscriptEntry } from "@/lib/controller-types";
 import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "@/games/matchslop/config/game-config";
 
 import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
@@ -532,11 +532,181 @@ function OpenerVotingList({
         Pass
       </motion.button>
 
-      {forfeitCount > 0 && (
-        <p className="text-xs text-center" style={{ color: "var(--ms-ink-dim)", opacity: 0.6 }}>
-          {forfeitCount} {forfeitCount === 1 ? "model" : "models"} failed to respond
-        </p>
-      )}
+      <AnimatePresence>
+        {forfeitCount > 0 && (
+          <motion.p
+            className="text-xs text-center"
+            style={{ color: "var(--ms-ink-dim)", opacity: 0.6 }}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 0.6, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={springDefault}
+          >
+            {forfeitCount} {forfeitCount === 1 ? "model" : "models"} failed to respond
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ─── Outcome Icon helpers ─── */
+
+function OutcomeIcon({ outcome }: { outcome: string }) {
+  if (outcome === "DATE_SEALED") {
+    return (
+      <svg width={14} height={14} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+      </svg>
+    );
+  }
+  if (outcome === "UNMATCHED") {
+    return (
+      <svg width={14} height={14} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.53L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zM12.1 18.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5 18.5 5 20 6.5 20 8.5c0 2.89-3.14 5.74-7.9 10.05z" />
+      </svg>
+    );
+  }
+  return (
+    <svg width={12} height={12} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+    </svg>
+  );
+}
+
+function getOutcomeConfig(outcome: string) {
+  switch (outcome) {
+    case "DATE_SEALED":
+      return { label: "It's a date!", color: "var(--ms-mint)", bg: "var(--ms-mint-soft)" };
+    case "UNMATCHED":
+      return { label: "Unmatched", color: "var(--ms-red)", bg: "var(--ms-red-soft)" };
+    case "COMEBACK":
+      return { label: "Comeback", color: "var(--ms-coral)", bg: "var(--ms-coral-soft)" };
+    default:
+      return { label: "Time's up", color: "var(--ms-coral)", bg: "var(--ms-coral-soft)" };
+  }
+}
+
+/* ─── Controller Transcript (FINAL_RESULTS phone view) ─── */
+
+function ControllerTranscript({
+  transcript,
+  outcome,
+}: {
+  transcript: ControllerTranscriptEntry[];
+  outcome?: string;
+}) {
+
+  const outcomeConfig = outcome ? getOutcomeConfig(outcome) : null;
+
+  return (
+    <div className="space-y-3">
+      {/* Transcript scroll area */}
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          background: "var(--ms-surface)",
+          border: "1px solid var(--ms-edge)",
+        }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-4 py-3"
+          style={{ borderBottom: "1px solid var(--ms-edge)" }}
+        >
+          <span
+            className="font-display font-bold text-sm"
+            style={{ color: "var(--ms-ink)" }}
+          >
+            {outcome === "COMEBACK" ? "Partial Win" : "Game Over"}
+          </span>
+          {transcript.length > 0 && (
+            <span
+              className="text-[10px] font-mono"
+              style={{ color: "var(--ms-ink-dim)" }}
+            >
+              {transcript.length} msg{transcript.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {/* Messages */}
+        <div
+          className="overflow-y-auto px-3 py-3 space-y-2.5"
+          style={{ maxHeight: "50svh" }}
+        >
+          {transcript.map((entry, i) => {
+            const isPersona = entry.speaker === "PERSONA";
+            const name = isPersona
+              ? (entry.authorName ?? "Persona")
+              : (entry.authorName ?? "Players");
+
+            return (
+              <motion.div
+                key={entry.id ?? `t-${i}`}
+                className={`flex ${isPersona ? "justify-start" : "justify-end"}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ ...springDefault, delay: i * 0.03 }}
+              >
+                <div
+                  className={`max-w-[82%] ${
+                    isPersona
+                      ? "rounded-2xl rounded-bl-md"
+                      : "rounded-2xl rounded-br-md"
+                  }`}
+                  style={{
+                    background: isPersona
+                      ? "var(--ms-bubble-persona)"
+                      : "var(--ms-bubble-player)",
+                    border: `1px solid ${
+                      isPersona ? "var(--ms-rose-soft)" : "var(--ms-violet-soft)"
+                    }`,
+                    padding: "0.625rem 0.875rem",
+                  }}
+                >
+                  <span
+                    className="block font-bold uppercase tracking-wider mb-0.5"
+                    style={{
+                      fontSize: "9px",
+                      color: isPersona ? "var(--ms-rose)" : "var(--ms-violet)",
+                    }}
+                  >
+                    {name}
+                  </span>
+                  <p
+                    className="text-[13px] leading-relaxed"
+                    style={{ color: "var(--ms-ink)" }}
+                  >
+                    {entry.text}
+                  </p>
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {/* Outcome badge at end */}
+          {outcomeConfig && (
+            <motion.div
+              className="flex justify-center pt-2"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ ...springDefault, delay: transcript.length * 0.03 + 0.1 }}
+            >
+              <span
+                className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full"
+                style={{
+                  color: outcomeConfig.color,
+                  background: outcomeConfig.bg,
+                }}
+              >
+                <OutcomeIcon outcome={outcome!} />
+                {outcomeConfig.label}
+              </span>
+            </motion.div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -816,15 +986,25 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
             </h1>
           </div>
 
-          {gameState.phaseDeadline && !gameState.timersDisabled && (
-            <div className="mb-4">
-              <Timer deadline={gameState.phaseDeadline} />
-            </div>
-          )}
+          <AnimatePresence>
+            {gameState.phaseDeadline && !gameState.timersDisabled && (
+              <motion.div
+                key="timer"
+                className="mb-4"
+                variants={collapseExpand}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <Timer deadline={gameState.phaseDeadline} />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="space-y-4">
+            <AnimatePresence mode="wait">
             {gameState.status === "LOBBY" && (
-              <div className="space-y-4">
+              <motion.div key="phase-lobby" className="space-y-4" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                 <div className="rounded-2xl bg-teal-soft/50 border border-teal/20 p-6 text-center">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold mb-2">
                     Room Code
@@ -861,28 +1041,35 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                     <PulsingDot>Waiting for the host to start the game...</PulsingDot>
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
 
             {gameState.status === "WRITING" && (
-              <div className="space-y-4">
+              <motion.div key="phase-writing" className="space-y-4" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                <AnimatePresence mode="wait">
                 {isInitialProfilePending ? (
-                  <CompletionCard
-                    title="Building profile"
-                    subtitle="The persona is still generating. Writing opens as soon as the prompts are ready."
-                  />
+                  <motion.div key="write-profile-pending" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                    <CompletionCard
+                      title="Building profile"
+                      subtitle="The persona is still generating. Writing opens as soon as the prompts are ready."
+                    />
+                  </motion.div>
                 ) : isInitialProfileFailed ? (
-                  <CompletionCard
-                    title="Profile failed"
-                    subtitle="The persona could not be generated. Ask the host to end the game and start again."
-                  />
+                  <motion.div key="write-profile-failed" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                    <CompletionCard
+                      title="Profile failed"
+                      subtitle="The persona could not be generated. Ask the host to end the game and start again."
+                    />
+                  </motion.div>
                 ) : hasSubmittedCurrent ? (
-                  <CompletionCard
-                    title="Submitted!"
-                    subtitle={isComebackRound
-                      ? "Waiting to see if the room can save this."
-                      : "Waiting for everyone else to write."}
-                  />
+                  <motion.div key="write-submitted" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                    <CompletionCard
+                      title="Submitted!"
+                      subtitle={isComebackRound
+                        ? "Waiting to see if the room can save this."
+                        : "Waiting for everyone else to write."}
+                    />
+                  </motion.div>
                 ) : isOpenerRound ? (
                   /* ── Opener: two-step pick → write ── */
                   <AnimatePresence mode="wait">
@@ -983,17 +1170,23 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                     </div>
                   </div>
                 )}
-              </div>
+                </AnimatePresence>
+              </motion.div>
             )}
 
             {gameState.status === "VOTING" && (
-              <div className="space-y-4">
+              <motion.div key="phase-voting" className="space-y-4" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                <AnimatePresence mode="wait">
                 {gameState.votingRevealing ? (
-                  <CompletionCard title="Revealing" subtitle="The main screen is calculating results." />
+                  <motion.div key="vote-revealing" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                    <CompletionCard title="Revealing" subtitle="The main screen is calculating results." />
+                  </motion.div>
                 ) : !currentVotePrompt ? (
-                  <CompletionCard title="Waiting" subtitle="The next ballot is not ready yet." />
+                  <motion.div key="vote-waiting" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                    <CompletionCard title="Waiting" subtitle="The next ballot is not ready yet." />
+                  </motion.div>
                 ) : hasVotedCurrent ? (
-                  <div className="space-y-3">
+                  <motion.div key="vote-cast" className="space-y-3" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                     <div
                       className="rounded-2xl p-4"
                       style={{
@@ -1013,8 +1206,9 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                           : "Waiting on other players..."}
                       </PulsingDot>
                     </div>
-                  </div>
+                  </motion.div>
                 ) : isOpenerVoting ? (
+                  <motion.div key="vote-opener" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                   <OpenerVotingList
                     responses={currentVotePrompt.responses}
                     openerPromptById={openerPromptById}
@@ -1024,8 +1218,9 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                     onPass={() => void castVote(currentVotePrompt.id, null)}
                     triggerElement={triggerElement}
                   />
+                  </motion.div>
                 ) : (
-                  <div className="space-y-3">
+                  <motion.div key="vote-standard" className="space-y-3" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                     <div
                       className="rounded-2xl p-4"
                       style={{
@@ -1096,35 +1291,28 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                         Pass
                       </motion.button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
-              </div>
+                </AnimatePresence>
+              </motion.div>
             )}
 
-            {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
-              <div className="space-y-4">
+            {gameState.status === "ROUND_RESULTS" && (
+              <motion.div key="phase-round-results" className="space-y-4" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                 <div className="rounded-2xl border border-edge bg-surface/70 p-5 text-center">
                   <p className="font-display font-bold text-lg text-ink mb-2">
-                    {gameState.status === "FINAL_RESULTS"
-                      ? matchslop?.outcome === "COMEBACK"
-                        ? "Partial Win"
-                        : "Game Over"
-                      : isComebackRound
-                        ? "Comeback Round Complete"
-                        : `Round ${gameState.currentRound} Complete`}
+                    {isComebackRound
+                      ? "Comeback Round Complete"
+                      : `Round ${gameState.currentRound} Complete`}
                   </p>
                   <PulsingDot>
-                    {gameState.status === "FINAL_RESULTS"
-                      ? matchslop?.outcome === "COMEBACK"
-                        ? "Check the main screen for the comeback ending."
-                        : "Check the main screen for the final transcript."
-                      : isComebackRound
-                        ? "The main screen is revealing whether the room saved it."
-                        : "Round results are on the main screen."}
+                    {isComebackRound
+                      ? "The main screen is revealing whether the room saved it."
+                      : "Round results are on the main screen."}
                   </PulsingDot>
                 </div>
 
-                {isHost && gameState.status === "ROUND_RESULTS" ? (
+                {isHost ? (
                   <motion.button
                     type="button"
                     onClick={(e) => {
@@ -1140,28 +1328,46 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                 ) : (
                   <div className="text-center py-2">
                     <PulsingDot>
-                      {gameState.status === "FINAL_RESULTS"
-                        ? "Waiting for the next game..."
-                        : isComebackRound
-                          ? "Waiting for host to reveal the ending..."
-                          : "Waiting for host to continue..."}
+                      {isComebackRound
+                        ? "Waiting for host to reveal the ending..."
+                        : "Waiting for host to continue..."}
                     </PulsingDot>
                   </div>
                 )}
-
-                {gameState.status === "FINAL_RESULTS" && (
-                  <Link
-                    href={isHost ? "/host" : "/join"}
-                    className="block text-center py-3 rounded-2xl border border-edge text-ink-dim hover:text-ink hover:bg-surface/60 transition-colors"
-                  >
-                    {isHost ? "Host Another Game" : "Join Another Game"}
-                  </Link>
-                )}
-              </div>
+              </motion.div>
             )}
 
+            {gameState.status === "FINAL_RESULTS" && (
+              <motion.div key="phase-final-results" className="space-y-4" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
+                <ControllerTranscript
+                  transcript={matchslop?.transcript ?? []}
+                  outcome={matchslop?.outcome}
+                />
+
+                <Link
+                  href={isHost ? "/host" : "/join"}
+                  className="block text-center py-3 rounded-2xl transition-colors"
+                  style={{
+                    border: "1px solid var(--ms-edge)",
+                    color: "var(--ms-ink-dim)",
+                  }}
+                >
+                  {isHost ? "Host Another Game" : "Join Another Game"}
+                </Link>
+              </motion.div>
+            )}
+            </AnimatePresence>
+
+            <AnimatePresence>
             {canHostAdvance && (gameState.status === "WRITING" || gameState.status === "VOTING") && (
-              <div className="mt-5 pt-4 border-t border-edge/50">
+              <motion.div
+                key="force-advance"
+                className="mt-5 pt-4 border-t border-edge/50"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={springDefault}
+              >
                 <motion.button
                   type="button"
                   onClick={(e) => {
@@ -1174,8 +1380,9 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                 >
                   {hostActionBusy ? "Working..." : "Force Advance"}
                 </motion.button>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
 
             <AnimatePresence>
               {actionError && (

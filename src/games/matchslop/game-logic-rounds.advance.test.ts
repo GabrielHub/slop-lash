@@ -84,6 +84,7 @@ describe("advanceGame", () => {
       seekerIdentity: "WOMAN",
       personaIdentity: "MAN",
       comebackRound: null,
+      mood: 50,
     });
     prismaMock.game.updateMany.mockResolvedValue({ count: 0 });
 
@@ -141,11 +142,13 @@ describe("advanceGame", () => {
       seekerIdentity: "WOMAN",
       personaIdentity: "MAN",
       comebackRound: null,
+      mood: 50,
     });
     prismaMock.game.updateMany.mockResolvedValue({ count: 1 });
     aiMocks.generatePersonaReply.mockResolvedValue({
       reply: "persona follow-up",
       outcome: "CONTINUE",
+      moodDelta: 5,
       usage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -217,11 +220,13 @@ describe("advanceGame", () => {
               turn: 2,
               outcome: "CONTINUE",
               authorName: "Riley",
+              mood: 55,
             },
           ],
           lastRoundResult: null,
           outcome: "IN_PROGRESS",
           comebackRound: null,
+          mood: 55,
           profile: {
             displayName: "Riley",
           },

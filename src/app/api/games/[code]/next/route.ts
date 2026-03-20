@@ -7,6 +7,7 @@ import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggr
 import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
+import { runAiResponsesGeneration, runAiVotesGeneration, runGameStateMaintenance } from "@/games/core/runtime";
 import { publishGameStateEvent } from "@/lib/realtime-events";
 
 export async function POST(
@@ -79,15 +80,24 @@ export async function POST(
     if (newRoundStarted) {
       await publishGameStateEvent(game.id);
       after(async () => {
-        await def.handlers.generateAiResponses(game.id);
-        await publishGameStateEvent(game.id);
+        const ran = await runAiResponsesGeneration(game.id, game.gameType);
+        if (ran) {
+          await publishGameStateEvent(game.id);
+        }
+        await runGameStateMaintenance(game.id, game.gameType);
       });
     } else if (def.capabilities.retainsCompletedData) {
       after(() => applyCompletedGameToLeaderboardAggregate(game.id));
       revalidateTag(LEADERBOARD_TAG, { expire: 0 });
       await publishGameStateEvent(game.id);
+      after(async () => {
+        await runGameStateMaintenance(game.id, game.gameType);
+      });
     } else {
       await publishGameStateEvent(game.id);
+      after(async () => {
+        await runGameStateMaintenance(game.id, game.gameType);
+      });
     }
     return NextResponse.json({ success: true });
   }
@@ -112,14 +122,20 @@ export async function POST(
       forced: true,
     });
     // AI_CHAT_SHOWDOWN already triggers AI votes inside forceAdvancePhase().
-    if (advancedTo === "VOTING" && game.gameType !== "AI_CHAT_SHOWDOWN") {
+    if (advancedTo === "VOTING") {
       await publishGameStateEvent(game.id);
       after(async () => {
-        await def.handlers.generateAiVotes(game.id);
-        await publishGameStateEvent(game.id);
+        const ran = await runAiVotesGeneration(game.id, game.gameType);
+        if (ran) {
+          await publishGameStateEvent(game.id);
+        }
+        await runGameStateMaintenance(game.id, game.gameType);
       });
     } else {
       await publishGameStateEvent(game.id);
+      after(async () => {
+        await runGameStateMaintenance(game.id, game.gameType);
+      });
     }
     return NextResponse.json({ success: true });
   }

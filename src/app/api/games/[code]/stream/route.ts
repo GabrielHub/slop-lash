@@ -1,34 +1,25 @@
-import { getGameDefinition } from "@/games/registry";
-import { LEADERBOARD_TAG } from "@/games/core/constants";
-import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
-import { revalidateTag } from "next/cache";
-import { publishGameStateEvent, waitForRealtimeEvent } from "@/lib/realtime-events";
-import { findAuthenticatedPlayer } from "@/lib/player-auth";
+import { publishGameStateEvent } from "@/lib/realtime-events";
 import type { GameMetaPayload } from "../route-data";
 import { findGameMeta, findGamePayloadByStatus, normalizePayload } from "../route-data";
-import { isDeadlineExpired, stripUnrevealedVotes } from "../route-helpers";
+import { stripUnrevealedVotes } from "../route-helpers";
+import { HEARTBEAT_MIN_INTERVAL_MS } from "../sse-helpers";
+import { createStateStreamResponse } from "../state-stream";
 import { touchStreamHeartbeat } from "../stream-maintenance";
-import {
-  sseEvent,
-  SSE_HEADERS,
-  SSE_KEEPALIVE_INTERVAL_MS,
-  HEARTBEAT_MIN_INTERVAL_MS,
-} from "../sse-helpers";
 
 export const dynamic = "force-dynamic";
-
-const SAFETY_CHECK_INTERVAL_MS = 10_000;
-const IDLE_WAKE_INTERVAL_MS = 30_000;
-const PERIODIC_META_RESYNC_MS = 60_000;
-const lastSafetyCheck = new Map<string, number>();
 
 function getStateKey(meta: GameMetaPayload): string {
   return `${meta.version}:${meta.reactionsVersion}`;
 }
 
-function getDeadlineWaitMs(phaseDeadline: Date | null): number {
-  if (!phaseDeadline) return Number.POSITIVE_INFINITY;
-  return Math.max(phaseDeadline.getTime() - Date.now(), 0);
+function shouldEndGameStream(state: ReturnType<typeof normalizePayload>): boolean {
+  if (state.status !== "FINAL_RESULTS") return false;
+
+  const postMortemGeneration = (state.modeState as Record<string, unknown> | undefined)
+    ?.postMortemGeneration as Record<string, unknown> | undefined;
+  const status = postMortemGeneration?.status;
+
+  return status !== "NOT_REQUESTED" && status !== "STREAMING";
 }
 
 export async function GET(
@@ -41,233 +32,39 @@ export async function GET(
   const playerToken = url.searchParams.get("playerToken");
   const hostToken = url.searchParams.get("hostToken");
 
-  const encoder = new TextEncoder();
-  let lastStateKey = "";
-  let lastKeepaliveAt = Date.now();
-  let latestMeta: GameMetaPayload | null = null;
-  let lastMetaSyncAt = 0;
-  let resolvedPlayerId: string | null = null;
-  let playerResolved = false;
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  let heartbeatBusy = false;
+  return createStateStreamResponse({
+    request,
+    roomCode,
+    playerToken,
+    hostToken,
+    findMeta: findGameMeta,
+    getStateKey,
+    shouldEndStream: shouldEndGameStream,
+    loadState: async ({ roomCode: currentRoomCode, meta, stateKey }) => {
+      const game = await findGamePayloadByStatus(currentRoomCode, meta.status, stateKey);
+      if (!game) return null;
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      function enqueue(text: string) {
-        try {
-          controller.enqueue(encoder.encode(text));
-        } catch {
-          // Stream already closed.
-        }
+      const normalized = structuredClone(normalizePayload(game));
+      if (normalized.status !== "FINAL_RESULTS") {
+        stripUnrevealedVotes(normalized);
       }
 
-      function sendKeepalive() {
-        const now = Date.now();
-        if (now - lastKeepaliveAt >= SSE_KEEPALIVE_INTERVAL_MS) {
-          enqueue(": ping\n\n");
-          lastKeepaliveAt = now;
-        }
-      }
+      return normalized;
+    },
+    touchHeartbeat: async ({ meta, currentPlayerId, roomCode: currentRoomCode, hostToken: currentHostToken }) => {
+      const stateChanged = await touchStreamHeartbeat({
+        meta,
+        currentPlayerId,
+        roomCode: currentRoomCode,
+        minTouchIntervalMs: HEARTBEAT_MIN_INTERVAL_MS,
+        hostToken: currentHostToken,
+      });
 
-      async function runWritingSafety(meta: GameMetaPayload): Promise<boolean> {
-        if (meta.status !== "WRITING") return false;
-
-        const now = Date.now();
-        const lastCheck = lastSafetyCheck.get(meta.id) ?? 0;
-        if (now - lastCheck < SAFETY_CHECK_INTERVAL_MS) return false;
-
-        lastSafetyCheck.set(meta.id, now);
-        const def = getGameDefinition(meta.gameType);
-
-        try {
-          const allIn = await def.handlers.checkAllResponsesIn(meta.id);
-          if (!allIn) return false;
-
-          lastSafetyCheck.delete(meta.id);
-          const claimed = await def.handlers.startVoting(meta.id);
-          if (!claimed) return false;
-
-          await publishGameStateEvent(meta.id);
-          if (meta.gameType !== "AI_CHAT_SHOWDOWN") {
-            void (async () => {
-              await def.handlers.generateAiVotes(meta.id);
-              await publishGameStateEvent(meta.id);
-            })();
-          }
-          return true;
-        } catch {
-          lastSafetyCheck.delete(meta.id);
-          return false;
-        }
-      }
-
-      async function enforceDeadline(meta: GameMetaPayload): Promise<boolean> {
-        if (!isDeadlineExpired(meta.phaseDeadline)) return false;
-
-        const def = getGameDefinition(meta.gameType);
-        const advancedTo = await def.handlers.checkAndEnforceDeadline(meta.id);
-        if (!advancedTo) return false;
-
+      if (stateChanged) {
         await publishGameStateEvent(meta.id);
-
-        if (advancedTo === "VOTING") {
-          void (async () => {
-            await def.handlers.generateAiVotes(meta.id);
-            await publishGameStateEvent(meta.id);
-          })();
-        } else if (advancedTo === "WRITING") {
-          void (async () => {
-            await def.handlers.generateAiResponses(meta.id);
-            await publishGameStateEvent(meta.id);
-          })();
-        } else if (advancedTo === "FINAL_RESULTS" && def.capabilities.retainsCompletedData) {
-          void applyCompletedGameToLeaderboardAggregate(meta.id).then(() =>
-            revalidateTag(LEADERBOARD_TAG, { expire: 0 }),
-          );
-        }
-
-        return true;
       }
 
-      async function touchHeartbeat(meta: GameMetaPayload, currentPlayerId: string | null) {
-        const stateChanged = await touchStreamHeartbeat({
-          meta,
-          currentPlayerId,
-          roomCode,
-          minTouchIntervalMs: HEARTBEAT_MIN_INTERVAL_MS,
-          hostToken,
-        });
-
-        if (stateChanged) {
-          await publishGameStateEvent(meta.id);
-        }
-      }
-
-      async function syncState(force: boolean): Promise<boolean> {
-        let meta =
-          !force && latestMeta && Date.now() - lastMetaSyncAt < PERIODIC_META_RESYNC_MS
-            ? latestMeta
-            : await findGameMeta(roomCode);
-        if (!meta) {
-          enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
-          return false;
-        }
-
-        latestMeta = meta;
-        lastMetaSyncAt = Date.now();
-        if (!playerResolved) {
-          resolvedPlayerId = (await findAuthenticatedPlayer(meta.id, playerToken))?.id ?? null;
-          playerResolved = true;
-        }
-
-        const deadlineChanged = await enforceDeadline(meta);
-        if (deadlineChanged) {
-          meta = await findGameMeta(roomCode);
-          if (!meta) {
-            enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
-            return false;
-          }
-          latestMeta = meta;
-          lastMetaSyncAt = Date.now();
-        }
-
-        const safetyChanged = await runWritingSafety(meta);
-        if (safetyChanged) {
-          meta = await findGameMeta(roomCode);
-          if (!meta) {
-            enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
-            return false;
-          }
-          latestMeta = meta;
-          lastMetaSyncAt = Date.now();
-        }
-
-        const nextStateKey = getStateKey(meta);
-        if (!force && !deadlineChanged && !safetyChanged && nextStateKey === lastStateKey) {
-          return true;
-        }
-
-        const game = await findGamePayloadByStatus(roomCode, meta.status, nextStateKey);
-        if (!game) {
-          enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
-          return false;
-        }
-
-        const normalized = structuredClone(normalizePayload(game));
-        if (normalized.status !== "FINAL_RESULTS") {
-          stripUnrevealedVotes(normalized);
-        }
-
-        enqueue(sseEvent("state", normalized));
-        lastStateKey = getStateKey(meta);
-        lastKeepaliveAt = Date.now();
-
-        if (normalized.status === "FINAL_RESULTS") {
-          enqueue(sseEvent("done", {}));
-          return false;
-        }
-
-        return true;
-      }
-
-      try {
-        if (!(await syncState(true))) return;
-
-        heartbeatTimer = setInterval(() => {
-          const meta = latestMeta;
-          if (!meta || heartbeatBusy || request.signal.aborted) return;
-
-          heartbeatBusy = true;
-          void touchHeartbeat(meta, resolvedPlayerId).finally(() => {
-            heartbeatBusy = false;
-          });
-        }, HEARTBEAT_MIN_INTERVAL_MS);
-
-        while (!request.signal.aborted) {
-          const meta = latestMeta;
-          if (!meta) break;
-
-          const timeoutMs = Math.max(
-            1,
-            Math.min(
-              SSE_KEEPALIVE_INTERVAL_MS,
-              meta.status === "WRITING" ? SAFETY_CHECK_INTERVAL_MS : IDLE_WAKE_INTERVAL_MS,
-              getDeadlineWaitMs(meta.phaseDeadline),
-            ),
-          );
-
-          const event = await waitForRealtimeEvent(
-            { gameId: meta.id, kinds: ["state"] },
-            request.signal,
-            timeoutMs,
-          );
-          if (request.signal.aborted) break;
-
-          if (event) {
-            if (!(await syncState(true))) break;
-            continue;
-          }
-
-          sendKeepalive();
-
-          const shouldResync =
-            getDeadlineWaitMs(meta.phaseDeadline) <= timeoutMs ||
-            (meta.status === "WRITING" && timeoutMs === SAFETY_CHECK_INTERVAL_MS);
-
-          if (shouldResync && !(await syncState(false))) {
-            break;
-          }
-        }
-      } catch {
-        if (!request.signal.aborted) {
-          enqueue(sseEvent("server-error", { code: "INTERNAL", message: "Stream error" }));
-        }
-      } finally {
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
-        controller.close();
-      }
+      return stateChanged;
     },
   });
-
-  return new Response(stream, { headers: SSE_HEADERS });
 }

@@ -479,10 +479,6 @@ export function MockChatGameShell({
           return jsonResponse({ audio: null });
         }
 
-        if (method === "GET" && endpoint.startsWith("/tagline")) {
-          return new Response(null, { status: 204 });
-        }
-
         return jsonResponse({ ok: true, mock: true });
       }
 

@@ -132,6 +132,13 @@ export async function checkAndEnforceDeadline(gameId: string): Promise<PhaseAdva
   });
   if (!game?.phaseDeadline) return null;
   if (game.phaseDeadline.getTime() > Date.now()) return null;
+
+  const claim = await prisma.game.updateMany({
+    where: { id: gameId, phaseDeadline: game.phaseDeadline },
+    data: { phaseDeadline: null },
+  });
+  if (claim.count === 0) return null;
+
   return forceAdvancePhase(gameId);
 }
 
@@ -161,6 +168,7 @@ export async function endGameEarly(gameId: string): Promise<void> {
     data: {
       status: "FINAL_RESULTS",
       phaseDeadline: null,
+      votingRevealing: false,
       modeState: toJson({
         ...latestModeState,
         outcome:

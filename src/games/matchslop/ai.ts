@@ -16,16 +16,18 @@ import {
   type AiUsage,
 } from "@/games/ai-chat-showdown/ai";
 import type { MatchSlopPersonaSeed } from "./config/persona-examples";
-import { parseProfileDraft } from "./game-logic-core";
+import { parsePostMortemDraft, parseProfileDraft } from "./game-logic-core";
 import type {
   MatchSlopDecision,
   MatchSlopIdentity,
+  MatchSlopPostMortem,
+  MatchSlopPostMortemDraft,
   MatchSlopProfile,
   MatchSlopProfileDraft,
+  MatchSlopTranscriptEntry,
 } from "./types";
 import {
   MATCHSLOP_INITIAL_MOOD,
-  clampMatchSlopMood,
   getMoodLabel,
 } from "./types";
 
@@ -168,14 +170,12 @@ function buildPersonaExamplesXml(personaExamples: MatchSlopPersonaSeed[]): strin
     .map(
       (example) => `<example id="${escapeXml(example.id)}">
 <backstory>${escapeXml(example.backstory)}</backstory>
+<textingStyle>${escapeXml(example.textingStyle)}</textingStyle>
 <name>${escapeXml(example.name)}</name>
 <title>${escapeXml(example.title)}</title>
 <bio>${escapeXml(example.bio)}</bio>
 <details job="${escapeXml(example.details.job ?? "")}" school="${escapeXml(example.details.school ?? "")}" height="${escapeXml(example.details.height ?? "")}" languages="${escapeXml(example.details.languages.join(", "))}" />
 <promptExamples>${escapeXml(example.promptExamples.join(" | "))}</promptExamples>
-<toneTags>${escapeXml(example.toneTags.join(", "))}</toneTags>
-<redFlags>${escapeXml(example.redFlags.join(", "))}</redFlags>
-<greenFlags>${escapeXml(example.greenFlags.join(", "))}</greenFlags>
 </example>`,
     )
     .join("\n");
@@ -193,19 +193,22 @@ function buildPersonaProfileRequest({
     model: gateway(modelId),
     system: `You create dating-app personas for MatchSlop, a comedy party game.
 
-The persona is a ${identityLabel(personaIdentity)}. The players collectively roleplay as a ${identityLabel(seekerIdentity)} trying to match.
+The persona is a ${identityLabel(personaIdentity)}. The players roleplay as a ${identityLabel(seekerIdentity)} trying to match.
 
-IMPORTANT: The persona must feel like a real, normal person you'd actually find on a dating app. They should have a realistic job, genuine interests, and a natural voice. The humor in this game comes from the PLAYERS sending unhinged messages — the persona is the straight man. Think of someone your friend would actually date: grounded, relatable, maybe a little quirky but never cartoonish or gimmick-based. No absurd obsessions, no "committed to the bit" performance art, no wacky personality hooks.
+The persona must feel like a real person on a dating app. Realistic job, genuine interests, natural voice. The humor comes from PLAYERS sending unhinged messages — the persona is the straight man. Think of someone your friend would actually date: grounded, relatable, maybe a bit quirky but never cartoonish.
 
-Start with a backstory (3-5 sentences: personality, what they care about, how they talk). Derive everything else from it.
+Backstory (3-5 sentences) MUST include:
+1. Who they are — personality, what they care about, their vibe
+2. How they text — their specific texting style on dating apps. Do they use lowercase? Abbreviations? Full sentences? Emojis? Rapid-fire messages? Dry one-liners? Every persona should text differently. This is critical — it's what makes conversations feel like real people, not chatbots.
 
-- Age must be between 20 and 30
-- Bio under 220 characters — should sound like a real person wrote it, not a comedy writer
-- 3 profile prompts with genuine, natural answers
-- Include job, height, and languages (at least 1). school is optional (null if omitted)
-- Authentic and specific, not quirky for the sake of quirky — no hateful or sexual content
-- Backstory must sustain the character across multiple conversation rounds
-- The persona should react like a real person would when players say weird things — confused, amused, put off, or charmed depending on what's said`,
+Derive everything else from the backstory.
+
+- Age 20-30
+- Bio under 220 characters, written the way THIS person would actually type it — not polished copywriting
+- 3 profile prompts with answers that sound like this person wrote them, in their voice
+- Include job, height, and languages (at least 1). school optional (null if omitted)
+- Authentic and specific — no hateful or sexual content
+- The persona reacts like a real person when players say weird things`,
     prompt: `<persona-seeds>${examplesXml}</persona-seeds>`,
     output: Output.object({
       schema: personaProfileGenerationSchema,
@@ -597,16 +600,17 @@ export async function generateAiFunnyVote(
 const personaReplySchema = z.object({
   reply: z.string(),
   outcome: z.enum(["CONTINUE", "DATE_SEALED", "UNMATCHED"]),
-  mood: z.number().int().min(0).max(100),
+  moodDelta: z.number().int().min(-50).max(50),
 });
 
-function inferMoodFromOutcome(
-  outcome: MatchSlopDecision,
-  currentMood: number = MATCHSLOP_INITIAL_MOOD,
-): number {
-  if (outcome === "DATE_SEALED") return Math.max(85, clampMatchSlopMood(currentMood));
-  if (outcome === "UNMATCHED") return Math.min(20, clampMatchSlopMood(currentMood));
-  return clampMatchSlopMood(currentMood);
+function clampMoodDelta(delta: number): number {
+  return Math.max(-50, Math.min(50, Math.round(delta)));
+}
+
+function inferMoodDeltaFromOutcome(outcome: MatchSlopDecision): number {
+  if (outcome === "DATE_SEALED") return 35;
+  if (outcome === "UNMATCHED") return -30;
+  return 0;
 }
 
 function readNumberField(obj: Record<string, unknown>, keys: string[]): number | null {
@@ -627,7 +631,7 @@ export function parsePersonaReplyResponse(
 ): {
   reply: string;
   outcome: MatchSlopDecision;
-  mood: number;
+  moodDelta: number;
 } | null {
   const parsed = parseJsonText(text, personaReplySchema);
   if (parsed && parsed.reply.trim()) return parsed;
@@ -636,13 +640,21 @@ export function parsePersonaReplyResponse(
   if (loose) {
     const reply = readStringField(loose, ["reply", "text", "message", "line"]);
     const outcome = readStringField(loose, ["outcome", "decision", "status"])?.toUpperCase();
-    const rawMood = readNumberField(loose, ["mood"]);
-    const mood = rawMood != null ? clampMatchSlopMood(rawMood) : null;
+    // Try moodDelta first, fall back to legacy absolute "mood" field
+    const rawDelta = readNumberField(loose, ["moodDelta", "mood_delta", "delta"]);
+    const rawAbsoluteMood = rawDelta == null ? readNumberField(loose, ["mood"]) : null;
+    let moodDelta: number | null = null;
+    if (rawDelta != null) {
+      moodDelta = clampMoodDelta(rawDelta);
+    } else if (rawAbsoluteMood != null) {
+      // AI returned an absolute mood — convert to delta from currentMood
+      moodDelta = clampMoodDelta(rawAbsoluteMood - currentMood);
+    }
     if (!reply) return null;
     if (outcome === "CONTINUE" || outcome === "DATE_SEALED" || outcome === "UNMATCHED") {
-      return { reply, outcome, mood: mood ?? inferMoodFromOutcome(outcome, currentMood) };
+      return { reply, outcome, moodDelta: moodDelta ?? inferMoodDeltaFromOutcome(outcome) };
     }
-    return { reply, outcome: "CONTINUE", mood: mood ?? clampMatchSlopMood(currentMood) };
+    return { reply, outcome: "CONTINUE", moodDelta: moodDelta ?? 0 };
   }
 
   const fallbackReply = fallbackPlainTextLine(text);
@@ -650,7 +662,7 @@ export function parsePersonaReplyResponse(
     ? {
         reply: fallbackReply,
         outcome: "CONTINUE",
-        mood: clampMatchSlopMood(currentMood),
+        moodDelta: 0,
       }
     : null;
 }
@@ -662,34 +674,53 @@ export function buildPersonaReplySystemPrompt(
   currentMood: number = MATCHSLOP_INITIAL_MOOD,
 ): string {
   const moodLabel = getMoodLabel(currentMood);
-  return `You are a ${identityLabel(personaIdentity)} on a dating app. You just matched with a ${identityLabel(seekerIdentity)} and are chatting with them.
+  return `You are a ${identityLabel(personaIdentity)} chatting with a ${identityLabel(seekerIdentity)} on a dating app.
 
-Your profile and backstory are provided — stay consistent with who you are. Reply the way you'd actually text on a dating app: short, natural, in your own voice.
+Your profile and backstory define who you are AND how you text. Your backstory includes your texting style — follow it closely. This is a dating app chat, not an interview.
 
-You are a normal person with standards. You don't have to be nice about everything. If someone sends you something weird, creepy, nonsensical, or off-putting, react the way a real person would — with confusion, discomfort, a short reply, or by unmatching. You are NOT obligated to keep the conversation going. Not everyone deserves a response.
+How real people actually text on dating apps:
+- 1-3 sentences max. Most messages are short.
+- Lowercase is normal. Abbreviations are normal (lol, omg, ngl, tbh, idk, rn, haha, etc).
+- People trail off... use fragments... don't always finish
+- Emojis sometimes, not every message
+- No bullet points. No lists. No structured responses.
+- Nobody says "I appreciate that", "that's a great point", "I love that for you" — that's therapist-speak, not texting
+- Nobody says "haha that's hilarious" to something that's actually weird — they say "what" or "lol what"
+- Sometimes "lol" or "haha what" or "um" IS the whole response
+- People don't use semicolons in texts. Or colons. Or em dashes (unless that's specifically their style).
+- If something is weird, just say it's weird. Don't intellectualize it.
 
-IMPORTANT: Your reply should reflect your current mood and willingness to continue the conversation. Do NOT state the outcome directly in your message — just respond naturally as someone in your current mood would. Let your tone and enthusiasm (or lack thereof) speak for itself.
+You have standards. Weird, creepy, boring, or off-putting messages get the reaction they deserve — confusion, a short reply, or an unmatch. You don't owe anyone enthusiasm.
 
-Your current mood is ${currentMood}/100 (${moodLabel}).
-Mood is a number from 0 to 100 representing how interested you are:
-- 0-20 (done): checked out, over it, about to unmatch
-- 21-40 (skeptical): guarded, minimal effort, not sold yet
-- 41-60 (amused): entertained but noncommittal, casual banter
-- 61-80 (intrigued): genuinely interested, asking questions, flirty
-- 81-100 (obsessed): all-in, very enthusiastic, ready to meet
+DO NOT:
+- Sound like a chatbot or customer service rep ("That's such a great question!")
+- Mirror weird energy just to keep things going
+- Use filler phrases to be polite ("I really appreciate you sharing that")
+- Write more than 3 sentences unless you're genuinely excited
+- Use perfect grammar and punctuation if your character's texting style is casual
+- Start with greetings like "Hey!" or "Hi there!" mid-conversation
+- Repeat back what they said ("So you're saying...")
+- Use "interesting" as a standalone response unless you're being dry about it
 
-Set your new mood based on how the conversation just went. Mood can shift up or down — a great message might jump it +20, a terrible one might drop it -30. Be honest and reactive.
+Your current vibe is: ${moodLabel}.
+
+After reading their message, report how it shifted your mood as moodDelta:
+- Great message: +15 to +25
+- Solid/funny: +5 to +15
+- Meh/neutral: -5 to +5
+- Weird or off-putting: -10 to -20
+- Creepy or awful: -20 to -40
 ${
   forceContinue
-    ? `This is the opening exchange — keep the conversation going. outcome must be CONTINUE. Set mood between 35 and 60 based on how the opener lands.`
-    : `After replying, decide what happens next:
-- CONTINUE: the conversation is going well enough to keep talking (mood above 20)
-- DATE_SEALED: you're genuinely into this person and ready to meet up — only if mood is 85+ and they've been actually charming
-- UNMATCHED: they said something weird, creepy, boring, or off-putting — you're done (mood should be 20 or below)`
+    ? `Opening exchange — outcome must be CONTINUE. Set moodDelta between -15 and +10 based on how the opener lands.`
+    : `Decide:
+- CONTINUE: conversation's worth continuing
+- DATE_SEALED: genuinely charming, want to meet — only if they've actually earned it
+- UNMATCHED: done. weird, boring, or creepy.`
 }
 
-Respond with ONLY this JSON (no other text):
-{"reply":"your message","outcome":"CONTINUE","mood":50}`;
+Respond with ONLY this JSON:
+{"reply":"your message","outcome":"CONTINUE","moodDelta":0}`;
 }
 
 export function normalizePersonaReplyOutcome(
@@ -701,18 +732,19 @@ export function normalizePersonaReplyOutcome(
 
 function buildFallbackPersonaReply(
   forceContinue: boolean,
-  currentMood: number,
 ): {
   reply: string;
   outcome: MatchSlopDecision;
-  mood: number;
+  moodDelta: number;
 } {
   return {
     reply: forceContinue ? "okay, that was weirdly bold. keep going." : "hmm. that bought you one more message.",
     outcome: "CONTINUE",
-    mood: clampMatchSlopMood(forceContinue ? Math.max(currentMood, 35) : currentMood),
+    moodDelta: forceContinue ? -5 : 0,
   };
 }
+
+const PERSONA_REPLY_TIMEOUT_MS = 12_000;
 
 export async function generatePersonaReply(
   modelId: string,
@@ -720,10 +752,14 @@ export async function generatePersonaReply(
   personaIdentity: MatchSlopIdentity,
   profile: MatchSlopProfile,
   transcript: Array<{ speaker: "PLAYERS" | "PERSONA"; text: string; authorName: string | null }>,
-  options?: { forceContinue?: boolean; currentMood?: number },
-): Promise<{ reply: string; outcome: MatchSlopDecision; mood: number; usage: AiUsage }> {
+  options?: { forceContinue?: boolean; currentMood?: number; abortSignal?: AbortSignal },
+): Promise<{ reply: string; outcome: MatchSlopDecision; moodDelta: number; usage: AiUsage }> {
   const forceContinue = options?.forceContinue === true;
   const currentMood = options?.currentMood ?? MATCHSLOP_INITIAL_MOOD;
+  const timeoutSignal = AbortSignal.timeout(PERSONA_REPLY_TIMEOUT_MS);
+  const abortSignal = options?.abortSignal
+    ? AbortSignal.any([options.abortSignal, timeoutSignal])
+    : timeoutSignal;
   const transcriptXml = transcript
     .map((entry) => {
       const tag = entry.speaker === "PERSONA" ? "persona" : "players";
@@ -737,6 +773,7 @@ export async function generatePersonaReply(
       model: gateway(modelId),
       system: buildPersonaReplySystemPrompt(seekerIdentity, personaIdentity, forceContinue, currentMood),
       prompt: `<profile><name>${escapeXml(profile.displayName)}</name>${profile.backstory ? `<backstory>${escapeXml(profile.backstory)}</backstory>` : ""}<bio>${escapeXml(profile.bio)}</bio><tagline>${escapeXml(profile.tagline ?? "")}</tagline></profile>\n<transcript>${transcriptXml}</transcript>`,
+      abortSignal,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -745,7 +782,7 @@ export async function generatePersonaReply(
       console.error(
         `[matchslop:generatePersonaReply] ${modelId} parse failed. raw text: "${result.text.slice(0, 200)}"`,
       );
-      const fallback = buildFallbackPersonaReply(forceContinue, currentMood);
+      const fallback = buildFallbackPersonaReply(forceContinue);
       return {
         ...fallback,
         usage: extractUsage(modelId, result.usage),
@@ -755,7 +792,7 @@ export async function generatePersonaReply(
     const reply = parsed.reply.trim();
     if (!reply) {
       console.error(`[matchslop:generatePersonaReply] ${modelId} returned an empty reply, falling back`);
-      const fallback = buildFallbackPersonaReply(forceContinue, currentMood);
+      const fallback = buildFallbackPersonaReply(forceContinue);
       return {
         ...fallback,
         usage: extractUsage(modelId, result.usage),
@@ -765,12 +802,12 @@ export async function generatePersonaReply(
     return {
       reply,
       outcome: normalizePersonaReplyOutcome(parsed.outcome, forceContinue),
-      mood: parsed.mood,
+      moodDelta: parsed.moodDelta,
       usage: extractUsage(modelId, result.usage),
     };
   } catch (err) {
     console.error(`[matchslop:generatePersonaReply] ${modelId} failed: ${describeError(err)}`);
-    const fallback = buildFallbackPersonaReply(forceContinue, currentMood);
+    const fallback = buildFallbackPersonaReply(forceContinue);
     return {
       ...fallback,
       usage:
@@ -779,4 +816,110 @@ export async function generatePersonaReply(
           : { ...ZERO_USAGE, modelId },
     };
   }
+}
+
+/* ─── Persona Post-Mortem ─── */
+
+const postMortemCalloutSchema = z.object({
+  playerName: z.string(),
+  verdict: z.string(),
+  favoriteLine: z.string().nullable(),
+});
+
+const postMortemSchema = z.object({
+  opening: z.string(),
+  playerCallouts: z.array(postMortemCalloutSchema).min(1),
+  favoriteMoment: z.string(),
+  finalThought: z.string(),
+});
+
+const postMortemGenerationSchema = z.object({
+  postMortem: postMortemSchema,
+});
+
+type PostMortemGenerationArgs = {
+  modelId: string;
+  personaIdentity: MatchSlopIdentity;
+  profile: MatchSlopProfile;
+  transcript: MatchSlopTranscriptEntry[];
+  playerNames: string[];
+  outcome: string;
+};
+
+function buildPostMortemRequest(args: PostMortemGenerationArgs) {
+  const { modelId, personaIdentity, profile, transcript, playerNames, outcome } = args;
+
+  const transcriptXml = transcript
+    .map((entry) => {
+      const tag = entry.speaker === "PERSONA" ? "persona" : "players";
+      const author = entry.authorName ? ` author="${escapeXml(entry.authorName)}"` : "";
+      return `<${tag}${author}>${escapeXml(entry.text)}</${tag}>`;
+    })
+    .join("\n");
+
+  const outcomeDescription = {
+    DATE_SEALED: "The date was sealed — the players charmed you into a date.",
+    UNMATCHED: "You unmatched the players — they blew it.",
+    TURN_LIMIT: "The conversation hit the round limit without a clear outcome.",
+    COMEBACK: "The players almost lost, but managed a partial comeback.",
+  }[outcome] ?? "The game ended.";
+
+  return {
+    model: gateway(modelId),
+    system: `You are ${profile.displayName}, a ${identityLabel(personaIdentity)} who just finished a dating-app conversation in MatchSlop, a comedy party game.
+
+${profile.backstory ?? profile.bio}
+
+Deliver a post-mortem: your honest take on the conversation and the players. Stay in character — write the way you actually text.
+
+Rules:
+- "opening": your first reaction to the whole experience (1-2 sentences, in your texting voice — not an essay voice)
+- playerCallouts: honest verdict on each player's messages. Quote their best/worst line in favoriteLine if something stood out, null if nothing did.
+- "favoriteMoment": the single most memorable moment (1-2 sentences)
+- "finalThought": parting shot — savage, wistful, or bewildered depending on how it went
+- Reference actual things that were said. No generic commentary like "what a wild ride" or "that was certainly something."
+- Write in your voice. If you text in lowercase with abbreviations, your post-mortem should sound like that too.
+- Keep it concise — you're texting this, not writing a review`,
+    prompt: `<outcome>${escapeXml(outcomeDescription)}</outcome>
+<players>${playerNames.map((n) => `<player>${escapeXml(n)}</player>`).join("")}</players>
+<profile>${buildProfileXml(profile)}</profile>
+<transcript>${transcriptXml}</transcript>`,
+    output: Output.object({
+      schema: postMortemGenerationSchema,
+      name: "matchslop_post_mortem",
+      description: "Persona post-mortem for MatchSlop",
+    }),
+    providerOptions: getLowReasoningProviderOptions(modelId),
+  } as const;
+}
+
+export async function streamPersonaPostMortem(
+  args: PostMortemGenerationArgs,
+  options?: {
+    onPartialPostMortem?: (draft: MatchSlopPostMortemDraft) => Promise<void> | void;
+  },
+): Promise<{ postMortem: MatchSlopPostMortem; usage: AiUsage }> {
+  const result = streamText(buildPostMortemRequest(args));
+
+  for await (const partialOutput of result.partialOutputStream) {
+    const draft = parsePostMortemDraft(partialOutput?.postMortem);
+    if (!draft) continue;
+    await options?.onPartialPostMortem?.(draft);
+  }
+
+  const [output, usage] = await Promise.all([result.output, result.usage]);
+  return {
+    postMortem: output.postMortem,
+    usage: extractUsage(args.modelId, usage),
+  };
+}
+
+export async function generatePersonaPostMortem(
+  args: PostMortemGenerationArgs,
+): Promise<{ postMortem: MatchSlopPostMortem; usage: AiUsage }> {
+  const result = await generateText(buildPostMortemRequest(args));
+  return {
+    postMortem: result.output.postMortem,
+    usage: extractUsage(args.modelId, result.usage),
+  };
 }

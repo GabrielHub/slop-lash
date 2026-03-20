@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getGameDefinition } from "@/games/registry";
 import { logGameEvent } from "./observability";
+import { runGameStateMaintenance } from "./runtime";
 import type { GameType } from "./types";
 
 /** Players are auto-disconnected after 120 seconds of inactivity. */
@@ -56,9 +57,7 @@ export async function checkAndDisconnectInactivePlayers(
     });
   }
 
-  if (gameType === "AI_CHAT_SHOWDOWN") {
-    await recheckQuorumAfterDisconnect(gameId, gameType);
-  }
+  await recheckQuorumAfterDisconnect(gameId, gameType);
 
   return staleIds;
 }
@@ -124,28 +123,7 @@ async function recheckQuorumAfterDisconnect(
   gameId: string,
   gameType: GameType,
 ): Promise<void> {
-  const game = await prisma.game.findUnique({
-    where: { id: gameId },
-    select: { status: true },
-  });
-  if (!game) return;
-
-  const def = getGameDefinition(gameType);
-
-  if (game.status === "WRITING") {
-    const allIn = await def.handlers.checkAllResponsesIn(gameId);
-    if (allIn) {
-      const claimed = await def.handlers.startVoting(gameId);
-      if (claimed) {
-        await def.handlers.generateAiVotes(gameId);
-      }
-    }
-  } else if (game.status === "VOTING") {
-    const allIn = await def.handlers.checkAllVotesForCurrentPrompt(gameId);
-    if (allIn) {
-      await def.handlers.revealCurrentPrompt(gameId);
-    }
-  }
+  await runGameStateMaintenance(gameId, gameType);
 }
 
 /**

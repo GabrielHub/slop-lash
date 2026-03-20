@@ -1,19 +1,25 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { runAiResponsesGeneration } from "@/games/core/runtime";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { generatePersonaProfile, streamPersonaProfile } from "./ai";
-import { generateAiResponses } from "./game-logic-ai";
 import {
   buildRoundPromptText,
   buildWritingDeadline,
   parseModeState,
   resolvePersonaExamples,
+  selectPersonaExamples,
 } from "./game-logic-core";
 import { ensurePersonaImage } from "./persona-image";
 import type { MatchSlopProfile, MatchSlopProfileDraft } from "./types";
 
-const inflightPersonaProfiles = new Map<string, Promise<void>>();
+type InflightPersonaProfile = {
+  token: symbol;
+  promise: Promise<void>;
+};
+
+const inflightPersonaProfiles = new Map<string, InflightPersonaProfile>();
 const PROFILE_DRAFT_PUBLISH_INTERVAL_MS = 250;
 
 function toJson(value: unknown): Prisma.InputJsonValue {
@@ -22,6 +28,10 @@ function toJson(value: unknown): Prisma.InputJsonValue {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function newGenerationId(): string {
+  return crypto.randomUUID();
 }
 
 async function updateModeState(
@@ -85,6 +95,7 @@ async function claimPersonaProfileGeneration(gameId: string) {
     if (modeState.profile) return null;
     if (modeState.profileGeneration.status !== "NOT_REQUESTED") return null;
 
+    const generationId = newGenerationId();
     const claimed = await prisma.game.updateMany({
       where: {
         id: gameId,
@@ -97,6 +108,7 @@ async function claimPersonaProfileGeneration(gameId: string) {
           profileGeneration: {
             status: "STREAMING",
             updatedAt: nowIso(),
+            generationId,
           },
           personaImage: {
             status: "NOT_REQUESTED",
@@ -110,6 +122,7 @@ async function claimPersonaProfileGeneration(gameId: string) {
 
     if (claimed.count > 0) {
       return {
+        generationId,
         personaModelId: game.personaModelId,
         seekerIdentity: modeState.seekerIdentity,
         personaIdentity: modeState.personaIdentity,
@@ -121,10 +134,15 @@ async function claimPersonaProfileGeneration(gameId: string) {
   return null;
 }
 
-async function publishProfileDraft(gameId: string, profileDraft: MatchSlopProfileDraft): Promise<boolean> {
+async function publishProfileDraft(
+  gameId: string,
+  generationId: string,
+  profileDraft: MatchSlopProfileDraft,
+): Promise<boolean> {
   return updateModeState(gameId, (modeState) => {
     if (modeState.profile) return null;
     if (modeState.profileGeneration.status !== "STREAMING") return null;
+    if (modeState.profileGeneration.generationId !== generationId) return null;
 
     return {
       ...modeState,
@@ -132,12 +150,17 @@ async function publishProfileDraft(gameId: string, profileDraft: MatchSlopProfil
       profileGeneration: {
         status: "STREAMING",
         updatedAt: nowIso(),
+        generationId,
       },
     };
   });
 }
 
-async function finalizePersonaProfile(gameId: string, profile: MatchSlopProfile): Promise<boolean> {
+async function finalizePersonaProfile(
+  gameId: string,
+  generationId: string,
+  profile: MatchSlopProfile,
+): Promise<boolean> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const game = await prisma.game.findUnique({
       where: { id: gameId },
@@ -164,6 +187,7 @@ async function finalizePersonaProfile(gameId: string, profile: MatchSlopProfile)
     const modeState = parseModeState(game.modeState);
     if (modeState.profile) return true;
     if (modeState.profileGeneration.status !== "STREAMING") return false;
+    if (modeState.profileGeneration.generationId !== generationId) return false;
 
     const promptText = buildRoundPromptText(1, profile, []);
     const promptId = game.currentRound === 1 ? game.rounds[0]?.prompts[0]?.id : null;
@@ -191,6 +215,7 @@ async function finalizePersonaProfile(gameId: string, profile: MatchSlopProfile)
             profileGeneration: {
               status: "READY",
               updatedAt: nowIso(),
+              generationId,
             },
             profile,
             personaImage: {
@@ -207,10 +232,12 @@ async function finalizePersonaProfile(gameId: string, profile: MatchSlopProfile)
       }),
     );
 
-    const [, gameUpdate] = await prisma.$transaction([
+    const results = await prisma.$transaction([
       ...updates,
     ] as [Prisma.PrismaPromise<unknown>, ...Prisma.PrismaPromise<unknown>[]]);
 
+    // The game updateMany is always the last element (prompt update is optional first)
+    const gameUpdate = results[results.length - 1];
     if (
       typeof gameUpdate === "object" &&
       gameUpdate != null &&
@@ -225,12 +252,21 @@ async function finalizePersonaProfile(gameId: string, profile: MatchSlopProfile)
   return false;
 }
 
-async function markPersonaProfileFailed(gameId: string): Promise<void> {
+async function markPersonaProfileFailed(
+  gameId: string,
+  generationId: string,
+): Promise<void> {
   const updated = await updateModeState(gameId, (modeState) => {
     if (modeState.profile) return null;
     if (
       modeState.profileGeneration.status !== "STREAMING" &&
       modeState.profileGeneration.status !== "NOT_REQUESTED"
+    ) {
+      return null;
+    }
+    if (
+      modeState.profileGeneration.generationId != null &&
+      modeState.profileGeneration.generationId !== generationId
     ) {
       return null;
     }
@@ -240,6 +276,7 @@ async function markPersonaProfileFailed(gameId: string): Promise<void> {
       profileGeneration: {
         status: "FAILED",
         updatedAt: nowIso(),
+        generationId,
       },
     };
   });
@@ -249,11 +286,37 @@ async function markPersonaProfileFailed(gameId: string): Promise<void> {
   }
 }
 
-async function runPostProfileTasks(gameId: string): Promise<void> {
+async function isCurrentPersonaGeneration(
+  gameId: string,
+  generationId: string,
+): Promise<boolean> {
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { modeState: true },
+  });
+  if (!game) return false;
+
+  const modeState = parseModeState(game.modeState);
+  return (
+    modeState.profile == null &&
+    modeState.profileGeneration.status === "STREAMING" &&
+    modeState.profileGeneration.generationId === generationId
+  );
+}
+
+export async function runPostProfileTasks(gameId: string): Promise<void> {
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { gameType: true },
+  });
+  if (!game) return;
+
   const results = await Promise.allSettled([
     (async () => {
-      await generateAiResponses(gameId);
-      await publishGameStateEvent(gameId);
+      const ran = await runAiResponsesGeneration(gameId, game.gameType);
+      if (ran) {
+        await publishGameStateEvent(gameId);
+      }
     })(),
     ensurePersonaImage(gameId),
   ]);
@@ -267,12 +330,16 @@ async function runPostProfileTasks(gameId: string): Promise<void> {
 
 export async function ensurePersonaProfile(gameId: string): Promise<void> {
   const existing = inflightPersonaProfiles.get(gameId);
-  if (existing) return existing;
+  if (existing) return existing.promise;
 
+  const token = Symbol(gameId);
   const promise = doEnsurePersonaProfile(gameId).finally(() => {
-    inflightPersonaProfiles.delete(gameId);
+    const current = inflightPersonaProfiles.get(gameId);
+    if (current?.token === token) {
+      inflightPersonaProfiles.delete(gameId);
+    }
   });
-  inflightPersonaProfiles.set(gameId, promise);
+  inflightPersonaProfiles.set(gameId, { token, promise });
   return promise;
 }
 
@@ -280,6 +347,7 @@ async function doEnsurePersonaProfile(gameId: string): Promise<void> {
   const claim = await claimPersonaProfileGeneration(gameId);
   if (!claim) return;
 
+  const { generationId } = claim;
   await publishGameStateEvent(gameId).catch(() => undefined);
 
   let latestDraft: MatchSlopProfileDraft | null = null;
@@ -292,11 +360,13 @@ async function doEnsurePersonaProfile(gameId: string): Promise<void> {
     const nextJson = JSON.stringify(latestDraft);
     if (nextJson === lastPersistedDraftJson) return;
 
-    const updated = await publishProfileDraft(gameId, latestDraft);
+    // Set timestamp optimistically to prevent concurrent flushes from racing
+    lastDraftPublishAt = Date.now();
+
+    const updated = await publishProfileDraft(gameId, generationId, latestDraft);
     if (!updated) return;
 
     lastPersistedDraftJson = nextJson;
-    lastDraftPublishAt = Date.now();
     await publishGameStateEvent(gameId).catch(() => undefined);
   };
 
@@ -327,15 +397,117 @@ async function doEnsurePersonaProfile(gameId: string): Promise<void> {
       );
     }
 
+    if (!(await isCurrentPersonaGeneration(gameId, generationId))) {
+      return;
+    }
+
     await accumulateUsage(gameId, [profileResult.usage]);
 
-    const finalized = await finalizePersonaProfile(gameId, profileResult.profile);
+    const finalized = await finalizePersonaProfile(gameId, generationId, profileResult.profile);
     if (!finalized) return;
 
     await publishGameStateEvent(gameId).catch(() => undefined);
     await runPostProfileTasks(gameId);
   } catch (error) {
     console.error(`[matchslop:ensurePersonaProfile] ${gameId} failed:`, error);
-    await markPersonaProfileFailed(gameId);
+    await markPersonaProfileFailed(gameId, generationId);
   }
+}
+
+/**
+ * Prepare persona examples in modeState so lobby generation can start safely.
+ */
+async function prepareLobbyPersonaGeneration(
+  gameId: string,
+  options: { forceReset: boolean; reseedExamples: boolean },
+): Promise<boolean> {
+  const { forceReset, reseedExamples } = options;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const game = await prisma.game.findUnique({
+      where: { id: gameId },
+      select: {
+        personaModelId: true,
+        modeState: true,
+        version: true,
+      },
+    });
+    if (!game?.personaModelId) return false;
+
+    const modeState = parseModeState(game.modeState);
+    if (!forceReset && modeState.profile) return true;
+    if (
+      !forceReset &&
+      (modeState.profileGeneration.status === "STREAMING" ||
+        modeState.profileGeneration.status === "READY")
+    ) {
+      return true;
+    }
+
+    const shouldReset = forceReset || modeState.profileGeneration.status === "FAILED";
+    const nextExampleIds =
+      reseedExamples || modeState.selectedPersonaExampleIds.length === 0
+        ? selectPersonaExamples(modeState.personaIdentity).map((example) => example.id)
+        : modeState.selectedPersonaExampleIds;
+
+    const examplesChanged =
+      nextExampleIds.length !== modeState.selectedPersonaExampleIds.length ||
+      nextExampleIds.some((id, index) => id !== modeState.selectedPersonaExampleIds[index]);
+
+    if (!shouldReset && !examplesChanged) {
+      return true;
+    }
+
+    const updated = await prisma.game.updateMany({
+      where: { id: gameId, version: game.version },
+      data: {
+        modeState: toJson({
+          ...modeState,
+          selectedPersonaExampleIds: nextExampleIds,
+          ...(shouldReset
+            ? {
+                profile: null,
+                profileDraft: null,
+                profileGeneration: {
+                  status: "NOT_REQUESTED",
+                  updatedAt: nowIso(),
+                  generationId: null,
+                },
+                personaImage: {
+                  status: "NOT_REQUESTED",
+                  imageUrl: null,
+                  updatedAt: nowIso(),
+                },
+              }
+            : {}),
+        }),
+        version: { increment: 1 },
+      },
+    });
+
+    if (updated.count > 0) {
+      await publishGameStateEvent(gameId).catch(() => undefined);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function startLobbyPersonaGeneration(gameId: string): Promise<boolean> {
+  return prepareLobbyPersonaGeneration(gameId, {
+    forceReset: false,
+    reseedExamples: false,
+  });
+}
+
+/**
+ * Reset the current persona profile so the lobby can start a fresh generation.
+ */
+export async function skipPersonaProfile(gameId: string): Promise<boolean> {
+  inflightPersonaProfiles.delete(gameId);
+  return prepareLobbyPersonaGeneration(gameId, {
+    forceReset: true,
+    reseedExamples: true,
+  });
 }

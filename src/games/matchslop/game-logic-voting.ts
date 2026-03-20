@@ -156,6 +156,7 @@ async function finalizeGameWithoutWinner(
     data: {
       status: "FINAL_RESULTS",
       phaseDeadline: null,
+      votingRevealing: false,
       modeState: toJson({
         ...modeState,
         outcome,
@@ -270,6 +271,7 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
       where: { id: gameId },
       data: {
         status: "ROUND_RESULTS",
+        votingRevealing: false,
         phaseDeadline: buildResultsDeadline(game.timersDisabled),
         modeState: toJson({
           ...modeState,

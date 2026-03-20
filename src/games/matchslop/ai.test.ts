@@ -11,7 +11,7 @@ describe("buildPersonaReplySystemPrompt", () => {
   it("requires the opener round to continue after the initial vote", () => {
     const prompt = buildPersonaReplySystemPrompt("MAN", "WOMAN", true);
 
-    expect(prompt).toContain("This is the opening exchange");
+    expect(prompt).toContain("Opening exchange");
     expect(prompt).toContain("outcome must be CONTINUE");
   });
 
@@ -56,6 +56,7 @@ describe("matchslop AI response parsing", () => {
     expect(parsePersonaReplyResponse("you are alarmingly confident for someone holding a rotisserie chicken")).toEqual({
       reply: "you are alarmingly confident for someone holding a rotisserie chicken",
       outcome: "CONTINUE",
+      moodDelta: 0,
     });
   });
 
@@ -63,6 +64,7 @@ describe("matchslop AI response parsing", () => {
     expect(parsePersonaReplyResponse('{"reply":"that is the most suspiciously confident soup pitch i have ever heard"}')).toEqual({
       reply: "that is the most suspiciously confident soup pitch i have ever heard",
       outcome: "CONTINUE",
+      moodDelta: 0,
     });
   });
 

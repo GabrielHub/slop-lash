@@ -96,6 +96,7 @@ export interface MatchSlopProfileDraft {
 export interface MatchSlopProfileGenerationState {
   status: MatchSlopProfileGenerationStatus;
   updatedAt: string;
+  generationId: string | null;
 }
 
 export interface MatchSlopTranscriptEntry {
@@ -122,6 +123,44 @@ export interface MatchSlopRoundResult {
   selectedPromptText: string | null;
 }
 
+export type MatchSlopPostMortemStatus =
+  | "NOT_REQUESTED"
+  | "STREAMING"
+  | "READY"
+  | "FAILED";
+
+export interface MatchSlopPostMortemCallout {
+  playerName: string;
+  verdict: string;
+  favoriteLine: string | null;
+}
+
+export interface MatchSlopPostMortem {
+  opening: string;
+  playerCallouts: MatchSlopPostMortemCallout[];
+  favoriteMoment: string;
+  finalThought: string;
+}
+
+export interface MatchSlopPostMortemCalloutDraft {
+  playerName?: string;
+  verdict?: string;
+  favoriteLine?: string | null;
+}
+
+export interface MatchSlopPostMortemDraft {
+  opening?: string;
+  playerCallouts?: MatchSlopPostMortemCalloutDraft[];
+  favoriteMoment?: string;
+  finalThought?: string;
+}
+
+export interface MatchSlopPostMortemGenerationState {
+  status: MatchSlopPostMortemStatus;
+  updatedAt: string;
+  generationId: string | null;
+}
+
 export interface MatchSlopModeState {
   seekerIdentity: MatchSlopIdentity;
   personaIdentity: MatchSlopIdentity;
@@ -138,4 +177,7 @@ export interface MatchSlopModeState {
   personaImage: MatchSlopPersonaImageState;
   lastRoundResult: MatchSlopRoundResult | null;
   mood: number;
+  postMortemGeneration: MatchSlopPostMortemGenerationState;
+  postMortemDraft: MatchSlopPostMortemDraft | null;
+  postMortem: MatchSlopPostMortem | null;
 }

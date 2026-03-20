@@ -6,6 +6,7 @@ import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { logGameEvent } from "@/games/core/observability";
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { runGameStateMaintenance } from "@/games/core/runtime";
 import { findAuthenticatedPlayer, readPlayerToken } from "@/lib/player-auth";
 
 export async function POST(
@@ -197,13 +198,7 @@ export async function POST(
   await publishGameStateEvent(game.id);
 
   after(async () => {
-    const allIn = await def.handlers.checkAllVotesForCurrentPrompt(game.id);
-    if (allIn) {
-      const claimed = await def.handlers.revealCurrentPrompt(game.id);
-      if (claimed) {
-        await publishGameStateEvent(game.id);
-      }
-    }
+    await runGameStateMaintenance(game.id, game.gameType);
   });
 
   return NextResponse.json({ success: true });

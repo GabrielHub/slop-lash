@@ -18,6 +18,11 @@ import type {
   MatchSlopPersonaDetails,
   MatchSlopPersonaDetailsDraft,
   MatchSlopPersonaImageState,
+  MatchSlopPostMortem,
+  MatchSlopPostMortemCallout,
+  MatchSlopPostMortemDraft,
+  MatchSlopPostMortemCalloutDraft,
+  MatchSlopPostMortemGenerationState,
   MatchSlopProfile,
   MatchSlopProfileDraft,
   MatchSlopProfileGenerationState,
@@ -199,6 +204,67 @@ function parseLastRoundResult(value: unknown): MatchSlopRoundResult | null {
   };
 }
 
+function parsePostMortemCallout(value: unknown): MatchSlopPostMortemCallout | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const playerName = asString(record.playerName);
+  const verdict = asString(record.verdict);
+  if (!playerName || !verdict) return null;
+  return {
+    playerName,
+    verdict,
+    favoriteLine: asString(record.favoriteLine) ?? null,
+  };
+}
+
+function parsePostMortemCalloutDraft(value: unknown): MatchSlopPostMortemCalloutDraft | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const draft: MatchSlopPostMortemCalloutDraft = {};
+  const playerName = asString(record.playerName);
+  const verdict = asString(record.verdict);
+  const favoriteLine = asString(record.favoriteLine);
+  if (playerName) draft.playerName = playerName;
+  if (verdict) draft.verdict = verdict;
+  if (favoriteLine != null) draft.favoriteLine = favoriteLine;
+  return Object.keys(draft).length > 0 ? draft : null;
+}
+
+function parsePostMortem(value: unknown): MatchSlopPostMortem | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const opening = asString(record.opening);
+  const favoriteMoment = asString(record.favoriteMoment);
+  const finalThought = asString(record.finalThought);
+  if (!opening || !favoriteMoment || !finalThought) return null;
+  const playerCallouts = Array.isArray(record.playerCallouts)
+    ? record.playerCallouts
+        .map(parsePostMortemCallout)
+        .filter((c): c is MatchSlopPostMortemCallout => c != null)
+    : [];
+  if (playerCallouts.length === 0) return null;
+  return { opening, playerCallouts, favoriteMoment, finalThought };
+}
+
+export function parsePostMortemDraft(value: unknown): MatchSlopPostMortemDraft | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const draft: MatchSlopPostMortemDraft = {};
+  const opening = asString(record.opening);
+  const favoriteMoment = asString(record.favoriteMoment);
+  const finalThought = asString(record.finalThought);
+  if (opening) draft.opening = opening;
+  if (favoriteMoment) draft.favoriteMoment = favoriteMoment;
+  if (finalThought) draft.finalThought = finalThought;
+  const playerCallouts = Array.isArray(record.playerCallouts)
+    ? record.playerCallouts
+        .map(parsePostMortemCalloutDraft)
+        .filter((c): c is MatchSlopPostMortemCalloutDraft => c != null)
+    : [];
+  if (playerCallouts.length > 0) draft.playerCallouts = playerCallouts;
+  return Object.keys(draft).length > 0 ? draft : null;
+}
+
 function createInitialImageState(): MatchSlopPersonaImageState {
   return {
     status: "NOT_REQUESTED",
@@ -211,6 +277,15 @@ function createInitialProfileGenerationState(): MatchSlopProfileGenerationState 
   return {
     status: "NOT_REQUESTED",
     updatedAt: new Date().toISOString(),
+    generationId: null,
+  };
+}
+
+function createInitialPostMortemGenerationState(): MatchSlopPostMortemGenerationState {
+  return {
+    status: "NOT_REQUESTED",
+    updatedAt: new Date().toISOString(),
+    generationId: null,
   };
 }
 
@@ -234,6 +309,9 @@ export function createInitialModeState(
     personaImage: createInitialImageState(),
     lastRoundResult: null,
     mood: MATCHSLOP_INITIAL_MOOD,
+    postMortemGeneration: createInitialPostMortemGenerationState(),
+    postMortemDraft: null,
+    postMortem: null,
   };
 }
 
@@ -278,6 +356,7 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
           : defaultProfileGeneration.status,
       updatedAt:
         asString(profileGenerationRecord?.updatedAt) ?? defaultProfileGeneration.updatedAt,
+      generationId: asString(profileGenerationRecord?.generationId) ?? null,
     },
     profile: parseProfile(record?.profile),
     personaImage: {
@@ -287,6 +366,23 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
     },
     lastRoundResult: parseLastRoundResult(record?.lastRoundResult),
     mood: clampMatchSlopMood(asNumber(record?.mood) ?? MATCHSLOP_INITIAL_MOOD),
+    postMortemGeneration: (() => {
+      const pmRecord = asRecord(record?.postMortemGeneration);
+      const defaultPm = createInitialPostMortemGenerationState();
+      if (!pmRecord) return defaultPm;
+      return {
+        status:
+          pmRecord.status === "STREAMING" ||
+          pmRecord.status === "READY" ||
+          pmRecord.status === "FAILED"
+            ? pmRecord.status
+            : defaultPm.status,
+        updatedAt: asString(pmRecord.updatedAt) ?? defaultPm.updatedAt,
+        generationId: asString(pmRecord.generationId) ?? null,
+      };
+    })(),
+    postMortemDraft: parsePostMortemDraft(record?.postMortemDraft),
+    postMortem: parsePostMortem(record?.postMortem),
   };
 }
 

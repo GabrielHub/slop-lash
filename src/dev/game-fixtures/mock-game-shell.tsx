@@ -33,10 +33,6 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-function emptyResponse(status = 204): Response {
-  return new Response(null, { status });
-}
-
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -377,10 +373,6 @@ export function MockGameShell({
 
       if (method === "POST" && endpoint === "/speech") {
         return jsonResponse({ audio: null });
-      }
-
-      if (method === "GET" && endpoint.startsWith("/tagline")) {
-        return emptyResponse(204);
       }
 
       return jsonResponse({ ok: true, mock: true });

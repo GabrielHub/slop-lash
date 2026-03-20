@@ -130,6 +130,8 @@ export interface GameState {
   votingPromptIndex: number;
   votingRevealing: boolean;
   nextGameCode: string | null;
+  winnerTagline?: string | null;
+  winnerTaglinePending?: boolean;
   version: number;
   aiInputTokens: number;
   aiOutputTokens: number;

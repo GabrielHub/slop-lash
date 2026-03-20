@@ -36,6 +36,10 @@ vi.mock("@/games/core/observability", () => ({
   warnGameEvent: vi.fn(),
 }));
 
+vi.mock("@/games/core/runtime", () => ({
+  runGameStateMaintenance: vi.fn().mockResolvedValue(false),
+}));
+
 vi.mock("ai", () => ({
   generateText: vi.fn(),
   Output: { object: vi.fn() },
@@ -71,7 +75,7 @@ const db = prisma as unknown as {
   vote: { createMany: Fn };
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => vi.resetAllMocks());
 
 // ===========================================================================
 // 1. getActivePlayerIds — quorum base
@@ -395,7 +399,7 @@ describe("checkAllVotesForCurrentPrompt", () => {
 // ===========================================================================
 
 describe("checkAndDisconnectInactivePlayers", () => {
-  it("disconnects stale human players for non-AI_CHAT_SHOWDOWN without quorum re-checks", async () => {
+  it("disconnects stale human players for non-AI_CHAT_SHOWDOWN and runs maintenance", async () => {
     db.player.findMany.mockResolvedValue([
       { id: "p1", name: "Alpha" },
       { id: "p2", name: "Bravo" },
@@ -411,7 +415,6 @@ describe("checkAndDisconnectInactivePlayers", () => {
 
     expect(result).toEqual(["p1", "p2"]);
     expect(db.player.findMany).toHaveBeenCalledTimes(1);
-    expect(db.game.findUnique).not.toHaveBeenCalled();
   });
 
   it("disconnects stale human players for AI_CHAT_SHOWDOWN", async () => {

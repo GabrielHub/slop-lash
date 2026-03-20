@@ -13,12 +13,13 @@ import {
   selectPersonaExamples,
   selectPlayerExamples,
 } from "./game-logic-core";
+import { ensurePersonaPostMortem } from "./persona-post-mortem";
 import type {
   MatchSlopOutcome,
   MatchSlopTranscriptEntry,
   MatchSlopTranscriptOutcome,
 } from "./types";
-import { MATCHSLOP_MOOD_THRESHOLD_UNMATCH } from "./types";
+import { MATCHSLOP_MOOD_THRESHOLD_UNMATCH, clampMatchSlopMood } from "./types";
 import { DEFAULT_TOTAL_ROUNDS } from "./game-constants";
 
 function toJson(value: unknown): Prisma.InputJsonValue {
@@ -237,6 +238,13 @@ async function finalizeClaimedAdvance(args: {
           lastRoundResult: toJson(lastRoundResult),
           outcome,
           comebackRound,
+          postMortemGeneration: {
+            status: "NOT_REQUESTED",
+            updatedAt: new Date().toISOString(),
+            generationId: null,
+          },
+          postMortemDraft: null,
+          postMortem: null,
         }),
         version: { increment: 1 },
       },
@@ -332,6 +340,10 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
   }
 
   const modeState = parseModeState(game.modeState);
+  const hasPreGeneratedProfile =
+    modeState.profileGeneration.status === "STREAMING" ||
+    modeState.profileGeneration.status === "READY";
+
   const sampledPersonaExamples =
     modeState.selectedPersonaExampleIds.length > 0
       ? resolvePersonaExamples(modeState.selectedPersonaExampleIds)
@@ -349,17 +361,23 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
         ...modeState,
         selectedPersonaExampleIds: sampledPersonaExamples.map((example) => example.id),
         selectedPlayerExamples: sampledPlayerExamples,
-        profileDraft: null,
-        profileGeneration: {
-          status: "NOT_REQUESTED",
-          updatedAt: new Date().toISOString(),
-        },
-        profile: null,
-        personaImage: {
-          status: "NOT_REQUESTED",
-          imageUrl: null,
-          updatedAt: new Date().toISOString(),
-        },
+        // Preserve profile-related fields if generation started in the lobby
+        ...(hasPreGeneratedProfile
+          ? {}
+          : {
+              profileDraft: null,
+              profileGeneration: {
+                status: "NOT_REQUESTED",
+                updatedAt: new Date().toISOString(),
+                generationId: null,
+              },
+              profile: null,
+              personaImage: {
+                status: "NOT_REQUESTED",
+                imageUrl: null,
+                updatedAt: new Date().toISOString(),
+              },
+            }),
         transcript: [],
         lastRoundResult: null,
         comebackRound: null,
@@ -369,7 +387,16 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
     },
   });
 
-  await createTurnRound(gameId, roundNumber, { startDeadline: false });
+  const refreshedGame = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { modeState: true },
+  });
+  const refreshedModeState = refreshedGame ? parseModeState(refreshedGame.modeState) : modeState;
+  const profileReady =
+    refreshedModeState.profile != null ||
+    refreshedModeState.profileGeneration.status === "READY";
+
+  await createTurnRound(gameId, roundNumber, { startDeadline: profileReady });
 }
 
 export async function advanceGame(gameId: string): Promise<boolean> {
@@ -414,7 +441,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       const fallbackOutcome = isComebackRound(claim.modeState, claim.currentRound)
         ? "UNMATCHED"
         : "TURN_LIMIT";
-      await finalizeClaimedAdvance({
+      const fallbackFinalized = await finalizeClaimedAdvance({
         gameId,
         modeState: claim.modeState,
         transcript: claim.modeState.transcript,
@@ -422,6 +449,9 @@ export async function advanceGame(gameId: string): Promise<boolean> {
         outcome: fallbackOutcome,
         comebackRound: claim.modeState.comebackRound,
       });
+      if (fallbackFinalized) {
+        void ensurePersonaPostMortem(gameId);
+      }
       return false;
     }
 
@@ -438,7 +468,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     const transcriptWithWinner = [...claim.modeState.transcript, winnerEntry];
     const forceContinue = claim.currentRound === 1;
 
-    const { reply, outcome, mood, usage } = await generatePersonaReply(
+    const { reply, outcome, moodDelta, usage } = await generatePersonaReply(
       game.personaModelId,
       claim.modeState.seekerIdentity,
       claim.modeState.personaIdentity,
@@ -448,8 +478,11 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     );
     await accumulateUsage(gameId, [usage]);
 
+    // Compute new mood deterministically from the AI's delta
+    const newMood = clampMatchSlopMood(claim.modeState.mood + moodDelta);
+
     // Override outcome based on mood threshold
-    const effectiveOutcome = !forceContinue && mood <= MATCHSLOP_MOOD_THRESHOLD_UNMATCH
+    const effectiveOutcome = !forceContinue && newMood <= MATCHSLOP_MOOD_THRESHOLD_UNMATCH
       ? "UNMATCHED" as const
       : outcome;
 
@@ -466,10 +499,10 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       turn: claim.currentRound,
       outcome: advancePlan.transcriptOutcome,
       authorName: profile.displayName,
-      mood,
+      mood: newMood,
     };
     const nextTranscript = [...transcriptWithWinner, personaEntry];
-    const updatedModeState = { ...claim.modeState, mood };
+    const updatedModeState = { ...claim.modeState, mood: newMood };
 
     if (advancePlan.kind === "NEXT_ROUND") {
       return await transitionClaimedAdvanceToNextRound({
@@ -484,7 +517,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       });
     }
 
-    await finalizeClaimedAdvance({
+    const finalized = await finalizeClaimedAdvance({
       gameId,
       modeState: updatedModeState,
       transcript: nextTranscript,
@@ -492,6 +525,9 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       outcome: advancePlan.nextOutcome,
       comebackRound: advancePlan.comebackRound,
     });
+    if (finalized) {
+      void ensurePersonaPostMortem(gameId);
+    }
     return false;
   } catch (error) {
     await releaseRoundAdvanceClaim({

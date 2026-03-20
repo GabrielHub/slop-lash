@@ -163,6 +163,7 @@ export function DevMatchslopPlayground() {
                 profileGeneration={{ status: "READY" }}
                 outcome="IN_PROGRESS"
                 mood={sliderMood}
+                gameStarted={true}
               />
             </div>
           </DemoCard>

@@ -9,8 +9,14 @@ declare module "pg" {
 
   export class Pool {
     constructor(config: { connectionString: string; max?: number });
+    connect(): Promise<PoolClient>;
     query<Row = unknown>(queryText: string, values?: unknown[]): Promise<QueryResult<Row>>;
     end(): Promise<void>;
+  }
+
+  export interface PoolClient {
+    query<Row = unknown>(queryText: string, values?: unknown[]): Promise<QueryResult<Row>>;
+    release(): void;
   }
 
   export class Client {

@@ -30,7 +30,6 @@ import {
 } from "@/lib/animations";
 import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { useWinnerTagline } from "@/hooks/use-winner-tagline";
 import { WinnerTagline } from "@/components/winner-tagline";
 import { ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
 
@@ -167,7 +166,6 @@ export function Results({
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
-  const { tagline, isStreaming, winner: taglineWinner } = useWinnerTagline(code, isFinal, game.players);
   const advancePendingRef = useRef(false);
 
   const confettiFired = useRef(false);
@@ -248,6 +246,12 @@ export function Results({
   }, [currentRound, isFinal]);
 
   const sortedPlayers = [...game.players].sort((a, b) => b.score - a.score);
+  const taglineWinner = sortedPlayers[0]?.type === "AI" ? sortedPlayers[0] : null;
+  const tagline = game.winnerTagline ?? "";
+  const isStreaming =
+    game.gameType === "SLOPLASH" &&
+    taglineWinner != null &&
+    game.winnerTaglinePending === true;
   const afkPlayers = game.players.filter((p) => p.type === "HUMAN" && p.idleRounds >= 2);
 
   async function handleKick(targetPlayerId: string) {

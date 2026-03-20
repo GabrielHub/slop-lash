@@ -2,6 +2,10 @@ import type { GameStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { modelUsagesInclude, roundsInclude, roundsIncludeWriting, roundsIncludeActive } from "@/games/core/queries";
 import { createTimedCache } from "@/lib/timed-cache";
+import {
+  normalizeWinnerTagline,
+  WINNER_TAGLINE_GENERATING,
+} from "@/games/sloplash/winner-tagline";
 
 const GAME_PAYLOAD_CACHE_TTL_MS = 30_000;
 const gamePayloadCache = createTimedCache(300);
@@ -47,6 +51,7 @@ const gamePayloadCommonSelect = {
   votingPromptIndex: true,
   votingRevealing: true,
   nextGameCode: true,
+  winnerTagline: true,
   version: true,
 } as const satisfies Prisma.GameSelect;
 
@@ -97,6 +102,7 @@ export const gamePayloadAllRoundsSelect = {
 
 export type GameMetaPayload = Prisma.GameGetPayload<{ select: typeof gameMetaSelect }>;
 export type GameRoutePayload = Prisma.GameGetPayload<{ select: typeof gamePayloadAllRoundsSelect }>;
+export type NormalizedGameRoutePayload = GameRoutePayload & { winnerTaglinePending: boolean };
 
 export function findGameMeta(roomCode: string) {
   return prisma.game.findUnique({
@@ -106,18 +112,20 @@ export function findGameMeta(roomCode: string) {
 }
 
 /** Fill optional fields that may be absent in lighter select queries. */
-export function normalizePayload(game: unknown): GameRoutePayload {
+export function normalizePayload(game: unknown): NormalizedGameRoutePayload {
   const g = game as Record<string, unknown>;
   return {
     ...g,
     personaModelId: (g.personaModelId as string | null) ?? null,
     modeState: g.modeState ?? null,
+    winnerTagline: normalizeWinnerTagline((g.winnerTagline as string | null) ?? null),
+    winnerTaglinePending: (g.winnerTagline as string | null) === WINNER_TAGLINE_GENERATING,
     aiInputTokens: (g.aiInputTokens as number) ?? 0,
     aiOutputTokens: (g.aiOutputTokens as number) ?? 0,
     aiCostUsd: (g.aiCostUsd as number) ?? 0,
     modelUsages: (g.modelUsages as GameRoutePayload["modelUsages"]) ?? [],
     rounds: (g.rounds as GameRoutePayload["rounds"]) ?? [],
-  } as GameRoutePayload;
+  } as NormalizedGameRoutePayload;
 }
 
 export function findGamePayloadByStatus(
