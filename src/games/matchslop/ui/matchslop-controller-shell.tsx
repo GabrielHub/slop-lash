@@ -663,7 +663,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
     matchslop?.profile == null &&
     profileGeneration?.status === "FAILED";
   const isOpenerVoting = currentVotePrompt?.responses.some((r) => r.openerPromptId) ?? false;
-  const selectedOption = promptOptions.find((o) => o.id === selectedPromptId) ?? null;
+  const selectedOption: MatchSlopProfilePromptOption | null =
+    promptOptions.find((o) => o.id === selectedPromptId) ??
+    (selectedPromptId === PHOTO_PROMPT_ID
+      ? { id: PHOTO_PROMPT_ID, prompt: MATCHSLOP_PHOTO_PROMPT_TEXT, answer: "" }
+      : null);
   const personaName = matchslop?.profile?.displayName ?? "the persona";
 
   async function postHostAction(path: "start" | "next") {

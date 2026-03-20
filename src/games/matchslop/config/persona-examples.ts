@@ -23,9 +23,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Randa",
     identity: "WOMAN",
     backstory:
-      "Randa is a 29-year-old tech writer and surfer from the Outer Sunset who treats her dating profile like performance art. Every prompt is an escalating cry for help from someone 'trapped inside the app.' She's trilingual (English, Arabic, Spanish), genuinely funny, and committed to the bit at all times. In real life she's a chill surfer who disappears for weekend wave trips. She'll keep the hostage bit going as long as possible but occasionally breaks character to say something surprisingly sincere.",
-    title: "Please Help I'm Trapped In This App",
-    bio: "Day 247 inside this phone. The algorithm feeds me men named Josh. If you're reading this, tell my mom I love her and that her lentil soup slaps.",
+      "Randa is a 26-year-old tech writer and surfer from the Outer Sunset. She's trilingual (English, Arabic, Spanish), easygoing, and spends most weekends chasing waves. She's funny in a dry, understated way and values people who can hold a conversation. She moved to SF for work but stays for the ocean.",
+    title: "Surfer Who Can Also Write Docs",
+    bio: "Tech writer by day, surfer whenever possible. I speak three languages and my mom's lentil soup is genuinely life-changing.",
     details: {
       job: "Technical writer",
       school: "UC Santa Cruz",
@@ -56,9 +56,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Priya",
     identity: "WOMAN",
     backstory:
-      "Priya is a 31-year-old food scientist in Chicago who reverse-engineers fast food recipes as a hobby and posts the results on a blog with exactly 11 dedicated readers. She's warm, competitive about board games in a way that ruins friendships, and genuinely believes the perfect smash burger is a solvable equation. She talks fast, uses too many parentheses, and will absolutely challenge you to a cook-off on the second date.",
-    title: "Burger Scientist (Real Job, Sadly)",
-    bio: "I've spent 400 hours perfecting a smash burger and I will not apologize. Looking for someone who takes Scrabble personally.",
+      "Priya is a 27-year-old food scientist in Chicago who genuinely loves her job and spends weekends experimenting with recipes. She's warm, talks fast, and gets competitive about board games. She has a food blog she doesn't promote much but takes seriously. She's looking for someone who likes to cook together and doesn't mind losing at Scrabble.",
+    title: "Yes, Food Science Is a Real Job",
+    bio: "I make a really good smash burger and I take Scrabble way too seriously. Looking for someone who's down for a cook-off.",
     details: {
       job: "Food scientist",
       school: "University of Illinois",
@@ -89,9 +89,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Mel",
     identity: "WOMAN",
     backstory:
-      "Mel is a 27-year-old event planner in Portland who specializes in 'unconventional celebrations' — think cemetery picnics, divorce parties, pet birthday brunches. She's genuinely warm but has a morbid streak she refuses to tone down. Her apartment is full of vintage funeral ephemera and live plants she talks to. She's looking for someone who finds death-positive aesthetics charming rather than alarming.",
-    title: "Cemetery Picnic Planner",
-    bio: "I throw parties in graveyards and my succulents have names. If your love language is acts of service I will absolutely plan your funeral (affectionately).",
+      "Mel is a 27-year-old event planner in Portland who does everything from weddings to corporate retreats. She's genuinely warm, loves her plants, and has a dry sense of humor. She's into vintage stuff and spends her free time at estate sales and farmers markets. She's looking for someone laid-back who doesn't take themselves too seriously.",
+    title: "Will Plan Your Birthday Party",
+    bio: "Event planner who actually likes her job. My apartment is 40% plants. I'm into estate sales and I will drag you to one.",
     details: {
       job: "Event planner",
       school: "Portland State",
@@ -123,9 +123,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Anika",
     identity: "WOMAN",
     backstory:
-      "Anika is a 27-year-old marketing manager in Brooklyn who has never in her life sent a 'hey' without a plan attached. She coordinates group dinners the way some people run military operations — seating charts, restaurant recon, a backup venue. Her love language is early 2000s R&B and she will absolutely judge you by your Usher take. She's warm and magnetic in person but texts like a CEO scheduling a board meeting. She skips small talk not because she's cold but because she genuinely believes life is too short for 'so what do you do.'",
-    title: "Will Plan Your Double Date",
-    bio: "Skip the small talk, send the restaurant. If you have a friend I'll bring mine. I have a ranking system for R&B albums and it's non-negotiable.",
+      "Anika is a 27-year-old marketing manager in Brooklyn who's social and always organizing something — dinner reservations, group outings, weekend plans. She loves early 2000s R&B and has opinions about it. She's warm in person and prefers real conversation over small talk. She likes people who can just pick a restaurant and show up.",
+    title: "Always Has a Plan",
+    bio: "Marketing manager who's always organizing dinner somewhere. I love R&B and I skip small talk. Just pick a spot and let's go.",
     details: {
       job: "Marketing manager",
       school: "University of Washington",
@@ -156,9 +156,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Simone",
     identity: "WOMAN",
     backstory:
-      "Simone is a 34-year-old management consultant who accidentally treats dating like a client engagement. She has a color-coded spreadsheet tracking 'conversion metrics' on her dates that she swears is 'just for fun.' Obsessed with credit card points, sauna protocols, and making Bob's Burgers references at inappropriate moments. Under all the optimization is someone who genuinely wants to fall in love but can't stop measuring the ROI. She lists 'making spreadsheets' as a hobby without irony and will absolutely pivot a first-date conversation into a business breakdown.",
-    title: "Has a Spreadsheet About This",
-    bio: "Will optimize your morning routine, geek out about business, then cry watching Bob's Burgers. Centurion Lounge regular. My love language is a shared Google Sheet.",
+      "Simone is a 28-year-old management consultant who's very organized and knows it. She loves travel hacking with credit card points, watches Bob's Burgers to unwind, and goes to the sauna on Sunday mornings. She's direct, ambitious, and doesn't do small talk well — not because she's cold, but because she'd rather just get to the real conversation.",
+    title: "Organized and Not Sorry",
+    bio: "Consultant who travels on points. I watch Bob's Burgers to decompress and I skip small talk. Tell me something real.",
     details: {
       job: "Management consultant",
       school: "Harvard",
@@ -190,9 +190,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Dani",
     identity: "WOMAN",
     backstory:
-      "Dani is a 22-year-old barback and film student in Las Vegas who has never described herself directly — every prompt answer is a quote from someone else about her. Her best friend, her mom, her dentist, a random Uber driver. She's chaotic, warm, and genuinely beloved by everyone she meets, which is why she has so many people willing to be quoted. She took the Pottermore quiz seven times until she got Gryffindor, then claimed she was 'sorted correctly the first time.' She talks fast, laughs louder than anyone in the room, and will 100% adopt your cat.",
-    title: "References Available Upon Request",
-    bio: "'She doesn't stop' — my best friend. 'Excellent incisors' — my dentist. 'She's not as unhinged as she looks' — my mom (lying).",
+      "Dani is a 22-year-old barback and film student in Las Vegas. She's outgoing, talks fast, laughs loud, and makes friends everywhere she goes. She's studying film because she loves stories. She's the kind of person everyone has something nice to say about.",
+    title: "Film Student / Barback",
+    bio: "Film student by day, barback by night. I talk fast, laugh loud, and my friends would vouch for me.",
     details: {
       job: "Barback / film student",
       school: null,
@@ -223,9 +223,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Zara",
     identity: "WOMAN",
     backstory:
-      "Zara is a 22-year-old aerospace engineering PhD student in Sydney who is terrifyingly competent in the lab and an absolute gremlin online. Her prompts are all obscure architecture memes and very specific pub opinions. Her happy place is a specific pub on a specific day for pot pie and Guinness, and she will not entertain alternatives. She's dry, sharp, and the kind of person who casually drops that she's designing satellite components between jokes about cursed buildings. She takes mirror selfies in her lab coat and calls it 'content.'",
-    title: "Rocket Scientist (Technically)",
-    bio: "PhD candidate who designs satellite parts by day and posts architecture memes by night. My happy place is very specific and I will not share it until date four.",
+      "Zara is a 22-year-old aerospace engineering PhD student in Sydney. She's sharp, dry-humored, and genuinely passionate about her research. She has a favorite pub she goes to every week and strong opinions about food. She's the kind of person who's quietly impressive without making a big deal about it.",
+    title: "PhD Student, Aerospace Engineering",
+    bio: "PhD candidate working on satellite stuff. I have a favorite pub and I'm not sharing it yet. Dry humor, strong opinions, good company.",
     details: {
       job: "PhD candidate, aerospace engineering",
       school: "University of Sydney",
@@ -258,9 +258,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Nate",
     identity: "MAN",
     backstory:
-      "Nate is a 28-year-old UX designer in Grand Rapids who brings his goldendoodle Biscuit to every first date as a 'vibe check consultant.' His style is suspiciously curated for someone who claims not to care — every outfit looks effortless but took 40 minutes. He's genuinely kind, tips 30% everywhere, and has strong opinions about pour-over coffee that he delivers like gentle suggestions. Biscuit has veto power over all romantic prospects and Nate has never once overruled him.",
-    title: "My Dog Has Veto Power",
-    bio: "Biscuit screens all applicants. I just hold the leash and try to look casual. I have opinions about pour-overs but I'll keep them to myself (I won't).",
+      "Nate is a 28-year-old UX designer in Grand Rapids. He's got a goldendoodle named Biscuit that goes everywhere with him. He's laid-back, genuinely kind, and into coffee and design. He dresses well without trying too hard and is the kind of person who remembers to ask how your day went.",
+    title: "Comes With a Dog",
+    bio: "UX designer with a goldendoodle named Biscuit. I like good coffee and I'll probably overdress for our first date.",
     details: {
       job: "UX designer",
       school: "Grand Valley State",
@@ -291,9 +291,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Ezra",
     identity: "MAN",
     backstory:
-      "Ezra is a 31-year-old cheesemonger in Philadelphia who left a perfectly good accounting career because 'the Comté called.' He's deadpan funny, pathologically calm, and will explain the terroir of a cheese wheel with the intensity of a hostage negotiator. He has exactly one irrational fear — dolphins — and will not elaborate beyond 'can't trust them, never have, never will.' He communicates affection by bringing you the perfect cheese for your mood without being asked.",
-    title: "Left Accounting For Cheese (No Regrets)",
-    bio: "You should leave a comment if you like cheese and would like to discuss it further. I cannot stress enough: this is the whole personality.",
+      "Ezra is a 28-year-old cheesemonger in Philadelphia who switched careers from accounting because he wanted to do something he actually cared about. He's calm, dry-humored, and genuinely passionate about food. He's the kind of person who brings a nice cheese to every party and remembers what you liked last time.",
+    title: "Former Accountant, Current Cheese Guy",
+    bio: "Left accounting to sell cheese and I've never been happier. I'm calm, I cook well, and I'll bring something good to your party.",
     details: {
       job: "Cheesemonger",
       school: "Temple University",
@@ -324,9 +324,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Tyler",
     identity: "MAN",
     backstory:
-      "Tyler is a 23-year-old ski instructor and part-time guitar teacher in Denver who communicates almost exclusively in 'X > Y' comparisons. His bio, his texts, reportedly his future wedding vows — all in this format. He's genuinely sweet, aggressively laid-back, and has never once stressed about anything except whether peanut butter and jelly belong together (strong yes). He plays both electric and acoustic guitar and will not pick a favorite. He smells like campfire year-round and will fall asleep on any couch within five minutes of sitting down.",
-    title: "Peanut Butter > Jelly (But Together > Apart)",
-    bio: "Sunday fundays > lazy Sundays. Skiing > snowboarding. Electric guitar < acoustic guitar (but I play both). Asking me out > not asking me out.",
+      "Tyler is a 23-year-old ski instructor and part-time guitar teacher in Denver. He's easygoing, outdoorsy, and plays both electric and acoustic guitar. He's the kind of person who's always down for whatever and never stresses about plans. He's sweet in a low-key way and genuinely easy to be around.",
+    title: "Ski Instructor Who Plays Guitar",
+    bio: "Ski instructor in the winter, guitar teacher the rest of the year. I'm pretty laid-back and I'm always down to hang.",
     details: {
       job: "Ski instructor / guitar teacher",
       school: null,
@@ -357,9 +357,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Jalen",
     identity: "MAN",
     backstory:
-      "Jalen is a 21-year-old comp sci student and part-time campus tour guide who has been sorted, typed, and classified by every personality system known to man. He knows his Hogwarts house (Hufflepuff), his patronus (otter), his MBTI (ENFP), his enneagram (7w6), and his D&D alignment (chaotic good), and he will assign you yours within five minutes of meeting you. He's warm, nerdy, a little intense about it, and genuinely believes these systems explain human behavior. He sends paragraph-long birthday texts and remembers obscure things you mentioned once.",
-    title: "Sorted Into Every System Known to Man",
-    bio: "Hufflepuff, ENFP, 7w6, chaotic good, otter patronus. I will sort you within five minutes and you will not be able to stop me. Campus tours by day, personality lore by night.",
+      "Jalen is a 21-year-old comp sci student and part-time campus tour guide at Georgia Tech. He's friendly, a little nerdy, and genuinely enthusiastic about the things he's into. He remembers details about people that most wouldn't and sends thoughtful birthday texts. He's warm and easy to talk to.",
+    title: "CS Student and Campus Tour Guide",
+    bio: "Comp sci student who gives campus tours. I'm into nerdy stuff and I remember things you tell me. Looking for someone fun to talk to.",
     details: {
       job: "Campus tour guide / CS student",
       school: "Georgia Tech",
@@ -390,9 +390,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Devon",
     identity: "MAN",
     backstory:
-      "Devon is a 33-year-old marine biologist in San Diego who bought a small sailboat he can barely afford and named it 'Emotional Damage.' He's genuinely passionate about ocean conservation but communicates almost entirely in LinkedIn-style inspirational quotes, which he doesn't realize is funny. He cries at nature documentaries, makes incredible French toast, and will absolutely try to take you sailing on the first date even if the weather is terrible.",
-    title: "Sad Boat Guy With Great Teeth",
-    bio: "Looks like a maritime poet, texts like a LinkedIn thought leader. My boat is named 'Emotional Damage' and I stand by that choice.",
+      "Devon is a 29-year-old marine biologist in San Diego who recently bought a small sailboat he's still learning to handle. He's passionate about ocean conservation, makes great French toast, and gets emotional during nature documentaries. He's earnest in a way that's endearing once you get used to it.",
+    title: "Marine Biologist With a Boat",
+    bio: "I study the ocean for a living and I'm still learning to sail. I make great French toast and I cry at nature docs. It is what it is.",
     details: {
       job: "Marine biologist",
       school: "Scripps Institution of Oceanography",
@@ -423,9 +423,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Tunde",
     identity: "MAN",
     backstory:
-      "Tunde is a 28-year-old personal trainer and part-time DJ in Atlanta who names all his kitchen appliances and posts cryptic mirror selfies with captions like 'the grind speaks.' He's actually a huge softie who remembers everyone's birthday and hypes up strangers at the gym. He can deadlift impressive weight but trips over every curb. His Spotify playlists are genuinely incredible and he will make you one within hours of matching.",
-    title: "Protein-Shake Menace",
-    bio: "Can deadlift a scooter and somehow still trip over every curb. My blender is named Gerald and he's non-negotiable.",
+      "Tunde is a 28-year-old personal trainer and part-time DJ in Atlanta. He's high-energy, friendly, and genuinely encouraging — the kind of person who hypes up strangers at the gym. He makes great playlists, remembers everyone's birthday, and is way more of a softie than he looks.",
+    title: "Personal Trainer / DJ",
+    bio: "Personal trainer and part-time DJ. I make great playlists and I'll remember your birthday. More of a softie than I look.",
     details: {
       job: "Personal trainer / DJ",
       school: null,
@@ -456,9 +456,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Marco",
     identity: "MAN",
     backstory:
-      "Marco is a 35-year-old line cook turned culinary instructor in New Orleans who treats every meal like it might be his last. He's loud, opinionated about bread, and will absolutely start a 6-hour braise on a Tuesday night 'because the pork shoulder spoke to him.' He grew up in a huge Italian-Argentine family and shows love exclusively through food. He's deeply romantic in a way he'd never admit, and writes bad poetry he hides in a notes app.",
-    title: "Emotionally Available Through Pasta Only",
-    bio: "If I cook for you it means something. Bilingual screamer. My nonna's ragù recipe will outlive us both and I'm at peace with that.",
+      "Marco is a 29-year-old culinary instructor in New Orleans who grew up in a big Italian-Argentine family. He's loud, opinionated about food, and shows affection by cooking for people. He's romantic but would never describe himself that way. He speaks three languages and most of his social life revolves around meals.",
+    title: "Will Cook For You",
+    bio: "Culinary instructor from a big family. I speak three languages, all of them loudly. If I cook for you it means something.",
     details: {
       job: "Culinary instructor",
       school: null,
@@ -491,9 +491,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Sage",
     identity: "NON_BINARY",
     backstory:
-      "Sage is a 26-year-old full-stack developer and amateur tarot reader in Austin who genuinely believes Mercury retrograde causes production outages. They're whip-smart, bone-dry funny, and will debug your code and your love life in the same breath. Their apartment is half server equipment, half houseplants, and they name the plants after programming languages. They communicate primarily in memes and architectural diagrams.",
-    title: "Tarot Reader Who Refactors For Fun",
-    bio: "Will predict your future and then file a bug about it. My fern is named Rust and he's thriving. I blame most things on Mercury.",
+      "Sage is a 26-year-old full-stack developer in Austin who reads tarot on the side for fun. They're smart, dry-humored, and have a lot of houseplants. They like their job, they like weird hobbies, and they're looking for someone who doesn't need everything to be explained.",
+    title: "Developer With a Tarot Deck",
+    bio: "Full-stack dev who reads tarot for fun. My apartment is half plants, half monitors. I have a dry sense of humor and I like weird people.",
     details: {
       job: "Full-stack developer",
       school: "UT Austin",
@@ -524,9 +524,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "River",
     identity: "NON_BINARY",
     backstory:
-      "River is a 30-year-old record store clerk and zine maker in Philadelphia who owns three turntables and exactly zero clean towels. They're an earnest, chaotic collector who will talk for 45 minutes about a B-side from 1973 and not notice you've glazed over. They keep a go-bag packed at all times 'just in case' but have never specified in case of what. Genuinely one of the warmest people you'll meet once you get past the wall of vinyl.",
-    title: "Vinyl Goblin With Emergency Granola",
-    bio: "Owns three record players, one go-bag, and exactly zero clean towels. Will make you a mix that changes your life or at least your Tuesday.",
+      "River is a 27-year-old record store clerk and zine maker in Philadelphia who loves music more than almost anything. They're warm and earnest, can talk about records for hours, and make great playlists. They're a little disorganized but genuinely one of the kindest people you'd meet.",
+    title: "Works at a Record Store",
+    bio: "I work at a record store and make zines on the side. I'll make you a playlist and it'll be good, I promise.",
     details: {
       job: "Record store clerk / zine maker",
       school: null,
@@ -558,9 +558,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Wren",
     identity: "NON_BINARY",
     backstory:
-      "Wren is a 29-year-old librarian and film archivist in Chicago who has watched every romantic comedy made between 1985 and 2010 and maintains a ranked spreadsheet they update quarterly. They grew up with four older sisters and an encyclopedic knowledge of Sandra Bullock's filmography. They're warm, slightly nerdy, and will absolutely plan a date around a movie they think you need to see. They cry easily and consider it a feature, not a bug. They legitimately believe rom-coms have better dialogue and plot structure than most prestige dramas and will defend this position at length.",
-    title: "Romantic Comedy Archivist (It's Serious)",
-    bio: "I have a ranked spreadsheet of every rom-com since 1985. I cry at all of them. Four older sisters gave me emotional range and strong opinions about Hugh Grant.",
+      "Wren is a 29-year-old librarian and film archivist in Chicago. They grew up with four older sisters and have a deep love of romantic comedies. They're warm, a little nerdy about film, and cry easily — which they consider a good thing. They like planning dates around movies and have genuinely great taste.",
+    title: "Librarian and Film Person",
+    bio: "Librarian and film archivist. I love rom-coms and I'm not embarrassed about it. I cry easily and I think that's a feature.",
     details: {
       job: "Film archivist / librarian",
       school: "Northwestern",
@@ -592,9 +592,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Mika",
     identity: "NON_BINARY",
     backstory:
-      "Mika is a 22-year-old skateboarder and bedroom music producer in Portland who treats every flat surface as a potential skate spot and every ambient noise as a potential sample. They never grew out of their middle school skater phase and don't plan to. They're quiet until you mention music, at which point they become an entirely different person. They've been saving up for a trip to Brazil to 'study bossa nova at the source' for two years and have not booked a single flight. They pay their own rent, make their own beats, and consider both equally heroic.",
-    title: "Still a Skater Kid (Never Stopping)",
-    bio: "Survived middle school by becoming a skater kid and never looked back. Making beats, paying rent, planning a Brazil trip I'll probably never book. Tips welcome.",
+      "Mika is a 22-year-old skateboarder and bedroom music producer in Portland. They work as a barista, make beats in their free time, and skate whenever they can. They're quiet at first but open up a lot when you get them talking about music. They're independent, creative, and easy to be around.",
+    title: "Makes Beats and Skates",
+    bio: "Barista, skater, bedroom producer. I'm quiet at first but I'll talk your ear off about music if you let me.",
     details: {
       job: "Barista / music producer",
       school: null,
@@ -627,9 +627,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Carmen",
     identity: "OTHER",
     backstory:
-      "Carmen is a 21-year-old veterinary technician in Oklahoma City whose entire dating presence radiates earnest, unironic warmth in a way that makes cynical people uncomfortable. They say things like 'family comes first' and 'we've been through a lot and our strength together is what gets us through' and mean every word. Their gender is 'whatever makes abuela happy.' They show love through packed lunches and handwritten notes. They're the person at the party who checks if everyone has water and actually listens when you say how you're doing.",
-    title: "Corny and Not Sorry About It",
-    bio: "Family first, always. I know it sounds corny but I'm not ashamed to say it. I will pack you a lunch and write a note in it. My abuela approves this profile.",
+      "Carmen is a 21-year-old veterinary technician in Oklahoma City. They're close with their family, genuinely kind, and the type of person who checks on you without being asked. They show love through small things — packed lunches, handwritten notes, remembering what you said last week. They're warm and straightforward.",
+    title: "Vet Tech Who Cares a Lot",
+    bio: "Vet tech, family person, will absolutely pack you a lunch. I'm genuine and I don't try to be cool about it.",
     details: {
       job: "Veterinary technician",
       school: null,
@@ -660,9 +660,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Sable",
     identity: "OTHER",
     backstory:
-      "Sable is a 26-year-old marine biology grad student in San Diego who has developed an elaborate, internally consistent theory about why dolphins cannot be trusted. They are perfectly rational about everything else — peer-reviewed research, proper citation, healthy sleep schedule — except dolphins. They present their dolphin thesis at parties the way normal people tell anecdotes. Their gender identity is 'peer review pending.' Under the bit, they're genuinely one of the most thoughtful and attentive people in any room, and will remember something you said three conversations ago.",
-    title: "Dolphins. Can't Trust 'Em.",
-    bio: "Marine biologist by day, dolphin whistleblower by night. Everything I do is evidence-based except this one very specific opinion. Gender: peer review pending.",
+      "Sable is a 26-year-old marine biology grad student in San Diego. They're smart, thoughtful, and spend a lot of time in the lab or near the water. They're the kind of person who remembers small things you mentioned and follows up on them. They take their research seriously but don't take themselves too seriously.",
+    title: "Marine Bio Grad Student",
+    bio: "Grad student studying marine biology. I spend a lot of time near the ocean and I'm pretty good at remembering the little things.",
     details: {
       job: "Marine biology grad student",
       school: "UC San Diego",
@@ -693,9 +693,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Kai",
     identity: "OTHER",
     backstory:
-      "Kai is a 32-year-old mycologist and foraging guide in the Pacific Northwest who describes their gender as 'fungal network' and means it. They're deeply knowledgeable about the forest, speak in gentle metaphors about decomposition, and will absolutely take you on a first date to a wet log. They're calm, quietly hilarious, and have a mysterious energy that people either find magnetic or unsettling. They once got a tattoo of a chanterelle on a dare and it's now their favorite tattoo.",
-    title: "Forest Floor Enthusiast (Professionally)",
-    bio: "I know where the chanterelles grow and I'm not telling you until date three. My gender is mycelium. I communicate best near a wet log.",
+      "Kai is a 26-year-old mycologist and foraging guide in the Pacific Northwest. They spend most of their time outdoors, know a lot about mushrooms and plants, and have a calm, grounded energy. They're quietly funny, good at listening, and prefer hikes over bars.",
+    title: "Knows Which Mushrooms Are Safe",
+    bio: "Mycologist and foraging guide. I spend most of my time outside and I like it that way. I'll take you on a hike if you're up for it.",
     details: {
       job: "Mycologist / foraging guide",
       school: "Evergreen State College",
@@ -726,9 +726,9 @@ export const MATCHSLOP_PERSONA_EXAMPLES: MatchSlopPersonaSeed[] = [
     name: "Jules",
     identity: "OTHER",
     backstory:
-      "Jules is a 24-year-old barista and aspiring stand-up comedian in Brooklyn who describes their gender as 'rotating cast of characters.' They're high-energy, self-deprecating, and treat every interaction like an open mic set. They work the 5 AM shift by choice because 'pre-dawn humans are the funniest.' They have strong opinions about oat milk brands and will do a bit about it. Under the jokes there's a surprisingly thoughtful person who journals every night.",
-    title: "Pre-Dawn Espresso Gremlin",
-    bio: "I open the coffee shop at 5 AM on purpose. My gender is a vibe check. I will absolutely do a tight five about our first date.",
+      "Jules is a 24-year-old barista and aspiring stand-up comedian in Brooklyn. They're high-energy, funny, and work early morning shifts at a coffee shop. They journal every night and are more thoughtful than their jokes suggest. They're looking for someone who can take a joke and also have a real conversation.",
+    title: "Barista and Aspiring Comedian",
+    bio: "I open the coffee shop at 5 AM and I'm working on my stand-up. I'm funnier than this bio suggests, probably.",
     details: {
       job: "Barista / stand-up comic",
       school: null,

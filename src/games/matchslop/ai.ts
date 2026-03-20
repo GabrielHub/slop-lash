@@ -61,7 +61,7 @@ const detailsSchema = z.object({
 const profileSchema = z.object({
   displayName: z.string(),
   backstory: z.string(),
-  age: z.number().int().nullable(),
+  age: z.number().int().min(20).max(30).nullable(),
   location: z.string().nullable(),
   bio: z.string(),
   tagline: z.string().nullable(),
@@ -190,13 +190,17 @@ function buildPersonaProfileRequest({
 
 The persona is a ${identityLabel(personaIdentity)}. The players collectively roleplay as a ${identityLabel(seekerIdentity)} trying to match.
 
-Start with a backstory (3-5 sentences: personality, contradictions, obsessions, voice). Derive everything else from it.
+IMPORTANT: The persona must feel like a real, normal person you'd actually find on a dating app. They should have a realistic job, genuine interests, and a natural voice. The humor in this game comes from the PLAYERS sending unhinged messages — the persona is the straight man. Think of someone your friend would actually date: grounded, relatable, maybe a little quirky but never cartoonish or gimmick-based. No absurd obsessions, no "committed to the bit" performance art, no wacky personality hooks.
 
-- Bio under 220 characters
-- 3 profile prompts with short, punchy answers
+Start with a backstory (3-5 sentences: personality, what they care about, how they talk). Derive everything else from it.
+
+- Age must be between 20 and 30
+- Bio under 220 characters — should sound like a real person wrote it, not a comedy writer
+- 3 profile prompts with genuine, natural answers
 - Include job, height, and languages (at least 1). school is optional (null if omitted)
-- Playful, specific, a little cursed — no hateful or sexual content
-- Backstory must sustain the character across multiple conversation rounds`,
+- Authentic and specific, not quirky for the sake of quirky — no hateful or sexual content
+- Backstory must sustain the character across multiple conversation rounds
+- The persona should react like a real person would when players say weird things — confused, amused, put off, or charmed depending on what's said`,
     prompt: `<persona-seeds>${examplesXml}</persona-seeds>`,
     output: Output.object({
       schema: personaProfileGenerationSchema,
@@ -622,13 +626,15 @@ export function buildPersonaReplySystemPrompt(
   return `You are a ${identityLabel(personaIdentity)} on a dating app. You just matched with a ${identityLabel(seekerIdentity)} and are chatting with them.
 
 Your profile and backstory are provided — stay consistent with who you are. Reply the way you'd actually text on a dating app: short, natural, in your own voice.
+
+You are a normal person with standards. You don't have to be nice about everything. If someone sends you something weird, creepy, nonsensical, or off-putting, react the way a real person would — with confusion, discomfort, a short reply, or by unmatching. You are NOT obligated to keep the conversation going. Not everyone deserves a response.
 ${
   forceContinue
     ? `This is the opening exchange — keep the conversation going. outcome must be CONTINUE.`
     : `After replying, decide what happens next:
-- CONTINUE: you're interested enough to keep talking
-- DATE_SEALED: you're genuinely into this and ready to meet up
-- UNMATCHED: this isn't working — you're done`
+- CONTINUE: the conversation is going well enough to keep talking
+- DATE_SEALED: you're genuinely into this person and ready to meet up — only if they've been actually charming
+- UNMATCHED: they said something weird, creepy, boring, or off-putting — you're done. Real people unmatch all the time. Don't be afraid to do it.`
 }
 
 Respond with ONLY this JSON (no other text):

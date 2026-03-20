@@ -1,9 +1,9 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
-import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { generatePersonaReply } from "./ai";
 import {
+  buildResultsDeadline,
   buildWritingDeadline,
   buildRoundPromptText,
   getActivePlayerIds,
@@ -38,6 +38,13 @@ type MatchSlopAdvancePlan =
       transcriptOutcome: MatchSlopTranscriptOutcome;
       comebackRound: number | null;
     };
+
+type AdvanceClaim = {
+  currentRound: number;
+  totalRounds: number;
+  timersDisabled: boolean;
+  modeState: ReturnType<typeof parseModeState>;
+};
 
 export function resolveAdvancePlan(args: {
   currentRound: number;
@@ -105,19 +112,27 @@ export function resolveAdvancePlan(args: {
 async function createTurnRound(
   gameId: string,
   roundNumber: number,
-  options?: { startDeadline?: boolean },
+  options?: { startDeadline?: boolean; promptText?: string; timersDisabled?: boolean },
 ): Promise<void> {
+  let promptText = options?.promptText;
+  let timersDisabled = options?.timersDisabled;
+
   const [activePlayerIds, game] = await Promise.all([
     getActivePlayerIds(gameId),
-    prisma.game.findUnique({
-      where: { id: gameId },
-      select: { timersDisabled: true, modeState: true },
-    }),
+    // Skip DB read entirely when caller already supplies promptText + timersDisabled
+    promptText != null && timersDisabled != null
+      ? null
+      : prisma.game.findUnique({ where: { id: gameId }, select: { timersDisabled: true, modeState: true } }),
   ]);
 
-  if (!game) return;
-  const modeState = parseModeState(game.modeState);
-  const promptText = buildRoundPromptText(roundNumber, modeState.profile, modeState.transcript);
+  if (promptText == null || timersDisabled == null) {
+    if (!game) return;
+    timersDisabled ??= game.timersDisabled;
+    if (promptText == null) {
+      const modeState = parseModeState(game.modeState);
+      promptText = buildRoundPromptText(roundNumber, modeState.profile, modeState.transcript);
+    }
+  }
 
   await prisma.round.create({
     data: {
@@ -144,9 +159,160 @@ async function createTurnRound(
       votingPromptIndex: 0,
       votingRevealing: false,
       phaseDeadline:
-        options?.startDeadline === false ? null : buildWritingDeadline(game.timersDisabled),
+        options?.startDeadline === false ? null : buildWritingDeadline(timersDisabled),
       version: { increment: 1 },
     },
+  });
+}
+
+async function claimRoundAdvance(args: {
+  gameId: string;
+  version: number;
+}): Promise<number | null> {
+  const { gameId, version } = args;
+  const claimedVersion = version + 1;
+  const claimed = await prisma.game.updateMany({
+    where: {
+      id: gameId,
+      status: "ROUND_RESULTS",
+      votingRevealing: false,
+      version,
+    },
+    data: {
+      votingRevealing: true,
+      phaseDeadline: null,
+      version: claimedVersion,
+    },
+  });
+
+  return claimed.count > 0 ? claimedVersion : null;
+}
+
+async function releaseRoundAdvanceClaim(args: {
+  gameId: string;
+  timersDisabled: boolean;
+}): Promise<void> {
+  const { gameId, timersDisabled } = args;
+  await prisma.game.updateMany({
+    where: {
+      id: gameId,
+      status: "ROUND_RESULTS",
+      votingRevealing: true,
+    },
+    data: {
+      votingRevealing: false,
+      phaseDeadline: buildResultsDeadline(timersDisabled),
+    },
+  });
+}
+
+async function finalizeClaimedAdvance(args: {
+  gameId: string;
+  modeState: ReturnType<typeof parseModeState>;
+  outcome: Exclude<MatchSlopOutcome, "IN_PROGRESS">;
+  transcript: MatchSlopTranscriptEntry[];
+  lastRoundResult: unknown;
+  comebackRound: number | null;
+}): Promise<boolean> {
+  const { gameId, modeState, outcome, transcript, lastRoundResult, comebackRound } = args;
+  return prisma.$transaction(async (tx) => {
+    const game = await tx.game.findUnique({
+      where: { id: gameId },
+      select: { status: true, votingRevealing: true },
+    });
+    if (!game || game.status !== "ROUND_RESULTS" || !game.votingRevealing) {
+      return false;
+    }
+
+    await tx.game.update({
+      where: { id: gameId },
+      data: {
+        status: "FINAL_RESULTS",
+        phaseDeadline: null,
+        votingRevealing: false,
+        modeState: toJson({
+          ...modeState,
+          transcript,
+          lastRoundResult: toJson(lastRoundResult),
+          outcome,
+          comebackRound,
+        }),
+        version: { increment: 1 },
+      },
+    });
+
+    return true;
+  });
+}
+
+async function transitionClaimedAdvanceToNextRound(args: {
+  gameId: string;
+  nextRound: number;
+  promptText: string;
+  timersDisabled: boolean;
+  modeState: ReturnType<typeof parseModeState>;
+  transcript: MatchSlopTranscriptEntry[];
+  outcome: MatchSlopOutcome;
+  comebackRound: number | null;
+}): Promise<boolean> {
+  const {
+    gameId,
+    nextRound,
+    promptText,
+    timersDisabled,
+    modeState,
+    transcript,
+    outcome,
+    comebackRound,
+  } = args;
+  const activePlayerIds = await getActivePlayerIds(gameId);
+
+  return prisma.$transaction(async (tx) => {
+    const game = await tx.game.findUnique({
+      where: { id: gameId },
+      select: { status: true, votingRevealing: true },
+    });
+    if (!game || game.status !== "ROUND_RESULTS" || !game.votingRevealing) {
+      return false;
+    }
+
+    await tx.round.create({
+      data: {
+        gameId,
+        roundNumber: nextRound,
+        prompts: {
+          create: [
+            {
+              text: promptText,
+              assignments: {
+                create: activePlayerIds.map((playerId) => ({ playerId })),
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    await tx.game.update({
+      where: { id: gameId },
+      data: {
+        currentRound: nextRound,
+        status: "WRITING",
+        votingPromptIndex: 0,
+        votingRevealing: false,
+        phaseDeadline: buildWritingDeadline(timersDisabled),
+        modeState: toJson({
+          ...modeState,
+          transcript,
+          lastRoundResult: null,
+          outcome,
+          comebackRound,
+        }),
+        version: { increment: 1 },
+      },
+    });
+
+    return true;
   });
 }
 
@@ -209,114 +375,121 @@ export async function advanceGame(gameId: string): Promise<boolean> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
     select: {
+      status: true,
       currentRound: true,
       totalRounds: true,
       personaModelId: true,
+      timersDisabled: true,
+      votingRevealing: true,
       modeState: true,
+      version: true,
     },
   });
 
   if (!game?.personaModelId) return false;
+  if (game.status !== "ROUND_RESULTS" || game.votingRevealing) return false;
 
   const modeState = parseModeState(game.modeState);
-  const result = modeState.lastRoundResult;
-  const profile = modeState.profile;
-  if (!result || !profile) {
-    const fallbackOutcome = isComebackRound(modeState, game.currentRound)
-      ? "UNMATCHED"
-      : "TURN_LIMIT";
-    await prisma.game.update({
-      where: { id: gameId },
-      data: {
-        status: "FINAL_RESULTS",
-        phaseDeadline: null,
-        modeState: toJson({
-          ...modeState,
-          outcome: fallbackOutcome,
-          lastRoundResult: null,
-        }),
-        version: { increment: 1 },
-      },
+  const claim: AdvanceClaim | null = await (async () => {
+    const claimedVersion = await claimRoundAdvance({
+      gameId,
+      version: game.version,
     });
-    return false;
-  }
+    if (claimedVersion == null) return null;
+    return {
+      currentRound: game.currentRound,
+      totalRounds: game.totalRounds,
+      timersDisabled: game.timersDisabled,
+      modeState,
+    };
+  })();
+  if (!claim) return false;
 
-  const winnerEntry: MatchSlopTranscriptEntry = {
-    id: `players-turn-${game.currentRound}`,
-    speaker: "PLAYERS",
-    text: result.winnerText,
-    turn: game.currentRound,
-    outcome: null,
-    authorName: result.authorName,
-    selectedPromptText: game.currentRound === 1 ? (result.selectedPromptText ?? null) : null,
-    selectedPromptId: game.currentRound === 1 ? (result.selectedPromptId ?? null) : null,
-  };
-  const transcriptWithWinner = [...modeState.transcript, winnerEntry];
-  const forceContinue = game.currentRound === 1;
+  const result = claim.modeState.lastRoundResult;
+  const profile = claim.modeState.profile;
 
-  const { reply, outcome, usage } = await generatePersonaReply(
-    game.personaModelId,
-    modeState.seekerIdentity,
-    modeState.personaIdentity,
-    profile,
-    transcriptWithWinner,
-    { forceContinue },
-  );
-  await accumulateUsage(gameId, [usage]);
-
-  const advancePlan = resolveAdvancePlan({
-    currentRound: game.currentRound,
-    totalRounds: game.totalRounds,
-    comebackRound: modeState.comebackRound,
-    personaOutcome: outcome,
-  });
-  const personaEntry: MatchSlopTranscriptEntry = {
-    id: `persona-turn-${game.currentRound}`,
-    speaker: "PERSONA",
-    text: reply,
-    turn: game.currentRound,
-    outcome: advancePlan.transcriptOutcome,
-    authorName: profile.displayName,
-  };
-  const nextTranscript = [...transcriptWithWinner, personaEntry];
-
-  if (advancePlan.kind === "NEXT_ROUND") {
-    try {
-      await prisma.game.update({
-        where: { id: gameId },
-        data: {
-          modeState: toJson({
-            ...modeState,
-            transcript: nextTranscript,
-            lastRoundResult: null,
-            outcome: advancePlan.nextOutcome,
-            comebackRound: advancePlan.comebackRound,
-          }),
-          version: { increment: 1 },
-        },
+  try {
+    if (!result || !profile) {
+      const fallbackOutcome = isComebackRound(claim.modeState, claim.currentRound)
+        ? "UNMATCHED"
+        : "TURN_LIMIT";
+      await finalizeClaimedAdvance({
+        gameId,
+        modeState: claim.modeState,
+        transcript: claim.modeState.transcript,
+        lastRoundResult: null,
+        outcome: fallbackOutcome,
+        comebackRound: claim.modeState.comebackRound,
       });
-      await createTurnRound(gameId, advancePlan.nextRound);
-      return true;
-    } catch (error) {
-      if (!hasPrismaErrorCode(error, "P2002")) throw error;
       return false;
     }
-  }
 
-  await prisma.game.update({
-    where: { id: gameId },
-    data: {
-      status: "FINAL_RESULTS",
-      phaseDeadline: null,
-      modeState: toJson({
-        ...modeState,
+    const winnerEntry: MatchSlopTranscriptEntry = {
+      id: `players-turn-${claim.currentRound}`,
+      speaker: "PLAYERS",
+      text: result.winnerText,
+      turn: claim.currentRound,
+      outcome: null,
+      authorName: result.authorName,
+      selectedPromptText: claim.currentRound === 1 ? (result.selectedPromptText ?? null) : null,
+      selectedPromptId: claim.currentRound === 1 ? (result.selectedPromptId ?? null) : null,
+    };
+    const transcriptWithWinner = [...claim.modeState.transcript, winnerEntry];
+    const forceContinue = claim.currentRound === 1;
+
+    const { reply, outcome, usage } = await generatePersonaReply(
+      game.personaModelId,
+      claim.modeState.seekerIdentity,
+      claim.modeState.personaIdentity,
+      profile,
+      transcriptWithWinner,
+      { forceContinue },
+    );
+    await accumulateUsage(gameId, [usage]);
+
+    const advancePlan = resolveAdvancePlan({
+      currentRound: claim.currentRound,
+      totalRounds: claim.totalRounds,
+      comebackRound: claim.modeState.comebackRound,
+      personaOutcome: outcome,
+    });
+    const personaEntry: MatchSlopTranscriptEntry = {
+      id: `persona-turn-${claim.currentRound}`,
+      speaker: "PERSONA",
+      text: reply,
+      turn: claim.currentRound,
+      outcome: advancePlan.transcriptOutcome,
+      authorName: profile.displayName,
+    };
+    const nextTranscript = [...transcriptWithWinner, personaEntry];
+
+    if (advancePlan.kind === "NEXT_ROUND") {
+      return await transitionClaimedAdvanceToNextRound({
+        gameId,
+        nextRound: advancePlan.nextRound,
+        promptText: personaEntry.text,
+        timersDisabled: claim.timersDisabled,
+        modeState: claim.modeState,
         transcript: nextTranscript,
-        lastRoundResult: result,
         outcome: advancePlan.nextOutcome,
         comebackRound: advancePlan.comebackRound,
-      }),
-      version: { increment: 1 },
-    },
-  });
-  return false;
+      });
+    }
+
+    await finalizeClaimedAdvance({
+      gameId,
+      modeState: claim.modeState,
+      transcript: nextTranscript,
+      lastRoundResult: result,
+      outcome: advancePlan.nextOutcome,
+      comebackRound: advancePlan.comebackRound,
+    });
+    return false;
+  } catch (error) {
+    await releaseRoundAdvanceClaim({
+      gameId,
+      timersDisabled: claim.timersDisabled,
+    });
+    throw error;
+  }
 }
