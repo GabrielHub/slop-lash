@@ -27,6 +27,7 @@ import type {
   MatchSlopTranscriptOutcome,
   MatchSlopTranscriptEntry,
 } from "./types";
+import { MATCHSLOP_INITIAL_MOOD, clampMatchSlopMood } from "./types";
 import { asRecord, asString, asNumber, asStringArray } from "@/lib/json-guards";
 
 function isIdentity(value: unknown): value is MatchSlopIdentity {
@@ -156,6 +157,7 @@ function parseTranscriptEntry(value: unknown, index: number): MatchSlopTranscrip
   const text = asString(record.text);
   if (!speaker || !text) return null;
   const outcome = asString(record.outcome) as MatchSlopTranscriptOutcome | null;
+  const mood = asNumber(record.mood);
   return {
     id: asString(record.id) ?? `entry-${index + 1}`,
     speaker,
@@ -172,6 +174,7 @@ function parseTranscriptEntry(value: unknown, index: number): MatchSlopTranscrip
     authorName: asString(record.authorName),
     selectedPromptText: asString(record.selectedPromptText) ?? null,
     selectedPromptId: asString(record.selectedPromptId) ?? null,
+    mood: mood == null ? null : clampMatchSlopMood(mood),
   };
 }
 
@@ -230,6 +233,7 @@ export function createInitialModeState(
     profile: null,
     personaImage: createInitialImageState(),
     lastRoundResult: null,
+    mood: MATCHSLOP_INITIAL_MOOD,
   };
 }
 
@@ -282,6 +286,7 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
       updatedAt: asString(imageRecord?.updatedAt) ?? defaultImage.updatedAt,
     },
     lastRoundResult: parseLastRoundResult(record?.lastRoundResult),
+    mood: clampMatchSlopMood(asNumber(record?.mood) ?? MATCHSLOP_INITIAL_MOOD),
   };
 }
 

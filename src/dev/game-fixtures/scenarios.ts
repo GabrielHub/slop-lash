@@ -931,6 +931,7 @@ const BASE_MATCHSLOP_MODE_STATE = {
   },
   transcript: [] as Record<string, unknown>[],
   lastRoundResult: null as Record<string, unknown> | null,
+  mood: 50,
 };
 
 const MATCHSLOP_OPENING_TEXT =
@@ -1392,6 +1393,7 @@ const MATCHSLOP_FOLLOW_UP_MODE_STATE = matchSlopModeState({
     updatedAt: "2026-03-19T00:00:00.000Z",
   },
   transcript: MATCHSLOP_ROUND_1_TRANSCRIPT,
+  mood: 58,
 });
 
 const MATCHSLOP_COMEBACK_MODE_STATE = matchSlopModeState({
@@ -1402,6 +1404,7 @@ const MATCHSLOP_COMEBACK_MODE_STATE = matchSlopModeState({
   },
   comebackRound: 3,
   transcript: MATCHSLOP_UNMATCHED_TRANSCRIPT,
+  mood: 15,
 });
 
 function buildMatchSlopFollowUpWriting(): MockScenario {
@@ -1635,6 +1638,7 @@ function buildMatchSlopFinal(): MockScenario {
       currentRound: 2,
       modeState: matchSlopModeState({
         outcome: "DATE_SEALED",
+        mood: 92,
         personaImage: {
           status: "READY",
           imageUrl: "/images/dev/matchslop-placeholder.jpg",
@@ -1713,6 +1717,7 @@ function buildMatchSlopFinalUnmatched(): MockScenario {
       totalRounds: 2,
       modeState: matchSlopModeState({
         outcome: "UNMATCHED",
+        mood: 8,
         comebackRound: 3,
         personaImage: {
           status: "READY",
@@ -1775,6 +1780,7 @@ function buildMatchSlopFinalComeback(): MockScenario {
       totalRounds: 2,
       modeState: matchSlopModeState({
         outcome: "COMEBACK",
+        mood: 45,
         comebackRound: 3,
         personaImage: {
           status: "READY",
@@ -1837,6 +1843,7 @@ function buildMatchSlopFinalTurnLimit(): MockScenario {
       totalRounds: 2,
       modeState: matchSlopModeState({
         outcome: "TURN_LIMIT",
+        mood: 55,
         personaImage: {
           status: "READY",
           imageUrl: "/images/dev/matchslop-placeholder.jpg",

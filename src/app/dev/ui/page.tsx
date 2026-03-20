@@ -186,6 +186,12 @@ export default function DevUiIndexPage() {
             <h2 className="font-display text-xl font-bold text-ink">
               MatchSlop
             </h2>
+            <Link
+              href="/dev/components/matchslop"
+              className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
+            >
+              Components
+            </Link>
           </div>
           <p className="text-sm text-ink-dim mb-4">
             TV-first stage fixtures plus dedicated phone controller previews.

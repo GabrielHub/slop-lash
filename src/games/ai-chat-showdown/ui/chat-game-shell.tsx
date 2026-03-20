@@ -30,12 +30,12 @@ import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from 
 
 /* ─── Shared animation configs ─── */
 
-const msgSpring = { type: "spring" as const, stiffness: 500, damping: 32 };
-const gentleSpring = { type: "spring" as const, stiffness: 300, damping: 25 };
+export const msgSpring = { type: "spring" as const, stiffness: 500, damping: 32 };
+export const gentleSpring = { type: "spring" as const, stiffness: 300, damping: 25 };
 
 /* ─── Typing indicator ─── */
 
-function TypingDots({ label }: { label?: string }) {
+export function TypingDots({ label }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 px-1">
       <div className="flex gap-1">
@@ -56,7 +56,7 @@ function TypingDots({ label }: { label?: string }) {
 
 /* ─── System message (inline in feed) ─── */
 
-function SystemMsg({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
+export function SystemMsg({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
   return (
     <motion.div
       className="flex items-center justify-center gap-2 py-2"
@@ -74,7 +74,7 @@ function SystemMsg({ children, icon }: { children: React.ReactNode; icon?: React
 
 /* ─── Chat bubble ─── */
 
-function Bubble({
+export function Bubble({
   message,
   playerName,
   modelId,
@@ -177,7 +177,7 @@ function Bubble({
 
 /* ─── Game event cards (rendered as "messages" in the feed) ─── */
 
-function GameCard({ children, accent = false }: { children: React.ReactNode; accent?: boolean }) {
+export function GameCard({ children, accent = false }: { children: React.ReactNode; accent?: boolean }) {
   return (
     <motion.div
       className="mx-auto w-full max-w-sm lg:max-w-md"
@@ -197,7 +197,7 @@ function GameCard({ children, accent = false }: { children: React.ReactNode; acc
 
 /* ─── Vote option button ─── */
 
-function VoteOption({
+export function VoteOption({
   text,
   isMine,
   disabled,
@@ -236,7 +236,7 @@ function VoteOption({
 
 /* ─── Result row ─── */
 
-function ResultRow({
+export function ResultRow({
   text,
   playerName,
   modelId,
@@ -314,7 +314,7 @@ function ResultRow({
 
 /* ─── Progress pill ─── */
 
-function ProgressPill({ current, total, label }: { current: number; total: number; label: string }) {
+export function ProgressPill({ current, total, label }: { current: number; total: number; label: string }) {
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
   const done = current >= total && total > 0;
   return (
@@ -341,7 +341,7 @@ function ProgressPill({ current, total, label }: { current: number; total: numbe
 
 /* ─── Chat input bar ─── */
 
-function ChatBar({
+export function ChatBar({
   mode,
   onSend,
   disabled,
