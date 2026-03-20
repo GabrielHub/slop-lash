@@ -7,7 +7,7 @@ import { MatchSlopControllerShell } from "@/games/matchslop/ui/matchslop-control
 import type { ControllerGameState } from "@/lib/controller-types";
 import type { GameResponse, GameState } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
-import { getMockScenario, type MockScenario } from "./scenarios";
+import { getComebackRound, getMockScenario, type MockScenario } from "./scenarios";
 
 interface MockMatchSlopControllerShellProps {
   scenario: MockScenario;
@@ -23,8 +23,9 @@ type ControllerStreamEntry = {
 
 type MatchSlopModeState = {
   aiVoteWeight?: number;
+  comebackRound?: number | null;
   humanVoteWeight?: number;
-  outcome?: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT";
+  outcome?: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
   personaIdentity?: string | null;
   personaImage?: {
     imageUrl?: string | null;
@@ -52,7 +53,7 @@ type MatchSlopModeState = {
   transcript?: Array<{
     authorName?: string | null;
     id?: string;
-    outcome?: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | null;
+    outcome?: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK" | null;
     speaker?: "PERSONA" | "PLAYERS" | string;
     text?: string;
     turn?: number;
@@ -227,6 +228,7 @@ function deriveControllerState(
       outcome: modeState.outcome ?? "IN_PROGRESS",
       humanVoteWeight: modeState.humanVoteWeight ?? 2,
       aiVoteWeight: modeState.aiVoteWeight ?? 1,
+      comebackRound: modeState.comebackRound ?? null,
       profile: profile == null
         ? null
         : {
@@ -453,16 +455,25 @@ export function MockMatchSlopControllerShell({
       if (method === "POST" && endpoint === "/next") {
         log(`next (${gameRef.current.status})`);
         const currentGame = gameRef.current;
+        const comebackRound = getComebackRound(currentGame);
+        const isComebackRound =
+          comebackRound != null && currentGame.currentRound === comebackRound;
 
         if (currentGame.status === "WRITING") {
-          const votingSlug = currentGame.currentRound === 1
-            ? "matchslop-voting"
-            : "matchslop-follow-up-voting";
+          const votingSlug = isComebackRound
+            ? "matchslop-comeback-voting"
+            : currentGame.currentRound === 1
+              ? "matchslop-voting"
+              : "matchslop-follow-up-voting";
           const next = withScenarioGame(votingSlug, (fixture) =>
             mergeRoundResponses(currentGame, {
               ...fixture,
               currentRound: currentGame.currentRound,
               totalRounds: currentGame.totalRounds,
+              modeState: {
+                ...fixture.modeState,
+                comebackRound,
+              },
             }),
           );
           if (next) setGame(next);
@@ -481,13 +492,19 @@ export function MockMatchSlopControllerShell({
 
         if (currentGame.status === "VOTING") {
           const next = withScenarioGame(
-            currentGame.currentRound >= currentGame.totalRounds
-              ? "matchslop-final"
-              : "matchslop-results",
+            isComebackRound
+              ? "matchslop-comeback-results"
+              : currentGame.currentRound >= currentGame.totalRounds
+                ? "matchslop-results-unmatched"
+                : "matchslop-results",
             (fixture) => ({
               ...fixture,
               currentRound: currentGame.currentRound,
               totalRounds: currentGame.totalRounds,
+              modeState: {
+                ...fixture.modeState,
+                comebackRound,
+              },
             }),
           );
           if (next) setGame(next);
@@ -496,16 +513,23 @@ export function MockMatchSlopControllerShell({
 
         if (currentGame.status === "ROUND_RESULTS") {
           const next = withScenarioGame(
-            currentGame.currentRound >= currentGame.totalRounds
-              ? "matchslop-final"
-              : "matchslop-follow-up-writing",
+            isComebackRound
+              ? "matchslop-final-comeback"
+              : currentGame.currentRound >= currentGame.totalRounds
+                ? "matchslop-comeback-writing"
+                : "matchslop-follow-up-writing",
             (fixture) => ({
               ...fixture,
               currentRound:
-                currentGame.currentRound >= currentGame.totalRounds
+                isComebackRound || currentGame.currentRound >= currentGame.totalRounds
                   ? currentGame.currentRound
                   : currentGame.currentRound + 1,
               totalRounds: currentGame.totalRounds,
+              modeState: {
+                ...fixture.modeState,
+                comebackRound:
+                  isComebackRound ? comebackRound : currentGame.currentRound + 1,
+              },
             }),
           );
           if (next) setGame(next);

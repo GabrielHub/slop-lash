@@ -70,17 +70,18 @@ type MatchSlopTranscriptEntry = {
 type MatchSlopModeState = {
   seekerIdentity?: MatchSlopIdentity | string | null;
   personaIdentity?: MatchSlopIdentity | string | null;
-  outcome?: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT";
+  outcome?: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
   humanVoteWeight?: number;
   aiVoteWeight?: number;
   selectedPersonaExampleIds?: string[];
   selectedPlayerExamples?: string[];
+  comebackRound?: number | null;
   profile?: MatchSlopProfile | null;
   transcript?: MatchSlopTranscriptEntry[];
   personaImage?: MatchSlopPersonaImageState | null;
 };
 
-type Outcome = "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT";
+type Outcome = "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
 const EMPTY_TRANSCRIPT: MatchSlopTranscriptEntry[] = [];
 
 /* ─── Helpers ─── */
@@ -182,6 +183,12 @@ function OutcomeBadge({ outcome }: { outcome: Outcome }) {
     TURN_LIMIT: {
       icon: <SparkleIcon size={12} />,
       label: "Time's up",
+      color: "var(--ms-coral)",
+      bg: "var(--ms-coral-soft)",
+    },
+    COMEBACK: {
+      icon: <SparkleIcon size={12} />,
+      label: "Comeback",
       color: "var(--ms-coral)",
       bg: "var(--ms-coral-soft)",
     },
@@ -471,15 +478,32 @@ function TranscriptBubble({
             className="flex items-center gap-1.5 mt-2"
             style={{
               fontSize: "clamp(0.6rem, 0.8vw, 0.75rem)",
-              color: entry.outcome === "DATE_SEALED" ? "var(--ms-mint)" : "var(--ms-red)",
+              color:
+                entry.outcome === "DATE_SEALED"
+                  ? "var(--ms-mint)"
+                  : entry.outcome === "COMEBACK" || entry.outcome === "TURN_LIMIT"
+                    ? "var(--ms-coral)"
+                    : "var(--ms-red)",
             }}
             variants={popIn}
             initial="hidden"
             animate="visible"
           >
-            {entry.outcome === "DATE_SEALED" ? <HeartIcon size={12} /> : <BrokenHeartIcon size={12} />}
+            {entry.outcome === "DATE_SEALED" ? (
+              <HeartIcon size={12} />
+            ) : entry.outcome === "COMEBACK" || entry.outcome === "TURN_LIMIT" ? (
+              <SparkleIcon size={12} />
+            ) : (
+              <BrokenHeartIcon size={12} />
+            )}
             <span className="font-bold uppercase tracking-wider">
-              {entry.outcome === "DATE_SEALED" ? "Date sealed!" : entry.outcome === "UNMATCHED" ? "Unmatched" : "Turn limit"}
+              {entry.outcome === "DATE_SEALED"
+                ? "Date sealed!"
+                : entry.outcome === "UNMATCHED"
+                  ? "Unmatched"
+                  : entry.outcome === "COMEBACK"
+                    ? "Comeback"
+                    : "Turn limit"}
             </span>
           </motion.div>
         )}
@@ -491,6 +515,7 @@ function TranscriptBubble({
 function PhaseStatusCard({
   gameState,
   outcome,
+  isComebackRound,
   isHost,
   hostActionBusy,
   endingGame,
@@ -501,6 +526,7 @@ function PhaseStatusCard({
 }: {
   gameState: GameState;
   outcome: Outcome;
+  isComebackRound: boolean;
   isHost: boolean;
   hostActionBusy: boolean;
   endingGame: boolean;
@@ -518,37 +544,55 @@ function PhaseStatusCard({
     },
     WRITING: {
       icon: <PenIcon size={24} />,
-      title: "Craft your best line",
-      subtitle: "Everyone's writing their funniest opener on their phones.",
+      title: isComebackRound ? "Comeback round" : "Craft your best line",
+      subtitle: isComebackRound
+        ? "You got unmatched, but one killer follow-up can still save the conversation."
+        : "Everyone's writing their funniest opener on their phones.",
       color: "var(--ms-coral)",
     },
     VOTING: {
       icon: <VoteIcon size={24} />,
-      title: "Pick the winner",
-      subtitle: "Votes turn straight into points, and even close seconds can score. Human votes count double.",
+      title: isComebackRound ? "Vote for the save" : "Pick the winner",
+      subtitle: isComebackRound
+        ? "This vote decides whether the room pulls off the comeback."
+        : "Votes turn straight into points, and even close seconds can score. Human votes count double.",
       color: "var(--ms-violet)",
     },
     ROUND_RESULTS: {
       icon: <SparkleIcon size={24} />,
-      title: "The verdict is in",
-      subtitle: "The winning line has been sent. Let's see the response...",
+      title: isComebackRound ? "Did they save it?" : "The verdict is in",
+      subtitle: isComebackRound
+        ? "The best rescue line has landed. Now we find out whether it worked."
+        : "The winning line has been sent. Let's see the response...",
       color: "var(--ms-coral)",
     },
     FINAL_RESULTS: {
-      icon: outcome === "DATE_SEALED"
-        ? <HeartIcon size={28} />
-        : <BrokenHeartIcon size={28} />,
+      icon:
+        outcome === "DATE_SEALED"
+          ? <HeartIcon size={28} />
+          : outcome === "COMEBACK"
+            ? <SparkleIcon size={24} />
+            : <BrokenHeartIcon size={28} />,
       title: outcome === "DATE_SEALED"
         ? "It's a match!"
+        : outcome === "COMEBACK"
+          ? "You saved it"
         : outcome === "UNMATCHED"
           ? "Better luck next time"
           : "Time ran out",
       subtitle: outcome === "DATE_SEALED"
         ? "You collectively charmed the persona. Date sealed."
+        : outcome === "COMEBACK"
+          ? "Not a full date, but the room talked its way back from disaster."
         : outcome === "UNMATCHED"
           ? "The persona wasn't feeling it. Try a different approach?"
           : "The conversation hit the round limit without a clear outcome.",
-      color: outcome === "DATE_SEALED" ? "var(--ms-mint)" : "var(--ms-red)",
+      color:
+        outcome === "DATE_SEALED"
+          ? "var(--ms-mint)"
+          : outcome === "COMEBACK"
+            ? "var(--ms-coral)"
+            : "var(--ms-red)",
     },
   }[gameState.status] ?? {
     icon: <HeartIcon size={28} />,
@@ -666,7 +710,9 @@ function PhaseStatusCard({
           >
             <TypingIndicator />
             <p style={{ fontSize: "clamp(0.8rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}>
-              Players are typing their best lines...
+              {isComebackRound
+                ? "Players are firing off one last save..."
+                : "Players are typing their best lines..."}
             </p>
           </div>
         )}
@@ -684,7 +730,7 @@ function PhaseStatusCard({
               <VoteIcon size={20} />
             </motion.div>
             <p style={{ fontSize: "clamp(0.8rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}>
-              Votes are coming in...
+              {isComebackRound ? "Votes are deciding the comeback..." : "Votes are coming in..."}
             </p>
           </div>
         )}
@@ -739,7 +785,13 @@ function PhaseStatusCard({
               }}
               {...buttonTap}
             >
-              {hostActionBusy ? "Working..." : gameState.status === "ROUND_RESULTS" ? "Next Round" : "Skip Phase"}
+              {hostActionBusy
+                ? "Working..."
+                : gameState.status === "ROUND_RESULTS"
+                  ? isComebackRound
+                    ? "Show Ending"
+                    : "Next Round"
+                  : "Skip Phase"}
             </motion.button>
           )}
           {canEndGame && (
@@ -809,6 +861,16 @@ function OutcomeVerdict({ outcome }: { outcome: Outcome }) {
       border: "color-mix(in srgb, var(--ms-coral) 18%, transparent)",
       lineGradient: "var(--ms-coral)",
       glow: "none",
+      pulse: false,
+    },
+    COMEBACK: {
+      icon: <SparkleIcon size={16} />,
+      label: "Comeback",
+      color: "var(--ms-coral)",
+      bg: "linear-gradient(135deg, color-mix(in srgb, var(--ms-coral) 10%, var(--ms-surface)), var(--ms-surface))",
+      border: "color-mix(in srgb, var(--ms-coral) 22%, transparent)",
+      lineGradient: "var(--ms-coral)",
+      glow: "0 -4px 24px color-mix(in srgb, var(--ms-coral) 10%, transparent)",
       pulse: false,
     },
   }[outcome];
@@ -919,8 +981,11 @@ export function MatchSlopGameShell({
   const modeState = asModeState(gameState?.modeState);
   const profile = modeState.profile ?? null;
   const outcome = (modeState.outcome ?? "IN_PROGRESS") as Outcome;
+  const comebackRound = modeState.comebackRound ?? null;
   const personaImage = modeState.personaImage ?? null;
   const transcript = modeState.transcript ?? EMPTY_TRANSCRIPT;
+  const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
+  const isActiveComebackRound = isComebackRound && gameState?.status !== "FINAL_RESULTS";
   const currentRoundData =
     gameState?.rounds.find((round) => round.roundNumber === gameState.currentRound) ??
     gameState?.rounds[0];
@@ -1186,8 +1251,18 @@ export function MatchSlopGameShell({
               color: "var(--ms-rose)",
               background: "var(--ms-rose-soft)",
             }}
-          >
-            {gameState.status === "LOBBY" ? "Lobby" : gameState.status === "WRITING" ? "Writing" : gameState.status === "VOTING" ? "Voting" : gameState.status === "ROUND_RESULTS" ? "Results" : "Final"}
+            >
+            {gameState.status === "LOBBY"
+              ? "Lobby"
+              : isActiveComebackRound
+                ? "Comeback"
+                : gameState.status === "WRITING"
+                  ? "Writing"
+                  : gameState.status === "VOTING"
+                    ? "Voting"
+                    : gameState.status === "ROUND_RESULTS"
+                      ? "Results"
+                      : "Final"}
           </span>
           <span
             className="font-mono"
@@ -1196,7 +1271,9 @@ export function MatchSlopGameShell({
               color: "var(--ms-ink-dim)",
             }}
           >
-            Turn {gameState.currentRound}/{gameState.totalRounds}
+            {isComebackRound
+              ? "Comeback Round"
+              : `Turn ${gameState.currentRound}/${gameState.totalRounds}`}
           </span>
         </div>
       </div>
@@ -1226,6 +1303,7 @@ export function MatchSlopGameShell({
             <PhaseStatusCard
               gameState={gameState}
               outcome={outcome}
+              isComebackRound={isActiveComebackRound}
               isHost={isHost}
               hostActionBusy={hostActionBusy}
               endingGame={endingGame}

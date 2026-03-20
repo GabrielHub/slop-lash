@@ -7,16 +7,99 @@ import {
   buildWritingDeadline,
   buildRoundPromptText,
   getActivePlayerIds,
+  isComebackRound,
   parseModeState,
   resolvePersonaExamples,
   selectPersonaExamples,
   selectPlayerExamples,
 } from "./game-logic-core";
-import type { MatchSlopTranscriptEntry } from "./types";
+import type {
+  MatchSlopOutcome,
+  MatchSlopTranscriptEntry,
+  MatchSlopTranscriptOutcome,
+} from "./types";
 import { DEFAULT_TOTAL_ROUNDS } from "./game-constants";
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
+}
+
+type MatchSlopAdvancePlan =
+  | {
+      kind: "NEXT_ROUND";
+      nextRound: number;
+      nextOutcome: MatchSlopOutcome;
+      transcriptOutcome: MatchSlopTranscriptOutcome;
+      comebackRound: number | null;
+    }
+  | {
+      kind: "FINAL_RESULTS";
+      nextOutcome: Exclude<MatchSlopOutcome, "IN_PROGRESS">;
+      transcriptOutcome: MatchSlopTranscriptOutcome;
+      comebackRound: number | null;
+    };
+
+export function resolveAdvancePlan(args: {
+  currentRound: number;
+  totalRounds: number;
+  comebackRound: number | null;
+  personaOutcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
+}): MatchSlopAdvancePlan {
+  const { currentRound, totalRounds, comebackRound, personaOutcome } = args;
+
+  if (comebackRound === currentRound) {
+    if (personaOutcome === "UNMATCHED") {
+      return {
+        kind: "FINAL_RESULTS",
+        nextOutcome: "UNMATCHED",
+        transcriptOutcome: "UNMATCHED",
+        comebackRound,
+      };
+    }
+
+    return {
+      kind: "FINAL_RESULTS",
+      nextOutcome: "COMEBACK",
+      transcriptOutcome: "COMEBACK",
+      comebackRound,
+    };
+  }
+
+  if (personaOutcome === "UNMATCHED") {
+    return {
+      kind: "NEXT_ROUND",
+      nextRound: currentRound + 1,
+      nextOutcome: "IN_PROGRESS",
+      transcriptOutcome: "UNMATCHED",
+      comebackRound: currentRound + 1,
+    };
+  }
+
+  if (personaOutcome === "CONTINUE" && currentRound < totalRounds) {
+    return {
+      kind: "NEXT_ROUND",
+      nextRound: currentRound + 1,
+      nextOutcome: "IN_PROGRESS",
+      transcriptOutcome: "CONTINUE",
+      comebackRound,
+    };
+  }
+
+  if (personaOutcome === "CONTINUE") {
+    return {
+      kind: "FINAL_RESULTS",
+      nextOutcome: "TURN_LIMIT",
+      transcriptOutcome: "TURN_LIMIT",
+      comebackRound,
+    };
+  }
+
+  return {
+    kind: "FINAL_RESULTS",
+    nextOutcome: "DATE_SEALED",
+    transcriptOutcome: "DATE_SEALED",
+    comebackRound,
+  };
 }
 
 async function createTurnRound(gameId: string, roundNumber: number): Promise<void> {
@@ -110,6 +193,7 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
         },
         transcript: [],
         lastRoundResult: null,
+        comebackRound: null,
         outcome: "IN_PROGRESS",
       }),
       version: { increment: 1 },
@@ -136,6 +220,9 @@ export async function advanceGame(gameId: string): Promise<boolean> {
   const result = modeState.lastRoundResult;
   const profile = modeState.profile;
   if (!result || !profile) {
+    const fallbackOutcome = isComebackRound(modeState, game.currentRound)
+      ? "UNMATCHED"
+      : "TURN_LIMIT";
     await prisma.game.update({
       where: { id: gameId },
       data: {
@@ -143,7 +230,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
         phaseDeadline: null,
         modeState: toJson({
           ...modeState,
-          outcome: "TURN_LIMIT",
+          outcome: fallbackOutcome,
           lastRoundResult: null,
         }),
         version: { increment: 1 },
@@ -173,19 +260,23 @@ export async function advanceGame(gameId: string): Promise<boolean> {
   );
   await accumulateUsage(gameId, [usage]);
 
-  const isTurnLimit = outcome === "CONTINUE" && game.currentRound >= game.totalRounds;
-  const finalOutcome = isTurnLimit ? "TURN_LIMIT" : outcome;
+  const advancePlan = resolveAdvancePlan({
+    currentRound: game.currentRound,
+    totalRounds: game.totalRounds,
+    comebackRound: modeState.comebackRound,
+    personaOutcome: outcome,
+  });
   const personaEntry: MatchSlopTranscriptEntry = {
     id: `persona-turn-${game.currentRound}`,
     speaker: "PERSONA",
     text: reply,
     turn: game.currentRound,
-    outcome: finalOutcome === "TURN_LIMIT" ? "TURN_LIMIT" : outcome,
+    outcome: advancePlan.transcriptOutcome,
     authorName: profile.displayName,
   };
   const nextTranscript = [...transcriptWithWinner, personaEntry];
 
-  if (outcome === "CONTINUE" && game.currentRound < game.totalRounds) {
+  if (advancePlan.kind === "NEXT_ROUND") {
     try {
       await prisma.game.update({
         where: { id: gameId },
@@ -194,12 +285,13 @@ export async function advanceGame(gameId: string): Promise<boolean> {
             ...modeState,
             transcript: nextTranscript,
             lastRoundResult: null,
-            outcome: "IN_PROGRESS",
+            outcome: advancePlan.nextOutcome,
+            comebackRound: advancePlan.comebackRound,
           }),
           version: { increment: 1 },
         },
       });
-      await createTurnRound(gameId, game.currentRound + 1);
+      await createTurnRound(gameId, advancePlan.nextRound);
       return true;
     } catch (error) {
       if (!hasPrismaErrorCode(error, "P2002")) throw error;
@@ -216,7 +308,8 @@ export async function advanceGame(gameId: string): Promise<boolean> {
         ...modeState,
         transcript: nextTranscript,
         lastRoundResult: result,
-        outcome: finalOutcome,
+        outcome: advancePlan.nextOutcome,
+        comebackRound: advancePlan.comebackRound,
       }),
       version: { increment: 1 },
     },

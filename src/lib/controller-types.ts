@@ -47,7 +47,7 @@ export interface MatchSlopTranscriptEntry {
   speaker: "PLAYERS" | "PERSONA";
   text: string;
   turn: number;
-  outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | null;
+  outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK" | null;
   authorName: string | null;
 }
 
@@ -103,9 +103,10 @@ export interface ControllerGameState {
   matchslop: {
     seekerIdentity: string | null;
     personaIdentity: string | null;
-    outcome: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT";
+    outcome: "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK";
     humanVoteWeight: number;
     aiVoteWeight: number;
+    comebackRound: number | null;
     profile: MatchSlopProfileState | null;
     transcript: MatchSlopTranscriptEntry[];
     writing: MatchSlopWritingState | null;

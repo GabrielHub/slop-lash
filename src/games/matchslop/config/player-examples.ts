@@ -154,5 +154,13 @@ export const MATCHSLOP_PLAYER_EXAMPLES: string[] = [
   "Honey, we have to let the wheels on the bus handle this one.",
   "What kind of music do you like? Me? I hate music.",
   "We've matched before, you told me I didn't know Matt Damon movies I KNOW Matt Damon movies my hands were just freezing",
-  "I have a ridiculous typing speed. like 80 WPM. The only way I can get faster is to add an extra set of hands, and I think you've got what it takes"
+  "I have a ridiculous typing speed. like 80 WPM. The only way I can get faster is to add an extra set of hands, and I think you've got what it takes",
+  "You'll love that i only drink water, only water. On the weekends yeah i'll have like 8 beers both days, but other than that just water",
+  "I'm at a Whole Foods can I get you anything?",
+  "we NEED to bring the wok to Poland, we just have to",
+  "You just turned 30, but I think you still have a chance at starring in the next 'To All The Boys I've Loved Before'",
+  "Looking for someone who will help me fix the feng shui in this room, sound interesting?",
+  "You should join me in my empty house.",
+  "Need someone to help me out of this chud life. You about that life?",
+  "How many weeks pregnant is the perfect amount of weeks? Asking for a friend"
 ];

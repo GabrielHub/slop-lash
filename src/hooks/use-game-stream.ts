@@ -96,9 +96,8 @@ export function useGameStream(
 
     connect();
 
-    // Visibility handling: close stream when hidden (non-stage), reconnect when visible
+    // Hidden tabs do not need a live SSE connection or heartbeat traffic.
     function onVisibilityChange() {
-      if (viewMode === "stage") return;
       if (document.visibilityState === "hidden") {
         esRef.current?.close();
         esRef.current = null;

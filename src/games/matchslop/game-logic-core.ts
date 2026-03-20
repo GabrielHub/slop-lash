@@ -20,6 +20,7 @@ import type {
   MatchSlopProfile,
   MatchSlopProfilePrompt,
   MatchSlopRoundResult,
+  MatchSlopTranscriptOutcome,
   MatchSlopTranscriptEntry,
 } from "./types";
 import { asRecord, asString, asNumber, asStringArray } from "@/lib/json-guards";
@@ -86,7 +87,7 @@ function parseTranscriptEntry(value: unknown, index: number): MatchSlopTranscrip
         : null;
   const text = asString(record.text);
   if (!speaker || !text) return null;
-  const outcome = asString(record.outcome);
+  const outcome = asString(record.outcome) as MatchSlopTranscriptOutcome | null;
   return {
     id: asString(record.id) ?? `entry-${index + 1}`,
     speaker,
@@ -96,7 +97,8 @@ function parseTranscriptEntry(value: unknown, index: number): MatchSlopTranscrip
       outcome === "CONTINUE" ||
       outcome === "DATE_SEALED" ||
       outcome === "UNMATCHED" ||
-      outcome === "TURN_LIMIT"
+      outcome === "TURN_LIMIT" ||
+      outcome === "COMEBACK"
         ? outcome
         : null,
     authorName: asString(record.authorName),
@@ -144,6 +146,7 @@ export function createInitialModeState(
     aiVoteWeight: MATCHSLOP_AI_VOTE_WEIGHT,
     selectedPersonaExampleIds: [],
     selectedPlayerExamples: [],
+    comebackRound: null,
     transcript: [],
     profile: null,
     personaImage: createInitialImageState(),
@@ -164,13 +167,15 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
     outcome:
       record?.outcome === "DATE_SEALED" ||
       record?.outcome === "UNMATCHED" ||
-      record?.outcome === "TURN_LIMIT"
+      record?.outcome === "TURN_LIMIT" ||
+      record?.outcome === "COMEBACK"
         ? record.outcome
         : "IN_PROGRESS",
     humanVoteWeight: asNumber(record?.humanVoteWeight) ?? MATCHSLOP_HUMAN_VOTE_WEIGHT,
     aiVoteWeight: asNumber(record?.aiVoteWeight) ?? MATCHSLOP_AI_VOTE_WEIGHT,
     selectedPersonaExampleIds: asStringArray(record?.selectedPersonaExampleIds),
     selectedPlayerExamples: asStringArray(record?.selectedPlayerExamples),
+    comebackRound: asNumber(record?.comebackRound) ?? null,
     transcript: Array.isArray(record?.transcript)
       ? record.transcript
           .map((value, index) => parseTranscriptEntry(value, index))
@@ -184,6 +189,13 @@ export function parseModeState(raw: unknown): MatchSlopModeState {
     },
     lastRoundResult: parseLastRoundResult(record?.lastRoundResult),
   };
+}
+
+export function isComebackRound(
+  modeState: Pick<MatchSlopModeState, "comebackRound">,
+  roundNumber: number,
+): boolean {
+  return modeState.comebackRound === roundNumber;
 }
 
 function futureDeadline(seconds: number): Date {

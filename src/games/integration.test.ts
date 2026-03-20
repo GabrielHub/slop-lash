@@ -876,4 +876,64 @@ describe("cleanupOldGames leaderboard exclusion", () => {
     expect(summary.autoFinalizedAbandonedActive).toBe(1);
     expect(summary.abandonedByGameType).toEqual({ AI_CHAT_SHOWDOWN: 1 });
   });
+
+  it("deletes stale MatchSlop final-results games as transient completed data", async () => {
+    db.game.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    db.game.deleteMany
+      .mockResolvedValueOnce({ count: 1 } as never)
+      .mockResolvedValueOnce({ count: 0 } as never);
+
+    db.leaderboardProcessedGame.deleteMany.mockResolvedValue({ count: 0 } as never);
+    db.$transaction.mockResolvedValue([{ count: 0 }, { count: 0 }, { count: 0 }] as never);
+
+    const summary = await cleanupOldGames();
+
+    expect(db.game.deleteMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          gameType: { in: expect.arrayContaining(["MATCHSLOP", "AI_CHAT_SHOWDOWN"]) },
+          status: "FINAL_RESULTS",
+        }),
+      }),
+    );
+    expect(summary.deletedTransientCompleted).toBe(1);
+  });
+
+  it("deletes abandoned lobbies with no recent host or player activity", async () => {
+    db.game.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    db.game.deleteMany
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 2 } as never);
+
+    db.leaderboardProcessedGame.deleteMany.mockResolvedValue({ count: 0 } as never);
+    db.$transaction.mockResolvedValue([{ count: 0 }, { count: 0 }, { count: 0 }] as never);
+
+    const summary = await cleanupOldGames();
+
+    expect(db.game.deleteMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: "LOBBY",
+          players: expect.objectContaining({
+            none: expect.objectContaining({
+              type: "HUMAN",
+              participationStatus: "ACTIVE",
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(summary.deletedAbandonedLobby).toBe(2);
+    expect(summary.totalDeleted).toBe(2);
+  });
 });

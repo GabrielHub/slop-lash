@@ -3,8 +3,10 @@ export type MatchSlopOutcome =
   | "IN_PROGRESS"
   | "DATE_SEALED"
   | "UNMATCHED"
-  | "TURN_LIMIT";
+  | "TURN_LIMIT"
+  | "COMEBACK";
 export type MatchSlopDecision = "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
+export type MatchSlopTranscriptOutcome = MatchSlopDecision | "TURN_LIMIT" | "COMEBACK";
 
 export type MatchSlopPersonaImageStatus =
   | "NOT_REQUESTED"
@@ -48,7 +50,7 @@ export interface MatchSlopTranscriptEntry {
   speaker: "PLAYERS" | "PERSONA";
   text: string;
   turn: number;
-  outcome: MatchSlopDecision | "TURN_LIMIT" | null;
+  outcome: MatchSlopTranscriptOutcome | null;
   authorName: string | null;
 }
 
@@ -72,6 +74,7 @@ export interface MatchSlopModeState {
   aiVoteWeight: number;
   selectedPersonaExampleIds: string[];
   selectedPlayerExamples: string[];
+  comebackRound: number | null;
   transcript: MatchSlopTranscriptEntry[];
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState;

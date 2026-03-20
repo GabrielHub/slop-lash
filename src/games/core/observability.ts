@@ -46,6 +46,7 @@ export type CleanupBreakdown = Record<string, number>;
  */
 export function logCleanupSummary(summary: {
   autoFinalizedAbandonedActive: number;
+  deletedAbandonedLobby: number;
   deletedTransientCompleted: number;
   deletedFinalOrOld: number;
   deletedIncomplete: number;
@@ -54,6 +55,7 @@ export function logCleanupSummary(summary: {
 }): void {
   const parts = [
     `autoFinalized=${summary.autoFinalizedAbandonedActive}`,
+    `deletedLobby=${summary.deletedAbandonedLobby}`,
     `deletedTransient=${summary.deletedTransientCompleted}`,
     `deletedOld=${summary.deletedFinalOrOld}`,
     `deletedIncomplete=${summary.deletedIncomplete}`,

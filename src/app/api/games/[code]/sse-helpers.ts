@@ -1,5 +1,5 @@
 export const SSE_KEEPALIVE_INTERVAL_MS = 15_000;
-export const HEARTBEAT_MIN_INTERVAL_MS = 5_000;
+export const HEARTBEAT_MIN_INTERVAL_MS = 10_000;
 
 export const SSE_HEADERS = {
   "Content-Type": "text/event-stream",

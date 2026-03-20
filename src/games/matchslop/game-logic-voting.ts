@@ -9,6 +9,7 @@ import {
   buildResultsDeadline,
   buildVotingDeadline,
   getActivePlayerIds,
+  isComebackRound,
   parseModeState,
 } from "./game-logic-core";
 import type { MatchSlopRoundResult } from "./types";
@@ -144,7 +145,12 @@ export function calculateResponsePoints(
   );
 }
 
-async function finalizeGameWithoutWinner(gameId: string, modeState: ReturnType<typeof parseModeState>) {
+async function finalizeGameWithoutWinner(
+  gameId: string,
+  modeState: ReturnType<typeof parseModeState>,
+  currentRound: number,
+) {
+  const outcome = isComebackRound(modeState, currentRound) ? "UNMATCHED" : "TURN_LIMIT";
   await prisma.game.update({
     where: { id: gameId },
     data: {
@@ -152,7 +158,7 @@ async function finalizeGameWithoutWinner(gameId: string, modeState: ReturnType<t
       phaseDeadline: null,
       modeState: toJson({
         ...modeState,
-        outcome: "TURN_LIMIT",
+        outcome,
         lastRoundResult: null,
       }),
       version: { increment: 1 },
@@ -164,7 +170,7 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
   const [game, round, players] = await Promise.all([
     prisma.game.findUnique({
       where: { id: gameId },
-      select: { status: true, timersDisabled: true, modeState: true },
+      select: { status: true, timersDisabled: true, modeState: true, currentRound: true },
     }),
     prisma.round.findFirst({
       where: { gameId },
@@ -244,7 +250,7 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
 
   const winner = pickRoundWinner(results);
   if (!winner) {
-    await finalizeGameWithoutWinner(gameId, modeState);
+    await finalizeGameWithoutWinner(gameId, modeState, game.currentRound);
     return;
   }
 

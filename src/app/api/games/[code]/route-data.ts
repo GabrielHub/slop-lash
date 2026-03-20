@@ -1,6 +1,10 @@
 import type { GameStatus, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { modelUsagesInclude, roundsInclude, roundsIncludeWriting, roundsIncludeActive } from "@/games/core/queries";
+import { createTimedCache } from "@/lib/timed-cache";
+
+const GAME_PAYLOAD_CACHE_TTL_MS = 30_000;
+const gamePayloadCache = createTimedCache(300);
 
 const publicPlayerSelect = {
   id: true,
@@ -119,6 +123,7 @@ export function normalizePayload(game: unknown): GameRoutePayload {
 export function findGamePayloadByStatus(
   roomCode: string,
   status: GameStatus,
+  cacheKey?: string,
 ) {
   const select = (() => {
     switch (status) {
@@ -132,6 +137,14 @@ export function findGamePayloadByStatus(
         return gamePayloadActiveSelect;
     }
   })();
+
+  if (cacheKey) {
+    return gamePayloadCache.getOrLoad(
+      `${roomCode}:${status}:${cacheKey}`,
+      GAME_PAYLOAD_CACHE_TTL_MS,
+      () => prisma.game.findUnique({ where: { roomCode }, select }),
+    );
+  }
 
   return prisma.game.findUnique({ where: { roomCode }, select });
 }

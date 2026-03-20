@@ -17,6 +17,11 @@ export interface MockScenario {
   game: GameState;
 }
 
+export function getComebackRound(game: GameState): number | null {
+  const modeState = game.modeState as { comebackRound?: number | null } | null;
+  return modeState?.comebackRound ?? null;
+}
+
 const HOST_ID = "p-host";
 const HUMAN_2_ID = "p-amy";
 const HUMAN_3_ID = "p-beau";
@@ -917,6 +922,7 @@ const BASE_MATCHSLOP_MODE_STATE = {
   aiVoteWeight: 1,
   selectedPersonaExampleIds: ["vinyl-doomprep", "tarot-coder"],
   selectedPlayerExamples: [],
+  comebackRound: null as number | null,
   profile: MOCK_NORA_PROFILE,
   personaImage: {
     status: "PENDING" as "NOT_REQUESTED" | "PENDING" | "READY" | "FAILED",
@@ -931,6 +937,8 @@ const MATCHSLOP_OPENING_TEXT =
   "Write the funniest opener to send Nora based on one of her profile prompts.";
 const MATCHSLOP_FOLLOW_UP_TEXT =
   "Coastal danger is my whole brand. Last Sunday I cured fish on my fire escape and the seagulls formed a queue.";
+const MATCHSLOP_COMEBACK_TEXT =
+  "She unmatched the room. One last follow-up can still save this. What do you send?";
 
 const MATCHSLOP_ROUND_1_TRANSCRIPT: Record<string, unknown>[] = [
   {
@@ -947,6 +955,26 @@ const MATCHSLOP_ROUND_1_TRANSCRIPT: Record<string, unknown>[] = [
     text: MATCHSLOP_FOLLOW_UP_TEXT,
     turn: 1,
     outcome: "CONTINUE",
+    authorName: "Nora, 29",
+  },
+];
+
+const MATCHSLOP_UNMATCHED_TRANSCRIPT: Record<string, unknown>[] = [
+  ...MATCHSLOP_ROUND_1_TRANSCRIPT,
+  {
+    id: "mt-u3",
+    speaker: "PLAYERS",
+    text: "Okay but seriously, do you like bread? Because I knead you in my life.",
+    turn: 2,
+    outcome: null,
+    authorName: "Ong",
+  },
+  {
+    id: "mt-u4",
+    speaker: "PERSONA",
+    text: "I'm going to be honest, I'd rather date the bread. Unmatched.",
+    turn: 2,
+    outcome: "UNMATCHED",
     authorName: "Nora, 29",
   },
 ];
@@ -1108,6 +1136,146 @@ function buildMatchSlopVotingRound(players: GamePlayer[], roundNumber = 1): Game
   ]);
 }
 
+function buildMatchSlopComebackWritingRound(players: GamePlayer[]): GameRound {
+  const p = new Map(players.map((player) => [player.id, player]));
+  const roundId = "m-comeback-writing-3";
+  const promptId = "match-prompt-3";
+
+  return round(roundId, 3, [
+    prompt(
+      promptId,
+      roundId,
+      MATCHSLOP_COMEBACK_TEXT,
+      players.map((player) => player.id),
+      [
+        response(
+          p,
+          "match-ai-seed-3",
+          promptId,
+          AI_ID,
+          "Then let me be the jam. Two carbs this compatible don't just happen.",
+          0,
+          { metadata: null },
+        ),
+      ],
+      [],
+    ),
+  ]);
+}
+
+function buildMatchSlopComebackVotingRound(players: GamePlayer[]): GameRound {
+  const p = new Map(players.map((player) => [player.id, player]));
+  const roundId = "m-comeback-voting-3";
+  const promptId = "match-prompt-3";
+
+  return round(roundId, 3, [
+    prompt(
+      promptId,
+      roundId,
+      MATCHSLOP_COMEBACK_TEXT,
+      players.map((player) => player.id),
+      [
+        response(
+          p,
+          "match-host-3",
+          promptId,
+          HOST_ID,
+          "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
+          0,
+          { metadata: null },
+        ),
+        response(
+          p,
+          "match-amy-3",
+          promptId,
+          HUMAN_2_ID,
+          "Then let me be the weird little olive plate that proves this date still has range.",
+          0,
+          { metadata: null },
+        ),
+        response(
+          p,
+          "match-beau-3",
+          promptId,
+          HUMAN_3_ID,
+          "Bread can't text you back after 9, and I think that's where I separate myself.",
+          0,
+          { metadata: null },
+        ),
+        response(
+          p,
+          "match-ai-3",
+          promptId,
+          AI_ID,
+          "Then let me be the jam. Two carbs this compatible don't just happen.",
+          0,
+          { metadata: null },
+        ),
+      ],
+      [vote("match-vote-seed-3", promptId, AI_ID, "AI", "match-host-3")],
+    ),
+  ]);
+}
+
+function buildMatchSlopComebackResultsRound(players: GamePlayer[]): GameRound {
+  const p = new Map(players.map((player) => [player.id, player]));
+  const roundId = "m-comeback-results-3";
+  const promptId = "match-prompt-3";
+
+  return round(roundId, 3, [
+    prompt(
+      promptId,
+      roundId,
+      MATCHSLOP_COMEBACK_TEXT,
+      players.map((player) => player.id),
+      [
+        response(
+          p,
+          "match-response-host-3",
+          promptId,
+          HOST_ID,
+          "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
+          175,
+          { metadata: null },
+        ),
+        response(
+          p,
+          "match-response-amy-3",
+          promptId,
+          HUMAN_2_ID,
+          "Then let me be the weird little olive plate that proves this date still has range.",
+          80,
+          { metadata: null },
+        ),
+        response(
+          p,
+          "match-response-beau-3",
+          promptId,
+          HUMAN_3_ID,
+          "Bread can't text you back after 9, and I think that's where I separate myself.",
+          55,
+          { metadata: null },
+        ),
+        response(
+          p,
+          "match-response-ai-3",
+          promptId,
+          AI_ID,
+          "Then let me be the jam. Two carbs this compatible don't just happen.",
+          30,
+          { metadata: null },
+        ),
+      ],
+      [
+        vote("match-vote-5", promptId, HOST_ID, "HUMAN", "match-response-host-3"),
+        vote("match-vote-6", promptId, HUMAN_2_ID, "HUMAN", "match-response-host-3"),
+        vote("match-vote-7", promptId, HUMAN_3_ID, "HUMAN", "match-response-amy-3"),
+        vote("match-vote-8", promptId, AI_ID, "AI", "match-response-host-3"),
+      ],
+    ),
+  ]);
+}
+
 function buildMatchSlopResultsRound(players: GamePlayer[]): GameRound {
   const p = new Map(players.map((player) => [player.id, player]));
   const roundId = "m-results-1";
@@ -1224,6 +1392,16 @@ const MATCHSLOP_FOLLOW_UP_MODE_STATE = matchSlopModeState({
   transcript: MATCHSLOP_ROUND_1_TRANSCRIPT,
 });
 
+const MATCHSLOP_COMEBACK_MODE_STATE = matchSlopModeState({
+  personaImage: {
+    status: "READY" as const,
+    imageUrl: "/images/dev/matchslop-placeholder.jpg",
+    updatedAt: "2026-03-19T00:00:00.000Z",
+  },
+  comebackRound: 3,
+  transcript: MATCHSLOP_UNMATCHED_TRANSCRIPT,
+});
+
 function buildMatchSlopFollowUpWriting(): MockScenario {
   const players = basePlayers();
   return {
@@ -1317,6 +1495,124 @@ function buildMatchSlopResults(): MockScenario {
   };
 }
 
+function buildMatchSlopResultsUnmatched(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HUMAN_2_ID) return { ...player, score: 132, humorRating: 1.24 };
+    if (player.id === HOST_ID) return { ...player, score: 106, humorRating: 1.16 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 88, humorRating: 1.02 };
+    if (player.id === AI_ID) return { ...player, score: 74, humorRating: 0.97 };
+    return player;
+  });
+
+  return {
+    slug: "matchslop-results-unmatched",
+    title: "MatchSlop Results (Unmatched)",
+    description: "The round-winning line landed, but Nora unmatched the room and triggered the comeback round.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "ROUND_RESULTS",
+      rounds: [buildMatchSlopResultsRound(players)],
+      currentRound: 2,
+      totalRounds: 2,
+      phaseDeadline: futureDeadline(12),
+      modeState: matchSlopModeState({
+        transcript: MATCHSLOP_UNMATCHED_TRANSCRIPT,
+        lastRoundResult: {
+          promptId: "match-prompt-2",
+          winnerResponseId: "match-response-u2",
+          winnerPlayerId: HOST_ID,
+          winnerText: "Okay but seriously, do you like bread? Because I knead you in my life.",
+          authorName: "Ong",
+          weightedVotes: 4,
+          rawVotes: 3,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      }),
+    }),
+  };
+}
+
+function buildMatchSlopComebackWriting(): MockScenario {
+  const players = basePlayers();
+  return {
+    slug: "matchslop-comeback-writing",
+    title: "MatchSlop Comeback Writing",
+    description: "One last follow-up after getting unmatched. Win the room back or go home.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "WRITING",
+      currentRound: 3,
+      totalRounds: 2,
+      rounds: [buildMatchSlopComebackWritingRound(players)],
+      phaseDeadline: futureDeadline(52),
+      modeState: MATCHSLOP_COMEBACK_MODE_STATE,
+    }),
+  };
+}
+
+function buildMatchSlopComebackVoting(): MockScenario {
+  const players = basePlayers();
+  return {
+    slug: "matchslop-comeback-voting",
+    title: "MatchSlop Comeback Voting",
+    description: "The room votes on the one message that might rescue the match.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "VOTING",
+      currentRound: 3,
+      totalRounds: 2,
+      rounds: [buildMatchSlopComebackVotingRound(players)],
+      phaseDeadline: futureDeadline(36),
+      votingPromptIndex: 0,
+      votingRevealing: false,
+      modeState: MATCHSLOP_COMEBACK_MODE_STATE,
+    }),
+  };
+}
+
+function buildMatchSlopComebackResults(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HOST_ID) return { ...player, score: 168, humorRating: 1.23 };
+    if (player.id === HUMAN_2_ID) return { ...player, score: 144, humorRating: 1.18 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 96, humorRating: 1.05 };
+    if (player.id === AI_ID) return { ...player, score: 87, humorRating: 0.99 };
+    return player;
+  });
+
+  return {
+    slug: "matchslop-comeback-results",
+    title: "MatchSlop Comeback Results",
+    description: "The winning rescue line is headed to Nora. Now the game reveals whether it worked.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "ROUND_RESULTS",
+      currentRound: 3,
+      totalRounds: 2,
+      rounds: [buildMatchSlopComebackResultsRound(players)],
+      phaseDeadline: futureDeadline(12),
+      modeState: matchSlopModeState({
+        ...MATCHSLOP_COMEBACK_MODE_STATE,
+        lastRoundResult: {
+          promptId: "match-prompt-3",
+          winnerResponseId: "match-response-host-3",
+          winnerPlayerId: HOST_ID,
+          winnerText: "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
+          authorName: "Ong",
+          weightedVotes: 5,
+          rawVotes: 3,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      }),
+    }),
+  };
+}
+
 function buildMatchSlopFinal(): MockScenario {
   const players = basePlayers().map((player) => {
     if (player.id === HOST_ID) return { ...player, score: 224, humorRating: 1.41, winStreak: 3 };
@@ -1403,61 +1699,110 @@ function buildMatchSlopFinalUnmatched(): MockScenario {
 
   return {
     slug: "matchslop-final-unmatched",
-    title: "MatchSlop Unmatched",
-    description: "Persona rejected the players. Game over.",
+    title: "MatchSlop Comeback Failed",
+    description: "The room used its last shot and still got unmatched.",
     playerId: HOST_ID,
     game: makeMatchSlopGame({
       players,
       status: "FINAL_RESULTS",
-      currentRound: 2,
+      currentRound: 3,
+      totalRounds: 2,
       modeState: matchSlopModeState({
         outcome: "UNMATCHED",
+        comebackRound: 3,
         personaImage: {
           status: "READY",
           imageUrl: "/images/dev/matchslop-placeholder.jpg",
           updatedAt: "2026-03-19T00:00:00.000Z",
         },
         transcript: [
+          ...MATCHSLOP_UNMATCHED_TRANSCRIPT,
           {
-            id: "mt-u1",
+            id: "mt-u5",
             speaker: "PLAYERS",
-            text: "Are you a parking ticket? Because you've got 'fine' written all over you.",
-            turn: 1,
-            outcome: null,
-            authorName: "Amy",
-          },
-          {
-            id: "mt-u2",
-            speaker: "PERSONA",
-            text: "That line's older than my grandmother's couch. You've got one more shot, make it count.",
-            turn: 1,
-            outcome: "CONTINUE",
-            authorName: "Nora, 29",
-          },
-          {
-            id: "mt-u3",
-            speaker: "PLAYERS",
-            text: "Okay but seriously, do you like bread? Because I knead you in my life.",
-            turn: 2,
+            text: "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
+            turn: 3,
             outcome: null,
             authorName: "Ong",
           },
           {
-            id: "mt-u4",
+            id: "mt-u6",
             speaker: "PERSONA",
-            text: "I'm going to be honest — I'd rather date the bread. Good luck out there.",
-            turn: 2,
+            text: "Strong recovery, but no. I'm committing to the bread.",
+            turn: 3,
             outcome: "UNMATCHED",
             authorName: "Nora, 29",
           },
         ],
         lastRoundResult: {
-          promptId: "match-prompt-2",
-          winnerResponseId: "match-response-u2",
+          promptId: "match-prompt-3",
+          winnerResponseId: "match-response-host-3",
           winnerPlayerId: HOST_ID,
-          winnerText: "Okay but seriously, do you like bread? Because I knead you in my life.",
+          winnerText: "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
           authorName: "Ong",
-          weightedVotes: 4,
+          weightedVotes: 5,
+          rawVotes: 3,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      }),
+    }),
+  };
+}
+
+function buildMatchSlopFinalComeback(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HOST_ID) return { ...player, score: 196, humorRating: 1.29, winStreak: 2 };
+    if (player.id === HUMAN_2_ID) return { ...player, score: 171, humorRating: 1.22 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 118, humorRating: 1.07 };
+    if (player.id === AI_ID) return { ...player, score: 102, humorRating: 1.01 };
+    return player;
+  });
+
+  return {
+    slug: "matchslop-final-comeback",
+    title: "MatchSlop Comeback",
+    description: "The room pulled off the final save and earned the partial-win ending.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "FINAL_RESULTS",
+      currentRound: 3,
+      totalRounds: 2,
+      modeState: matchSlopModeState({
+        outcome: "COMEBACK",
+        comebackRound: 3,
+        personaImage: {
+          status: "READY",
+          imageUrl: "/images/dev/matchslop-placeholder.jpg",
+          updatedAt: "2026-03-19T00:00:00.000Z",
+        },
+        transcript: [
+          ...MATCHSLOP_UNMATCHED_TRANSCRIPT,
+          {
+            id: "mt-c5",
+            speaker: "PLAYERS",
+            text: "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
+            turn: 3,
+            outcome: null,
+            authorName: "Ong",
+          },
+          {
+            id: "mt-c6",
+            speaker: "PERSONA",
+            text: "Annoyingly good answer. You don't get the date, but you do get back on the maybe list.",
+            turn: 3,
+            outcome: "COMEBACK",
+            authorName: "Nora, 29",
+          },
+        ],
+        lastRoundResult: {
+          promptId: "match-prompt-3",
+          winnerResponseId: "match-response-host-3",
+          winnerPlayerId: HOST_ID,
+          winnerText: "Fair. But if the bread flakes on you, I make an incredible emotional support butter board.",
+          authorName: "Ong",
+          weightedVotes: 5,
           rawVotes: 3,
           selectedPromptId: null,
           selectedPromptText: null,
@@ -1547,9 +1892,14 @@ export const MATCHSLOP_SCENARIOS: MockScenario[] = [
   buildMatchSlopLobby(),
   buildMatchSlopWriting(),
   buildMatchSlopVoting(),
+  buildMatchSlopResults(),
   buildMatchSlopFollowUpWriting(),
   buildMatchSlopFollowUpVoting(),
-  buildMatchSlopResults(),
+  buildMatchSlopResultsUnmatched(),
+  buildMatchSlopComebackWriting(),
+  buildMatchSlopComebackVoting(),
+  buildMatchSlopComebackResults(),
+  buildMatchSlopFinalComeback(),
   buildMatchSlopFinal(),
   buildMatchSlopFinalUnmatched(),
   buildMatchSlopFinalTurnLimit(),

@@ -1,15 +1,13 @@
-import { prisma } from "@/lib/db";
 import { getGameDefinition } from "@/games/registry";
 import { LEADERBOARD_TAG } from "@/games/core/constants";
-import { checkAndDisconnectInactivePlayers } from "@/games/core/disconnect";
 import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggregate";
 import { revalidateTag } from "next/cache";
-import { matchesHostControlToken } from "@/lib/host-control";
 import { publishGameStateEvent, waitForRealtimeEvent } from "@/lib/realtime-events";
 import { findAuthenticatedPlayer } from "@/lib/player-auth";
 import type { GameMetaPayload } from "../route-data";
 import { findGameMeta, findGamePayloadByStatus, normalizePayload } from "../route-data";
 import { isDeadlineExpired, stripUnrevealedVotes } from "../route-helpers";
+import { touchStreamHeartbeat } from "../stream-maintenance";
 import {
   sseEvent,
   SSE_HEADERS,
@@ -21,6 +19,7 @@ export const dynamic = "force-dynamic";
 
 const SAFETY_CHECK_INTERVAL_MS = 10_000;
 const IDLE_WAKE_INTERVAL_MS = 30_000;
+const PERIODIC_META_RESYNC_MS = 60_000;
 const lastSafetyCheck = new Map<string, number>();
 
 function getStateKey(meta: GameMetaPayload): string {
@@ -46,6 +45,7 @@ export async function GET(
   let lastStateKey = "";
   let lastKeepaliveAt = Date.now();
   let latestMeta: GameMetaPayload | null = null;
+  let lastMetaSyncAt = 0;
   let resolvedPlayerId: string | null = null;
   let playerResolved = false;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -130,54 +130,13 @@ export async function GET(
       }
 
       async function touchHeartbeat(meta: GameMetaPayload, currentPlayerId: string | null) {
-        if (meta.status === "FINAL_RESULTS") return;
-
-        let stateChanged = false;
-        const now = Date.now();
-
-        if (currentPlayerId) {
-          const cutoff = new Date(now - HEARTBEAT_MIN_INTERVAL_MS);
-          await prisma.player.updateMany({
-            where: { id: currentPlayerId, gameId: meta.id, lastSeen: { lt: cutoff } },
-            data: { lastSeen: new Date() },
-          });
-
-          const def = getGameDefinition(meta.gameType);
-          const hostControlStale =
-            !!meta.hostControlLastSeen &&
-            now - meta.hostControlLastSeen.getTime() > def.constants.hostStaleMs;
-
-          if (!meta.hostPlayerId && hostControlStale) {
-            await def.handlers.promoteHost(meta.id);
-            stateChanged = true;
-          } else if (meta.hostPlayerId && currentPlayerId !== meta.hostPlayerId) {
-            const host = await prisma.player.findUnique({
-              where: { id: meta.hostPlayerId },
-              select: { gameId: true, lastSeen: true },
-            });
-            if (host?.gameId === meta.id && now - host.lastSeen.getTime() > def.constants.hostStaleMs) {
-              await def.handlers.promoteHost(meta.id);
-              stateChanged = true;
-            }
-          }
-
-          if (meta.status === "WRITING" || meta.status === "VOTING") {
-            const disconnectedIds = await checkAndDisconnectInactivePlayers(meta.id, meta.gameType, roomCode);
-            if (disconnectedIds.length > 0) {
-              stateChanged = true;
-            }
-          }
-        }
-
-        const isHostTouch =
-          !!hostToken && matchesHostControlToken(meta.hostControlTokenHash, hostToken);
-        if (isHostTouch) {
-          const cutoff = new Date(now - HEARTBEAT_MIN_INTERVAL_MS);
-          await prisma.game.updateMany({
-            where: { id: meta.id, hostControlLastSeen: { lt: cutoff } },
-            data: { hostControlLastSeen: new Date() },
-          });
-        }
+        const stateChanged = await touchStreamHeartbeat({
+          meta,
+          currentPlayerId,
+          roomCode,
+          minTouchIntervalMs: HEARTBEAT_MIN_INTERVAL_MS,
+          hostToken,
+        });
 
         if (stateChanged) {
           await publishGameStateEvent(meta.id);
@@ -185,13 +144,17 @@ export async function GET(
       }
 
       async function syncState(force: boolean): Promise<boolean> {
-        let meta = await findGameMeta(roomCode);
+        let meta =
+          !force && latestMeta && Date.now() - lastMetaSyncAt < PERIODIC_META_RESYNC_MS
+            ? latestMeta
+            : await findGameMeta(roomCode);
         if (!meta) {
           enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
           return false;
         }
 
         latestMeta = meta;
+        lastMetaSyncAt = Date.now();
         if (!playerResolved) {
           resolvedPlayerId = (await findAuthenticatedPlayer(meta.id, playerToken))?.id ?? null;
           playerResolved = true;
@@ -205,6 +168,7 @@ export async function GET(
             return false;
           }
           latestMeta = meta;
+          lastMetaSyncAt = Date.now();
         }
 
         const safetyChanged = await runWritingSafety(meta);
@@ -215,6 +179,7 @@ export async function GET(
             return false;
           }
           latestMeta = meta;
+          lastMetaSyncAt = Date.now();
         }
 
         const nextStateKey = getStateKey(meta);
@@ -222,13 +187,13 @@ export async function GET(
           return true;
         }
 
-        const game = await findGamePayloadByStatus(roomCode, meta.status);
+        const game = await findGamePayloadByStatus(roomCode, meta.status, nextStateKey);
         if (!game) {
           enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
           return false;
         }
 
-        const normalized = normalizePayload(game);
+        const normalized = structuredClone(normalizePayload(game));
         if (normalized.status !== "FINAL_RESULTS") {
           stripUnrevealedVotes(normalized);
         }

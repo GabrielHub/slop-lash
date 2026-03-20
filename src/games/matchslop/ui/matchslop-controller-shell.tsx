@@ -25,7 +25,7 @@ function MatchHeader({
   roundLabel: string | null;
 }) {
   return (
-    <div className="fixed top-0 left-0 right-0 z-30 px-4 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
+    <div className="fixed top-0 left-0 right-0 z-30 pl-4 pr-16 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
         <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
           MATCHSLOP
@@ -289,7 +289,7 @@ function OpenerWriteStep({
             placeholder={isPhotoOption ? "Say something about their photo..." : `Reply to "${selectedOption.prompt}"...`}
             maxLength={300}
             autoFocus
-            className="w-full py-3.5 px-4 rounded-2xl text-[15px] focus:outline-none transition-colors"
+            className="w-full py-3.5 px-4 rounded-2xl text-base focus:outline-none transition-colors"
             style={{
               background: "var(--ms-raised)",
               border: "2px solid var(--ms-edge)",
@@ -640,6 +640,8 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
     ? currentVotePrompt.hasVoted || votingPromptIds.has(currentVotePrompt.id)
     : false;
   const hasSubmittedCurrent = matchslop?.writing?.submitted || (matchslop?.writing?.promptId ? submittedPromptIds.has(matchslop.writing.promptId) : false);
+  const comebackRound = matchslop?.comebackRound ?? null;
+  const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
   const isOpenerRound = promptOptions.length > 0;
   const isOpenerVoting = currentVotePrompt?.responses.some((r) => r.openerPromptId) ?? false;
   const selectedOption = promptOptions.find((o) => o.id === selectedPromptId) ?? null;
@@ -760,7 +762,9 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const roundLabel =
     gameState.status === "LOBBY"
       ? "Controller"
-      : `Round ${gameState.currentRound}/${gameState.totalRounds}`;
+      : isComebackRound
+        ? "Comeback Round"
+        : `Round ${gameState.currentRound}/${gameState.totalRounds}`;
   const canHostAdvance =
     isHost &&
     (gameState.status === "WRITING" ||
@@ -780,10 +784,10 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
           <div className="mb-4 text-center">
             <h1 className="font-display text-2xl font-bold text-ink">
               {gameState.status === "LOBBY" && "Lobby"}
-              {gameState.status === "WRITING" && "Write"}
-              {gameState.status === "VOTING" && "Vote"}
-              {gameState.status === "ROUND_RESULTS" && "Round Results"}
-              {gameState.status === "FINAL_RESULTS" && "Game Over"}
+              {gameState.status === "WRITING" && (isComebackRound ? "Comeback Round" : "Write")}
+              {gameState.status === "VOTING" && (isComebackRound ? "Comeback Vote" : "Vote")}
+              {gameState.status === "ROUND_RESULTS" && (isComebackRound ? "Comeback Results" : "Round Results")}
+              {gameState.status === "FINAL_RESULTS" && (matchslop?.outcome === "COMEBACK" ? "Partial Win" : "Game Over")}
             </h1>
           </div>
 
@@ -838,7 +842,12 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
             {gameState.status === "WRITING" && (
               <div className="space-y-4">
                 {hasSubmittedCurrent ? (
-                  <CompletionCard title="Submitted!" subtitle="Waiting for everyone else to write." />
+                  <CompletionCard
+                    title="Submitted!"
+                    subtitle={isComebackRound
+                      ? "Waiting to see if the room can save this."
+                      : "Waiting for everyone else to write."}
+                  />
                 ) : isOpenerRound ? (
                   /* ── Opener: two-step pick → write ── */
                   <AnimatePresence mode="wait">
@@ -884,10 +893,10 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                         className="text-xs uppercase tracking-wider mb-2 font-bold"
                         style={{ color: "var(--ms-ink-dim)" }}
                       >
-                        Reply to
+                        {isComebackRound ? "One last shot" : "Reply to"}
                       </p>
                       <p
-                        className="font-display font-semibold text-lg leading-snug"
+                        className="font-display font-semibold text-sm leading-snug"
                         style={{ color: "var(--ms-rose)" }}
                       >
                         {matchslop?.writing?.text ?? "Write the funniest reply."}
@@ -903,9 +912,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                             void submitResponse(matchslop.writing.promptId);
                           }
                         }}
-                        placeholder="Type your funniest reply..."
+                        placeholder={isComebackRound
+                          ? "Type the line that saves the match..."
+                          : "Type your funniest reply..."}
                         maxLength={300}
-                        className="w-full py-3.5 px-4 rounded-2xl text-[15px] focus:outline-none transition-colors"
+                        className="w-full py-3.5 px-4 rounded-2xl text-base focus:outline-none transition-colors"
                         style={{
                           background: "var(--ms-raised)",
                           border: "2px solid var(--ms-edge)",
@@ -928,7 +939,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                         }}
                         {...buttonTapPrimary}
                       >
-                        {submittingPromptId === matchslop?.writing?.promptId ? "Sending..." : "Send"}
+                        {submittingPromptId === matchslop?.writing?.promptId
+                          ? "Sending..."
+                          : isComebackRound
+                            ? "Send comeback"
+                            : "Send"}
                       </motion.button>
                     </div>
                   </div>
@@ -957,7 +972,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                       >
                         Vote cast!
                       </p>
-                      <PulsingDot>Waiting on other players...</PulsingDot>
+                      <PulsingDot>
+                        {isComebackRound
+                          ? "Waiting to see if the room saved it..."
+                          : "Waiting on other players..."}
+                      </PulsingDot>
                     </div>
                   </div>
                 ) : isOpenerVoting ? (
@@ -982,16 +1001,18 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                         className="text-xs uppercase tracking-wider mb-2 font-bold"
                         style={{ color: "var(--ms-violet)" }}
                       >
-                        Vote for the funniest reply
+                        {isComebackRound ? "Vote for the line that saves it" : "Vote for the funniest reply"}
                       </p>
                       <p
-                        className="font-display font-semibold text-lg leading-snug mb-1"
+                        className="font-display font-semibold text-sm leading-snug mb-1"
                         style={{ color: "var(--ms-rose)" }}
                       >
                         {currentVotePrompt.text}
                       </p>
                       <p className="text-xs" style={{ color: "var(--ms-ink-dim)" }}>
-                  Votes become points, even for strong runner-ups. Human votes count double.
+                        {isComebackRound
+                          ? "Pick the follow-up that gives the room the best chance to claw this back."
+                          : "Votes become points, even for strong runner-ups. Human votes count double."}
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -1049,13 +1070,21 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                 <div className="rounded-2xl border border-edge bg-surface/70 p-5 text-center">
                   <p className="font-display font-bold text-lg text-ink mb-2">
                     {gameState.status === "FINAL_RESULTS"
-                      ? "Game Over"
-                      : `Round ${gameState.currentRound} Complete`}
+                      ? matchslop?.outcome === "COMEBACK"
+                        ? "Partial Win"
+                        : "Game Over"
+                      : isComebackRound
+                        ? "Comeback Round Complete"
+                        : `Round ${gameState.currentRound} Complete`}
                   </p>
                   <PulsingDot>
                     {gameState.status === "FINAL_RESULTS"
-                      ? "Check the main screen for the final transcript."
-                      : "Round results are on the main screen."}
+                      ? matchslop?.outcome === "COMEBACK"
+                        ? "Check the main screen for the comeback ending."
+                        : "Check the main screen for the final transcript."
+                      : isComebackRound
+                        ? "The main screen is revealing whether the room saved it."
+                        : "Round results are on the main screen."}
                   </PulsingDot>
                 </div>
 
@@ -1070,14 +1099,16 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                     className="w-full bg-punch/90 hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-2xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
                     {...buttonTapPrimary}
                   >
-                    {hostActionBusy ? "Advancing..." : "Next Round"}
+                    {hostActionBusy ? "Advancing..." : isComebackRound ? "Show Ending" : "Next Round"}
                   </motion.button>
                 ) : (
                   <div className="text-center py-2">
                     <PulsingDot>
                       {gameState.status === "FINAL_RESULTS"
                         ? "Waiting for the next game..."
-                        : "Waiting for host to continue..."}
+                        : isComebackRound
+                          ? "Waiting for host to reveal the ending..."
+                          : "Waiting for host to continue..."}
                     </PulsingDot>
                   </div>
                 )}

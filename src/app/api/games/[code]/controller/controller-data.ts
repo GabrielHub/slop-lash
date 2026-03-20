@@ -4,7 +4,11 @@ import { FORFEIT_MARKER } from "@/games/core/constants";
 import type { ControllerGameState } from "@/lib/controller-types";
 import { asRecord, asString, asNumber } from "@/lib/json-guards";
 import { parseDetails } from "@/games/matchslop/game-logic-core";
+import { createTimedCache } from "@/lib/timed-cache";
 import { isPromptVotable } from "../route-helpers";
+
+const CONTROLLER_PAYLOAD_CACHE_TTL_MS = 30_000;
+const controllerPayloadCache = createTimedCache(300);
 
 function asPromptOptions(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -36,7 +40,8 @@ function asTranscript(value: unknown) {
         outcomeRaw === "CONTINUE" ||
         outcomeRaw === "DATE_SEALED" ||
         outcomeRaw === "UNMATCHED" ||
-        outcomeRaw === "TURN_LIMIT"
+        outcomeRaw === "TURN_LIMIT" ||
+        outcomeRaw === "COMEBACK"
           ? outcomeRaw
           : null;
       return {
@@ -53,7 +58,7 @@ function asTranscript(value: unknown) {
       speaker: "PLAYERS" | "PERSONA";
       text: string;
       turn: number;
-      outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | null;
+      outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK" | null;
       authorName: string | null;
     } => item != null);
 }
@@ -77,53 +82,60 @@ export function findControllerMeta(roomCode: string) {
   });
 }
 
-export async function findControllerPayload(roomCode: string, playerId: string | null): Promise<ControllerGameState | null> {
-  const game = await prisma.game.findUnique({
-    where: { roomCode },
-    select: {
-      id: true,
-      roomCode: true,
-      gameType: true,
-      status: true,
-      personaModelId: true,
-      modeState: true,
-      currentRound: true,
-      totalRounds: true,
-      hostPlayerId: true,
-      phaseDeadline: true,
-      timersDisabled: true,
-      votingPromptIndex: true,
-      votingRevealing: true,
-      nextGameCode: true,
-      version: true,
-      players: {
-        select: { id: true, name: true, type: true, participationStatus: true },
-        orderBy: { name: "asc" },
-      },
-      rounds: {
-        orderBy: { roundNumber: "desc" },
-        take: 1,
-        select: {
-          roundNumber: true,
-          prompts: {
-            orderBy: { id: "asc" },
-            select: {
-              id: true,
-              text: true,
-              assignments: { select: { playerId: true } },
-              responses: {
-                select: { id: true, playerId: true, text: true, metadata: true },
-                orderBy: { id: "asc" },
-              },
-              votes: {
-                select: { voterId: true, responseId: true, failReason: true },
-              },
+export async function findControllerPayload(
+  roomCode: string,
+  playerId: string | null,
+  version?: number,
+): Promise<ControllerGameState | null> {
+  const controllerGameSelect = {
+    id: true,
+    roomCode: true,
+    gameType: true,
+    status: true,
+    personaModelId: true,
+    modeState: true,
+    currentRound: true,
+    totalRounds: true,
+    hostPlayerId: true,
+    phaseDeadline: true,
+    timersDisabled: true,
+    votingPromptIndex: true,
+    votingRevealing: true,
+    nextGameCode: true,
+    version: true,
+    players: {
+      select: { id: true, name: true, type: true, participationStatus: true },
+      orderBy: { name: "asc" as const },
+    },
+    rounds: {
+      orderBy: { roundNumber: "desc" as const },
+      take: 1,
+      select: {
+        roundNumber: true,
+        prompts: {
+          orderBy: { id: "asc" as const },
+          select: {
+            id: true,
+            text: true,
+            assignments: { select: { playerId: true } },
+            responses: {
+              select: { id: true, playerId: true, text: true, metadata: true },
+              orderBy: { id: "asc" as const },
+            },
+            votes: {
+              select: { voterId: true, responseId: true, failReason: true },
             },
           },
         },
       },
     },
-  });
+  } as const;
+
+  const cacheKey = version == null ? null : `${roomCode}:${playerId ?? "_"}:${version}`;
+  const load = () => prisma.game.findUnique({ where: { roomCode }, select: controllerGameSelect });
+  const game = cacheKey
+    ? await controllerPayloadCache.getOrLoad(cacheKey, CONTROLLER_PAYLOAD_CACHE_TTL_MS, load)
+    : await load();
 
   if (!game) return null;
 
@@ -232,7 +244,10 @@ export async function findControllerPayload(roomCode: string, playerId: string |
 
     const outcomeRaw = asString(modeState?.outcome);
     const outcome =
-      outcomeRaw === "DATE_SEALED" || outcomeRaw === "UNMATCHED" || outcomeRaw === "TURN_LIMIT"
+      outcomeRaw === "DATE_SEALED" ||
+      outcomeRaw === "UNMATCHED" ||
+      outcomeRaw === "TURN_LIMIT" ||
+      outcomeRaw === "COMEBACK"
         ? outcomeRaw
         : "IN_PROGRESS" as const;
 
@@ -251,6 +266,7 @@ export async function findControllerPayload(roomCode: string, playerId: string |
       outcome,
       humanVoteWeight: asNumber(modeState?.humanVoteWeight) ?? 2,
       aiVoteWeight: asNumber(modeState?.aiVoteWeight) ?? 1,
+      comebackRound: asNumber(modeState?.comebackRound) ?? null,
       profile: profile
         ? {
             displayName: asString(profile.displayName) ?? "Mystery Match",
