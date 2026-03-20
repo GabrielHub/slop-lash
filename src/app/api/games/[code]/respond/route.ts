@@ -8,6 +8,8 @@ import { parseJsonBody } from "@/lib/http";
 import { logGameEvent } from "@/games/core/observability";
 import { publishGameStateEvent } from "@/lib/realtime-events";
 import { parseModeState } from "@/games/matchslop/game-logic-core";
+import { findAuthenticatedPlayer, readPlayerToken } from "@/lib/player-auth";
+import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "@/games/matchslop/config/game-config";
 
 function buildMatchSlopResponseMetadata(
   currentRound: number,
@@ -24,6 +26,13 @@ function buildMatchSlopResponseMetadata(
       : null;
   if (!selectedPromptId) {
     return { error: "MatchSlop openers must pick a profile prompt" };
+  }
+
+  if (selectedPromptId === MATCHSLOP_PHOTO_PROMPT_ID) {
+    return {
+      selectedPromptId: MATCHSLOP_PHOTO_PROMPT_ID,
+      selectedPromptText: MATCHSLOP_PHOTO_PROMPT_TEXT,
+    } satisfies Prisma.InputJsonValue;
   }
 
   const profile = parseModeState(modeStateRaw).profile;
@@ -44,7 +53,7 @@ export async function POST(
 ) {
   const { code } = await params;
   const body = await parseJsonBody<{
-    playerId?: unknown;
+    playerToken?: unknown;
     promptId?: unknown;
     text?: unknown;
     metadata?: unknown;
@@ -52,8 +61,8 @@ export async function POST(
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { playerId, promptId, text, metadata } = body;
-  const validPlayerId = typeof playerId === "string" ? playerId : null;
+  const { playerToken, promptId, text, metadata } = body;
+  const validPlayerToken = readPlayerToken(playerToken);
   const validPromptId = typeof promptId === "string" ? promptId : null;
 
   const validMetadata =
@@ -63,9 +72,9 @@ export async function POST(
         ? metadata as Record<string, unknown>
         : undefined;
 
-  if (!validPlayerId || !validPromptId || !text || typeof text !== "string") {
+  if (!validPlayerToken || !validPromptId || !text || typeof text !== "string") {
     return NextResponse.json(
-      { error: "playerId, promptId, and text are required" },
+      { error: "playerToken, promptId, and text are required" },
       { status: 400 }
     );
   }
@@ -100,14 +109,11 @@ export async function POST(
     );
   }
 
-  const player = await prisma.player.findFirst({
-    where: { id: validPlayerId, gameId: game.id },
-    select: { id: true, type: true, participationStatus: true },
-  });
+  const player = await findAuthenticatedPlayer(game.id, validPlayerToken);
   if (!player) {
     return NextResponse.json(
-      { error: "Player not in this game" },
-      { status: 403 }
+      { error: "Invalid player session" },
+      { status: 401 }
     );
   }
 
@@ -124,7 +130,7 @@ export async function POST(
     );
   }
 
-  if (!checkRateLimit(`respond:${validPlayerId}`, 20, 60_000)) {
+  if (!checkRateLimit(`respond:${player.id}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
       { status: 429 }
@@ -132,7 +138,7 @@ export async function POST(
   }
 
   const assignment = await prisma.promptAssignment.findUnique({
-    where: { promptId_playerId: { promptId: validPromptId, playerId: validPlayerId } },
+    where: { promptId_playerId: { promptId: validPromptId, playerId: player.id } },
     select: { id: true },
   });
 
@@ -158,7 +164,7 @@ export async function POST(
   try {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.response.findFirst({
-        where: { promptId: validPromptId, playerId: validPlayerId },
+        where: { promptId: validPromptId, playerId: player.id },
         select: { id: true },
       });
 
@@ -169,7 +175,7 @@ export async function POST(
       await tx.response.create({
         data: {
           promptId: validPromptId,
-          playerId: validPlayerId,
+          playerId: player.id,
           text: trimmed,
           metadata: responseMetadata,
         },
@@ -193,7 +199,7 @@ export async function POST(
   const def = getGameDefinition(game.gameType);
 
   logGameEvent("responded", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
-    playerId: validPlayerId,
+    playerId: player.id,
   });
   await publishGameStateEvent(game.id);
 

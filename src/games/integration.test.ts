@@ -113,6 +113,8 @@ function routeParams(code = "TEST") {
   return { params: Promise.resolve({ code }) };
 }
 
+const PLAYER_TOKEN = "tok-player";
+
 async function readJson(res: Response) {
   return {
     status: res.status,
@@ -347,6 +349,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
     db.player.findFirst.mockResolvedValue({
       id: "voter1",
       type: "HUMAN",
+      participationStatus: "ACTIVE",
     } as never);
   }
 
@@ -355,7 +358,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: null,
       }),
@@ -395,7 +398,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "p1",       // p1 is the owner of r1 — genuine self-vote
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r1",
       }),
@@ -426,7 +429,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: null,
       }),
@@ -456,7 +459,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: null,
       }),
@@ -490,7 +493,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r2",
       }),
@@ -524,7 +527,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r2", // belongs to p2, not voter1
       }),
@@ -550,7 +553,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r1",
       }),
@@ -573,7 +576,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "spec1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r1",
       }),
@@ -596,7 +599,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r1",
       }),
@@ -630,7 +633,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r2",
       }),
@@ -650,7 +653,7 @@ describe("AI_CHAT_SHOWDOWN no-abstain enforcement (vote route)", () => {
 
     const res = await votePOST(
       jsonRequest({
-        voterId: "voter1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         responseId: "r-nonexistent",
       }),
@@ -767,7 +770,7 @@ describe("MATCHSLOP response metadata", () => {
 
     const res = await respondPOST(
       jsonRequest({
-        playerId: "player1",
+        playerToken: PLAYER_TOKEN,
         promptId: "prompt1",
         text: "I respect a reckless anchovy.",
         metadata: { selectedPromptId: "m-p1" },

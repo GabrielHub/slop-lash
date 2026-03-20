@@ -1,4 +1,5 @@
 import { FORFEIT_MARKER } from "@/games/core/constants";
+import type { GameType } from "@/games/core/types";
 
 export function isVersionUnchanged(params: {
   clientVersion: string | null;
@@ -21,11 +22,32 @@ type MutableVote = { voterId: string; voter: unknown; [key: string]: unknown };
 type MutablePrompt = { id: string; responses: MutableResponse[]; votes: MutableVote[] };
 type MutableRound = { prompts: MutablePrompt[] };
 type MutableVotingGame = {
+  gameType: GameType;
   status: string;
   rounds: MutableRound[];
   votingPromptIndex: number;
   votingRevealing: boolean;
 };
+
+export function isPromptVotable(
+  gameType: GameType,
+  prompt: { responses: Array<{ text: string }> },
+): boolean {
+  switch (gameType) {
+    case "MATCHSLOP":
+      return prompt.responses.some((response) => response.text !== FORFEIT_MARKER);
+    case "AI_CHAT_SHOWDOWN":
+      return (
+        prompt.responses.length >= 2 &&
+        !prompt.responses.every((response) => response.text === FORFEIT_MARKER)
+      );
+    default:
+      return (
+        prompt.responses.length >= 2 &&
+        !prompt.responses.some((response) => response.text === FORFEIT_MARKER)
+      );
+  }
+}
 
 /**
  * Strip votes from prompts that haven't been revealed yet during VOTING phase.
@@ -34,13 +56,9 @@ type MutableVotingGame = {
 export function stripUnrevealedVotes<T extends MutableVotingGame>(game: T): void {
   if (game.status !== "VOTING" || game.rounds[0] == null) return;
 
-  // Must match getVotablePrompts: 2+ responses, no forfeits, sorted by id
+  // Must match each game's getVotablePrompts implementation, sorted by id.
   const votable = [...game.rounds[0].prompts]
-    .filter(
-      (prompt) =>
-        prompt.responses.length >= 2 &&
-        !prompt.responses.some((r) => r.text === FORFEIT_MARKER),
-    )
+    .filter((prompt) => isPromptVotable(game.gameType, prompt))
     .sort((a, b) => a.id.localeCompare(b.id));
 
   for (let i = 0; i < votable.length; i++) {

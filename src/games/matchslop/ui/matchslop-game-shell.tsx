@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { PulsingDot } from "@/components/pulsing-dot";
@@ -21,6 +21,8 @@ import {
 } from "@/lib/animations";
 import { useGameStream } from "@/hooks/use-game-stream";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
+import { playSound, preloadSounds } from "@/lib/sounds";
 import type { GameState } from "@/lib/types";
 
 /* ─── Local Types ─── */
@@ -28,7 +30,7 @@ import type { GameState } from "@/lib/types";
 type MatchSlopIdentity = "MAN" | "WOMAN" | "NON_BINARY" | "OTHER";
 
 type MatchSlopPersonaImageState = {
-  status?: "NOT_REQUESTED" | "PENDING" | "READY" | "FAILED";
+  status?: "NOT_REQUESTED" | "PENDING" | "PROCESSING" | "READY" | "FAILED";
   imageUrl?: string | null;
 };
 
@@ -79,34 +81,16 @@ type MatchSlopModeState = {
 };
 
 type Outcome = "IN_PROGRESS" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT";
+const EMPTY_TRANSCRIPT: MatchSlopTranscriptEntry[] = [];
 
 /* ─── Helpers ─── */
 
-function getPlayerId() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("playerId");
-}
-
-function getHostControlToken() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("hostControlToken");
-}
-
-const noopSubscribe = () => () => {};
+import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from "@/lib/client-session";
 
 function asModeState(state: GameState["modeState"] | undefined): MatchSlopModeState {
   return (state ?? {}) as MatchSlopModeState;
 }
 
-function identityLabel(value: string | null | undefined) {
-  switch (value) {
-    case "MAN": return "Man";
-    case "WOMAN": return "Woman";
-    case "NON_BINARY": return "Non-binary";
-    case "OTHER": return "Other";
-    default: return value ?? "Unknown";
-  }
-}
 
 /* ─── SVG Icons ─── */
 
@@ -220,14 +204,10 @@ function OutcomeBadge({ outcome }: { outcome: Outcome }) {
 function ProfileCard({
   profile,
   personaImage,
-  seekerIdentity,
-  personaIdentity,
   outcome,
 }: {
   profile: MatchSlopProfile | null;
   personaImage: MatchSlopPersonaImageState | null;
-  seekerIdentity: string | null | undefined;
-  personaIdentity: string | null | undefined;
   outcome: Outcome;
 }) {
   const imageStatus = personaImage?.status ?? "NOT_REQUESTED";
@@ -260,7 +240,7 @@ function ProfileCard({
               background: "linear-gradient(135deg, var(--ms-rose-soft), var(--ms-violet-soft), var(--ms-coral-soft))",
             }}
           >
-            <div className="text-center">
+            <div className="flex flex-col items-center text-center">
               <motion.div
                 className="animate-ms-heartbeat"
                 style={{ color: "var(--ms-rose)" }}
@@ -271,7 +251,9 @@ function ProfileCard({
                 className="text-sm font-medium mt-3"
                 style={{ color: "var(--ms-ink-dim)" }}
               >
-                {imageStatus === "PENDING" ? "Generating portrait..." : "Awaiting portrait"}
+                {imageStatus === "PENDING" || imageStatus === "PROCESSING"
+                  ? "Generating portrait..."
+                  : "Awaiting portrait"}
               </p>
             </div>
           </div>
@@ -347,20 +329,22 @@ function ProfileCard({
           {profile?.bio ?? "The persona profile is being generated..."}
         </p>
 
-        {/* Identity + detail badges */}
+        {/* Detail badges */}
         <div className="flex flex-wrap items-center gap-2 mt-4">
-          <span
-            className="text-[clamp(0.6rem,0.8vw,0.75rem)] font-bold uppercase tracking-wider px-3 py-1 rounded-full"
-            style={{ color: "var(--ms-violet)", background: "var(--ms-violet-soft)" }}
-          >
-            {identityLabel(seekerIdentity)} seeking {identityLabel(personaIdentity)}
-          </span>
           {profile?.details?.job && (
             <span
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {profile.details.job}
+              {"\uD83D\uDCBC"} {profile.details.job}
+            </span>
+          )}
+          {profile?.details?.school && (
+            <span
+              className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
+              style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
+            >
+              {"\uD83C\uDF93"} {profile.details.school}
             </span>
           )}
           {profile?.details?.height && (
@@ -368,7 +352,7 @@ function ProfileCard({
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {profile.details.height}
+              {"\uD83D\uDCCF"} {profile.details.height}
             </span>
           )}
           {profile?.details?.languages && profile.details.languages.length > 0 && (
@@ -376,7 +360,7 @@ function ProfileCard({
               className="text-[clamp(0.55rem,0.75vw,0.7rem)] px-3 py-1 rounded-full"
               style={{ background: "var(--ms-raised)", border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
             >
-              {profile.details.languages.join(", ")}
+              {"\uD83D\uDCAC"} {profile.details.languages.join(", ")}
             </span>
           )}
         </div>
@@ -541,7 +525,7 @@ function PhaseStatusCard({
     VOTING: {
       icon: <VoteIcon size={24} />,
       title: "Pick the winner",
-      subtitle: "Vote for the line most likely to land. Human votes count double.",
+      subtitle: "Votes turn straight into points, and even close seconds can score. Human votes count double.",
       color: "var(--ms-violet)",
     },
     ROUND_RESULTS: {
@@ -648,7 +632,7 @@ function PhaseStatusCard({
                   color: "var(--ms-ink-dim)",
                 }}
               >
-                Join at <strong style={{ color: "var(--ms-ink)" }}>sloplash.com</strong>
+                Join at <strong style={{ color: "var(--ms-ink)" }}>{typeof window !== "undefined" ? window.location.host : ""}</strong>
               </p>
             </div>
             <div className="text-center">
@@ -791,31 +775,100 @@ function PhaseStatusCard({
   );
 }
 
-/* ─── Outcome Overlay ─── */
+/* ─── Outcome Verdict ─── */
 
-function OutcomeOverlay({ outcome }: { outcome: Outcome }) {
+function OutcomeVerdict({ outcome }: { outcome: Outcome }) {
   if (outcome === "IN_PROGRESS") return null;
 
+  const config = {
+    DATE_SEALED: {
+      icon: <HeartIcon size={18} />,
+      label: "Date sealed",
+      color: "var(--ms-mint)",
+      bg: "linear-gradient(135deg, color-mix(in srgb, var(--ms-mint) 10%, var(--ms-surface)), var(--ms-surface))",
+      border: "color-mix(in srgb, var(--ms-mint) 25%, transparent)",
+      lineGradient: "var(--ms-mint)",
+      glow: "0 -4px 24px color-mix(in srgb, var(--ms-mint) 12%, transparent)",
+      pulse: true,
+    },
+    UNMATCHED: {
+      icon: <BrokenHeartIcon size={18} />,
+      label: "Unmatched",
+      color: "var(--ms-red)",
+      bg: "linear-gradient(135deg, color-mix(in srgb, var(--ms-red) 6%, var(--ms-surface)), var(--ms-surface))",
+      border: "color-mix(in srgb, var(--ms-red) 15%, transparent)",
+      lineGradient: "var(--ms-red)",
+      glow: "none",
+      pulse: false,
+    },
+    TURN_LIMIT: {
+      icon: <SparkleIcon size={16} />,
+      label: "Time\u2019s up",
+      color: "var(--ms-coral)",
+      bg: "linear-gradient(135deg, color-mix(in srgb, var(--ms-coral) 8%, var(--ms-surface)), var(--ms-surface))",
+      border: "color-mix(in srgb, var(--ms-coral) 18%, transparent)",
+      lineGradient: "var(--ms-coral)",
+      glow: "none",
+      pulse: false,
+    },
+  }[outcome];
+
   return (
-    <AnimatePresence>
-      <motion.div
-        className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-      >
-        {outcome === "DATE_SEALED" && (
-          <div className="animate-ms-match-sealed" style={{ color: "var(--ms-mint)" }}>
-            <HeartIcon size={120} />
-          </div>
-        )}
-        {outcome === "UNMATCHED" && (
-          <div className="animate-ms-unmatch-slam" style={{ color: "var(--ms-red)", opacity: 0.15 }}>
-            <BrokenHeartIcon size={120} />
-          </div>
-        )}
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      style={{
+        borderTop: `1px solid ${config.border}`,
+        background: config.bg,
+        boxShadow: config.glow,
+        padding: "clamp(1rem, 1.8vw, 1.5rem) clamp(1.25rem, 2vw, 1.75rem)",
+      }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <div className="flex items-center gap-3">
+        {/* Left decorative line */}
+        <div
+          className="flex-1 h-px"
+          style={{
+            background: `linear-gradient(to right, transparent, ${config.lineGradient})`,
+            opacity: 0.3,
+          }}
+        />
+
+        {/* Centered verdict */}
+        <motion.div
+          className="shrink-0 flex items-center gap-2.5"
+          initial={{ scale: 0.7, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.5, type: "spring", bounce: 0.35 }}
+        >
+          <span
+            className={config.pulse ? "animate-ms-heartbeat" : ""}
+            style={{ color: config.color, display: "flex" }}
+          >
+            {config.icon}
+          </span>
+          <span
+            className="font-display font-bold uppercase tracking-widest"
+            style={{
+              fontSize: "clamp(0.6rem, 0.85vw, 0.8rem)",
+              color: config.color,
+            }}
+          >
+            {config.label}
+          </span>
+        </motion.div>
+
+        {/* Right decorative line */}
+        <div
+          className="flex-1 h-px"
+          style={{
+            background: `linear-gradient(to left, transparent, ${config.lineGradient})`,
+            opacity: 0.3,
+          }}
+        />
+      </div>
+    </motion.div>
   );
 }
 
@@ -830,14 +883,29 @@ export function MatchSlopGameShell({
 }) {
   const searchParams = useSearchParams();
   const storedPlayerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
   const { triggerElement } = usePixelDissolve();
   const playerId = viewMode === "stage" ? null : storedPlayerId;
-  const { gameState, error } = useGameStream(code, playerId, hostControlToken, viewMode);
+  const { gameState, error } = useGameStream(
+    code,
+    playerToken,
+    hostControlToken,
+    viewMode,
+  );
+  useScreenWakeLock(gameState != null);
   const [endingGame, setEndingGame] = useState(false);
   const [hostActionBusy, setHostActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const prevStatusRef = useRef<GameState["status"] | null>(null);
+  const prevPlayerIdsRef = useRef<Set<string> | null>(null);
+  const prevRoundRef = useRef<number | undefined>(undefined);
+  const allInRef = useRef<string>("");
+  const winnerRevealRef = useRef<string>("");
+  const finalResultsRef = useRef<string>("");
+  const prevTranscriptLengthRef = useRef<number | null>(null);
+  const prevVoteCountRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (viewMode !== "stage") return;
@@ -847,18 +915,127 @@ export function MatchSlopGameShell({
     }
   }, [searchParams, viewMode]);
 
-  useEffect(() => {
-    if (viewMode !== "stage") return;
-    document.documentElement.setAttribute("data-theme", "dark");
-    localStorage.setItem("theme", "dark");
-  }, [viewMode]);
-
   // Auto-scroll transcript
   const modeState = asModeState(gameState?.modeState);
-  const transcript = modeState.transcript ?? [];
+  const profile = modeState.profile ?? null;
+  const outcome = (modeState.outcome ?? "IN_PROGRESS") as Outcome;
+  const personaImage = modeState.personaImage ?? null;
+  const transcript = modeState.transcript ?? EMPTY_TRANSCRIPT;
+  const currentRoundData =
+    gameState?.rounds.find((round) => round.roundNumber === gameState.currentRound) ??
+    gameState?.rounds[0];
+  const currentPrompt =
+    currentRoundData?.prompts[gameState?.votingPromptIndex ?? 0] ??
+    currentRoundData?.prompts[0];
+  const activePlayers =
+    gameState?.players.filter(
+      (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
+    ) ?? [];
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript.length]);
+
+  useEffect(() => {
+    window.addEventListener("pointerdown", preloadSounds, { once: true });
+    return () => window.removeEventListener("pointerdown", preloadSounds);
+  }, []);
+
+  useEffect(() => {
+    const status = gameState?.status;
+    if (!status || status === prevStatusRef.current) return;
+    const previousStatus = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (!previousStatus || status === "LOBBY") return;
+    playSound("phase-transition");
+  }, [gameState?.status]);
+
+  useEffect(() => {
+    const players = gameState?.players;
+    if (!players) return;
+    const currentIds = new Set(players.map((player) => player.id));
+    const previousIds = prevPlayerIdsRef.current;
+    prevPlayerIdsRef.current = currentIds;
+    if (!previousIds) return;
+    const hasJoin = players.some((player) => !previousIds.has(player.id));
+    const hasLeave = [...previousIds].some((id) => !currentIds.has(id));
+    if (hasJoin) {
+      playSound("player-join");
+    } else if (hasLeave) {
+      playSound("player-leave");
+    }
+  }, [gameState?.players]);
+
+  useEffect(() => {
+    const status = gameState?.status;
+    const currentRound = gameState?.currentRound;
+    if (status !== "WRITING" || currentRound == null) return;
+    if (prevRoundRef.current !== undefined && currentRound !== prevRoundRef.current) {
+      playSound("round-start");
+    }
+    prevRoundRef.current = currentRound;
+  }, [gameState?.currentRound, gameState?.status]);
+
+  useEffect(() => {
+    if (!gameState || gameState.status !== "WRITING" || !currentPrompt) return;
+    if (activePlayers.length < 2) return;
+    const allSubmitted = currentPrompt.responses.length >= activePlayers.length;
+    const key = `${gameState.currentRound}`;
+    if (allSubmitted && allInRef.current !== key) {
+      allInRef.current = key;
+      playSound("all-in");
+    }
+  }, [activePlayers.length, currentPrompt, gameState]);
+
+  useEffect(() => {
+    const status = gameState?.status;
+    const currentRound = gameState?.currentRound;
+    if (status !== "ROUND_RESULTS" || currentRound == null) return;
+    const key = `${currentRound}`;
+    if (winnerRevealRef.current === key) return;
+    winnerRevealRef.current = key;
+    playSound("winner-reveal");
+  }, [gameState?.currentRound, gameState?.status]);
+
+  useEffect(() => {
+    if (gameState?.status !== "FINAL_RESULTS") return;
+    const key = `${gameState.currentRound}:${outcome}`;
+    if (finalResultsRef.current === key) return;
+    finalResultsRef.current = key;
+    playSound("game-over");
+    if (outcome !== "DATE_SEALED") return;
+    const timer = window.setTimeout(() => playSound("celebration"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [gameState?.currentRound, gameState?.status, outcome]);
+
+  useEffect(() => {
+    const previousLength = prevTranscriptLengthRef.current;
+    prevTranscriptLengthRef.current = transcript.length;
+    if (previousLength == null || transcript.length <= previousLength) return;
+    const newEntries = transcript.slice(previousLength);
+    const hasPlayerEntry = newEntries.some((entry) => entry.speaker === "PLAYERS");
+    const hasPersonaEntry = newEntries.some((entry) => entry.speaker === "PERSONA");
+    if (hasPlayerEntry) {
+      playSound("chat-send");
+    }
+    if (!hasPersonaEntry) return;
+    const timer = window.setTimeout(() => playSound("chat-receive"), hasPlayerEntry ? 180 : 0);
+    return () => window.clearTimeout(timer);
+  }, [transcript]);
+
+  useEffect(() => {
+    const nextVoteCount = currentPrompt?.votes.length ?? 0;
+    const previousVoteCount = prevVoteCountRef.current;
+    prevVoteCountRef.current = nextVoteCount;
+    if (
+      previousVoteCount == null ||
+      gameState?.status !== "VOTING" ||
+      gameState.votingRevealing ||
+      nextVoteCount <= previousVoteCount
+    ) {
+      return;
+    }
+    playSound("vote-cast");
+  }, [currentPrompt?.votes.length, gameState?.status, gameState?.votingRevealing]);
 
   // Set data-game attribute
   useEffect(() => {
@@ -868,9 +1045,6 @@ export function MatchSlopGameShell({
     };
   }, []);
 
-  const profile = modeState.profile ?? null;
-  const outcome = (modeState.outcome ?? "IN_PROGRESS") as Outcome;
-  const personaImage = modeState.personaImage ?? null;
   const isHost =
     playerId === gameState?.hostPlayerId ||
     (viewMode === "stage" && !!hostControlToken && gameState?.hostPlayerId == null);
@@ -894,6 +1068,10 @@ export function MatchSlopGameShell({
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         setActionError(data?.error || "Action failed");
+      } else if (path === "start") {
+        playSound("game-start");
+      } else if (gameState?.status === "ROUND_RESULTS") {
+        playSound("round-transition");
       }
     } catch {
       setActionError("Something went wrong");
@@ -926,7 +1104,6 @@ export function MatchSlopGameShell({
     return (
       <main
         className="min-h-svh flex items-center justify-center px-6"
-        style={{ background: "var(--ms-bg)" }}
       >
         <motion.div variants={fadeInUp} initial="hidden" animate="visible">
           <p className="text-fail font-display font-bold text-xl">{error}</p>
@@ -939,7 +1116,6 @@ export function MatchSlopGameShell({
     return (
       <main
         className="min-h-svh flex items-center justify-center px-6"
-        style={{ background: "var(--ms-bg)" }}
       >
         <motion.div
           className="flex flex-col items-center gap-3"
@@ -958,7 +1134,6 @@ export function MatchSlopGameShell({
   return (
     <div
       className="min-h-svh flex flex-col overflow-x-hidden relative"
-      style={{ background: "var(--ms-bg)" }}
     >
       {/* Ambient glow background */}
       <div
@@ -1040,44 +1215,9 @@ export function MatchSlopGameShell({
             <ProfileCard
               profile={profile}
               personaImage={personaImage}
-              seekerIdentity={modeState.seekerIdentity}
-              personaIdentity={modeState.personaIdentity}
               outcome={outcome}
             />
 
-            {/* Vote weight info */}
-            <motion.div
-              className="flex items-center gap-3 mt-3 rounded-2xl"
-              style={{
-                background: "var(--ms-surface)",
-                border: "1px solid var(--ms-edge)",
-                padding: "clamp(0.6rem, 1vw, 0.875rem) clamp(0.75rem, 1.2vw, 1rem)",
-              }}
-              variants={fadeInUp}
-              initial="hidden"
-              animate="visible"
-            >
-              <div
-                className="shrink-0 flex items-center justify-center rounded-full font-bold"
-                style={{
-                  width: "clamp(2rem, 2.5vw, 2.5rem)",
-                  height: "clamp(2rem, 2.5vw, 2.5rem)",
-                  fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)",
-                  background: "var(--ms-rose-soft)",
-                  color: "var(--ms-rose)",
-                }}
-              >
-                {modeState.humanVoteWeight ?? 2}x
-              </div>
-              <p
-                style={{
-                  fontSize: "clamp(0.7rem, 0.9vw, 0.85rem)",
-                  color: "var(--ms-ink-dim)",
-                }}
-              >
-                Human votes count double. AI votes = {modeState.aiVoteWeight ?? 1}x.
-              </p>
-            </motion.div>
           </div>
 
           {/* Right: Conversation + Phase Status */}
@@ -1189,10 +1329,8 @@ export function MatchSlopGameShell({
                 )}
               </div>
 
-              {/* Outcome overlay inside transcript area */}
-              {outcome !== "IN_PROGRESS" && (
-                <OutcomeOverlay outcome={outcome} />
-              )}
+              {/* Outcome verdict footer */}
+              <OutcomeVerdict outcome={outcome} />
             </motion.div>
 
             {/* Final results link */}

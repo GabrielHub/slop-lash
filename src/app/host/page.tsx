@@ -126,6 +126,7 @@ export default function HostPage() {
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
   const [ttsVoice, setTtsVoice] = useState("RANDOM");
+  const [personaModelPickerOpen, setPersonaModelPickerOpen] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -158,6 +159,7 @@ export default function HostPage() {
   const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
   const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + selectedModels.length;
   const isMatchSlop = gameType === "MATCHSLOP";
+  const selectedPersonaModel = personaModelId ? getModelByModelId(personaModelId) : undefined;
 
   useEffect(() => {
     setSelectedModels((prev) => (prev.length <= maxAiPlayers ? prev : prev.slice(0, maxAiPlayers)));
@@ -180,6 +182,12 @@ export default function HostPage() {
       setVoicePickerOpen(false);
     }
   }, [selectedGameType.supportsNarrator]);
+
+  useEffect(() => {
+    if (!isMatchSlop) {
+      setPersonaModelPickerOpen(false);
+    }
+  }, [isMatchSlop]);
 
   async function createGame() {
     if (!hostSecret.trim()) {
@@ -251,7 +259,7 @@ export default function HostPage() {
   return (
     <main className="min-h-svh flex flex-col items-center sm:justify-center px-6 py-12 pt-20">
       <motion.div
-        className="w-full max-w-md lg:max-w-3xl"
+        className={`w-full max-w-md lg:max-w-3xl ${isMatchSlop ? "xl:max-w-5xl" : ""}`}
         variants={fadeInUp}
         initial="hidden"
         animate="visible"
@@ -284,7 +292,7 @@ export default function HostPage() {
             e.preventDefault();
             createGame();
           }}
-          className="flex flex-col lg:grid lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-12"
+          className={`flex flex-col lg:grid lg:grid-rows-[auto_1fr] lg:items-start ${isMatchSlop ? "lg:grid-cols-2 xl:grid-cols-3 lg:gap-x-8" : "lg:grid-cols-2 lg:gap-x-12"}`}
         >
           <div>
             <div className="mb-8">
@@ -319,125 +327,63 @@ export default function HostPage() {
             </div>
 
             {isMatchSlop && (
-              <div className="mb-8 space-y-4 rounded-2xl border border-edge bg-surface/60 p-4">
-                <div>
-                  <p className="text-sm font-medium text-ink-dim mb-2">
-                    Dating Setup
-                  </p>
-                  <p className="text-xs text-ink-dim/70 mb-3">
-                    This sets the shared persona framing for the whole table.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <span className="block text-xs uppercase tracking-wider text-ink-dim mb-2">
-                        I&apos;m
-                      </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        {MATCHSLOP_IDENTITY_OPTIONS.map((identity) => {
-                          const selected = seekerIdentity === identity.id;
-                          return (
-                            <motion.button
-                              key={identity.id}
-                              type="button"
-                              onClick={() => setSeekerIdentity(identity.id)}
-                              className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-colors cursor-pointer ${
-                                selected
-                                  ? "bg-punch/10 border-punch text-punch"
-                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                              }`}
-                              {...buttonTap}
-                            >
-                              {identity.label}
-                            </motion.button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="block text-xs uppercase tracking-wider text-ink-dim mb-2">
-                        Looking for
-                      </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        {MATCHSLOP_IDENTITY_OPTIONS.map((identity) => {
-                          const selected = personaIdentity === identity.id;
-                          return (
-                            <motion.button
-                              key={identity.id}
-                              type="button"
-                              onClick={() => setPersonaIdentity(identity.id)}
-                              className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-colors cursor-pointer ${
-                                selected
-                                  ? "bg-punch/10 border-punch text-punch"
-                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                              }`}
-                              {...buttonTap}
-                            >
-                              {identity.label}
-                            </motion.button>
-                          );
-                        })}
-                      </div>
+              <div className="mb-8">
+                <label className="block text-sm font-medium text-ink-dim mb-1">
+                  Dating Setup
+                </label>
+                <p className="text-xs text-ink-dim/50 mb-3">
+                  Sets the shared persona framing for the whole table.
+                </p>
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-ink-dim/70 w-20 shrink-0">
+                      I&apos;m a
+                    </span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {MATCHSLOP_IDENTITY_OPTIONS.map((identity) => {
+                        const selected = seekerIdentity === identity.id;
+                        return (
+                          <motion.button
+                            key={identity.id}
+                            type="button"
+                            onClick={() => setSeekerIdentity(identity.id)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                              selected
+                                ? "bg-punch/15 text-punch ring-1 ring-punch/40"
+                                : "bg-surface/80 text-ink-dim ring-1 ring-edge hover:ring-edge-strong hover:text-ink"
+                            }`}
+                            {...buttonTap}
+                          >
+                            {identity.label}
+                          </motion.button>
+                        );
+                      })}
                     </div>
                   </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-ink-dim mb-2">
-                    Persona Model
-                  </p>
-                  <div className="grid grid-cols-1 gap-2">
-                    {AI_MODELS.map((model) => {
-                      const selected = personaModelId === model.id;
-                      const teammateSelected = selectedModels.includes(model.id);
-                      return (
-                        <motion.button
-                          key={model.id}
-                          type="button"
-                          onClick={() => {
-                            setPersonaModelId(model.id);
-                            setSelectedModels((prev) => prev.filter((id) => id !== model.id));
-                          }}
-                          className={`p-3 rounded-xl border-2 text-left transition-colors cursor-pointer flex items-center gap-3 ${
-                            selected
-                              ? "bg-punch/10 border-punch"
-                              : teammateSelected
-                                ? "bg-surface/60 border-edge text-ink-dim/50"
-                                : "bg-surface/80 border-edge hover:border-edge-strong"
-                          }`}
-                          {...buttonTap}
-                        >
-                          <ModelIcon model={model} size={22} className="shrink-0" />
-                          <div className="min-w-0">
-                            <div className="flex items-baseline gap-2">
-                              <span className={`font-semibold text-sm truncate ${selected ? "text-punch" : "text-ink"}`}>
-                                {model.name}
-                              </span>
-                              <span className="text-xs text-ink-dim/60 shrink-0">
-                                {model.provider}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-ink-dim/60">
-                              Persona model only. Teammates use the funny prompt pool below.
-                            </p>
-                          </div>
-                          {selected && (
-                            <svg
-                              className="ml-auto shrink-0 text-punch"
-                              width="18"
-                              height="18"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          )}
-                        </motion.button>
-                      );
-                    })}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-ink-dim/70 w-20 shrink-0">
+                      Looking for
+                    </span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {MATCHSLOP_IDENTITY_OPTIONS.map((identity) => {
+                        const selected = personaIdentity === identity.id;
+                        return (
+                          <motion.button
+                            key={identity.id}
+                            type="button"
+                            onClick={() => setPersonaIdentity(identity.id)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                              selected
+                                ? "bg-punch/15 text-punch ring-1 ring-punch/40"
+                                : "bg-surface/80 text-ink-dim ring-1 ring-edge hover:ring-edge-strong hover:text-ink"
+                            }`}
+                            {...buttonTap}
+                          >
+                            {identity.label}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -489,7 +435,144 @@ export default function HostPage() {
             </div>
           </div>
 
-          <div className="mb-8 lg:mb-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
+          {isMatchSlop && (
+            <div className="mb-8 lg:mb-0 lg:col-start-1 xl:col-start-2 xl:row-start-1 xl:row-span-2">
+              <label className="block text-sm font-medium text-ink-dim mb-3">
+                Persona Model
+              </label>
+              <div>
+                <motion.button
+                  type="button"
+                  onClick={() => setPersonaModelPickerOpen((open) => !open)}
+                  className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
+                    personaModelPickerOpen
+                      ? "border-punch bg-punch/10 text-punch"
+                      : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
+                  }`}
+                  {...buttonTap}
+                >
+                  <span className="flex items-center gap-3">
+                    {selectedPersonaModel ? (
+                      <ModelIcon model={selectedPersonaModel} size={22} className="shrink-0" />
+                    ) : (
+                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-raised text-[10px] font-bold text-ink-dim">
+                        ?
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-2">
+                        <span className={`truncate text-sm font-semibold ${personaModelPickerOpen ? "text-punch" : "text-ink"}`}>
+                          {selectedPersonaModel?.name ?? "Pick model"}
+                        </span>
+                        {selectedPersonaModel && (
+                          <span className="shrink-0 text-xs text-ink-dim/60">
+                            {selectedPersonaModel.provider}
+                          </span>
+                        )}
+                      </span>
+                      <span className={`mt-0.5 block text-xs ${personaModelPickerOpen ? "text-punch/70" : "text-ink-dim/70"}`}>
+                        Persona runs on this model. AI teammates stay in the list on the right.
+                      </span>
+                    </span>
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="shrink-0 transition-transform duration-200"
+                      style={{ transform: personaModelPickerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </span>
+                </motion.button>
+
+                <AnimatePresence>
+                  {personaModelPickerOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
+                        {AI_MODELS.map((model) => {
+                          const selected = personaModelId === model.id;
+                          const teammateSelected = selectedModels.includes(model.id);
+                          return (
+                            <button
+                              key={model.id}
+                              type="button"
+                              onClick={() => {
+                                setPersonaModelId(model.id);
+                                setSelectedModels((prev) => prev.filter((id) => id !== model.id));
+                                setPersonaModelPickerOpen(false);
+                              }}
+                              className={`w-full border-b border-edge/40 px-3 py-2.5 text-left transition-colors last:border-b-0 ${
+                                selected
+                                  ? "bg-punch/10"
+                                  : "hover:bg-raised/60"
+                              }`}
+                            >
+                              <span className="flex items-center gap-3">
+                                <ModelIcon model={model} size={20} className="shrink-0" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex items-baseline gap-2">
+                                    <span className={`truncate text-sm font-semibold ${selected ? "text-punch" : "text-ink"}`}>
+                                      {model.name}
+                                    </span>
+                                    <span className="shrink-0 text-xs text-ink-dim/60">
+                                      {model.provider}
+                                    </span>
+                                  </span>
+                                  <span className="mt-0.5 flex items-center gap-2 text-xs">
+                                    <span className={`font-mono ${selected ? "text-punch/70" : "text-ink-dim/60"}`}>
+                                      {getCostTier(model)}
+                                    </span>
+                                    {teammateSelected && (
+                                      <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                        selected
+                                          ? "bg-punch/15 text-punch"
+                                          : "bg-raised text-ink-dim"
+                                      }`}>
+                                        In AI lineup
+                                      </span>
+                                    )}
+                                  </span>
+                                </span>
+                                {selected && (
+                                  <svg
+                                    className="shrink-0 text-punch"
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          )}
+
+          <div className={`mb-8 lg:mb-0 ${isMatchSlop ? "lg:col-start-2 lg:row-start-1 lg:row-span-3 xl:col-start-3 xl:row-span-2" : "lg:col-start-2 lg:row-start-1 lg:row-span-2"}`}>
             <div className="flex items-baseline justify-between mb-3">
               <label className="text-sm font-medium text-ink-dim">
                 Add AI Players
@@ -584,17 +667,8 @@ export default function HostPage() {
               </div>
             )}
 
-            <div className="mb-8">
-              {isMatchSlop ? (
-                <div className="rounded-xl border-2 border-dashed border-punch/30 bg-punch/5 p-4">
-                  <p className="text-sm font-medium text-punch mb-1">
-                    Host Plays Too
-                  </p>
-                  <p className="text-xs text-ink-dim/70">
-                    MatchSlop always runs in display-only TV mode. Everyone interacts from a phone, including the host if they want to join.
-                  </p>
-                </div>
-              ) : (
+            {!isMatchSlop && (
+              <div className="mb-8">
                 <Toggle
                   checked={hostParticipation === "PLAYER"}
                   onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
@@ -605,8 +679,8 @@ export default function HostPage() {
                       : "Host runs the game as a display/controller only (TV mode)"
                   }
                 />
-              )}
-            </div>
+              </div>
+            )}
 
             {selectedGameType.supportsNarrator && <div className="mb-8">
               <Toggle

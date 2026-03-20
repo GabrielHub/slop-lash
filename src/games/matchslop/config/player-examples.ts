@@ -154,4 +154,5 @@ export const MATCHSLOP_PLAYER_EXAMPLES: string[] = [
   "Honey, we have to let the wheels on the bus handle this one.",
   "What kind of music do you like? Me? I hate music.",
   "We've matched before, you told me I didn't know Matt Damon movies I KNOW Matt Damon movies my hands were just freezing",
+  "I have a ridiculous typing speed. like 80 WPM. The only way I can get faster is to add an extra set of hands, and I think you've got what it takes"
 ];

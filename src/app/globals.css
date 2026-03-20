@@ -560,6 +560,7 @@ body::after {
    ============================================ */
 
 [data-game="matchslop"] {
+  background: #110B14;
   --ms-bg: #110B14;
   --ms-surface: #1A1220;
   --ms-raised: #24192E;
@@ -585,8 +586,11 @@ body::after {
   --ms-gradient-romance: linear-gradient(135deg, #F06292, #FF8A65, #B388FF);
 }
 
+[data-theme="light"][data-game="matchslop"],
 [data-theme="light"] [data-game="matchslop"],
+:root:not([data-theme="dark"])[data-game="matchslop"],
 :root:not([data-theme="dark"]) [data-game="matchslop"] {
+  background: #FFF5F7;
   --ms-bg: #FFF5F7;
   --ms-surface: #FFFFFF;
   --ms-raised: #FFF0F3;

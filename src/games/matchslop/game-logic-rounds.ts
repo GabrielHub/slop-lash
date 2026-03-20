@@ -103,6 +103,11 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
         selectedPersonaExampleIds: sampledPersonaExamples.map((example) => example.id),
         selectedPlayerExamples: sampledPlayerExamples,
         profile,
+        personaImage: {
+          status: "PENDING",
+          imageUrl: null,
+          updatedAt: new Date().toISOString(),
+        },
         transcript: [],
         lastRoundResult: null,
         outcome: "IN_PROGRESS",
@@ -156,6 +161,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     authorName: result.authorName,
   };
   const transcriptWithWinner = [...modeState.transcript, winnerEntry];
+  const forceContinue = game.currentRound === 1;
 
   const { reply, outcome, usage } = await generatePersonaReply(
     game.personaModelId,
@@ -163,6 +169,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     modeState.personaIdentity,
     profile,
     transcriptWithWinner,
+    { forceContinue },
   );
   await accumulateUsage(gameId, [usage]);
 

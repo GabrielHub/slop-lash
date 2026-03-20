@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { FORFEIT_MARKER } from "@/games/core/constants";
+import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "./config/game-config";
 import { simpleHash, type AiUsage } from "@/games/ai-chat-showdown/ai";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { generateAiFollowup, generateAiFunnyVote, generateAiOpener } from "./ai";
@@ -127,7 +128,9 @@ async function doGenerateAiResponses(gameId: string): Promise<void> {
           ? ({
               selectedPromptId: openerResult.selectedPromptId,
               selectedPromptText:
-                profile.prompts.find((profilePrompt) => profilePrompt.id === openerResult.selectedPromptId)?.prompt ?? null,
+                openerResult.selectedPromptId === MATCHSLOP_PHOTO_PROMPT_ID
+                  ? MATCHSLOP_PHOTO_PROMPT_TEXT
+                  : profile.prompts.find((profilePrompt) => profilePrompt.id === openerResult.selectedPromptId)?.prompt ?? null,
             } as Prisma.InputJsonValue)
           : Prisma.DbNull;
 

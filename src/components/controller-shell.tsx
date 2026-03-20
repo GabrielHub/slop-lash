@@ -12,13 +12,8 @@ import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { MIN_PLAYERS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
-
-function getPlayerId() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("playerId");
-}
-
-const noopSubscribe = () => () => {};
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
+import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
 
 function ControllerHeader({
   roomCode,
@@ -47,7 +42,9 @@ export function ControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const { gameState, error, refresh } = useControllerStream(code, playerId);
+  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
+  const { gameState, error, refresh } = useControllerStream(code, playerToken);
+  useScreenWakeLock(gameState != null);
 
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(new Set());
@@ -144,7 +141,7 @@ export function ControllerShell({ code }: { code: string }) {
   }
 
   async function submitResponse(promptId: string) {
-    if (!playerId) return;
+    if (!playerToken) return;
     const text = responses[promptId]?.trim();
     if (!text) return;
     setSubmittingPromptId(promptId);
@@ -153,7 +150,7 @@ export function ControllerShell({ code }: { code: string }) {
       const res = await fetch(`/api/games/${code}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, promptId, text }),
+        body: JSON.stringify({ playerToken, promptId, text }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -169,14 +166,14 @@ export function ControllerShell({ code }: { code: string }) {
   }
 
   async function castVote(promptId: string, responseId: string | null) {
-    if (!playerId) return;
+    if (!playerToken) return;
     setVotingBusy(true);
     setActionError("");
     try {
       const res = await fetch(`/api/games/${code}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voterId: playerId, promptId, responseId }),
+        body: JSON.stringify({ playerToken, promptId, responseId }),
       });
       if (!res.ok) {
         const data = await res.json();

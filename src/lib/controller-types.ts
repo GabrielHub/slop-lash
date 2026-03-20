@@ -20,7 +20,7 @@ export interface MatchSlopProfilePromptOption {
 }
 
 export interface MatchSlopPersonaImageState {
-  status: "NOT_REQUESTED" | "PENDING" | "READY" | "FAILED";
+  status: "NOT_REQUESTED" | "PENDING" | "PROCESSING" | "READY" | "FAILED";
   imageUrl: string | null;
 }
 

@@ -24,20 +24,9 @@ import {
 } from "./use-optimistic-chat";
 import { useChatParticles, ChatParticleLayer } from "./chat-particles";
 import { useGameStream } from "@/hooks/use-game-stream";
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
-/* ─── localStorage helpers ─── */
-
-function getPlayerId() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("playerId");
-}
-
-function getHostControlToken() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("hostControlToken");
-}
-
-const noopSubscribe = () => () => {};
+import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from "@/lib/client-session";
 
 /* ─── Shared animation configs ─── */
 
@@ -423,8 +412,10 @@ export function ChatGameShell({
 }) {
   const searchParams = useSearchParams();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
-  const { gameState, error, refresh } = useGameStream(code, playerId, hostControlToken, viewMode);
+  const { gameState, error, refresh } = useGameStream(code, playerToken, hostControlToken, viewMode);
+  useScreenWakeLock(gameState != null);
   const { triggerElement } = usePixelDissolve();
 
   // Optimistic chat
@@ -656,14 +647,14 @@ export function ChatGameShell({
   }
 
   async function handleVote(responseId: string) {
-    if (!playerId || !currentPrompt || votingBusy) return;
+    if (!playerToken || !currentPrompt || votingBusy) return;
     setVotingBusy(true);
     setActionError("");
     try {
       const res = await fetch(`/api/games/${code}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voterId: playerId, promptId: currentPrompt.id, responseId }),
+        body: JSON.stringify({ playerToken, promptId: currentPrompt.id, responseId }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1233,13 +1224,13 @@ export function ChatGameShell({
 
   function handleInputSend(text: string) {
     if (inputMode === "response") {
-      if (!playerId || !currentPrompt) return;
+      if (!playerToken || !currentPrompt) return;
       setSubmitting(true);
       setActionError("");
       fetch(`/api/games/${code}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, promptId: currentPrompt.id, text: text.trim() }),
+        body: JSON.stringify({ playerToken, promptId: currentPrompt.id, text: text.trim() }),
       })
         .then(async (res) => {
           if (!res.ok) {

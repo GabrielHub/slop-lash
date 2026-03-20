@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState, GamePrompt, GamePlayer, filterCastVotes, filterAbstainVotes, filterErrorVotes } from "@/lib/types";
+import { PLAYER_TOKEN_KEY } from "@/lib/client-session";
 import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "@/games/sloplash/scoring";
 import { VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS } from "@/games/sloplash/game-constants";
 import { Timer } from "@/components/timer";
@@ -207,7 +208,11 @@ export function Voting({
   }, [skipping, game.status, game.votingPromptIndex, game.votingRevealing]);
 
   async function castVote(promptId: string, responseId: string | null) {
-    if (!playerId) return;
+    const playerToken = localStorage.getItem(PLAYER_TOKEN_KEY);
+    if (!playerToken) {
+      setError("Session expired. Refresh or rejoin the game.");
+      return;
+    }
     setVoting(true);
     setError("");
 
@@ -217,7 +222,7 @@ export function Voting({
       const res = await fetch(`/api/games/${code}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voterId: playerId, promptId, responseId }),
+        body: JSON.stringify({ playerToken, promptId, responseId }),
       });
 
       if (!res.ok) {

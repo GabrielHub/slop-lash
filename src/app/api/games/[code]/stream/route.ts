@@ -6,6 +6,7 @@ import { applyCompletedGameToLeaderboardAggregate } from "@/lib/leaderboard-aggr
 import { revalidateTag } from "next/cache";
 import { matchesHostControlToken } from "@/lib/host-control";
 import { publishGameStateEvent, waitForRealtimeEvent } from "@/lib/realtime-events";
+import { findAuthenticatedPlayer } from "@/lib/player-auth";
 import type { GameMetaPayload } from "../route-data";
 import { findGameMeta, findGamePayloadByStatus, normalizePayload } from "../route-data";
 import { isDeadlineExpired, stripUnrevealedVotes } from "../route-helpers";
@@ -38,13 +39,15 @@ export async function GET(
   const { code } = await params;
   const roomCode = code.toUpperCase();
   const url = new URL(request.url);
-  const playerId = url.searchParams.get("playerId");
+  const playerToken = url.searchParams.get("playerToken");
   const hostToken = url.searchParams.get("hostToken");
 
   const encoder = new TextEncoder();
   let lastStateKey = "";
   let lastKeepaliveAt = Date.now();
   let latestMeta: GameMetaPayload | null = null;
+  let resolvedPlayerId: string | null = null;
+  let playerResolved = false;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let heartbeatBusy = false;
 
@@ -126,16 +129,16 @@ export async function GET(
         return true;
       }
 
-      async function touchHeartbeat(meta: GameMetaPayload) {
+      async function touchHeartbeat(meta: GameMetaPayload, currentPlayerId: string | null) {
         if (meta.status === "FINAL_RESULTS") return;
 
         let stateChanged = false;
         const now = Date.now();
 
-        if (playerId) {
+        if (currentPlayerId) {
           const cutoff = new Date(now - HEARTBEAT_MIN_INTERVAL_MS);
           await prisma.player.updateMany({
-            where: { id: playerId, gameId: meta.id, lastSeen: { lt: cutoff } },
+            where: { id: currentPlayerId, gameId: meta.id, lastSeen: { lt: cutoff } },
             data: { lastSeen: new Date() },
           });
 
@@ -147,7 +150,7 @@ export async function GET(
           if (!meta.hostPlayerId && hostControlStale) {
             await def.handlers.promoteHost(meta.id);
             stateChanged = true;
-          } else if (meta.hostPlayerId && playerId !== meta.hostPlayerId) {
+          } else if (meta.hostPlayerId && currentPlayerId !== meta.hostPlayerId) {
             const host = await prisma.player.findUnique({
               where: { id: meta.hostPlayerId },
               select: { gameId: true, lastSeen: true },
@@ -189,6 +192,10 @@ export async function GET(
         }
 
         latestMeta = meta;
+        if (!playerResolved) {
+          resolvedPlayerId = (await findAuthenticatedPlayer(meta.id, playerToken))?.id ?? null;
+          playerResolved = true;
+        }
 
         const deadlineChanged = await enforceDeadline(meta);
         if (deadlineChanged) {
@@ -246,7 +253,7 @@ export async function GET(
           if (!meta || heartbeatBusy || request.signal.aborted) return;
 
           heartbeatBusy = true;
-          void touchHeartbeat(meta).finally(() => {
+          void touchHeartbeat(meta, resolvedPlayerId).finally(() => {
             heartbeatBusy = false;
           });
         }, HEARTBEAT_MIN_INTERVAL_MS);

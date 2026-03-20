@@ -9,6 +9,7 @@ export type MatchSlopDecision = "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
 export type MatchSlopPersonaImageStatus =
   | "NOT_REQUESTED"
   | "PENDING"
+  | "PROCESSING"
   | "READY"
   | "FAILED";
 

@@ -56,6 +56,7 @@ export function MockMatchSlopGameShell({
 }: MockMatchSlopGameShellProps) {
   const [game, setGame] = useState<GameState>(() => cloneGame(scenario.game));
   const [actionLog, setActionLog] = useState<string[]>([]);
+  const [storageReady, setStorageReady] = useState(false);
   const mockCode = makeMockCode(scenario.slug);
   const gameRef = useRef(game);
   const stateStreamsRef = useRef(new Set<MockEventSource>());
@@ -64,8 +65,9 @@ export function MockMatchSlopGameShell({
     gameRef.current = game;
   }, [game]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     localStorage.setItem("hostControlToken", "mock-matchslop-host");
+    setStorageReady(true);
   }, []);
 
   useLayoutEffect(() => {
@@ -88,20 +90,58 @@ export function MockMatchSlopGameShell({
 
       if (method === "POST" && endpoint === "/start") {
         log("start");
-        const next = withScenarioGame("matchslop-writing");
+        const next = withScenarioGame("matchslop-writing", (fixture) => ({
+          ...fixture,
+          currentRound: gameRef.current.currentRound,
+          totalRounds: gameRef.current.totalRounds,
+        }));
         if (next) setGame(next);
         return jsonResponse({ ok: true });
       }
 
       if (method === "POST" && endpoint === "/next") {
         log(`next (${gameRef.current.status})`);
-        const slug =
-          gameRef.current.status === "FINAL_RESULTS"
-            ? "matchslop-final"
-            : gameRef.current.status === "ROUND_RESULTS"
+        const currentGame = gameRef.current;
+        let next: GameState | null = null;
+
+        if (currentGame.status === "WRITING") {
+          const votingSlug = currentGame.currentRound === 1
+            ? "matchslop-voting"
+            : "matchslop-follow-up-voting";
+          next = withScenarioGame(votingSlug, (fixture) => ({
+            ...fixture,
+            currentRound: currentGame.currentRound,
+            totalRounds: currentGame.totalRounds,
+          }));
+        } else if (currentGame.status === "VOTING") {
+          next = withScenarioGame(
+            currentGame.currentRound >= currentGame.totalRounds
               ? "matchslop-final"
-              : "matchslop-results";
-        const next = withScenarioGame(slug);
+              : "matchslop-results",
+            (fixture) => ({
+              ...fixture,
+              currentRound: currentGame.currentRound,
+              totalRounds: currentGame.totalRounds,
+            }),
+          );
+        } else if (currentGame.status === "ROUND_RESULTS") {
+          next = withScenarioGame(
+            currentGame.currentRound >= currentGame.totalRounds
+              ? "matchslop-final"
+              : "matchslop-follow-up-writing",
+            (fixture) => ({
+              ...fixture,
+              currentRound:
+                currentGame.currentRound >= currentGame.totalRounds
+                  ? currentGame.currentRound
+                  : currentGame.currentRound + 1,
+              totalRounds: currentGame.totalRounds,
+            }),
+          );
+        } else if (currentGame.status === "FINAL_RESULTS") {
+          next = withScenarioGame("matchslop-final");
+        }
+
         if (next) setGame(next);
         return jsonResponse({ ok: true });
       }
@@ -193,6 +233,12 @@ export function MockMatchSlopGameShell({
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
+            <Link
+              href={`/dev/ui/${scenario.slug}/controller`}
+              className="rounded-md border border-punch/40 bg-punch/10 px-2 py-1 text-punch hover:border-punch hover:bg-punch/15"
+            >
+              Controller
+            </Link>
             <button
               type="button"
               onClick={toggleTheme}
@@ -238,7 +284,7 @@ export function MockMatchSlopGameShell({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden [&>div]:h-full [&>main]:h-full">
-        <MatchSlopGameShell code={mockCode} viewMode="stage" />
+        {storageReady ? <MatchSlopGameShell code={mockCode} viewMode="stage" /> : null}
       </div>
     </div>
   );

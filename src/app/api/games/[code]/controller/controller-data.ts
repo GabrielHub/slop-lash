@@ -4,6 +4,7 @@ import { FORFEIT_MARKER } from "@/games/core/constants";
 import type { ControllerGameState } from "@/lib/controller-types";
 import { asRecord, asString, asNumber } from "@/lib/json-guards";
 import { parseDetails } from "@/games/matchslop/game-logic-core";
+import { isPromptVotable } from "../route-helpers";
 
 function asPromptOptions(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -146,9 +147,7 @@ export async function findControllerPayload(roomCode: string, playerId: string |
   let voting: ControllerGameState["voting"] = null;
   if (game.status === "VOTING" && currentRound) {
     const votablePrompts = currentRound.prompts.filter(
-      (p) =>
-        p.responses.length >= 2 &&
-        !p.responses.some((r) => r.text === FORFEIT_MARKER),
+      (p) => isPromptVotable(game.gameType, p),
     );
     const currentPrompt = votablePrompts[game.votingPromptIndex] ?? null;
 
@@ -239,7 +238,10 @@ export async function findControllerPayload(roomCode: string, playerId: string |
 
     const imageStatus = asString(image?.status);
     const resolvedImageStatus =
-      imageStatus === "PENDING" || imageStatus === "READY" || imageStatus === "FAILED"
+      imageStatus === "PENDING" ||
+      imageStatus === "PROCESSING" ||
+      imageStatus === "READY" ||
+      imageStatus === "FAILED"
         ? imageStatus
         : "NOT_REQUESTED" as const;
 

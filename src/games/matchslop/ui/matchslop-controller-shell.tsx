@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
@@ -9,45 +8,14 @@ import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
-import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
+import { fadeInUp, buttonTap, buttonTapPrimary, springDefault } from "@/lib/animations";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import type { MatchSlopProfilePromptOption, MatchSlopProfileState } from "@/lib/controller-types";
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
+import type { MatchSlopProfilePromptOption, ControllerVoteOption } from "@/lib/controller-types";
+import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "@/games/matchslop/config/game-config";
 
-function getPlayerId() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("playerId");
-}
-
-const noopSubscribe = () => () => {};
-
-function identityLabel(value: string | null | undefined) {
-  switch (value) {
-    case "MAN":
-      return "Man";
-    case "WOMAN":
-      return "Woman";
-    case "NON_BINARY":
-      return "Non-binary";
-    case "OTHER":
-      return "Other";
-    default:
-      return value ?? "Unknown";
-  }
-}
-
-function outcomeLabel(value: string | null | undefined) {
-  switch (value) {
-    case "DATE_SEALED":
-      return "Date sealed";
-    case "UNMATCHED":
-      return "Unmatched";
-    case "TURN_LIMIT":
-      return "Turn limit";
-    default:
-      return "In progress";
-  }
-}
+import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
 
 function MatchHeader({
   roomCode,
@@ -72,175 +40,496 @@ function MatchHeader({
   );
 }
 
-function ProfilePromptCard({
-  option,
-  selected,
-  onSelect,
-}: {
-  option: MatchSlopProfilePromptOption;
-  selected: boolean;
-  onSelect: () => void;
-}) {
+function PhotoIcon({ size = 18 }: { size?: number }) {
   return (
-    <motion.button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded-2xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
-        selected
-          ? "bg-punch/10 border-punch"
-          : "bg-surface/80 border-edge hover:border-edge-strong"
-      }`}
-      {...buttonTap}
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--ms-violet)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <p className={`text-sm font-semibold ${selected ? "text-punch" : "text-ink"}`}>
-        {option.prompt}
-      </p>
-      {option.answer && (
-        <p className="text-xs text-ink-dim mt-1">
-          Answer: {option.answer}
-        </p>
-      )}
-    </motion.button>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
+    </svg>
   );
 }
 
-function ProfileBottomSheet({
-  profile,
-  seekerIdentity,
-  personaIdentity,
-  open,
-  onClose,
+/* ─── Opener Step 1: Prompt Picker ─── */
+
+const PHOTO_PROMPT_ID = MATCHSLOP_PHOTO_PROMPT_ID;
+
+function OpenerPromptPicker({
+  options,
+  personaName,
+  onPick,
 }: {
-  profile: MatchSlopProfileState;
-  seekerIdentity: string | null | undefined;
-  personaIdentity: string | null | undefined;
-  open: boolean;
-  onClose: () => void;
+  options: MatchSlopProfilePromptOption[];
+  personaName: string;
+  onPick: (option: MatchSlopProfilePromptOption) => void;
 }) {
-  const details = profile.details;
-  const imageStatus = profile.image?.status ?? "NOT_REQUESTED";
-  if (typeof document === "undefined") return null;
+  return (
+    <motion.div
+      key="prompt-picker"
+      className="space-y-4"
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      transition={springDefault}
+    >
+      <div className="text-center">
+        <p
+          className="text-[11px] uppercase tracking-[0.15em] font-bold mb-1"
+          style={{ color: "var(--ms-rose)" }}
+        >
+          Step 1
+        </p>
+        <p className="text-sm" style={{ color: "var(--ms-ink-dim)" }}>
+          Pick a prompt from {personaName}&apos;s profile
+        </p>
+      </div>
 
-  return createPortal(
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-          <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl"
+      <div className="space-y-3">
+        {options.map((option, i) => (
+          <motion.button
+            key={option.id}
+            type="button"
+            onClick={() => onPick(option)}
+            className="w-full rounded-2xl p-4 text-left cursor-pointer transition-all"
             style={{
-              background: "var(--color-surface, #fff)",
-              borderTop: "1px solid var(--color-edge, #e5e5e5)",
+              background: "var(--ms-raised)",
+              border: "2px solid var(--ms-edge)",
             }}
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+            whileHover={{
+              borderColor: "var(--ms-rose)",
+              background: "var(--ms-rose-soft)",
+            }}
+            whileTap={{ scale: 0.97 }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...springDefault, delay: i * 0.08 }}
           >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-10 h-1 rounded-full bg-edge-strong" />
-            </div>
+            <p
+              className="font-display font-bold text-[15px] leading-snug mb-1.5"
+              style={{ color: "var(--ms-rose)" }}
+            >
+              {option.prompt}
+            </p>
+            <p
+              className="text-sm leading-relaxed"
+              style={{ color: "var(--ms-ink)" }}
+            >
+              {option.answer}
+            </p>
+          </motion.button>
+        ))}
+      </div>
 
-            {/* Profile image */}
-            <div className="relative mx-4 overflow-hidden rounded-2xl" style={{ aspectRatio: "4/3" }}>
-              {imageStatus === "READY" && profile.image?.imageUrl ? (
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${profile.image.imageUrl})` }}
-                />
-              ) : (
-                <div
-                  className="absolute inset-0 flex items-center justify-center"
-                  style={{ background: "linear-gradient(135deg, #F06292 0%, #B388FF 50%, #FF8A65 100%)", opacity: 0.2 }}
+      {/* Photo-only option */}
+      <div className="flex items-center gap-3 px-2">
+        <div className="flex-1 h-px" style={{ background: "var(--ms-edge)" }} />
+        <span className="text-[10px] uppercase tracking-[0.2em] font-bold" style={{ color: "var(--ms-ink-dim)" }}>
+          or
+        </span>
+        <div className="flex-1 h-px" style={{ background: "var(--ms-edge)" }} />
+      </div>
+
+      <motion.button
+        type="button"
+        onClick={() =>
+          onPick({ id: PHOTO_PROMPT_ID, prompt: MATCHSLOP_PHOTO_PROMPT_TEXT, answer: "" })
+        }
+        className="w-full rounded-2xl py-3.5 px-4 flex items-center justify-center gap-2.5 cursor-pointer transition-all"
+        style={{
+          background: "var(--ms-violet-soft)",
+          border: "2px dashed var(--ms-edge-strong)",
+        }}
+        whileHover={{
+          borderColor: "var(--ms-violet)",
+          background: "var(--ms-violet-soft)",
+        }}
+        whileTap={{ scale: 0.97 }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...springDefault, delay: options.length * 0.08 }}
+      >
+        <PhotoIcon />
+        <span
+          className="font-display font-bold text-[14px]"
+          style={{ color: "var(--ms-violet)" }}
+        >
+          Just respond to their photo
+        </span>
+      </motion.button>
+    </motion.div>
+  );
+}
+
+/* ─── Opener Step 2: Write with pinned prompt ─── */
+
+function OpenerWriteStep({
+  selectedOption,
+  responseText,
+  onChangeText,
+  onSubmit,
+  onBack,
+  submitting,
+  disabled,
+  triggerElement,
+}: {
+  selectedOption: MatchSlopProfilePromptOption;
+  responseText: string;
+  onChangeText: (text: string) => void;
+  onSubmit: () => void;
+  onBack: () => void;
+  submitting: boolean;
+  disabled: boolean;
+  triggerElement: (el: HTMLElement) => void;
+}) {
+  const isPhotoOption = selectedOption.id === PHOTO_PROMPT_ID;
+  return (
+    <motion.div
+      key="opener-write"
+      className="space-y-4"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 40 }}
+      transition={springDefault}
+    >
+      {/* Back + pinned prompt */}
+      <div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1.5 mb-3 text-sm font-medium cursor-pointer transition-colors"
+          style={{ color: "var(--ms-ink-dim)" }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          Change prompt
+        </button>
+
+        {isPhotoOption ? (
+          <div
+            className="rounded-2xl p-4 flex items-center gap-3"
+            style={{
+              background: "var(--ms-violet-soft)",
+              border: "1px solid var(--ms-violet)",
+            }}
+          >
+            <span className="shrink-0">
+              <PhotoIcon size={20} />
+            </span>
+            <div>
+              <p
+                className="text-[10px] uppercase tracking-[0.15em] font-bold mb-0.5"
+                style={{ color: "var(--ms-violet)" }}
+              >
+                Responding to
+              </p>
+              <p
+                className="font-display font-bold text-[15px] leading-snug"
+                style={{ color: "var(--ms-violet)" }}
+              >
+                Their photo
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="rounded-2xl p-4"
+            style={{
+              background: "var(--ms-rose-soft)",
+              border: "1px solid var(--ms-rose)",
+            }}
+          >
+            <p
+              className="text-[10px] uppercase tracking-[0.15em] font-bold mb-1"
+              style={{ color: "var(--ms-rose)" }}
+            >
+              Responding to
+            </p>
+            <p
+              className="font-display font-bold text-[15px] leading-snug"
+              style={{ color: "var(--ms-rose)" }}
+            >
+              {selectedOption.prompt}
+            </p>
+            <p
+              className="text-sm mt-1 leading-relaxed"
+              style={{ color: "var(--ms-ink)" }}
+            >
+              {selectedOption.answer}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="space-y-3">
+        <div>
+          <p
+            className="text-[11px] uppercase tracking-[0.15em] font-bold mb-2"
+            style={{ color: "var(--ms-coral)" }}
+          >
+            Step 2 &mdash; Write your opener
+          </p>
+          <input
+            type="text"
+            value={responseText}
+            onChange={(e) => onChangeText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && responseText.trim()) onSubmit();
+            }}
+            placeholder={isPhotoOption ? "Say something about their photo..." : `Reply to "${selectedOption.prompt}"...`}
+            maxLength={300}
+            autoFocus
+            className="w-full py-3.5 px-4 rounded-2xl text-[15px] focus:outline-none transition-colors"
+            style={{
+              background: "var(--ms-raised)",
+              border: "2px solid var(--ms-edge)",
+              color: "var(--ms-ink)",
+            }}
+          />
+        </div>
+        <motion.button
+          type="button"
+          onClick={(e) => {
+            triggerElement(e.currentTarget);
+            onSubmit();
+          }}
+          disabled={disabled}
+          className="w-full py-3.5 rounded-2xl font-display font-bold text-white text-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            background: "var(--ms-gradient-romance)",
+            boxShadow: disabled ? "none" : "0 4px 20px var(--ms-rose-glow)",
+          }}
+          {...buttonTapPrimary}
+        >
+          {submitting ? "Sending..." : "Send Opener"}
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ─── Opener Voting: Responses grouped by prompt ─── */
+
+function OpenerVotingList({
+  responses,
+  openerPromptById,
+  votingBusy,
+  onVote,
+  onPass,
+  triggerElement,
+}: {
+  responses: ControllerVoteOption[];
+  openerPromptById: Map<string, string>;
+  votingBusy: boolean;
+  onVote: (responseId: string) => void;
+  onPass: () => void;
+  triggerElement: (el: HTMLElement) => void;
+}) {
+  // Group responses by their chosen profile prompt
+  const grouped = useMemo(() => {
+    const groups = new Map<string, { promptId: string; promptText: string; responses: ControllerVoteOption[] }>();
+    const ungrouped: ControllerVoteOption[] = [];
+
+    for (const resp of responses) {
+      const promptId = resp.openerPromptId;
+      const promptText = promptId ? openerPromptById.get(promptId) : null;
+      if (promptId && promptText) {
+        const existing = groups.get(promptId);
+        if (existing) {
+          existing.responses.push(resp);
+        } else {
+          groups.set(promptId, { promptId, promptText, responses: [resp] });
+        }
+      } else {
+        ungrouped.push(resp);
+      }
+    }
+
+    return { groups: [...groups.values()], ungrouped };
+  }, [responses, openerPromptById]);
+
+  const hasGroups = grouped.groups.length > 0;
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="rounded-2xl p-4"
+        style={{
+          background: "var(--ms-raised)",
+          border: "1px solid var(--ms-edge)",
+        }}
+      >
+        <p
+          className="text-xs uppercase tracking-wider font-bold mb-1"
+          style={{ color: "var(--ms-violet)" }}
+        >
+          Pick the best opener
+        </p>
+        <p className="text-sm" style={{ color: "var(--ms-ink-dim)" }}>
+          {hasGroups
+            ? "Responses are grouped by the prompt they chose."
+            : "Vote for the funniest line."}{" "}
+                Votes become points, even for strong runner-ups. Human votes count double.
+        </p>
+      </div>
+
+      {hasGroups ? (
+        <div className="space-y-4">
+          {grouped.groups.map((group, groupIndex) => (
+            <motion.div
+              key={group.promptId}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...springDefault, delay: groupIndex * 0.06 }}
+            >
+              {/* Prompt label */}
+              <div
+                className="flex items-center gap-2 mb-2 px-1"
+              >
+                {group.promptId === PHOTO_PROMPT_ID ? (
+                  <span className="shrink-0">
+                    <PhotoIcon size={12} />
+                  </span>
+                ) : (
+                  <span
+                    className="shrink-0 w-1.5 h-1.5 rounded-full"
+                    style={{ background: "var(--ms-rose)" }}
+                  />
+                )}
+                <span
+                  className="text-[11px] font-bold uppercase tracking-wider truncate"
+                  style={{ color: group.promptId === PHOTO_PROMPT_ID ? "var(--ms-violet)" : "var(--ms-rose)" }}
                 >
-                  <span className="text-4xl">💕</span>
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 h-1/2" style={{ background: "linear-gradient(to top, var(--color-surface, #fff), transparent)" }} />
-              <div className="absolute inset-x-0 bottom-0 p-4">
-                <h2 className="font-display text-2xl font-bold text-ink">{profile.displayName}</h2>
-                <div className="mt-0.5 flex items-center gap-2 text-sm text-ink-dim">
-                  {profile.age && <span>{profile.age}</span>}
-                  {profile.location && (
-                    <>
-                      <span className="text-edge-strong">·</span>
-                      <span>{profile.location}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Identity + detail badges */}
-            <div className="px-4 pb-2 pt-3">
-              <div className="flex flex-wrap gap-1.5">
-                <span className="rounded-full bg-punch/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-punch">
-                  {identityLabel(seekerIdentity)} seeking {identityLabel(personaIdentity)}
+                  {group.promptText}
                 </span>
-                {details?.job && (
-                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
-                    💼 {details.job}
-                  </span>
-                )}
-                {details?.school && (
-                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
-                    🎓 {details.school}
-                  </span>
-                )}
-                {details?.height && (
-                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
-                    📏 {details.height}
-                  </span>
-                )}
-                {details?.languages && details.languages.length > 0 && (
-                  <span className="rounded-full border border-edge bg-surface px-2.5 py-1 text-[11px] text-ink-dim">
-                    💬 {details.languages.join(", ")}
-                  </span>
-                )}
               </div>
-            </div>
 
-            {/* Bio */}
-            <div className="border-t border-edge px-4 py-3">
-              {profile.tagline && (
-                <p className="mb-1.5 font-display text-sm font-semibold italic text-punch">
-                  &ldquo;{profile.tagline}&rdquo;
-                </p>
-              )}
-              <p className="text-sm leading-relaxed text-ink">{profile.bio}</p>
-            </div>
-
-            {/* Prompt cards */}
-            {profile.prompts.length > 0 && (
-              <div className="space-y-2 px-4 py-3">
-                {profile.prompts.slice(0, 3).map((prompt) => (
-                  <div
-                    key={prompt.id}
-                    className="rounded-xl border border-edge bg-raised/50 p-3"
+              {/* Responses under this prompt */}
+              <div className="space-y-2">
+                {group.responses.map((resp) => (
+                  <motion.button
+                    key={resp.id}
+                    type="button"
+                    onClick={(e) => {
+                      triggerElement(e.currentTarget);
+                      onVote(resp.id);
+                    }}
+                    disabled={votingBusy}
+                    className="w-full text-left py-3 px-4 rounded-2xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: "var(--ms-raised)",
+                      border: "2px solid var(--ms-edge)",
+                    }}
+                    whileHover={{
+                      borderColor: "var(--ms-violet)",
+                      background: "var(--ms-violet-soft)",
+                    }}
+                    whileTap={{ scale: 0.97 }}
                   >
-                    <p className="text-xs font-semibold text-punch">{prompt.prompt}</p>
-                    {prompt.answer && (
-                      <p className="mt-0.5 text-sm leading-relaxed text-ink">{prompt.answer}</p>
-                    )}
-                  </div>
+                    <span
+                      className="text-[15px] leading-relaxed"
+                      style={{ color: "var(--ms-ink)" }}
+                    >
+                      {resp.text}
+                    </span>
+                  </motion.button>
                 ))}
               </div>
-            )}
+            </motion.div>
+          ))}
 
-            {/* Bottom padding for safe area */}
-            <div className="h-8" />
-          </motion.div>
-        </>
+          {/* Ungrouped responses (shouldn't normally happen but safe fallback) */}
+          {grouped.ungrouped.length > 0 && (
+            <div className="space-y-2">
+              {grouped.ungrouped.map((resp) => (
+                <motion.button
+                  key={resp.id}
+                  type="button"
+                  onClick={(e) => {
+                    triggerElement(e.currentTarget);
+                    onVote(resp.id);
+                  }}
+                  disabled={votingBusy}
+                  className="w-full text-left py-3 px-4 rounded-2xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    background: "var(--ms-raised)",
+                    border: "2px solid var(--ms-edge)",
+                  }}
+                  whileHover={{
+                    borderColor: "var(--ms-violet)",
+                  }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span
+                    className="text-[15px] leading-relaxed"
+                    style={{ color: "var(--ms-ink)" }}
+                  >
+                    {resp.text}
+                  </span>
+                </motion.button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {responses.map((resp) => (
+            <motion.button
+              key={resp.id}
+              type="button"
+              onClick={(e) => {
+                triggerElement(e.currentTarget);
+                onVote(resp.id);
+              }}
+              disabled={votingBusy}
+              className="w-full text-left py-3 px-4 rounded-2xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: "var(--ms-raised)",
+                border: "2px solid var(--ms-edge)",
+              }}
+              whileHover={{
+                borderColor: "var(--ms-violet)",
+              }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <span
+                className="text-[15px] leading-relaxed"
+                style={{ color: "var(--ms-ink)" }}
+              >
+                {resp.text}
+              </span>
+            </motion.button>
+          ))}
+        </div>
       )}
-    </AnimatePresence>,
-    document.body,
+
+      <motion.button
+        type="button"
+        onClick={(e) => {
+          triggerElement(e.currentTarget);
+          onPass();
+        }}
+        disabled={votingBusy}
+        className="w-full py-2.5 rounded-2xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{
+          border: "1px solid var(--ms-edge)",
+          color: "var(--ms-ink-dim)",
+        }}
+        {...buttonTap}
+      >
+        Pass
+      </motion.button>
+    </div>
   );
 }
 
@@ -248,9 +537,20 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
   const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const { gameState, error, refresh } = useControllerStream(code, playerId);
+  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
+  const { gameState, error, refresh } = useControllerStream(code, playerToken);
+  useScreenWakeLock(gameState != null);
+
+  // Activate MatchSlop design tokens (--ms-* CSS variables)
+  useEffect(() => {
+    document.documentElement.setAttribute("data-game", "matchslop");
+    return () => {
+      document.documentElement.removeAttribute("data-game");
+    };
+  }, []);
 
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const [openerStep, setOpenerStep] = useState<"pick" | "write">("pick");
   const [responseText, setResponseText] = useState("");
   const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(new Set());
   const [submittingPromptId, setSubmittingPromptId] = useState<string | null>(null);
@@ -259,7 +559,6 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const [hostActionBusy, setHostActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
-  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
   const rejoinAttempted = useRef(false);
   const phaseKeyRef = useRef("");
 
@@ -273,6 +572,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
         setResponseText("");
         setSubmittedPromptIds(new Set());
         setSelectedPromptId(null);
+        setOpenerStep("pick");
       }
       if (gameState.status !== "VOTING") {
         setVotingPromptIds(new Set());
@@ -328,21 +628,22 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const promptOptions = matchslop?.writing?.openerOptions ?? [];
   const prompts = matchslop?.profile?.prompts;
   const openerPromptById = useMemo(
-    () => new Map((prompts ?? []).map((prompt) => [prompt.id, prompt.prompt])),
+    () => {
+      const map = new Map((prompts ?? []).map((prompt) => [prompt.id, prompt.prompt]));
+      map.set(PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT);
+      return map;
+    },
     [prompts],
   );
-  const firstPromptOptionId = promptOptions[0]?.id ?? null;
   const currentVotePrompt = gameState?.voting?.currentPrompt ?? null;
   const hasVotedCurrent = currentVotePrompt
     ? currentVotePrompt.hasVoted || votingPromptIds.has(currentVotePrompt.id)
     : false;
   const hasSubmittedCurrent = matchslop?.writing?.submitted || (matchslop?.writing?.promptId ? submittedPromptIds.has(matchslop.writing.promptId) : false);
-
-  useEffect(() => {
-    if (!selectedPromptId && firstPromptOptionId) {
-      setSelectedPromptId(firstPromptOptionId);
-    }
-  }, [firstPromptOptionId, selectedPromptId]);
+  const isOpenerRound = promptOptions.length > 0;
+  const isOpenerVoting = currentVotePrompt?.responses.some((r) => r.openerPromptId) ?? false;
+  const selectedOption = promptOptions.find((o) => o.id === selectedPromptId) ?? null;
+  const personaName = matchslop?.profile?.displayName ?? "the persona";
 
   async function postHostAction(path: "start" | "next") {
     const hostToken = localStorage.getItem("hostControlToken");
@@ -367,7 +668,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   }
 
   async function submitResponse(promptId: string) {
-    if (!playerId) return;
+    if (!playerToken) return;
     const text = responseText.trim();
     if (!text) return;
     setSubmittingPromptId(promptId);
@@ -377,7 +678,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          playerId,
+          playerToken,
           promptId,
           text,
           metadata: selectedPromptId ? { selectedPromptId } : undefined,
@@ -398,14 +699,14 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   }
 
   async function castVote(promptId: string, responseId: string | null) {
-    if (!playerId) return;
+    if (!playerToken) return;
     setVotingBusy(true);
     setActionError("");
     try {
       const res = await fetch(`/api/games/${code}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voterId: playerId, promptId, responseId }),
+        body: JSON.stringify({ playerToken, promptId, responseId }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -484,11 +785,6 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
               {gameState.status === "ROUND_RESULTS" && "Round Results"}
               {gameState.status === "FINAL_RESULTS" && "Game Over"}
             </h1>
-            <p className="text-xs text-ink-dim mt-1">
-              {matchslop?.seekerIdentity || matchslop?.personaIdentity
-                ? `${identityLabel(matchslop?.seekerIdentity)} looking for ${identityLabel(matchslop?.personaIdentity)}`
-                : "MatchSlop controller"}
-            </p>
           </div>
 
           {gameState.phaseDeadline && !gameState.timersDisabled && (
@@ -498,72 +794,6 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
           )}
 
           <div className="space-y-4">
-            <div className="rounded-2xl border border-edge bg-surface/70 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-ink-dim mb-1">
-                    Persona
-                  </p>
-                  <p className="font-display text-lg font-bold text-ink">
-                    {matchslop?.profile?.displayName ?? "Waiting for persona"}
-                  </p>
-                  <p className="text-sm text-ink-dim mt-0.5">
-                    {matchslop?.outcome ? outcomeLabel(matchslop.outcome) : "In progress"}
-                  </p>
-                </div>
-                {matchslop?.profile && (
-                  <motion.button
-                    type="button"
-                    onClick={() => setProfileSheetOpen(true)}
-                    className="shrink-0 px-3 py-1.5 rounded-xl border border-edge bg-raised/80 text-xs font-semibold text-punch hover:bg-surface transition-colors cursor-pointer"
-                    {...buttonTap}
-                  >
-                    View Profile
-                  </motion.button>
-                )}
-              </div>
-            </div>
-
-            {/* Profile bottom sheet */}
-            {matchslop?.profile && (
-              <ProfileBottomSheet
-                profile={matchslop.profile}
-                seekerIdentity={matchslop.seekerIdentity}
-                personaIdentity={matchslop.personaIdentity}
-                open={profileSheetOpen}
-                onClose={() => setProfileSheetOpen(false)}
-              />
-            )}
-
-            <div className="rounded-2xl border border-edge bg-surface/70 p-4">
-              <p className="text-xs uppercase tracking-wider text-ink-dim mb-2">
-                Transcript
-              </p>
-              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                {(matchslop?.transcript ?? []).length > 0 ? (
-                  (matchslop?.transcript ?? []).map((entry, index) => (
-                    <div key={entry.id ?? `${entry.turn ?? index}-${index}`} className="rounded-xl border border-edge bg-base/80 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-dim">
-                          {entry.speaker === "PERSONA" ? "Persona" : entry.authorName ?? "Players"}
-                        </span>
-                        <span className="text-[10px] font-mono text-ink-dim">
-                          Turn {entry.turn ?? index + 1}
-                        </span>
-                      </div>
-                      <p className="text-sm text-ink leading-relaxed">
-                        {entry.text}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-ink-dim">
-                    Transcript will fill in as the conversation starts.
-                  </p>
-                )}
-              </div>
-            </div>
-
             {gameState.status === "LOBBY" && (
               <div className="space-y-4">
                 <div className="rounded-2xl bg-teal-soft/50 border border-teal/20 p-6 text-center">
@@ -574,16 +804,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                     {gameState.roomCode}
                   </p>
                 </div>
-                <div className="text-center space-y-1.5">
-                  <div className="flex items-center justify-center gap-2 text-sm text-ink-dim">
-                    <span className="w-1.5 h-1.5 rounded-full bg-punch animate-pulse" />
-                    <span className="font-medium">
-                      {activePlayerCount} player{activePlayerCount !== 1 ? "s" : ""} connected
-                    </span>
-                  </div>
-                  <p className="text-xs text-ink-dim/70 leading-relaxed px-2">
-                    {gameState.players.map((p) => p.name).join(" · ")}
-                  </p>
+                <div className="flex items-center justify-center gap-2 text-sm text-ink-dim">
+                  <span className="w-1.5 h-1.5 rounded-full bg-punch animate-pulse" />
+                  <span className="font-medium">
+                    {activePlayerCount} player{activePlayerCount !== 1 ? "s" : ""} connected
+                  </span>
                 </div>
                 {isHost ? (
                   <motion.button
@@ -612,64 +837,100 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
 
             {gameState.status === "WRITING" && (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-edge bg-surface/70 p-4">
-                  <p className="text-xs uppercase tracking-wider text-ink-dim mb-2">
-                    Writing context
-                  </p>
-                  <p className="font-display font-semibold text-lg text-punch leading-snug">
-                    {matchslop?.writing?.text ?? "Pick a prompt and send the funniest opener."}
-                  </p>
-                </div>
-
-                {matchslop?.writing?.openerOptions && matchslop.writing.openerOptions.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[11px] uppercase tracking-wider text-ink-dim font-semibold">
-                      Pick a profile prompt
-                    </p>
-                    <div className="space-y-2">
-                      {matchslop.writing.openerOptions.map((option) => (
-                        <ProfilePromptCard
-                          key={option.id}
-                          option={option}
-                          selected={selectedPromptId === option.id}
-                          onSelect={() => setSelectedPromptId(option.id)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {hasSubmittedCurrent ? (
                   <CompletionCard title="Submitted!" subtitle="Waiting for everyone else to write." />
+                ) : isOpenerRound ? (
+                  /* ── Opener: two-step pick → write ── */
+                  <AnimatePresence mode="wait">
+                    {openerStep === "pick" ? (
+                      <OpenerPromptPicker
+                        key="picker"
+                        options={promptOptions}
+                        personaName={personaName}
+                        onPick={(option) => {
+                          setSelectedPromptId(option.id);
+                          setOpenerStep("write");
+                        }}
+                      />
+                    ) : selectedOption ? (
+                      <OpenerWriteStep
+                        key="write"
+                        selectedOption={selectedOption}
+                        responseText={responseText}
+                        onChangeText={setResponseText}
+                        onSubmit={() => {
+                          if (matchslop?.writing?.promptId) {
+                            void submitResponse(matchslop.writing.promptId);
+                          }
+                        }}
+                        onBack={() => setOpenerStep("pick")}
+                        submitting={submittingPromptId === matchslop?.writing?.promptId}
+                        disabled={!responseText.trim() || !matchslop?.writing?.promptId || submittingPromptId === matchslop?.writing?.promptId}
+                        triggerElement={triggerElement}
+                      />
+                    ) : null}
+                  </AnimatePresence>
                 ) : (
-                  <div className="space-y-3">
-                    <input
-                      type="text"
-                      value={responseText}
-                      onChange={(e) => setResponseText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && matchslop?.writing?.promptId) {
-                          void submitResponse(matchslop.writing.promptId);
-                        }
+                  /* ── Follow-up rounds: single-step write ── */
+                  <div className="space-y-4">
+                    <div
+                      className="rounded-2xl p-4"
+                      style={{
+                        background: "var(--ms-raised)",
+                        border: "1px solid var(--ms-edge)",
                       }}
-                      placeholder="Type your funniest opener..."
-                      maxLength={300}
-                      className="w-full py-3.5 px-4 rounded-2xl bg-raised/80 border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
-                    />
-                    <motion.button
-                      type="button"
-                      onClick={(e) => {
-                        triggerElement(e.currentTarget);
-                        if (matchslop?.writing?.promptId) {
-                          void submitResponse(matchslop.writing.promptId);
-                        }
-                      }}
-                      disabled={!responseText.trim() || !matchslop?.writing?.promptId || submittingPromptId === matchslop.writing.promptId}
-                      className="w-full py-3 bg-punch/90 hover:bg-punch-hover disabled:opacity-50 text-white rounded-2xl font-bold transition-colors cursor-pointer disabled:cursor-not-allowed"
-                      {...buttonTap}
                     >
-                      {submittingPromptId === matchslop?.writing?.promptId ? "Sending..." : "Send"}
-                    </motion.button>
+                      <p
+                        className="text-xs uppercase tracking-wider mb-2 font-bold"
+                        style={{ color: "var(--ms-ink-dim)" }}
+                      >
+                        Reply to
+                      </p>
+                      <p
+                        className="font-display font-semibold text-lg leading-snug"
+                        style={{ color: "var(--ms-rose)" }}
+                      >
+                        {matchslop?.writing?.text ?? "Write the funniest reply."}
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={responseText}
+                        onChange={(e) => setResponseText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && matchslop?.writing?.promptId) {
+                            void submitResponse(matchslop.writing.promptId);
+                          }
+                        }}
+                        placeholder="Type your funniest reply..."
+                        maxLength={300}
+                        className="w-full py-3.5 px-4 rounded-2xl text-[15px] focus:outline-none transition-colors"
+                        style={{
+                          background: "var(--ms-raised)",
+                          border: "2px solid var(--ms-edge)",
+                          color: "var(--ms-ink)",
+                        }}
+                      />
+                      <motion.button
+                        type="button"
+                        onClick={(e) => {
+                          triggerElement(e.currentTarget);
+                          if (matchslop?.writing?.promptId) {
+                            void submitResponse(matchslop.writing.promptId);
+                          }
+                        }}
+                        disabled={!responseText.trim() || !matchslop?.writing?.promptId || submittingPromptId === matchslop?.writing?.promptId}
+                        className="w-full py-3.5 rounded-2xl font-display font-bold text-white text-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          background: "var(--ms-gradient-romance)",
+                          boxShadow: !responseText.trim() ? "none" : "0 4px 20px var(--ms-rose-glow)",
+                        }}
+                        {...buttonTapPrimary}
+                      >
+                        {submittingPromptId === matchslop?.writing?.promptId ? "Sending..." : "Send"}
+                      </motion.button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -683,24 +944,54 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                   <CompletionCard title="Waiting" subtitle="The next ballot is not ready yet." />
                 ) : hasVotedCurrent ? (
                   <div className="space-y-3">
-                    <div className="rounded-2xl border border-edge bg-surface/70 p-4">
-                      <p className="font-display font-semibold text-lg text-punch mb-2">
-                        {currentVotePrompt.text}
+                    <div
+                      className="rounded-2xl p-4"
+                      style={{
+                        background: "var(--ms-raised)",
+                        border: "1px solid var(--ms-edge)",
+                      }}
+                    >
+                      <p
+                        className="font-display font-semibold text-lg mb-2"
+                        style={{ color: "var(--ms-violet)" }}
+                      >
+                        Vote cast!
                       </p>
-                      <PulsingDot>Vote cast. Waiting on other players...</PulsingDot>
+                      <PulsingDot>Waiting on other players...</PulsingDot>
                     </div>
                   </div>
+                ) : isOpenerVoting ? (
+                  <OpenerVotingList
+                    responses={currentVotePrompt.responses}
+                    openerPromptById={openerPromptById}
+                    votingBusy={votingBusy}
+                    onVote={(responseId) => void castVote(currentVotePrompt.id, responseId)}
+                    onPass={() => void castVote(currentVotePrompt.id, null)}
+                    triggerElement={triggerElement}
+                  />
                 ) : (
                   <div className="space-y-3">
-                    <div className="rounded-2xl border border-edge bg-surface/70 p-4">
-                      <p className="text-xs uppercase tracking-wider text-ink-dim mb-2">
-                        Vote for the funniest line
+                    <div
+                      className="rounded-2xl p-4"
+                      style={{
+                        background: "var(--ms-raised)",
+                        border: "1px solid var(--ms-edge)",
+                      }}
+                    >
+                      <p
+                        className="text-xs uppercase tracking-wider mb-2 font-bold"
+                        style={{ color: "var(--ms-violet)" }}
+                      >
+                        Vote for the funniest reply
                       </p>
-                      <p className="font-display font-semibold text-lg text-punch mb-1">
+                      <p
+                        className="font-display font-semibold text-lg leading-snug mb-1"
+                        style={{ color: "var(--ms-rose)" }}
+                      >
                         {currentVotePrompt.text}
                       </p>
-                      <p className="text-xs text-ink-dim">
-                        Human votes count double.
+                      <p className="text-xs" style={{ color: "var(--ms-ink-dim)" }}>
+                  Votes become points, even for strong runner-ups. Human votes count double.
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -713,15 +1004,20 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                             void castVote(currentVotePrompt.id, resp.id);
                           }}
                           disabled={votingBusy}
-                          className="w-full text-left py-3 px-4 rounded-2xl border-2 border-edge bg-raised/80 hover:bg-surface hover:border-edge-strong text-ink transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          {...buttonTap}
+                          className="w-full text-left py-3 px-4 rounded-2xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{
+                            background: "var(--ms-raised)",
+                            border: "2px solid var(--ms-edge)",
+                          }}
+                          whileHover={{
+                            borderColor: "var(--ms-violet)",
+                          }}
+                          whileTap={{ scale: 0.97 }}
                         >
-                          {resp.openerPromptId && openerPromptById.get(resp.openerPromptId) && (
-                            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-punch/80">
-                              {openerPromptById.get(resp.openerPromptId)}
-                            </span>
-                          )}
-                          <span className="text-[15px] leading-relaxed">
+                          <span
+                            className="text-[15px] leading-relaxed"
+                            style={{ color: "var(--ms-ink)" }}
+                          >
                             {resp.text}
                           </span>
                         </motion.button>
@@ -733,7 +1029,11 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                           void castVote(currentVotePrompt.id, null);
                         }}
                         disabled={votingBusy}
-                        className="w-full py-2.5 rounded-2xl border border-edge text-ink-dim hover:text-ink hover:bg-surface/60 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full py-2.5 rounded-2xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{
+                          border: "1px solid var(--ms-edge)",
+                          color: "var(--ms-ink-dim)",
+                        }}
                         {...buttonTap}
                       >
                         Pass

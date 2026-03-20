@@ -2,6 +2,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 import {
+  MATCHSLOP_POINTS_PER_WEIGHTED_VOTE,
+  MATCHSLOP_WINNER_BONUS,
+} from "./config/game-config";
+import {
   buildResultsDeadline,
   buildVotingDeadline,
   getActivePlayerIds,
@@ -120,6 +124,26 @@ function compareResults(a: MatchSlopRoundResult, b: MatchSlopRoundResult): numbe
   return a.winnerResponseId.localeCompare(b.winnerResponseId);
 }
 
+export function pickRoundWinner(results: MatchSlopRoundResult[]): MatchSlopRoundResult | null {
+  const winner = [...results].sort(compareResults)[0] ?? null;
+  if (!winner) return null;
+  if (winner.weightedVotes === 0 && winner.rawVotes === 0) {
+    return null;
+  }
+  return winner;
+}
+
+export function calculateResponsePoints(
+  result: Pick<MatchSlopRoundResult, "weightedVotes">,
+  isWinner: boolean,
+): number {
+  if (result.weightedVotes <= 0) return 0;
+  return (
+    result.weightedVotes * MATCHSLOP_POINTS_PER_WEIGHTED_VOTE +
+    (isWinner ? MATCHSLOP_WINNER_BONUS : 0)
+  );
+}
+
 async function finalizeGameWithoutWinner(gameId: string, modeState: ReturnType<typeof parseModeState>) {
   await prisma.game.update({
     where: { id: gameId },
@@ -215,14 +239,24 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
       } satisfies MatchSlopRoundResult;
     });
 
-    promptResults.sort(compareResults);
-    return promptResults.slice(0, 1);
+    return promptResults;
   });
 
-  const winner = [...results].sort(compareResults)[0];
+  const winner = pickRoundWinner(results);
   if (!winner) {
     await finalizeGameWithoutWinner(gameId, modeState);
     return;
+  }
+
+  const responsePointAwards = results.map((result) => ({
+    responseId: result.winnerResponseId,
+    playerId: result.winnerPlayerId,
+    points: calculateResponsePoints(result, result.winnerResponseId === winner.winnerResponseId),
+  }));
+  const playerPoints = new Map<string, number>();
+  for (const award of responsePointAwards) {
+    if (award.points <= 0) continue;
+    playerPoints.set(award.playerId, (playerPoints.get(award.playerId) ?? 0) + award.points);
   }
 
   await prisma.$transaction(async (tx) => {
@@ -239,20 +273,24 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
       },
     });
 
-    await tx.player.update({
-      where: { id: winner.winnerPlayerId },
-      data: { score: { increment: 100 } },
-    });
-
     await tx.response.updateMany({
       where: { prompt: { round: { gameId } } },
       data: { pointsEarned: 0 },
     });
 
-    await tx.response.update({
-      where: { id: winner.winnerResponseId },
-      data: { pointsEarned: 100 },
-    });
+    for (const [playerId, points] of playerPoints) {
+      await tx.player.update({
+        where: { id: playerId },
+        data: { score: { increment: points } },
+      });
+    }
+
+    for (const award of responsePointAwards) {
+      await tx.response.update({
+        where: { id: award.responseId },
+        data: { pointsEarned: award.points },
+      });
+    }
   });
 }
 

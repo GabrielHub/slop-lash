@@ -93,7 +93,7 @@ function response(
   playerId: string,
   text: string,
   pointsEarned: number,
-  opts?: Partial<Pick<GameResponse, "failReason" | "reactions">>,
+  opts?: Partial<Pick<GameResponse, "failReason" | "metadata" | "reactions">>,
 ): GameResponse {
   return {
     id,
@@ -901,6 +901,12 @@ const MOCK_NORA_PROFILE = {
     { id: "m-p2", prompt: "The most unhinged thing about me", answer: "I once live-blogged a neighborhood coyote." },
     { id: "m-p3", prompt: "We will get along if", answer: "You can commit to a bit longer than a situationship." },
   ],
+  details: {
+    job: "Tattoo Apprentice",
+    school: "CalArts",
+    height: "5'6\"",
+    languages: ["English", "Spanish"],
+  },
 };
 
 const BASE_MATCHSLOP_MODE_STATE = {
@@ -912,10 +918,38 @@ const BASE_MATCHSLOP_MODE_STATE = {
   selectedPersonaExampleIds: ["vinyl-doomprep", "tarot-coder"],
   selectedPlayerExamples: [],
   profile: MOCK_NORA_PROFILE,
-  personaImage: { status: "PENDING", imageUrl: null },
+  personaImage: {
+    status: "PENDING" as "NOT_REQUESTED" | "PENDING" | "READY" | "FAILED",
+    imageUrl: null as string | null,
+    updatedAt: "2026-03-19T00:00:00.000Z",
+  },
   transcript: [] as Record<string, unknown>[],
   lastRoundResult: null as Record<string, unknown> | null,
 };
+
+const MATCHSLOP_OPENING_TEXT =
+  "Write the funniest opener to send Nora based on one of her profile prompts.";
+const MATCHSLOP_FOLLOW_UP_TEXT =
+  "Coastal danger is my whole brand. Last Sunday I cured fish on my fire escape and the seagulls formed a queue.";
+
+const MATCHSLOP_ROUND_1_TRANSCRIPT: Record<string, unknown>[] = [
+  {
+    id: "mt-t1",
+    speaker: "PLAYERS",
+    text: "You had me at reckless anchovies. I too enjoy flirting with coastal danger.",
+    turn: 1,
+    outcome: null,
+    authorName: "Amy",
+  },
+  {
+    id: "mt-t2",
+    speaker: "PERSONA",
+    text: MATCHSLOP_FOLLOW_UP_TEXT,
+    turn: 1,
+    outcome: "CONTINUE",
+    authorName: "Nora, 29",
+  },
+];
 
 function makeMatchSlopGame(overrides: Partial<GameState>): GameState {
   const players = overrides.players ?? basePlayers();
@@ -927,7 +961,7 @@ function makeMatchSlopGame(overrides: Partial<GameState>): GameState {
     modeState: { ...BASE_MATCHSLOP_MODE_STATE },
     status: "LOBBY",
     currentRound: 1,
-    totalRounds: 4,
+    totalRounds: 2,
     hostPlayerId: null,
     phaseDeadline: null,
     timersDisabled: false,
@@ -954,31 +988,301 @@ function makeMatchSlopGame(overrides: Partial<GameState>): GameState {
   };
 }
 
+function matchSlopModeState(overrides: Partial<typeof BASE_MATCHSLOP_MODE_STATE> = {}) {
+  return {
+    ...BASE_MATCHSLOP_MODE_STATE,
+    ...overrides,
+  };
+}
+
+function buildMatchSlopWritingRound(players: GamePlayer[], roundNumber = 1): GameRound {
+  const p = new Map(players.map((player) => [player.id, player]));
+  const roundId = `m-writing-${roundNumber}`;
+  const promptId = `match-prompt-${roundNumber}`;
+
+  return round(roundId, roundNumber, [
+    prompt(
+      promptId,
+      roundId,
+      roundNumber === 1 ? MATCHSLOP_OPENING_TEXT : MATCHSLOP_FOLLOW_UP_TEXT,
+      players.map((player) => player.id),
+      [
+        response(
+          p,
+          `match-ai-seed-${roundNumber}`,
+          promptId,
+          AI_ID,
+          roundNumber === 1
+            ? "Farmer's market menace seeks anchovy accomplice."
+            : "Honestly, candle wax and limes sounds like a strong opener for Thursday.",
+          0,
+          {
+            metadata: {
+              selectedPromptId: roundNumber === 1 ? "m-p1" : null,
+            },
+          },
+        ),
+      ],
+      [],
+    ),
+  ]);
+}
+
+function buildMatchSlopVotingRound(players: GamePlayer[], roundNumber = 1): GameRound {
+  const p = new Map(players.map((player) => [player.id, player]));
+  const roundId = `m-voting-${roundNumber}`;
+  const promptId = `match-prompt-${roundNumber}`;
+
+  return round(roundId, roundNumber, [
+    prompt(
+      promptId,
+      roundId,
+      roundNumber === 1 ? MATCHSLOP_OPENING_TEXT : MATCHSLOP_FOLLOW_UP_TEXT,
+      players.map((player) => player.id),
+      [
+        response(
+          p,
+          `match-host-${roundNumber}`,
+          promptId,
+          HOST_ID,
+          roundNumber === 1
+            ? "You had me at reckless anchovies. I too enjoy flirting with coastal danger."
+            : "Candle wax and limes says 'prepared' and 'slightly cursed' in the best way.",
+          0,
+          {
+            metadata: {
+              selectedPromptId: roundNumber === 1 ? "m-p1" : null,
+            },
+          },
+        ),
+        response(
+          p,
+          `match-amy-${roundNumber}`,
+          promptId,
+          HUMAN_2_ID,
+          roundNumber === 1
+            ? "If a man arrives with anchovies and confidence, I'm at least cancelling my other plans."
+            : "I'd bring the limes and a fake backstory just to keep up.",
+          0,
+          {
+            metadata: {
+              selectedPromptId: roundNumber === 1 ? "m-p1" : null,
+            },
+          },
+        ),
+        response(
+          p,
+          `match-beau-${roundNumber}`,
+          promptId,
+          HUMAN_3_ID,
+          roundNumber === 1
+            ? "Live-blogging coyotes is hot. Want a field producer with excellent snacks?"
+            : "That grocery list sounds like a séance with a dress code.",
+          0,
+          {
+            metadata: {
+              selectedPromptId: roundNumber === 1 ? "__photo__" : null,
+            },
+          },
+        ),
+        response(
+          p,
+          `match-ai-${roundNumber}`,
+          promptId,
+          AI_ID,
+          roundNumber === 1
+            ? "I'm emotionally available and lightly marinated."
+            : "I support any romance that starts like a suspicious produce receipt.",
+          0,
+          {
+            metadata: {
+              selectedPromptId: roundNumber === 1 ? "m-p1" : null,
+            },
+          },
+        ),
+      ],
+      roundNumber === 1
+        ? [vote("match-vote-seed-1", promptId, AI_ID, "AI", `match-amy-${roundNumber}`)]
+        : [vote("match-vote-seed-2", promptId, AI_ID, "AI", `match-host-${roundNumber}`)],
+    ),
+  ]);
+}
+
+function buildMatchSlopResultsRound(players: GamePlayer[]): GameRound {
+  const p = new Map(players.map((player) => [player.id, player]));
+  const roundId = "m-results-1";
+  const promptId = "match-prompt-1";
+
+  return round(roundId, 1, [
+    prompt(
+      promptId,
+      roundId,
+      MATCHSLOP_OPENING_TEXT,
+      players.map((player) => player.id),
+      [
+        response(
+          p,
+          "match-response-host-1",
+          promptId,
+          HOST_ID,
+          "You had me at reckless anchovies. I too enjoy flirting with coastal danger.",
+          90,
+          { metadata: { selectedPromptId: "m-p1" } },
+        ),
+        response(
+          p,
+          "match-response-amy-1",
+          promptId,
+          HUMAN_2_ID,
+          "If a man arrives with anchovies and confidence, I'm at least cancelling my other plans.",
+          160,
+          { metadata: { selectedPromptId: "m-p1" } },
+        ),
+        response(
+          p,
+          "match-response-beau-1",
+          promptId,
+          HUMAN_3_ID,
+          "Live-blogging coyotes is hot. Want a field producer with excellent snacks?",
+          60,
+          { metadata: { selectedPromptId: "m-p2" } },
+        ),
+        response(
+          p,
+          "match-response-ai-1",
+          promptId,
+          AI_ID,
+          "I'm emotionally available and lightly marinated.",
+          40,
+          { metadata: { selectedPromptId: "m-p1" } },
+        ),
+      ],
+      [
+        vote("match-vote-1", promptId, HOST_ID, "HUMAN", "match-response-amy-1"),
+        vote("match-vote-2", promptId, HUMAN_2_ID, "HUMAN", "match-response-host-1"),
+        vote("match-vote-3", promptId, HUMAN_3_ID, "HUMAN", "match-response-amy-1"),
+        vote("match-vote-4", promptId, AI_ID, "AI", "match-response-amy-1"),
+      ],
+    ),
+  ]);
+}
+
+function buildMatchSlopLobby(): MockScenario {
+  return {
+    slug: "matchslop-lobby",
+    title: "MatchSlop Lobby",
+    description: "Profile is ready, players are connected, and the phone controller host can start.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      status: "LOBBY",
+      phaseDeadline: null,
+    }),
+  };
+}
+
 function buildMatchSlopWriting(): MockScenario {
+  const players = basePlayers();
   return {
     slug: "matchslop-writing",
     title: "MatchSlop Writing",
-    description: "TV-first profile view with the first opener round ready.",
-    playerId: null,
+    description: "Round one opener writing with the real controller prompt-picker data wired in.",
+    playerId: HOST_ID,
     game: makeMatchSlopGame({
+      players,
       status: "WRITING",
+      rounds: [buildMatchSlopWritingRound(players)],
       phaseDeadline: futureDeadline(52),
     }),
   };
 }
 
+function buildMatchSlopVoting(): MockScenario {
+  const players = basePlayers();
+  return {
+    slug: "matchslop-voting",
+    title: "MatchSlop Voting",
+    description: "Phone controller voting state with opener labels attached to each submitted line.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "VOTING",
+      rounds: [buildMatchSlopVotingRound(players)],
+      phaseDeadline: futureDeadline(36),
+      currentRound: 1,
+      votingPromptIndex: 0,
+      votingRevealing: false,
+    }),
+  };
+}
+
+const MATCHSLOP_FOLLOW_UP_MODE_STATE = matchSlopModeState({
+  personaImage: {
+    status: "READY" as const,
+    imageUrl: "/images/dev/matchslop-placeholder.jpg",
+    updatedAt: "2026-03-19T00:00:00.000Z",
+  },
+  transcript: MATCHSLOP_ROUND_1_TRANSCRIPT,
+});
+
+function buildMatchSlopFollowUpWriting(): MockScenario {
+  const players = basePlayers();
+  return {
+    slug: "matchslop-follow-up-writing",
+    title: "MatchSlop Follow-up Writing",
+    description: "Round 2 reply writing — player replies to the persona's latest message.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "WRITING",
+      currentRound: 2,
+      rounds: [buildMatchSlopWritingRound(players, 2)],
+      phaseDeadline: futureDeadline(52),
+      modeState: MATCHSLOP_FOLLOW_UP_MODE_STATE,
+    }),
+  };
+}
+
+function buildMatchSlopFollowUpVoting(): MockScenario {
+  const players = basePlayers();
+  return {
+    slug: "matchslop-follow-up-voting",
+    title: "MatchSlop Follow-up Voting",
+    description: "Round 2 voting — flat list with no opener prompt grouping.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "VOTING",
+      currentRound: 2,
+      rounds: [buildMatchSlopVotingRound(players, 2)],
+      phaseDeadline: futureDeadline(36),
+      votingPromptIndex: 0,
+      votingRevealing: false,
+      modeState: MATCHSLOP_FOLLOW_UP_MODE_STATE,
+    }),
+  };
+}
+
 function buildMatchSlopResults(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HUMAN_2_ID) return { ...player, score: 132, humorRating: 1.24 };
+    if (player.id === HOST_ID) return { ...player, score: 106, humorRating: 1.16 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 88, humorRating: 1.02 };
+    if (player.id === AI_ID) return { ...player, score: 74, humorRating: 0.97 };
+    return player;
+  });
+
   return {
     slug: "matchslop-results",
     title: "MatchSlop Results",
     description: "Winning opener revealed and the persona replied.",
-    playerId: null,
+    playerId: HOST_ID,
     game: makeMatchSlopGame({
+      players,
       status: "ROUND_RESULTS",
+      rounds: [buildMatchSlopResultsRound(players)],
       currentRound: 1,
       phaseDeadline: futureDeadline(12),
-      modeState: {
-        ...BASE_MATCHSLOP_MODE_STATE,
+      modeState: matchSlopModeState({
         transcript: [
           {
             id: "mt-1",
@@ -1008,26 +1312,35 @@ function buildMatchSlopResults(): MockScenario {
           selectedPromptId: "m-p1",
           selectedPromptText: "Typical Sunday",
         },
-      },
+      }),
     }),
   };
 }
 
 function buildMatchSlopFinal(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HOST_ID) return { ...player, score: 224, humorRating: 1.41, winStreak: 3 };
+    if (player.id === HUMAN_2_ID) return { ...player, score: 206, humorRating: 1.32 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 171, humorRating: 1.18 };
+    if (player.id === AI_ID) return { ...player, score: 149, humorRating: 1.04 };
+    return player;
+  });
+
   return {
     slug: "matchslop-final",
     title: "MatchSlop Final",
     description: "Conversation finished with a sealed date.",
-    playerId: null,
+    playerId: HOST_ID,
     game: makeMatchSlopGame({
+      players,
       status: "FINAL_RESULTS",
       currentRound: 2,
-      modeState: {
-        ...BASE_MATCHSLOP_MODE_STATE,
+      modeState: matchSlopModeState({
         outcome: "DATE_SEALED",
         personaImage: {
           status: "READY",
           imageUrl: "/images/dev/matchslop-placeholder.jpg",
+          updatedAt: "2026-03-19T00:00:00.000Z",
         },
         transcript: [
           {
@@ -1074,15 +1387,172 @@ function buildMatchSlopFinal(): MockScenario {
           selectedPromptId: null,
           selectedPromptText: null,
         },
-      },
+      }),
+    }),
+  };
+}
+
+function buildMatchSlopFinalUnmatched(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HOST_ID) return { ...player, score: 98, humorRating: 0.88 };
+    if (player.id === HUMAN_2_ID) return { ...player, score: 112, humorRating: 0.94 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 76, humorRating: 0.81 };
+    if (player.id === AI_ID) return { ...player, score: 64, humorRating: 0.72 };
+    return player;
+  });
+
+  return {
+    slug: "matchslop-final-unmatched",
+    title: "MatchSlop Unmatched",
+    description: "Persona rejected the players. Game over.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "FINAL_RESULTS",
+      currentRound: 2,
+      modeState: matchSlopModeState({
+        outcome: "UNMATCHED",
+        personaImage: {
+          status: "READY",
+          imageUrl: "/images/dev/matchslop-placeholder.jpg",
+          updatedAt: "2026-03-19T00:00:00.000Z",
+        },
+        transcript: [
+          {
+            id: "mt-u1",
+            speaker: "PLAYERS",
+            text: "Are you a parking ticket? Because you've got 'fine' written all over you.",
+            turn: 1,
+            outcome: null,
+            authorName: "Amy",
+          },
+          {
+            id: "mt-u2",
+            speaker: "PERSONA",
+            text: "That line's older than my grandmother's couch. You've got one more shot, make it count.",
+            turn: 1,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "mt-u3",
+            speaker: "PLAYERS",
+            text: "Okay but seriously, do you like bread? Because I knead you in my life.",
+            turn: 2,
+            outcome: null,
+            authorName: "Ong",
+          },
+          {
+            id: "mt-u4",
+            speaker: "PERSONA",
+            text: "I'm going to be honest — I'd rather date the bread. Good luck out there.",
+            turn: 2,
+            outcome: "UNMATCHED",
+            authorName: "Nora, 29",
+          },
+        ],
+        lastRoundResult: {
+          promptId: "match-prompt-2",
+          winnerResponseId: "match-response-u2",
+          winnerPlayerId: HOST_ID,
+          winnerText: "Okay but seriously, do you like bread? Because I knead you in my life.",
+          authorName: "Ong",
+          weightedVotes: 4,
+          rawVotes: 3,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      }),
+    }),
+  };
+}
+
+function buildMatchSlopFinalTurnLimit(): MockScenario {
+  const players = basePlayers().map((player) => {
+    if (player.id === HOST_ID) return { ...player, score: 156, humorRating: 1.12 };
+    if (player.id === HUMAN_2_ID) return { ...player, score: 189, humorRating: 1.28 };
+    if (player.id === HUMAN_3_ID) return { ...player, score: 134, humorRating: 1.06 };
+    if (player.id === AI_ID) return { ...player, score: 121, humorRating: 0.99 };
+    return player;
+  });
+
+  return {
+    slug: "matchslop-final-turn-limit",
+    title: "MatchSlop Turn Limit",
+    description: "Ran out of rounds without a clear outcome.",
+    playerId: HOST_ID,
+    game: makeMatchSlopGame({
+      players,
+      status: "FINAL_RESULTS",
+      currentRound: 2,
+      totalRounds: 2,
+      modeState: matchSlopModeState({
+        outcome: "TURN_LIMIT",
+        personaImage: {
+          status: "READY",
+          imageUrl: "/images/dev/matchslop-placeholder.jpg",
+          updatedAt: "2026-03-19T00:00:00.000Z",
+        },
+        transcript: [
+          {
+            id: "mt-t1",
+            speaker: "PLAYERS",
+            text: "I see you're into farmer's markets. I once bought a squash so large it got its own seat on the bus.",
+            turn: 1,
+            outcome: null,
+            authorName: "Amy",
+          },
+          {
+            id: "mt-t2",
+            speaker: "PERSONA",
+            text: "Respect for the squash. What happened next — did it pay for its own ticket?",
+            turn: 1,
+            outcome: "CONTINUE",
+            authorName: "Nora, 29",
+          },
+          {
+            id: "mt-t3",
+            speaker: "PLAYERS",
+            text: "It tried to tap its Oyster card but fumbled. We've been inseparable since the incident.",
+            turn: 2,
+            outcome: null,
+            authorName: "Ong",
+          },
+          {
+            id: "mt-t4",
+            speaker: "PERSONA",
+            text: "Okay, that's genuinely funny. I need to think about this one...",
+            turn: 2,
+            outcome: "TURN_LIMIT",
+            authorName: "Nora, 29",
+          },
+        ],
+        lastRoundResult: {
+          promptId: "match-prompt-2",
+          winnerResponseId: "match-response-t2",
+          winnerPlayerId: HOST_ID,
+          winnerText: "It tried to tap its Oyster card but fumbled. We've been inseparable since the incident.",
+          authorName: "Ong",
+          weightedVotes: 5,
+          rawVotes: 3,
+          selectedPromptId: null,
+          selectedPromptText: null,
+        },
+      }),
     }),
   };
 }
 
 export const MATCHSLOP_SCENARIOS: MockScenario[] = [
+  buildMatchSlopLobby(),
   buildMatchSlopWriting(),
+  buildMatchSlopVoting(),
+  buildMatchSlopFollowUpWriting(),
+  buildMatchSlopFollowUpVoting(),
   buildMatchSlopResults(),
   buildMatchSlopFinal(),
+  buildMatchSlopFinalUnmatched(),
+  buildMatchSlopFinalTurnLimit(),
 ];
 
 export const MOCK_SCENARIOS: MockScenario[] = [

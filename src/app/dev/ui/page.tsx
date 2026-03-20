@@ -51,6 +51,54 @@ function ScenarioCard({
   );
 }
 
+function MatchSlopScenarioCard({
+  scenario,
+  index,
+}: {
+  scenario: (typeof MATCHSLOP_SCENARIOS)[number];
+  index: number;
+}) {
+  return (
+    <div
+      className="rounded-xl border-2 border-edge bg-surface/80 p-4 backdrop-blur-sm"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-xs font-mono text-ink-dim">#{index + 1}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full border border-punch/40 bg-punch/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-punch">
+            MatchSlop
+          </span>
+          <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-ink-dim">
+            {scenario.game.status}
+          </span>
+        </div>
+      </div>
+      <h2 className="font-display text-lg font-bold text-ink">
+        {scenario.title}
+      </h2>
+      <p className="mt-1 text-sm text-ink-dim">{scenario.description}</p>
+      <p className="mt-2 text-xs font-mono text-ink-dim/80">
+        default controller viewer: {scenario.playerId ?? "none"}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link
+          href={`/dev/ui/${scenario.slug}`}
+          className="rounded-md border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
+        >
+          Stage
+        </Link>
+        <Link
+          href={`/dev/ui/${scenario.slug}/controller`}
+          className="rounded-md border border-punch/40 bg-punch/10 px-3 py-2 text-sm text-punch hover:border-punch hover:bg-punch/15"
+        >
+          Controller
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function DevUiIndexPage() {
   return (
     <main className="min-h-svh px-6 py-10">
@@ -140,15 +188,14 @@ export default function DevUiIndexPage() {
             </h2>
           </div>
           <p className="text-sm text-ink-dim mb-4">
-            TV-first dating persona fixtures for the shared stage shell.
+            TV-first stage fixtures plus dedicated phone controller previews.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {MATCHSLOP_SCENARIOS.map((scenario, index) => (
-              <ScenarioCard
+              <MatchSlopScenarioCard
                 key={scenario.slug}
                 scenario={scenario}
                 index={index}
-                badge="MatchSlop"
               />
             ))}
           </div>

@@ -6,18 +6,19 @@ import { parseJsonBody } from "@/lib/http";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { logGameEvent } from "@/games/core/observability";
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { findAuthenticatedPlayer, readPlayerToken } from "@/lib/player-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-  const body = await parseJsonBody<{ voterId?: unknown; promptId?: unknown; responseId?: unknown }>(request);
+  const body = await parseJsonBody<{ playerToken?: unknown; promptId?: unknown; responseId?: unknown }>(request);
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { voterId, promptId, responseId } = body;
-  const validVoterId = typeof voterId === "string" ? voterId : null;
+  const { playerToken, promptId, responseId } = body;
+  const validPlayerToken = readPlayerToken(playerToken);
   const validPromptId = typeof promptId === "string" ? promptId : null;
 
   const validResponseId =
@@ -25,9 +26,9 @@ export async function POST(
     typeof responseId === "string" ? responseId :
     undefined;
 
-  if (!validVoterId || !validPromptId || validResponseId === undefined) {
+  if (!validPlayerToken || !validPromptId || validResponseId === undefined) {
     return NextResponse.json(
-      { error: "voterId and promptId are required" },
+      { error: "playerToken and promptId are required" },
       { status: 400 }
     );
   }
@@ -67,14 +68,11 @@ export async function POST(
     );
   }
 
-  const voter = await prisma.player.findFirst({
-    where: { id: validVoterId, gameId: game.id },
-    select: { id: true, type: true, participationStatus: true },
-  });
+  const voter = await findAuthenticatedPlayer(game.id, validPlayerToken);
   if (!voter) {
     return NextResponse.json(
-      { error: "Player not in this game" },
-      { status: 403 }
+      { error: "Invalid player session" },
+      { status: 401 }
     );
   }
   if (voter.type === "SPECTATOR") {
@@ -90,7 +88,7 @@ export async function POST(
     );
   }
 
-  if (!checkRateLimit(`vote:${validVoterId}`, 20, 60_000)) {
+  if (!checkRateLimit(`vote:${voter.id}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many requests, please slow down" },
       { status: 429 }
@@ -129,7 +127,7 @@ export async function POST(
         // Self-vote check: cannot vote for your own response
         if (validResponseId) {
           const selfResponse = await tx.response.findFirst({
-            where: { id: validResponseId, playerId: validVoterId },
+            where: { id: validResponseId, playerId: voter.id },
             select: { id: true },
           });
           if (selfResponse) {
@@ -139,7 +137,7 @@ export async function POST(
       } else {
         // SLOPLASH: respondents cannot vote on their prompt at all
         const voterResponse = await tx.response.findFirst({
-          where: { promptId: validPromptId, playerId: validVoterId },
+          where: { promptId: validPromptId, playerId: voter.id },
           select: { id: true },
         });
         if (voterResponse) {
@@ -148,7 +146,7 @@ export async function POST(
       }
 
       const existingVote = await tx.vote.findFirst({
-        where: { promptId: validPromptId, voterId: validVoterId },
+        where: { promptId: validPromptId, voterId: voter.id },
         select: { id: true },
       });
       if (existingVote) {
@@ -156,7 +154,7 @@ export async function POST(
       }
 
       await tx.vote.create({
-        data: { promptId: validPromptId, voterId: validVoterId, responseId: validResponseId },
+        data: { promptId: validPromptId, voterId: voter.id, responseId: validResponseId },
       });
 
       // Bump version so pollers pick up the new vote
@@ -192,7 +190,7 @@ export async function POST(
   }
 
   logGameEvent("voted", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
-    voterId: validVoterId,
+    voterId: voter.id,
     abstain: !validResponseId,
     weighted: game.gameType === "MATCHSLOP",
   });

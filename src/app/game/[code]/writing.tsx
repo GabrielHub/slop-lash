@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
+import { PLAYER_TOKEN_KEY } from "@/lib/client-session";
 import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { ErrorBanner } from "@/components/error-banner";
@@ -85,6 +86,11 @@ export function Writing({
   async function submitResponse(promptId: string) {
     const text = responses[promptId];
     if (!text?.trim()) return;
+    const playerToken = localStorage.getItem(PLAYER_TOKEN_KEY);
+    if (!playerToken) {
+      setError("Session expired. Refresh or rejoin the game.");
+      return;
+    }
 
     setSubmitting(promptId);
     setError("");
@@ -93,7 +99,7 @@ export function Writing({
       const res = await fetch(`/api/games/${code}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, promptId, text: text.trim() }),
+        body: JSON.stringify({ playerToken, promptId, text: text.trim() }),
       });
 
       if (!res.ok) {

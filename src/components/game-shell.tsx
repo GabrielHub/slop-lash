@@ -13,6 +13,7 @@ import { phaseTransition, fadeInUp } from "@/lib/animations";
 import { playSound, preloadSounds, subscribeAudio, isMuted, toggleMute, getVolume, setVolume, SOUND_NAMES } from "@/lib/sounds";
 import { useNarrator } from "@/hooks/use-narrator";
 import { useGameStream } from "@/hooks/use-game-stream";
+import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { NarratorIndicator } from "@/components/narrator-indicator";
 import {
   buildGameStartEvent,
@@ -25,17 +26,7 @@ import {
   getVotablePrompts,
 } from "@/games/sloplash/narrator-events";
 
-function getPlayerId() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("playerId");
-}
-
-function getHostControlToken() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("hostControlToken");
-}
-
-const noopSubscribe = () => () => {};
+import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from "@/lib/client-session";
 
 export function GameShell({
   code,
@@ -46,11 +37,18 @@ export function GameShell({
 }) {
   const searchParams = useSearchParams();
   const storedPlayerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
   const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
   // Stage/TV mode is display-only and should never impersonate a player from
   // stale localStorage state left over from another session.
   const playerId = viewMode === "stage" ? null : storedPlayerId;
-  const { gameState, error, refresh } = useGameStream(code, playerId, hostControlToken, viewMode);
+  const { gameState, error, refresh } = useGameStream(
+    code,
+    playerToken,
+    hostControlToken,
+    viewMode,
+  );
+  useScreenWakeLock(gameState != null);
   const [endingGame, setEndingGame] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const rejoinAttempted = useRef(false);
@@ -66,14 +64,6 @@ export function GameShell({
     }
   }, [viewMode, searchParams]);
 
-  // Stage mode: force dark theme for TV readability.
-  // Bypasses ThemeProvider intentionally — stage view never shows the toggle,
-  // and adding a setTheme() API to the provider isn't worth the complexity.
-  useEffect(() => {
-    if (viewMode !== "stage") return;
-    document.documentElement.setAttribute("data-theme", "dark");
-    localStorage.setItem("theme", "dark");
-  }, [viewMode]);
 
   useEffect(() => {
     if (viewMode === "stage") return;

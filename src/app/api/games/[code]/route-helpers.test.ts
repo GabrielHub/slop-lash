@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { FORFEIT_MARKER } from "@/games/core/constants";
-import { isDeadlineExpired, isVersionUnchanged, stripUnrevealedVotes } from "./route-helpers";
+import {
+  isDeadlineExpired,
+  isPromptVotable,
+  isVersionUnchanged,
+  stripUnrevealedVotes,
+} from "./route-helpers";
 
 describe("isVersionUnchanged", () => {
   it("returns true when client version query matches", () => {
@@ -60,6 +65,7 @@ describe("stripUnrevealedVotes", () => {
 
   it("does nothing outside the voting phase", () => {
     const game = {
+      gameType: "SLOPLASH" as const,
       status: "WRITING",
       votingPromptIndex: 0,
       votingRevealing: false,
@@ -78,6 +84,7 @@ describe("stripUnrevealedVotes", () => {
     const current = makePrompt("b", 2);
     const future = makePrompt("c", 2);
     const game = {
+      gameType: "SLOPLASH" as const,
       status: "VOTING",
       votingPromptIndex: 1,
       votingRevealing: false,
@@ -107,6 +114,7 @@ describe("stripUnrevealedVotes", () => {
     const current = makePrompt("a", 2);
     const future = makePrompt("b", 2);
     const game = {
+      gameType: "SLOPLASH" as const,
       status: "VOTING",
       votingPromptIndex: 0,
       votingRevealing: true,
@@ -121,20 +129,38 @@ describe("stripUnrevealedVotes", () => {
     expect(future.responses.every((r) => r.reactions.length === 0)).toBe(true);
   });
 
-  it("excludes forfeited prompts from votable list", () => {
-    const normal = makePrompt("a", 2);
+  it("keeps forfeited MatchSlop prompts aligned with server votable rules", () => {
     const forfeited = makePrompt("b", 2, true);
     const game = {
+      gameType: "MATCHSLOP" as const,
       status: "VOTING",
       votingPromptIndex: 0,
-      votingRevealing: true,
-      rounds: [{ prompts: [normal, forfeited] }],
+      votingRevealing: false,
+      rounds: [{ prompts: [forfeited] }],
     };
 
     stripUnrevealedVotes(game);
 
-    // Forfeited prompt is not votable, so its votes/reactions are untouched
     expect(forfeited.votes).toHaveLength(1);
-    expect(forfeited.responses[0].reactions).toHaveLength(1);
+    expect((forfeited.votes[0] as { responseId: unknown }).responseId).toBeNull();
+    expect(forfeited.responses.every((response) => response.reactions.length === 0)).toBe(true);
+  });
+});
+
+describe("isPromptVotable", () => {
+  it("treats MatchSlop prompts with one non-forfeit response as votable", () => {
+    expect(
+      isPromptVotable("MATCHSLOP", {
+        responses: [{ text: FORFEIT_MARKER }, { text: "real answer" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects fully forfeited AI Chat Showdown prompts", () => {
+    expect(
+      isPromptVotable("AI_CHAT_SHOWDOWN", {
+        responses: [{ text: FORFEIT_MARKER }, { text: FORFEIT_MARKER }],
+      }),
+    ).toBe(false);
   });
 });

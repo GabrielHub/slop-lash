@@ -13,7 +13,7 @@ import type { GameState } from "@/lib/types";
  */
 export function useGameStream(
   code: string,
-  playerId: string | null,
+  playerToken: string | null,
   hostControlToken: string | null,
   viewMode: "game" | "stage",
 ) {
@@ -37,7 +37,7 @@ export function useGameStream(
       if (cancelled) return;
 
       const params = new URLSearchParams();
-      if (playerId) params.set("playerId", playerId);
+      if (playerToken) params.set("playerToken", playerToken);
       if (hostControlToken && viewMode === "stage") params.set("hostToken", hostControlToken);
       const qs = params.toString();
       const url = `/api/games/${code}/stream${qs ? `?${qs}` : ""}`;
@@ -115,7 +115,7 @@ export function useGameStream(
       esRef.current?.close();
       esRef.current = null;
     };
-  }, [code, playerId, hostControlToken, viewMode, refreshKey]);
+  }, [code, playerToken, hostControlToken, viewMode, refreshKey]);
 
   const refresh = useCallback(() => {
     esRef.current?.close();

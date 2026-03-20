@@ -11,7 +11,7 @@ import type { ControllerGameState } from "@/lib/controller-types";
  *   - `server-error` – { code, message }
  *   - `done`   – game reached FINAL_RESULTS, stream ends
  */
-export function useControllerStream(code: string, playerId: string | null) {
+export function useControllerStream(code: string, playerToken: string | null) {
   const [gameState, setGameState] = useState<ControllerGameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -32,7 +32,7 @@ export function useControllerStream(code: string, playerId: string | null) {
       if (cancelled) return;
 
       const params = new URLSearchParams();
-      if (playerId) params.set("playerId", playerId);
+      if (playerToken) params.set("playerToken", playerToken);
       const qs = params.toString();
       const url = `/api/games/${code}/controller/stream${qs ? `?${qs}` : ""}`;
 
@@ -104,7 +104,7 @@ export function useControllerStream(code: string, playerId: string | null) {
       esRef.current?.close();
       esRef.current = null;
     };
-  }, [code, playerId, refreshKey]);
+  }, [code, playerToken, refreshKey]);
 
   const refresh = useCallback(() => {
     esRef.current?.close();
