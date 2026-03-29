@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { publishGameStateEvent } from "@/lib/realtime-events";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
 import { generatePersonaImage, generatePersonaPortraitPrompt } from "./ai";
-import { parseModeState } from "./game-logic-core";
+import { parseModeState, resolvePersonaExamples } from "./game-logic-core";
 
 const inflightPersonaImages = new Map<string, Promise<void>>();
 
@@ -118,6 +118,7 @@ async function claimPersonaImageGeneration(gameId: string) {
         personaModelId: game.personaModelId,
         personaIdentity: modeState.personaIdentity,
         profile,
+        personaExamples: resolvePersonaExamples(modeState.selectedPersonaExampleIds),
       };
     }
   }
@@ -147,6 +148,7 @@ async function doEnsurePersonaImage(gameId: string): Promise<void> {
       claim.personaModelId,
       claim.personaIdentity,
       claim.profile,
+      claim.personaExamples,
     );
     await accumulateUsage(gameId, [promptResult.usage]);
 

@@ -113,6 +113,7 @@ function parseProfile(value: unknown): MatchSlopProfile | null {
   return {
     displayName,
     backstory: asString(record.backstory),
+    appearance: asString(record.appearance),
     age: asNumber(record.age),
     location: asString(record.location),
     bio,
@@ -129,6 +130,7 @@ export function parseProfileDraft(value: unknown): MatchSlopProfileDraft | null 
   const draft: MatchSlopProfileDraft = {};
   const displayName = asString(record.displayName);
   const backstory = asString(record.backstory);
+  const appearance = asString(record.appearance);
   const age = asNumber(record.age);
   const location = asString(record.location);
   const bio = asString(record.bio);
@@ -142,6 +144,7 @@ export function parseProfileDraft(value: unknown): MatchSlopProfileDraft | null 
 
   if (displayName) draft.displayName = displayName;
   if (backstory != null) draft.backstory = backstory;
+  if (appearance != null) draft.appearance = appearance;
   if (age != null) draft.age = age;
   if (location != null) draft.location = location;
   if (bio != null) draft.bio = bio;

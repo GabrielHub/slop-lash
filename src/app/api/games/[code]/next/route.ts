@@ -10,6 +10,13 @@ import { logGameEvent } from "@/games/core/observability";
 import { runAiResponsesGeneration, runAiVotesGeneration, runGameStateMaintenance } from "@/games/core/runtime";
 import { publishGameStateEvent } from "@/lib/realtime-events";
 
+async function findAdvanceSnapshot(gameId: string) {
+  return prisma.game.findUnique({
+    where: { id: gameId },
+    select: { status: true, currentRound: true },
+  });
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
@@ -33,6 +40,7 @@ export async function POST(
       id: true,
       gameType: true,
       status: true,
+      currentRound: true,
       hostPlayerId: true,
       hostControlTokenHash: true,
       hostControlLastSeen: true,
@@ -73,11 +81,22 @@ export async function POST(
       }
     }
     const newRoundStarted = await def.handlers.advanceGame(game.id);
+    const latestGame = newRoundStarted ? null : await findAdvanceSnapshot(game.id);
+    const advancedToWriting =
+      latestGame?.status === "WRITING" && latestGame.currentRound > game.currentRound;
+    const advancedToFinal = latestGame?.status === "FINAL_RESULTS";
+
+    if (!newRoundStarted && !advancedToWriting && !advancedToFinal) {
+      return NextResponse.json(
+        { error: "Could not advance game state" },
+        { status: 409 }
+      );
+    }
     logGameEvent("phaseAdvanced", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
       from: "ROUND_RESULTS",
-      newRound: newRoundStarted,
+      newRound: newRoundStarted || advancedToWriting,
     });
-    if (newRoundStarted) {
+    if (newRoundStarted || advancedToWriting) {
       await publishGameStateEvent(game.id);
       after(async () => {
         const ran = await runAiResponsesGeneration(game.id, game.gameType);
@@ -109,16 +128,25 @@ export async function POST(
         { status: 403 }
       );
     }
-    if (game.status === "WRITING") {
-      await prisma.game.update({
-        where: { id: game.id },
-        data: { phaseDeadline: null },
-      });
+    let advancedTo = await def.handlers.forceAdvancePhase(game.id);
+    if (advancedTo == null) {
+      const latestGame = await findAdvanceSnapshot(game.id);
+      if (
+        latestGame != null &&
+        (latestGame.status !== game.status || latestGame.currentRound !== game.currentRound)
+      ) {
+        advancedTo = latestGame.status as NonNullable<typeof advancedTo>;
+      }
     }
-    const advancedTo = await def.handlers.forceAdvancePhase(game.id);
+    if (advancedTo == null) {
+      return NextResponse.json(
+        { error: "Could not advance current phase" },
+        { status: 409 }
+      );
+    }
     logGameEvent("phaseAdvanced", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
       from: game.status,
-      to: advancedTo ?? "none",
+      to: advancedTo,
       forced: true,
     });
     // AI_CHAT_SHOWDOWN already triggers AI votes inside forceAdvancePhase().

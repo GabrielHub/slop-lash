@@ -7,6 +7,7 @@ import {
   startLobbyPersonaGeneration,
   skipPersonaProfile,
 } from "@/games/matchslop/persona-profile";
+import { parseModeState } from "@/games/matchslop/game-logic-core";
 
 export async function POST(
   request: Request,
@@ -44,8 +45,10 @@ export async function POST(
       id: true,
       gameType: true,
       status: true,
+      currentRound: true,
       hostPlayerId: true,
       hostControlTokenHash: true,
+      modeState: true,
     },
   });
 
@@ -60,9 +63,15 @@ export async function POST(
     );
   }
 
-  if (game.status !== "LOBBY") {
+  const modeState = parseModeState(game.modeState);
+  const allowMidGameRecovery =
+    game.status === "WRITING" &&
+    game.currentRound === 1 &&
+    modeState.profile == null;
+
+  if (game.status !== "LOBBY" && !allowMidGameRecovery) {
     return NextResponse.json(
-      { error: "Persona can only be managed from the lobby" },
+      { error: "Persona can only be managed from the lobby or during round 1 profile recovery" },
       { status: 400 },
     );
   }

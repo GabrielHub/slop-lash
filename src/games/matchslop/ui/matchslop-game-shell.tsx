@@ -2715,9 +2715,12 @@ export function MatchSlopGameShell({
         body: JSON.stringify({ playerId, hostToken: hostControlToken }),
       });
       if (!res.ok) {
-        setEndingGame(false);
+        const data = await res.json().catch(() => null);
+        setActionError(data?.error || "Could not end game");
       }
     } catch {
+      setActionError("Could not end game");
+    } finally {
       setEndingGame(false);
     }
   }
@@ -2866,11 +2869,11 @@ export function MatchSlopGameShell({
               compact={viewMode === "stage"}
             />
 
-            {/* Persona controls in lobby */}
+            {/* Persona controls in lobby and round-1 recovery */}
             <AnimatePresence>
-              {isHost && gameState.status === "LOBBY" && (
+              {isHost && (gameState.status === "LOBBY" || isInitialProfileFailed) && (
                 <motion.button
-                  key={`persona-${personaLobbyAction}-${personaStatus}`}
+                  key={`persona-${gameState.status}-${personaLobbyAction}-${personaStatus}`}
                   type="button"
                   onClick={() => void postPersonaAction(personaLobbyAction)}
                   disabled={personaAction != null}

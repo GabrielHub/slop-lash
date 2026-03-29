@@ -19,6 +19,7 @@ import {
   getMatchSlopTimerTotal,
 } from "@/games/matchslop/config/game-config";
 import { TypingIndicator, ProgressCount } from "./matchslop-shared-ui";
+import { ProfileCard, type Outcome } from "./matchslop-game-shell";
 
 import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
 
@@ -740,6 +741,9 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
   const [votingPromptIds, setVotingPromptIds] = useState<Set<string>>(new Set());
   const [votingBusy, setVotingBusy] = useState(false);
   const [hostActionBusy, setHostActionBusy] = useState(false);
+  const [personaAction, setPersonaAction] = useState<"generate" | "skip" | null>(null);
+  const [endingGame, setEndingGame] = useState(false);
+  const [showPersonaSheet, setShowPersonaSheet] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
   const rejoinAttempted = useRef(false);
@@ -751,6 +755,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
     if (phaseKeyRef.current !== nextKey) {
       phaseKeyRef.current = nextKey;
       setActionError("");
+      setShowPersonaSheet(false);
       if (gameState.status !== "WRITING") {
         setResponseText("");
         setSubmittedPromptIds(new Set());
@@ -805,6 +810,19 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
       .finally(() => setReconnecting(false));
   }, [gameState, playerId, code, searchParams, refresh]);
 
+  useEffect(() => {
+    if (!showPersonaSheet) return;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPersonaSheet(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showPersonaSheet]);
+
   const isHost = !!(gameState && playerId && gameState.hostPlayerId === playerId);
   const activePlayerCount = gameState?.players.filter((p) => p.type !== "SPECTATOR").length ?? 0;
   const matchslop = gameState?.matchslop ?? null;
@@ -844,6 +862,16 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
       ? { id: PHOTO_PROMPT_ID, prompt: MATCHSLOP_PHOTO_PROMPT_TEXT, answer: "" }
       : null);
   const personaName = matchslop?.profile?.displayName ?? "the persona";
+  const canEndGame =
+    isHost &&
+    (gameState?.status === "WRITING" ||
+      gameState?.status === "VOTING" ||
+      gameState?.status === "ROUND_RESULTS");
+  const showPersonaButton =
+    gameState != null &&
+    gameState.status !== "LOBBY" &&
+    matchslop?.profile != null;
+  const gameStarted = gameState != null && gameState.status !== "LOBBY";
 
   async function postHostAction(path: "start" | "next") {
     const hostToken = localStorage.getItem("hostControlToken");
@@ -864,6 +892,51 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
       setActionError("Something went wrong");
     } finally {
       setHostActionBusy(false);
+    }
+  }
+
+  async function postPersonaAction(action: "generate" | "skip") {
+    const hostToken = localStorage.getItem("hostControlToken");
+    if (!playerId && !hostToken) return;
+    setPersonaAction(action);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/games/${code}/persona`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, playerId, hostToken }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setActionError(data?.error || "Persona action failed");
+      }
+    } catch {
+      setActionError("Persona action failed");
+    } finally {
+      setPersonaAction(null);
+    }
+  }
+
+  async function handleEndGame() {
+    const hostToken = localStorage.getItem("hostControlToken");
+    if ((!playerId && !hostToken) || !canEndGame) return;
+    if (!window.confirm("End the game early?")) return;
+    setEndingGame(true);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/games/${code}/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId, hostToken }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setActionError(data?.error || "Could not end game");
+      }
+    } catch {
+      setActionError("Could not end game");
+    } finally {
+      setEndingGame(false);
     }
   }
 
@@ -1082,8 +1155,22 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                   <motion.div key="write-profile-failed" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
                     <CompletionCard
                       title="Profile failed"
-                      subtitle="The persona could not be generated. Ask the host to end the game and start again."
+                      subtitle={isHost
+                        ? "Persona generation failed. Retry it from here or end the game."
+                        : "The persona could not be generated. Ask the host to retry or end the game."}
                     />
+                    {isHost && (
+                      <motion.button
+                        type="button"
+                        onClick={() => void postPersonaAction("generate")}
+                        disabled={personaAction != null}
+                        className="mt-3 w-full py-3 rounded-2xl border border-edge/60 bg-white/70 font-display font-semibold text-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ color: "var(--ms-ink)" }}
+                        {...buttonTap}
+                      >
+                        {personaAction === "generate" ? "Retrying..." : "Retry Persona"}
+                      </motion.button>
+                    )}
                   </motion.div>
                 ) : hasSubmittedCurrent ? (
                   <motion.div key="write-submitted" variants={phaseTransition} initial="hidden" animate="visible" exit="exit">
@@ -1515,6 +1602,34 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
             </AnimatePresence>
 
             <AnimatePresence>
+            {canEndGame && (
+              <motion.div
+                key="end-game"
+                className="mt-3"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={springDefault}
+              >
+                <motion.button
+                  type="button"
+                  onClick={() => void handleEndGame()}
+                  disabled={endingGame}
+                  className="w-full py-3 rounded-2xl border text-sm font-display font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    borderColor: "var(--ms-red-soft)",
+                    color: "var(--ms-red)",
+                    background: "transparent",
+                  }}
+                  {...buttonTap}
+                >
+                  {endingGame ? "Ending..." : "End Game"}
+                </motion.button>
+              </motion.div>
+            )}
+            </AnimatePresence>
+
+            <AnimatePresence>
               {actionError && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
                   <ErrorBanner error={actionError} />
@@ -1524,6 +1639,91 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
           </div>
         </motion.div>
       </main>
+
+      {/* Floating "View Persona" button */}
+      <AnimatePresence>
+        {showPersonaButton && !showPersonaSheet && (
+          <motion.button
+            key="persona-fab"
+            type="button"
+            onClick={() => setShowPersonaSheet(true)}
+            className="fixed bottom-6 right-4 z-30 w-12 h-12 rounded-full flex items-center justify-center cursor-pointer"
+            style={{
+              background: "var(--ms-gradient-romance)",
+              boxShadow: "0 4px 20px var(--ms-rose-glow)",
+            }}
+            initial={{ opacity: 0, scale: 0.5, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: 20 }}
+            transition={springDefault}
+            whileTap={{ scale: 0.9 }}
+            aria-label="View persona profile"
+          >
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Persona profile bottom sheet */}
+      <AnimatePresence>
+        {showPersonaSheet && matchslop?.profile && (
+          <motion.div
+            key="persona-sheet"
+            className="fixed inset-0 z-50 flex flex-col justify-end"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Backdrop */}
+            <motion.div
+              className="absolute inset-0"
+              style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+              onClick={() => setShowPersonaSheet(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+
+            {/* Sheet */}
+            <motion.div
+              className="relative z-10 rounded-t-3xl overflow-hidden flex flex-col"
+              style={{ maxHeight: "92svh", background: "var(--ms-base)" }}
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            >
+              {/* Grab handle */}
+              <div className="flex items-center justify-center pt-3 pb-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowPersonaSheet(false)}
+                  className="w-10 h-1 rounded-full cursor-pointer"
+                  style={{ background: "var(--ms-edge-strong)" }}
+                  aria-label="Close"
+                />
+              </div>
+
+              {/* Scrollable profile */}
+              <div className="overflow-y-auto overscroll-contain px-3 pb-[max(2rem,env(safe-area-inset-bottom))]">
+                <ProfileCard
+                  profile={matchslop.profile}
+                  personaImage={matchslop.profile.image}
+                  profileGeneration={matchslop.profileGeneration ?? null}
+                  outcome={matchslop.outcome as Outcome}
+                  mood={matchslop.mood ?? 50}
+                  moodDelta={matchslop.latestMoodDelta}
+                  gameStarted={gameStarted}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

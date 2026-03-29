@@ -170,25 +170,22 @@ async function createTurnRound(
 
 async function claimRoundAdvance(args: {
   gameId: string;
-  version: number;
-}): Promise<number | null> {
-  const { gameId, version } = args;
-  const claimedVersion = version + 1;
+}): Promise<boolean> {
+  const { gameId } = args;
   const claimed = await prisma.game.updateMany({
     where: {
       id: gameId,
       status: "ROUND_RESULTS",
       votingRevealing: false,
-      version,
     },
     data: {
       votingRevealing: true,
       phaseDeadline: null,
-      version: claimedVersion,
+      version: { increment: 1 },
     },
   });
 
-  return claimed.count > 0 ? claimedVersion : null;
+  return claimed.count > 0;
 }
 
 async function releaseRoundAdvanceClaim(args: {
@@ -416,7 +413,6 @@ export async function advanceGame(gameId: string): Promise<boolean> {
       timersDisabled: true,
       votingRevealing: true,
       modeState: true,
-      version: true,
     },
   });
 
@@ -425,11 +421,8 @@ export async function advanceGame(gameId: string): Promise<boolean> {
 
   const modeState = parseModeState(game.modeState);
   const claim: AdvanceClaim | null = await (async () => {
-    const claimedVersion = await claimRoundAdvance({
-      gameId,
-      version: game.version,
-    });
-    if (claimedVersion == null) return null;
+    const claimed = await claimRoundAdvance({ gameId });
+    if (!claimed) return null;
     return {
       currentRound: game.currentRound,
       totalRounds: game.totalRounds,

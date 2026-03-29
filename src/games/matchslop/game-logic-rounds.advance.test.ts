@@ -88,7 +88,6 @@ describe("advanceGame", () => {
       timersDisabled: false,
       votingRevealing: false,
       modeState: { ok: true },
-      version: 7,
     });
     coreMocks.parseModeState.mockReturnValue({
       transcript: [],
@@ -116,12 +115,11 @@ describe("advanceGame", () => {
         id: "game-1",
         status: "ROUND_RESULTS",
         votingRevealing: false,
-        version: 7,
       },
       data: {
         votingRevealing: true,
         phaseDeadline: null,
-        version: 8,
+        version: { increment: 1 },
       },
     });
     expect(aiMocks.generatePersonaReply).not.toHaveBeenCalled();
@@ -137,7 +135,6 @@ describe("advanceGame", () => {
       timersDisabled: false,
       votingRevealing: false,
       modeState: { ok: true },
-      version: 11,
     });
     coreMocks.parseModeState.mockReturnValue({
       transcript: [
@@ -288,7 +285,6 @@ describe("advanceGame", () => {
       timersDisabled: false,
       votingRevealing: false,
       modeState: { ok: true },
-      version: 21,
     });
     coreMocks.parseModeState.mockReturnValue({
       transcript: [],

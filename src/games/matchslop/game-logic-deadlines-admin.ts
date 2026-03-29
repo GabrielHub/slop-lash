@@ -90,6 +90,20 @@ async function fillMissingVotes(gameId: string): Promise<void> {
   });
 }
 
+async function resolveRoundResultsAdvanceOutcome(
+  gameId: string,
+  currentRound: number,
+): Promise<PhaseAdvanceResult> {
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { status: true, currentRound: true },
+  });
+  if (!game) return null;
+  if (game.status === "FINAL_RESULTS") return "FINAL_RESULTS";
+  if (game.status === "WRITING" && game.currentRound > currentRound) return "WRITING";
+  return null;
+}
+
 export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceResult> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
@@ -114,7 +128,8 @@ export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceRes
     }
     case "ROUND_RESULTS": {
       const advanced = await advanceGame(gameId);
-      return advanced ? "WRITING" : "FINAL_RESULTS";
+      if (advanced) return "WRITING";
+      return resolveRoundResultsAdvanceOutcome(gameId, game.currentRound);
     }
     default:
       return null;

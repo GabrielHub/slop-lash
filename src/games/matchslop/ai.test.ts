@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FORFEIT_MARKER } from "@/games/core/constants";
+import type { MatchSlopPersonaSeed } from "./config/persona-examples";
 import {
   buildPersonaReplySystemPrompt,
   deriveFallbackSignal,
+  generatePersonaPortraitPrompt,
+  generatePersonaProfile,
   normalizePersonaReplyOutcome,
   parseAiFollowupResponse,
   parseAiOpenerResponse,
@@ -113,6 +116,109 @@ describe("buildPersonaReplySystemPrompt", () => {
     expect(prompt).toContain("DATE_SEALED:");
     expect(prompt).toContain("UNMATCHED:");
     expect(prompt).toContain("CONTINUE:");
+  });
+});
+
+describe("persona generation prompts", () => {
+  const personaSeed: MatchSlopPersonaSeed = {
+    id: "seed-1",
+    name: "Randa",
+    identity: "WOMAN",
+    backstory: "Dry surfer from SF who texts in lowercase.",
+    textingStyle: "Lowercase and dry.",
+    title: "Beach text menace",
+    bio: "Surfs first, texts later.",
+    details: {
+      job: "Technical writer",
+      school: "UC Santa Cruz",
+      height: "5'7\"",
+      languages: ["English", "Arabic"],
+    },
+    appearance: "Woman, late 20s, olive skin, long wavy dark hair, athletic build, white tank and wetsuit, foggy beach backdrop",
+    imagePrompt:
+      "Portrait of an adult woman in her late 20s with olive skin and long wavy dark hair, athletic build, white tank and wetsuit, on a foggy beach. Shot on iPhone, portrait mode. Fully clothed, no text, no watermark.",
+    promptExamples: ["I go crazy for", "Typical Sunday", "A hill I will die on"],
+    toneTags: ["dry", "grounded"],
+    redFlags: ["ghosts for waves"],
+    greenFlags: ["always has snacks"],
+  };
+
+  it("uses seed examples as calibration without leaking example names into the prompt body", async () => {
+    generateTextMock.mockResolvedValueOnce({
+      output: {
+        profile: {
+          displayName: "Jules",
+          backstory: "Backstory",
+          appearance: "Appearance",
+          age: 27,
+          location: "San Francisco",
+          bio: "Bio",
+          tagline: null,
+          prompts: [
+            { id: "p1", prompt: "Prompt 1", answer: "Answer 1" },
+            { id: "p2", prompt: "Prompt 2", answer: "Answer 2" },
+            { id: "p3", prompt: "Prompt 3", answer: "Answer 3" },
+          ],
+          details: {
+            job: "Designer",
+            school: null,
+            height: "5'8\"",
+            languages: ["English"],
+          },
+        },
+      },
+      usage: { inputTokens: 10, outputTokens: 20 },
+    });
+
+    await generatePersonaProfile("openai/test-model", "MAN", "WOMAN", [personaSeed]);
+
+    const request = generateTextMock.mock.calls.at(-1)?.[0];
+    expect(request.system).toContain("Invent a NEW first name");
+    expect(request.prompt).toContain("<avoid-names>");
+    expect(request.prompt).toContain("Randa");
+    expect(request.prompt).not.toContain("<name>Randa</name>");
+    expect(request.prompt).toContain("<appearance>");
+  });
+
+  it("includes profile appearance and portrait seeds when building the Fal prompt request", async () => {
+    generateTextMock.mockResolvedValueOnce({
+      output: {
+        prompt: "portrait prompt",
+      },
+      usage: { inputTokens: 10, outputTokens: 20 },
+    });
+
+    await generatePersonaPortraitPrompt(
+      "openai/test-model",
+      "WOMAN",
+      {
+        displayName: "Jules",
+        backstory: "Backstory",
+        appearance: "Woman, late 20s, short curly hair, leather jacket, amused half-smile, bar patio",
+        age: 27,
+        location: "Oakland",
+        bio: "Bio",
+        tagline: null,
+        prompts: [
+          { id: "p1", prompt: "Prompt 1", answer: "Answer 1" },
+          { id: "p2", prompt: "Prompt 2", answer: "Answer 2" },
+          { id: "p3", prompt: "Prompt 3", answer: "Answer 3" },
+        ],
+        details: {
+          job: "Bartender",
+          school: null,
+          height: "5'6\"",
+          languages: ["English"],
+        },
+      },
+      [personaSeed],
+    );
+
+    const request = generateTextMock.mock.calls.at(-1)?.[0];
+    expect(request.system).toContain("appearance field as the primary source of truth");
+    expect(request.prompt).toContain("<portrait-seeds>");
+    expect(request.prompt).toContain(personaSeed.imagePrompt);
+    expect(request.prompt).toContain("short curly hair");
   });
 });
 

@@ -74,6 +74,7 @@ export interface MatchSlopPersonaDetailsDraft {
 export interface MatchSlopProfile {
   displayName: string;
   backstory: string | null;
+  appearance?: string | null;
   age: number | null;
   location: string | null;
   bio: string;
@@ -85,6 +86,7 @@ export interface MatchSlopProfile {
 export interface MatchSlopProfileDraft {
   displayName?: string;
   backstory?: string | null;
+  appearance?: string | null;
   age?: number | null;
   location?: string | null;
   bio?: string | null;

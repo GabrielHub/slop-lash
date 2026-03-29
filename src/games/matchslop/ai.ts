@@ -17,7 +17,10 @@ import {
   type AiCallOptions,
   type AiUsage,
 } from "@/games/ai-chat-showdown/ai";
-import type { MatchSlopPersonaSeed } from "./config/persona-examples";
+import {
+  MATCHSLOP_PERSONA_EXAMPLES,
+  type MatchSlopPersonaSeed,
+} from "./config/persona-examples";
 import { parsePostMortemDraft, parseProfileDraft } from "./game-logic-core";
 import type {
   MatchSlopDecision,
@@ -70,6 +73,7 @@ const detailsSchema = z.object({
 const profileSchema = z.object({
   displayName: z.string(),
   backstory: z.string(),
+  appearance: z.string().nullable(),
   age: z.number().int().min(20).max(30).nullable(),
   location: z.string().nullable(),
   bio: z.string(),
@@ -125,6 +129,7 @@ function buildProfileXml(profile: MatchSlopProfile): string {
   return `<profile>
 <name>${escapeXml(profile.displayName)}</name>
 ${profile.backstory ? `<backstory>${escapeXml(profile.backstory)}</backstory>` : ""}
+${profile.appearance ? `<appearance>${escapeXml(profile.appearance)}</appearance>` : ""}
 ${profile.age != null ? `<age>${profile.age}</age>` : ""}
 ${profile.location ? `<location>${escapeXml(profile.location)}</location>` : ""}
 <bio>${escapeXml(profile.bio)}</bio>
@@ -158,6 +163,7 @@ function buildFallbackPortraitPrompt(
   return [
     `Photorealistic dating-app portrait of ${profile.displayName}.`,
     detailBits.join(", "),
+    profile.appearance ?? null,
     profile.backstory ?? profile.bio,
     "Single adult, casual chest-up framing, natural candid pose, expressive face. Shot on iPhone, portrait mode, ambient lighting.",
     languageBit,
@@ -173,14 +179,36 @@ function buildPersonaExamplesXml(personaExamples: MatchSlopPersonaSeed[]): strin
       (example) => `<example id="${escapeXml(example.id)}">
 <backstory>${escapeXml(example.backstory)}</backstory>
 <textingStyle>${escapeXml(example.textingStyle)}</textingStyle>
-<name>${escapeXml(example.name)}</name>
+<appearance>${escapeXml(example.appearance)}</appearance>
 <title>${escapeXml(example.title)}</title>
 <bio>${escapeXml(example.bio)}</bio>
 <details job="${escapeXml(example.details.job ?? "")}" school="${escapeXml(example.details.school ?? "")}" height="${escapeXml(example.details.height ?? "")}" languages="${escapeXml(example.details.languages.join(", "))}" />
 <promptExamples>${escapeXml(example.promptExamples.join(" | "))}</promptExamples>
+<toneTags>${escapeXml(example.toneTags.join(" | "))}</toneTags>
 </example>`,
     )
     .join("\n");
+}
+
+function buildPortraitExamplesXml(personaExamples: MatchSlopPersonaSeed[]): string {
+  return personaExamples
+    .map(
+      (example) => `<example id="${escapeXml(example.id)}">
+<appearance>${escapeXml(example.appearance)}</appearance>
+<imagePrompt>${escapeXml(example.imagePrompt)}</imagePrompt>
+</example>`,
+    )
+    .join("\n");
+}
+
+const AVOIDED_SEED_NAMES = new Map<string, string[]>();
+for (const e of MATCHSLOP_PERSONA_EXAMPLES) {
+  const list = AVOIDED_SEED_NAMES.get(e.identity) ?? [];
+  list.push(e.name);
+  AVOIDED_SEED_NAMES.set(e.identity, list);
+}
+for (const list of AVOIDED_SEED_NAMES.values()) {
+  list.sort((a, b) => a.localeCompare(b));
 }
 
 function buildPersonaProfileRequest({
@@ -190,6 +218,7 @@ function buildPersonaProfileRequest({
   personaExamples,
 }: PersonaProfileGenerationArgs) {
   const examplesXml = buildPersonaExamplesXml(personaExamples);
+  const avoidNames = AVOIDED_SEED_NAMES.get(personaIdentity) ?? [];
 
   return {
     model: gateway(modelId),
@@ -205,13 +234,18 @@ Backstory (3-5 sentences) MUST include:
 
 Derive everything else from the backstory.
 
+- The example personas are calibration only. Copy their level of specificity, not their facts.
+- Invent a NEW first name that does not appear in the avoid-names list.
+- Do not reuse or lightly remix a seed example's exact name, title, bio, job, appearance, prompt answer, or setting.
+- Make the combo of job, hobbies, texting habits, city/region, and visual vibe feel meaningfully different from the seed examples.
 - Age 20-30
+- Include an appearance field with concrete physical traits, styling, clothing, expression, and setting cues that a portrait prompt can later use
 - Bio under 220 characters, written the way THIS person would actually type it — not polished copywriting
 - 3 profile prompts with answers that sound like this person wrote them, in their voice
 - Include job, height, and languages (at least 1). school optional (null if omitted)
 - Authentic and specific — no hateful or sexual content
 - The persona reacts like a real person when players say weird things`,
-    prompt: `<persona-seeds>${examplesXml}</persona-seeds>`,
+    prompt: `<avoid-names>${escapeXml(avoidNames.join(" | "))}</avoid-names>\n<persona-seeds>${examplesXml}</persona-seeds>`,
     output: Output.object({
       schema: personaProfileGenerationSchema,
       name: "matchslop_profile_generation",
@@ -277,18 +311,23 @@ export async function generatePersonaPortraitPrompt(
   modelId: string,
   personaIdentity: MatchSlopIdentity,
   profile: MatchSlopProfile,
+  personaExamples: MatchSlopPersonaSeed[],
 ): Promise<{ prompt: string; usage: AiUsage; failReason: string | null }> {
   try {
+    const portraitExamplesXml = buildPortraitExamplesXml(personaExamples);
     const result = await generateText({
       model: gateway(modelId),
       system: `Write a dating-app portrait prompt from the given persona profile. The photo should look like a friend took it on their phone — candid, natural, not professionally lit or posed.
 
 - One adult, chest-up or waist-up, caught in a natural moment
+- Use the profile's appearance field as the primary source of truth for the subject's look
 - Ground appearance in the backstory, bio, and profile details
 - Concrete visual traits, clothing, and real-world setting over vague mood words
+- Preserve distinctive traits instead of smoothing them into a generic same-face dating-app portrait
+- Use the example prompts only to match specificity and structure. Do not copy their exact wording or visual content.
 - Natural ambient lighting only — no studio setups or professional rigs
 - End with: shot on iPhone, portrait mode. Fully clothed, no text, no watermark`,
-      prompt: `<persona-identity>${escapeXml(identityLabel(personaIdentity))}</persona-identity>\n${buildProfileXml(profile)}`,
+      prompt: `<persona-identity>${escapeXml(identityLabel(personaIdentity))}</persona-identity>\n<portrait-seeds>${portraitExamplesXml}</portrait-seeds>\n${buildProfileXml(profile)}`,
       output: Output.object({
         schema: portraitPromptSchema,
         name: "matchslop_portrait_prompt",
