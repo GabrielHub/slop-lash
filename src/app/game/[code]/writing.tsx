@@ -164,7 +164,7 @@ export function Writing({
           </div>
           {!game.timersDisabled && (
             <div className="mb-6">
-              <Timer deadline={game.phaseDeadline} total={WRITING_DURATION_SECONDS} />
+              <Timer deadline={game.phaseDeadline} serverNow={game.serverNow} total={WRITING_DURATION_SECONDS} />
             </div>
           )}
           {isHost && (
@@ -227,7 +227,7 @@ export function Writing({
         {/* Timer */}
         <div className="mb-8">
           {!game.timersDisabled && (
-            <Timer deadline={game.phaseDeadline} total={WRITING_DURATION_SECONDS} />
+            <Timer deadline={game.phaseDeadline} serverNow={game.serverNow} total={WRITING_DURATION_SECONDS} />
           )}
           {isHost && (
             <motion.button

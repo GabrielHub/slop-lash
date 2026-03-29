@@ -83,3 +83,26 @@ export function stripUnrevealedVotes<T extends MutableVotingGame>(game: T): void
     }
   }
 }
+
+type MutableMatchSlopGame = {
+  gameType: GameType;
+  status: string;
+  rounds: MutableRound[];
+};
+
+/**
+ * MatchSlop stage data is intended for the host display only.
+ * Non-host viewers should not receive live response payloads from the TV stream.
+ */
+export function redactMatchSlopActiveRound<T extends MutableMatchSlopGame>(game: T): void {
+  if (game.gameType !== "MATCHSLOP") return;
+  if (game.status === "LOBBY" || game.status === "FINAL_RESULTS") return;
+
+  const currentRound = game.rounds[0];
+  if (!currentRound) return;
+
+  for (const prompt of currentRound.prompts) {
+    prompt.responses = [];
+    prompt.votes = [];
+  }
+}

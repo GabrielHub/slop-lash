@@ -117,6 +117,7 @@ export interface GameState {
   id: string;
   roomCode: string;
   gameType: GameType;
+  serverNow?: string | null;
   personaModelId?: string | null;
   modeState?: Record<string, unknown> | null;
   status: GameStatus;

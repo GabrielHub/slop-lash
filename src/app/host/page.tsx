@@ -25,6 +25,7 @@ import { ErrorBanner } from "@/components/error-banner";
 import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { clearPlayerSession, setHostControlToken, setPlayerSession } from "@/lib/client-session";
 import { MATCHSLOP_IDENTITIES, type MatchSlopIdentity } from "@/games/matchslop/identities";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
@@ -227,23 +228,16 @@ export default function HostPage() {
         return;
       }
 
-      if (data.hostControlToken) {
-        localStorage.setItem("hostControlToken", data.hostControlToken);
-      }
+      setHostControlToken(data.hostControlToken ?? null);
       if (typeof data.hostPlayerId === "string") {
-        localStorage.setItem("playerId", data.hostPlayerId);
-        localStorage.setItem("playerName", hostName.trim());
+        setPlayerSession({
+          playerId: data.hostPlayerId,
+          playerName: hostName.trim(),
+          rejoinToken: data.rejoinToken ?? null,
+          playerType: data.hostPlayerType ?? null,
+        });
       } else {
-        localStorage.removeItem("playerId");
-        localStorage.removeItem("playerName");
-        localStorage.removeItem("playerType");
-        localStorage.removeItem("rejoinToken");
-      }
-      if (typeof data.hostPlayerType === "string") {
-        localStorage.setItem("playerType", data.hostPlayerType);
-      }
-      if (data.rejoinToken) {
-        localStorage.setItem("rejoinToken", data.rejoinToken);
+        clearPlayerSession();
       }
       router.push(
         typeof data.hostPlayerId !== "string"

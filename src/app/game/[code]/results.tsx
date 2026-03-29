@@ -526,6 +526,7 @@ export function Results({
                 </p>
                 <Timer
                   deadline={game.phaseDeadline}
+                  serverNow={game.serverNow}
                   total={ROUND_RESULTS_SECONDS}
                 />
                 <p className="mt-2 text-xs text-ink-dim">

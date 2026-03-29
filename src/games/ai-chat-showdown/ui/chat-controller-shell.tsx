@@ -23,7 +23,7 @@ import { MIN_PLAYERS } from "../game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
-import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
+import { getPlayerId, getPlayerToken, setPlayerSession, subscribeSession } from "@/lib/client-session";
 
 function phaseAccent(status: string) {
   switch (status) {
@@ -120,8 +120,8 @@ function PromptCard({ text }: { text: string }) {
 export function ChatControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
-  const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
+  const playerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
   const { gameState, error, refresh } = useControllerStream(code, playerToken);
   useScreenWakeLock(gameState != null);
 
@@ -168,7 +168,7 @@ export function ChatControllerShell({ code }: { code: string }) {
 
     rejoinAttempted.current = true;
     const token =
-      searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
+      searchParams.get("rejoin") ?? getPlayerToken();
     if (!token) return;
 
     setReconnecting(true);
@@ -180,10 +180,12 @@ export function ChatControllerShell({ code }: { code: string }) {
       .then(async (res) => {
         if (!res.ok) return;
         const data = await res.json();
-        localStorage.setItem("playerId", data.playerId);
-        localStorage.setItem("playerName", data.playerName);
-        localStorage.setItem("rejoinToken", token);
-        if (data.playerType) localStorage.setItem("playerType", data.playerType);
+        setPlayerSession({
+          playerId: data.playerId,
+          playerName: data.playerName,
+          rejoinToken: token,
+          playerType: data.playerType ?? null,
+        });
         refresh();
       })
       .catch(() => {

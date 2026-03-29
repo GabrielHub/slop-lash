@@ -21,7 +21,7 @@ import {
 import { TypingIndicator, ProgressCount } from "./matchslop-shared-ui";
 import { ProfileCard, type Outcome } from "./matchslop-game-shell";
 
-import { getPlayerId, getPlayerToken, noopSubscribe } from "@/lib/client-session";
+import { getPlayerId, getPlayerToken, setPlayerSession, subscribeSession } from "@/lib/client-session";
 
 function MatchHeader({
   roomCode,
@@ -720,8 +720,8 @@ function ControllerTranscript({
 export function MatchSlopControllerShell({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
-  const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
+  const playerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
   const { gameState, error, refresh } = useControllerStream(code, playerToken);
   useScreenWakeLock(gameState != null);
 
@@ -780,7 +780,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
     if (!needsRejoin) return;
 
     rejoinAttempted.current = true;
-    const token = searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
+    const token = searchParams.get("rejoin") ?? getPlayerToken();
     if (!token) {
       rejoinAttempted.current = false;
       return;
@@ -798,10 +798,12 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
           return;
         }
         const data = await res.json();
-        localStorage.setItem("playerId", data.playerId);
-        localStorage.setItem("playerName", data.playerName);
-        localStorage.setItem("rejoinToken", token);
-        if (data.playerType) localStorage.setItem("playerType", data.playerType);
+        setPlayerSession({
+          playerId: data.playerId,
+          playerName: data.playerName,
+          rejoinToken: token,
+          playerType: data.playerType ?? null,
+        });
         refresh();
       })
       .catch(() => {
@@ -1083,6 +1085,7 @@ export function MatchSlopControllerShell({ code }: { code: string }) {
                     <div className="flex-1">
                       <Timer
                         deadline={gameState.phaseDeadline}
+                        serverNow={gameState.serverNow}
                         total={getMatchSlopTimerTotal(gameState.status)}
                       />
                     </div>

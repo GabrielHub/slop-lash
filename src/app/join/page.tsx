@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { setPlayerSession } from "@/lib/client-session";
 
 const NAME_MAX_LENGTH = 20;
 
@@ -53,14 +54,12 @@ export default function JoinPage() {
         return;
       }
 
-      localStorage.setItem("playerId", data.playerId);
-      localStorage.setItem("playerName", name.trim());
-      if (data.rejoinToken) {
-        localStorage.setItem("rejoinToken", data.rejoinToken);
-      }
-      if (data.playerType) {
-        localStorage.setItem("playerType", data.playerType);
-      }
+      setPlayerSession({
+        playerId: data.playerId,
+        playerName: name.trim(),
+        rejoinToken: data.rejoinToken ?? null,
+        playerType: data.playerType ?? null,
+      });
       const targetRoute =
         controllerMode || data.gameType === "MATCHSLOP"
           ? `/controller/${code}`

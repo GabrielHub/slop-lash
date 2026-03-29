@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { popIn } from "@/lib/animations";
 
@@ -8,11 +8,12 @@ interface TimerProps {
   deadline: string | null;
   disabled?: boolean;
   total?: number;
+  serverNow?: string | null;
 }
 
-function computeRemaining(deadline: string | null): number {
+function computeRemaining(deadline: string | null, nowMs: number): number {
   if (!deadline) return 0;
-  return Math.max(0, Math.round((new Date(deadline).getTime() - Date.now()) / 1000));
+  return Math.max(0, Math.ceil((new Date(deadline).getTime() - nowMs) / 1000));
 }
 
 function getUrgency(pct: number): "urgent" | "warning" | "normal" {
@@ -21,25 +22,56 @@ function getUrgency(pct: number): "urgent" | "warning" | "normal" {
   return "normal";
 }
 
-export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) {
-  const total = useMemo(() => {
+export function Timer({ deadline, disabled, total: totalOverride, serverNow }: TimerProps) {
+  const syncRef = useRef({ receivedAtMs: 0, serverNowMs: 0 });
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [derivedTotal, setDerivedTotal] = useState(() => {
     if (totalOverride != null) return totalOverride;
-    const remaining = computeRemaining(deadline);
+    const remaining = computeRemaining(deadline, Date.now());
     return remaining > 45 ? 90 : 45;
+  });
+
+  const syncClock = useCallback(() => {
+    const clientNowMs = Date.now();
+    const nextNowMs =
+      syncRef.current.serverNowMs > 0
+        ? syncRef.current.serverNowMs + (clientNowMs - syncRef.current.receivedAtMs)
+        : clientNowMs;
+
+    setNowMs(nextNowMs);
+    if (totalOverride == null) {
+      const remaining = computeRemaining(deadline, nextNowMs);
+      setDerivedTotal(remaining > 45 ? 90 : 45);
+    }
   }, [deadline, totalOverride]);
 
-  // A tick counter that forces re-render every second, letting us derive remaining
-  const [, setTick] = useState(0);
+  const total = totalOverride ?? derivedTotal;
 
   useEffect(() => {
-    if (!deadline || disabled) return;
+    const timer = setTimeout(() => {
+      syncClock();
+    }, 0);
+    if (!deadline || disabled) {
+      return () => clearTimeout(timer);
+    }
 
-    const interval = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 1000);
+    const interval = setInterval(syncClock, 1000);
 
-    return () => clearInterval(interval);
-  }, [deadline, disabled]);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [deadline, disabled, syncClock]);
+
+  useEffect(() => {
+    if (!serverNow) return;
+
+    const parsedServerNowMs = new Date(serverNow).getTime();
+    if (Number.isNaN(parsedServerNowMs)) return;
+
+    syncRef.current.receivedAtMs = Date.now();
+    syncRef.current.serverNowMs = parsedServerNowMs;
+  }, [serverNow]);
 
   if (disabled) {
     return (
@@ -55,7 +87,7 @@ export function Timer({ deadline, disabled, total: totalOverride }: TimerProps) 
     );
   }
 
-  const remaining = computeRemaining(deadline);
+  const remaining = computeRemaining(deadline, nowMs);
   const pct = total > 0 ? (remaining / total) * 100 : 0;
   const isAdvancing = remaining === 0 && deadline != null;
   const urgency = getUrgency(pct);

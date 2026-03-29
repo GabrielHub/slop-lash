@@ -21,8 +21,15 @@ export async function GET(
     playerToken,
     findMeta: findControllerMeta,
     getStateKey: (meta) => String(meta.version),
-    loadState: ({ roomCode: currentRoomCode, meta, playerId }) =>
-      findControllerPayload(currentRoomCode, playerId, meta.version, meta.status),
+    loadState: async ({ roomCode: currentRoomCode, meta, playerId }) => {
+      const state = await findControllerPayload(currentRoomCode, playerId, meta.version, meta.status);
+      if (!state) return null;
+
+      return {
+        ...state,
+        serverNow: new Date().toISOString(),
+      };
+    },
     touchHeartbeat: async ({ meta, currentPlayerId, roomCode: currentRoomCode }) => {
       if (!currentPlayerId) return false;
 

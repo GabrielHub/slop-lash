@@ -333,6 +333,7 @@ export function Voting({
                 {!game.timersDisabled && (
                   <Timer
                     deadline={game.phaseDeadline}
+                    serverNow={game.serverNow}
                     total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
                   />
                 )}
@@ -537,6 +538,7 @@ function HostDisplay({
           <div className="max-w-md mx-auto mb-8">
             <Timer
               deadline={game.phaseDeadline}
+              serverNow={game.serverNow}
               total={isRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS}
             />
           </div>

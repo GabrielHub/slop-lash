@@ -26,7 +26,14 @@ import { useChatParticles, ChatParticleLayer } from "./chat-particles";
 import { useGameStream } from "@/hooks/use-game-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 
-import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from "@/lib/client-session";
+import {
+  getPlayerId,
+  getPlayerToken,
+  getHostControlToken,
+  setHostControlToken,
+  setPlayerSession,
+  subscribeSession,
+} from "@/lib/client-session";
 
 /* ─── Shared animation configs ─── */
 
@@ -411,12 +418,20 @@ export function ChatGameShell({
   viewMode?: "game" | "stage";
 }) {
   const searchParams = useSearchParams();
-  const playerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
-  const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
+  const storedPlayerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
+  const storedHostControlToken = useSyncExternalStore(subscribeSession, getHostControlToken, () => null);
+  const urlHostToken = viewMode === "stage" ? searchParams.get("token") : null;
+  const hostControlToken = urlHostToken ?? storedHostControlToken;
+  const playerId = viewMode === "stage" ? null : storedPlayerId;
   const { gameState, error, refresh } = useGameStream(code, playerToken, hostControlToken, viewMode);
   useScreenWakeLock(gameState != null);
   const { triggerElement } = usePixelDissolve();
+
+  useEffect(() => {
+    if (viewMode !== "stage" || !urlHostToken) return;
+    setHostControlToken(urlHostToken);
+  }, [urlHostToken, viewMode]);
 
   // Optimistic chat
   const chatEnabled = !!gameState && gameState.status !== "FINAL_RESULTS";
@@ -551,11 +566,12 @@ export function ChatGameShell({
 
   // Rejoin attempt
   useEffect(() => {
+    if (viewMode === "stage") return;
     if (!gameState || rejoinAttempted.current) return;
     const inGame = gameState.players.some((p) => p.id === playerId);
     if (inGame || !playerId) return;
     rejoinAttempted.current = true;
-    const token = searchParams.get("rejoin") ?? localStorage.getItem("rejoinToken");
+    const token = searchParams.get("rejoin") ?? getPlayerToken();
     if (!token) return;
 
     setReconnecting(true);
@@ -567,15 +583,18 @@ export function ChatGameShell({
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
-          localStorage.setItem("playerId", data.playerId);
-          localStorage.setItem("playerName", data.playerName);
-          localStorage.setItem("rejoinToken", token);
+          setPlayerSession({
+            playerId: data.playerId,
+            playerName: data.playerName,
+            rejoinToken: token,
+            playerType: null,
+          });
           refresh();
         }
       })
       .catch(() => { rejoinAttempted.current = false; })
       .finally(() => setReconnecting(false));
-  }, [gameState, playerId, code, searchParams, refresh]);
+  }, [gameState, playerId, code, searchParams, refresh, viewMode]);
 
   // Auto-scroll feed
   useEffect(() => {

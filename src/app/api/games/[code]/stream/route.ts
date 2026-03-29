@@ -1,8 +1,9 @@
 import { publishGameStateEvent } from "@/lib/realtime-events";
+import { hashHostControlToken } from "@/lib/host-control";
 import { shouldEndGameStream } from "@/lib/game-stream-lifecycle";
 import type { GameMetaPayload } from "../route-data";
 import { findGameMeta, findGamePayloadByStatus, normalizePayload } from "../route-data";
-import { stripUnrevealedVotes } from "../route-helpers";
+import { redactMatchSlopActiveRound, stripUnrevealedVotes } from "../route-helpers";
 import { HEARTBEAT_MIN_INTERVAL_MS } from "../sse-helpers";
 import { createStateStreamResponse } from "../state-stream";
 import { touchStreamHeartbeat } from "../stream-maintenance";
@@ -22,6 +23,7 @@ export async function GET(
   const url = new URL(request.url);
   const playerToken = url.searchParams.get("playerToken");
   const hostToken = url.searchParams.get("hostToken");
+  const hostTokenHash = hostToken ? hashHostControlToken(hostToken) : null;
 
   return createStateStreamResponse({
     request,
@@ -31,16 +33,28 @@ export async function GET(
     findMeta: findGameMeta,
     getStateKey,
     shouldEndStream: shouldEndGameStream,
-    loadState: async ({ roomCode: currentRoomCode, meta, stateKey }) => {
+    loadState: async ({ roomCode: currentRoomCode, meta, playerId, stateKey }) => {
       const game = await findGamePayloadByStatus(currentRoomCode, meta.status, stateKey);
       if (!game) return null;
 
       const normalized = structuredClone(normalizePayload(game));
+      const canViewPrivilegedStageData =
+        (playerId != null && playerId === meta.hostPlayerId) ||
+        (!!hostTokenHash &&
+          !!meta.hostControlTokenHash &&
+          hostTokenHash === meta.hostControlTokenHash);
+
       if (normalized.status !== "FINAL_RESULTS") {
         stripUnrevealedVotes(normalized);
+        if (!canViewPrivilegedStageData) {
+          redactMatchSlopActiveRound(normalized);
+        }
       }
 
-      return normalized;
+      return {
+        ...normalized,
+        serverNow: new Date().toISOString(),
+      };
     },
     touchHeartbeat: async ({ meta, currentPlayerId, roomCode: currentRoomCode, hostToken: currentHostToken }) => {
       const stateChanged = await touchStreamHeartbeat({

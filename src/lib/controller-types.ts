@@ -92,6 +92,7 @@ export interface ControllerGameState {
   id: string;
   roomCode: string;
   gameType: GameType;
+  serverNow?: string | null;
   status: GameStatus;
   currentRound: number;
   totalRounds: number;

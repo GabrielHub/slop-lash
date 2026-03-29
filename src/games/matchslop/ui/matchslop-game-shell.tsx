@@ -180,7 +180,13 @@ const EMPTY_TRANSCRIPT: MatchSlopTranscriptEntry[] = [];
 
 /* ─── Helpers ─── */
 
-import { getPlayerId, getPlayerToken, getHostControlToken, noopSubscribe } from "@/lib/client-session";
+import {
+  getPlayerId,
+  getPlayerToken,
+  getHostControlToken,
+  setHostControlToken,
+  subscribeSession,
+} from "@/lib/client-session";
 
 function asModeState(state: GameState["modeState"] | undefined): MatchSlopModeState {
   return (state ?? {}) as MatchSlopModeState;
@@ -1943,6 +1949,7 @@ function PhaseStatusCard({
                   <div className="flex-1">
                     <Timer
                       deadline={gameState.phaseDeadline}
+                      serverNow={gameState.serverNow}
                       disabled={gameState.timersDisabled}
                       total={getMatchSlopTimerTotal(gameState.status)}
                     />
@@ -2280,9 +2287,11 @@ export function MatchSlopGameShell({
   viewMode?: "game" | "stage";
 }) {
   const searchParams = useSearchParams();
-  const storedPlayerId = useSyncExternalStore(noopSubscribe, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(noopSubscribe, getPlayerToken, () => null);
-  const hostControlToken = useSyncExternalStore(noopSubscribe, getHostControlToken, () => null);
+  const storedPlayerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
+  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
+  const storedHostControlToken = useSyncExternalStore(subscribeSession, getHostControlToken, () => null);
+  const urlHostToken = viewMode === "stage" ? searchParams.get("token") : null;
+  const hostControlToken = urlHostToken ?? storedHostControlToken;
   const { triggerElement } = usePixelDissolve();
   const playerId = viewMode === "stage" ? null : storedPlayerId;
   const { gameState, error } = useGameStream(
@@ -2307,12 +2316,9 @@ export function MatchSlopGameShell({
   const prevVoteCountRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (viewMode !== "stage") return;
-    const urlToken = searchParams.get("token");
-    if (urlToken) {
-      localStorage.setItem("hostControlToken", urlToken);
-    }
-  }, [searchParams, viewMode]);
+    if (viewMode !== "stage" || !urlHostToken) return;
+    setHostControlToken(urlHostToken);
+  }, [urlHostToken, viewMode]);
 
   // Auto-scroll transcript
   const modeState = asModeState(gameState?.modeState);
