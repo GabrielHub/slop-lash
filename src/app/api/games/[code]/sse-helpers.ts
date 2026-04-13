@@ -11,3 +11,7 @@ export const SSE_HEADERS = {
 export function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
+
+export function sseHeartbeat(now = Date.now()): string {
+  return sseEvent("heartbeat", { serverNow: new Date(now).toISOString() });
+}

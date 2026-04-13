@@ -7,6 +7,7 @@ import {
   HEARTBEAT_MIN_INTERVAL_MS,
   SSE_HEADERS,
   SSE_KEEPALIVE_INTERVAL_MS,
+  sseHeartbeat,
   sseEvent,
 } from "./sse-helpers";
 
@@ -87,7 +88,7 @@ export function createStateStreamResponse<
       function sendKeepalive() {
         const now = Date.now();
         if (now - lastKeepaliveAt >= SSE_KEEPALIVE_INTERVAL_MS) {
-          enqueue(": ping\n\n");
+          enqueue(sseHeartbeat(now));
           lastKeepaliveAt = now;
         }
       }

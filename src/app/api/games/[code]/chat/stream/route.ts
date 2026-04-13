@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { waitForRealtimeEvent } from "@/lib/realtime-events";
-import { sseEvent, SSE_HEADERS, SSE_KEEPALIVE_INTERVAL_MS } from "../../sse-helpers";
+import { sseEvent, sseHeartbeat, SSE_HEADERS, SSE_KEEPALIVE_INTERVAL_MS } from "../../sse-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +116,7 @@ export async function GET(
       function sendKeepalive() {
         const now = Date.now();
         if (now - lastKeepaliveAt >= SSE_KEEPALIVE_INTERVAL_MS) {
-          enqueue(": ping\n\n");
+          enqueue(sseHeartbeat(now));
           lastKeepaliveAt = now;
         }
       }
