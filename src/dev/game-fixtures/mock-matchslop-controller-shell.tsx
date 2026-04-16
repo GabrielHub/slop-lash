@@ -3,13 +3,28 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { MockEventSource } from "./mock-event-source";
+import { MockMatchSlopDebugPanel } from "./mock-matchslop-debug-panel";
+import {
+  advanceMockMatchSlopGame,
+  createMockMatchSlopSharedState,
+  endMockMatchSlopGame,
+  makeMockCode,
+  mutateSharedMatchSlopState,
+  readSharedMatchSlopState,
+  recordMockMatchSlopResponse,
+  resetSharedMatchSlopState,
+  startMockMatchSlopGame,
+  subscribeToSharedMatchSlopState,
+  voteMockMatchSlopResponse,
+} from "./mock-matchslop-state";
 import { MatchSlopControllerShell } from "@/games/matchslop/ui/matchslop-controller-shell";
 import type { ControllerGameState } from "@/lib/controller-types";
-import type { GameResponse, GameState } from "@/lib/types";
+import type { GameState } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
-import { getComebackRound, getMockScenario, type MockScenario } from "./scenarios";
+import type { MockScenario } from "./scenarios";
 
 interface MockMatchSlopControllerShellProps {
+  clientLabel?: string;
   scenario: MockScenario;
   previousSlug?: string;
   nextSlug?: string;
@@ -65,10 +80,6 @@ type MatchSlopModeState = {
   mood?: number;
 };
 
-function cloneGame(game: GameState): GameState {
-  return structuredClone(game);
-}
-
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -78,10 +89,6 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function futureDeadline(seconds: number): string {
-  return new Date(Date.now() + seconds * 1000).toISOString();
 }
 
 function parseUrl(input: RequestInfo | URL): URL {
@@ -102,28 +109,8 @@ async function parseJsonBody(init?: RequestInit): Promise<JsonObject> {
   return {};
 }
 
-function omitScore(player: GameState["players"][number]): GameResponse["player"] {
-  const { score, ...rest } = player;
-  void score;
-  return rest;
-}
-
 function asMatchSlopModeState(game: GameState): MatchSlopModeState {
   return (game.modeState ?? {}) as MatchSlopModeState;
-}
-
-function withScenarioGame(
-  slug: string,
-  patch?: (game: GameState) => GameState,
-): GameState | null {
-  const found = getMockScenario(slug);
-  if (!found) return null;
-  const next = cloneGame(found.game);
-  return patch ? patch(next) : next;
-}
-
-function makeMockCode(slug: string): string {
-  return `mock-${slug}`;
 }
 
 function deriveControllerState(
@@ -307,21 +294,6 @@ function deriveControllerState(
   };
 }
 
-function mergeRoundResponses(currentGame: GameState, fixture: GameState) {
-  const currentPrompt = currentGame.rounds[0]?.prompts[0];
-  const fixturePrompt = fixture.rounds[0]?.prompts[0];
-  if (!currentPrompt || !fixturePrompt || currentPrompt.responses.length === 0) {
-    return fixture;
-  }
-
-  const responseIds = new Set(currentPrompt.responses.map((response) => response.playerId));
-  fixturePrompt.responses = [
-    ...currentPrompt.responses,
-    ...fixturePrompt.responses.filter((response) => !responseIds.has(response.playerId)),
-  ];
-  return fixture;
-}
-
 function syncMockViewer(game: GameState, playerId: string | null, hostPlayerId: string | null) {
   if (playerId) {
     const player = game.players.find((entry) => entry.id === playerId);
@@ -344,12 +316,14 @@ function syncMockViewer(game: GameState, playerId: string | null, hostPlayerId: 
 }
 
 export function MockMatchSlopControllerShell({
+  clientLabel = "controller",
   scenario,
   previousSlug,
   nextSlug,
 }: MockMatchSlopControllerShellProps) {
-  const [game, setGame] = useState<GameState>(() => cloneGame(scenario.game));
-  const [actionLog, setActionLog] = useState<string[]>([]);
+  const [sharedState, setSharedState] = useState(() =>
+    createMockMatchSlopSharedState(scenario.game),
+  );
   const [storageReady, setStorageReady] = useState(false);
   const humanPlayers = useMemo(
     () => scenario.game.players.filter((player) => player.type === "HUMAN"),
@@ -359,6 +333,8 @@ export function MockMatchSlopControllerShell({
   const [viewerPlayerId, setViewerPlayerId] = useState<string | null>(
     scenario.playerId ?? hostPlayerId,
   );
+  const game = sharedState.game;
+  const actionLog = sharedState.actionLog;
   const mockCode = makeMockCode(scenario.slug);
   const gameRef = useRef(game);
   const controllerStreamsRef = useRef(new Set<ControllerStreamEntry>());
@@ -368,11 +344,10 @@ export function MockMatchSlopControllerShell({
   }, [game]);
 
   useEffect(() => {
-    setGame(cloneGame(scenario.game));
-    setActionLog([]);
-    setStorageReady(false);
+    setSharedState(readSharedMatchSlopState(scenario.slug, scenario.game));
     setViewerPlayerId(scenario.playerId ?? hostPlayerId);
-  }, [scenario, hostPlayerId]);
+    return subscribeToSharedMatchSlopState(scenario.slug, scenario.game, setSharedState);
+  }, [hostPlayerId, scenario.game, scenario.playerId, scenario.slug]);
 
   useLayoutEffect(() => {
     syncMockViewer(game, viewerPlayerId, hostPlayerId);
@@ -395,17 +370,10 @@ export function MockMatchSlopControllerShell({
       const body = await parseJsonBody(init);
       await delay(120);
 
-      const log = (label: string) =>
-        setActionLog((prev) => [`${new Date().toLocaleTimeString()}: ${label}`, ...prev].slice(0, 8));
-
       if (method === "POST" && endpoint === "/start") {
-        log("start");
-        const next = withScenarioGame("matchslop-writing", (fixture) => ({
-          ...fixture,
-          currentRound: gameRef.current.currentRound,
-          totalRounds: gameRef.current.totalRounds,
-        }));
-        if (next) setGame(next);
+        setSharedState(
+          mutateSharedMatchSlopState(scenario.slug, scenario.game, "start", startMockMatchSlopGame),
+        );
         return jsonResponse({ ok: true });
       }
 
@@ -423,30 +391,21 @@ export function MockMatchSlopControllerShell({
           return jsonResponse({ error: "Invalid response payload" }, 400);
         }
 
-        log(`respond (${promptId})`);
-        setGame((prev) => {
-          const next = cloneGame(prev);
-          const prompt = next.rounds[0]?.prompts.find((entry) => entry.id === promptId);
-          const player = next.players.find((entry) => entry.id === responderId);
-          if (!prompt || !player) return prev;
-          if (prompt.responses.some((response) => response.playerId === responderId)) {
-            return next;
-          }
-
-          prompt.responses.push({
-            id: `match-response-${Date.now()}`,
-            promptId,
-            playerId: responderId,
-            metadata: { selectedPromptId },
-            text,
-            pointsEarned: 0,
-            failReason: null,
-            reactions: [],
-            player: omitScore(player),
-          });
-          next.version += 1;
-          return next;
-        });
+        setSharedState(
+          mutateSharedMatchSlopState(
+            scenario.slug,
+            scenario.game,
+            `respond (${promptId})`,
+            (currentGame) =>
+              recordMockMatchSlopResponse(
+                currentGame,
+                promptId,
+                responderId,
+                text,
+                selectedPromptId,
+              ),
+          ),
+        );
         return jsonResponse({ ok: true });
       }
 
@@ -459,127 +418,35 @@ export function MockMatchSlopControllerShell({
           return jsonResponse({ error: "Invalid vote payload" }, 400);
         }
 
-        const prompt = gameRef.current.rounds[0]?.prompts.find((entry) => entry.id === promptId);
-        const ownResponse = prompt?.responses.find((response) => response.playerId === voterId) ?? null;
-        if (ownResponse && ownResponse.id === responseId) {
-          return jsonResponse({ error: "Cannot vote for yourself" }, 400);
+        const voteResult = voteMockMatchSlopResponse(gameRef.current, promptId, voterId, responseId);
+        if (voteResult.error) {
+          return jsonResponse({ error: voteResult.error }, 400);
         }
 
-        log(`vote (${promptId})`);
-        setGame((prev) => {
-          const next = cloneGame(prev);
-          const nextPrompt = next.rounds[0]?.prompts.find((entry) => entry.id === promptId);
-          const voter = next.players.find((entry) => entry.id === voterId);
-          if (!nextPrompt || !voter) return prev;
-          if (nextPrompt.votes.some((vote) => vote.voterId === voterId)) {
-            return next;
-          }
-
-          nextPrompt.votes.push({
-            id: `match-vote-${Date.now()}`,
-            promptId,
-            voterId,
-            responseId,
-            failReason: null,
-            voter: { id: voterId, type: voter.type },
-          });
-          next.version += 1;
-          return next;
-        });
+        setSharedState(
+          mutateSharedMatchSlopState(scenario.slug, scenario.game, `vote (${promptId})`, () => {
+            return voteResult.game;
+          }),
+        );
         return jsonResponse({ ok: true });
       }
 
       if (method === "POST" && endpoint === "/next") {
-        log(`next (${gameRef.current.status})`);
-        const currentGame = gameRef.current;
-        const comebackRound = getComebackRound(currentGame);
-        const isComebackRound =
-          comebackRound != null && currentGame.currentRound === comebackRound;
-
-        if (currentGame.status === "WRITING") {
-          const votingSlug = isComebackRound
-            ? "matchslop-comeback-voting"
-            : currentGame.currentRound === 1
-              ? "matchslop-voting"
-              : "matchslop-follow-up-voting";
-          const next = withScenarioGame(votingSlug, (fixture) =>
-            mergeRoundResponses(currentGame, {
-              ...fixture,
-              currentRound: currentGame.currentRound,
-              totalRounds: currentGame.totalRounds,
-              modeState: {
-                ...fixture.modeState,
-                comebackRound,
-              },
-            }),
-          );
-          if (next) setGame(next);
-          return jsonResponse({ ok: true });
-        }
-
-        if (currentGame.status === "VOTING" && !currentGame.votingRevealing) {
-          setGame((prev) => ({
-            ...cloneGame(prev),
-            phaseDeadline: futureDeadline(8),
-            version: prev.version + 1,
-            votingRevealing: true,
-          }));
-          return jsonResponse({ ok: true });
-        }
-
-        if (currentGame.status === "VOTING") {
-          const next = withScenarioGame(
-            isComebackRound
-              ? "matchslop-comeback-results"
-              : currentGame.currentRound >= currentGame.totalRounds
-                ? "matchslop-results-unmatched"
-                : "matchslop-results",
-            (fixture) => ({
-              ...fixture,
-              currentRound: currentGame.currentRound,
-              totalRounds: currentGame.totalRounds,
-              modeState: {
-                ...fixture.modeState,
-                comebackRound,
-              },
-            }),
-          );
-          if (next) setGame(next);
-          return jsonResponse({ ok: true });
-        }
-
-        if (currentGame.status === "ROUND_RESULTS") {
-          const next = withScenarioGame(
-            isComebackRound
-              ? "matchslop-final-comeback"
-              : currentGame.currentRound >= currentGame.totalRounds
-                ? "matchslop-comeback-writing"
-                : "matchslop-follow-up-writing",
-            (fixture) => ({
-              ...fixture,
-              currentRound:
-                isComebackRound || currentGame.currentRound >= currentGame.totalRounds
-                  ? currentGame.currentRound
-                  : currentGame.currentRound + 1,
-              totalRounds: currentGame.totalRounds,
-              modeState: {
-                ...fixture.modeState,
-                comebackRound:
-                  isComebackRound ? comebackRound : currentGame.currentRound + 1,
-              },
-            }),
-          );
-          if (next) setGame(next);
-          return jsonResponse({ ok: true });
-        }
-
+        setSharedState(
+          mutateSharedMatchSlopState(
+            scenario.slug,
+            scenario.game,
+            `next (${gameRef.current.status})`,
+            advanceMockMatchSlopGame,
+          ),
+        );
         return jsonResponse({ ok: true });
       }
 
       if (method === "POST" && endpoint === "/end") {
-        log("end");
-        const next = withScenarioGame("matchslop-final");
-        if (next) setGame(next);
+        setSharedState(
+          mutateSharedMatchSlopState(scenario.slug, scenario.game, "end", endMockMatchSlopGame),
+        );
         return jsonResponse({ ok: true });
       }
 
@@ -637,7 +504,7 @@ export function MockMatchSlopControllerShell({
       }
       controllerStreams.clear();
     };
-  }, [hostPlayerId, mockCode, viewerPlayerId]);
+  }, [hostPlayerId, mockCode, scenario.game, scenario.slug, viewerPlayerId]);
 
   useEffect(() => {
     for (const entry of controllerStreamsRef.current) {
@@ -702,8 +569,7 @@ export function MockMatchSlopControllerShell({
           <button
             type="button"
             onClick={() => {
-              setGame(cloneGame(scenario.game));
-              setActionLog([]);
+              setSharedState(resetSharedMatchSlopState(scenario.slug, scenario.game));
               setStorageReady(false);
             }}
             className="rounded-xl border border-edge px-3 py-2 text-xs text-ink-dim hover:border-edge-strong hover:text-ink"
@@ -732,6 +598,14 @@ export function MockMatchSlopControllerShell({
             {actionLog.join("  •  ")}
           </p>
         )}
+      </div>
+
+      <div className="pointer-events-none fixed left-4 top-4 z-[80] w-full max-w-md">
+        <MockMatchSlopDebugPanel
+          clientLabel={clientLabel}
+          scenarioSlug={scenario.slug}
+          sharedState={sharedState}
+        />
       </div>
     </div>
   );

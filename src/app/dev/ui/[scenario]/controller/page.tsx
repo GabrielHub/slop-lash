@@ -4,10 +4,13 @@ import { MATCHSLOP_SCENARIOS, getMockScenario } from "@/dev/game-fixtures/scenar
 
 export default async function DevUiMatchSlopControllerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ scenario: string }>;
+  searchParams: Promise<{ client?: string }>;
 }) {
   const { scenario: slug } = await params;
+  const { client } = await searchParams;
   const scenario = getMockScenario(slug);
 
   if (!scenario || scenario.game.gameType !== "MATCHSLOP") {
@@ -23,6 +26,7 @@ export default async function DevUiMatchSlopControllerPage({
 
   return (
     <MockMatchSlopControllerShell
+      clientLabel={client}
       key={slug}
       scenario={scenario}
       previousSlug={previousSlug}

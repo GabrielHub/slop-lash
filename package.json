@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:ui:matchslop-sync": "playwright test -c playwright.dev-ui.config.ts src/dev/game-fixtures/matchslop-sync.spec.ts",
     "check": "pnpm lint && pnpm typecheck",
     "check:theme-colors": "node scripts/check-theme-colors.mjs",
     "prepare": "husky"
@@ -37,6 +38,7 @@
     ]
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20.19.39",

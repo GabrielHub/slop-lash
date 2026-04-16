@@ -3,19 +3,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { MockEventSource } from "./mock-event-source";
+import { MockMatchSlopDebugPanel } from "./mock-matchslop-debug-panel";
+import {
+  advanceMockMatchSlopGame,
+  createMockMatchSlopSharedState,
+  endMockMatchSlopGame,
+  makeMockCode,
+  mutateSharedMatchSlopState,
+  readSharedMatchSlopState,
+  resetSharedMatchSlopState,
+  startMockMatchSlopGame,
+  subscribeToSharedMatchSlopState,
+} from "./mock-matchslop-state";
 import { MatchSlopGameShell } from "@/games/matchslop/ui/matchslop-game-shell";
-import type { GameState } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
-import { getComebackRound, getMockScenario, type MockScenario } from "./scenarios";
+import type { MockScenario } from "./scenarios";
 
 interface MockMatchSlopGameShellProps {
+  clientLabel?: string;
   scenario: MockScenario;
   previousSlug?: string;
   nextSlug?: string;
-}
-
-function cloneGame(game: GameState): GameState {
-  return structuredClone(game);
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -35,28 +43,18 @@ function parseUrl(input: RequestInfo | URL): URL {
   return new URL(input.url, window.location.origin);
 }
 
-function withScenarioGame(
-  slug: string,
-  patch?: (game: GameState) => GameState,
-): GameState | null {
-  const found = getMockScenario(slug);
-  if (!found) return null;
-  const next = cloneGame(found.game);
-  return patch ? patch(next) : next;
-}
-
-function makeMockCode(slug: string): string {
-  return `mock-${slug}`;
-}
-
 export function MockMatchSlopGameShell({
+  clientLabel = "stage",
   scenario,
   previousSlug,
   nextSlug,
 }: MockMatchSlopGameShellProps) {
-  const [game, setGame] = useState<GameState>(() => cloneGame(scenario.game));
-  const [actionLog, setActionLog] = useState<string[]>([]);
+  const [sharedState, setSharedState] = useState(() =>
+    createMockMatchSlopSharedState(scenario.game),
+  );
   const [storageReady, setStorageReady] = useState(false);
+  const game = sharedState.game;
+  const actionLog = sharedState.actionLog;
   const mockCode = makeMockCode(scenario.slug);
   const gameRef = useRef(game);
   const stateStreamsRef = useRef(new Set<MockEventSource>());
@@ -64,6 +62,11 @@ export function MockMatchSlopGameShell({
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
+
+  useEffect(() => {
+    setSharedState(readSharedMatchSlopState(scenario.slug, scenario.game));
+    return subscribeToSharedMatchSlopState(scenario.slug, scenario.game, setSharedState);
+  }, [scenario.game, scenario.slug]);
 
   useLayoutEffect(() => {
     localStorage.setItem("hostControlToken", "mock-matchslop-host");
@@ -85,93 +88,29 @@ export function MockMatchSlopGameShell({
       const method = (init?.method ?? "GET").toUpperCase();
       await delay(120);
 
-      const log = (label: string) =>
-        setActionLog((prev) => [`${new Date().toLocaleTimeString()}: ${label}`, ...prev].slice(0, 8));
-
       if (method === "POST" && endpoint === "/start") {
-        log("start");
-        const next = withScenarioGame("matchslop-writing", (fixture) => ({
-          ...fixture,
-          currentRound: gameRef.current.currentRound,
-          totalRounds: gameRef.current.totalRounds,
-        }));
-        if (next) setGame(next);
+        setSharedState(
+          mutateSharedMatchSlopState(scenario.slug, scenario.game, "start", startMockMatchSlopGame),
+        );
         return jsonResponse({ ok: true });
       }
 
       if (method === "POST" && endpoint === "/next") {
-        log(`next (${gameRef.current.status})`);
-        const currentGame = gameRef.current;
-        const comebackRound = getComebackRound(currentGame);
-        const isComebackRound =
-          comebackRound != null && currentGame.currentRound === comebackRound;
-        let next: GameState | null = null;
-
-        if (currentGame.status === "WRITING") {
-          const votingSlug = isComebackRound
-            ? "matchslop-comeback-voting"
-            : currentGame.currentRound === 1
-              ? "matchslop-voting"
-              : "matchslop-follow-up-voting";
-          next = withScenarioGame(votingSlug, (fixture) => ({
-            ...fixture,
-            currentRound: currentGame.currentRound,
-            totalRounds: currentGame.totalRounds,
-            modeState: {
-              ...fixture.modeState,
-              comebackRound,
-            },
-          }));
-        } else if (currentGame.status === "VOTING") {
-          next = withScenarioGame(
-            isComebackRound
-              ? "matchslop-comeback-results"
-              : currentGame.currentRound >= currentGame.totalRounds
-                ? "matchslop-results-unmatched"
-                : "matchslop-results",
-            (fixture) => ({
-              ...fixture,
-              currentRound: currentGame.currentRound,
-              totalRounds: currentGame.totalRounds,
-              modeState: {
-                ...fixture.modeState,
-                comebackRound,
-              },
-            }),
-          );
-        } else if (currentGame.status === "ROUND_RESULTS") {
-          next = withScenarioGame(
-            isComebackRound
-              ? "matchslop-final-comeback"
-              : currentGame.currentRound >= currentGame.totalRounds
-                ? "matchslop-comeback-writing"
-                : "matchslop-follow-up-writing",
-            (fixture) => ({
-              ...fixture,
-              currentRound:
-                isComebackRound || currentGame.currentRound >= currentGame.totalRounds
-                  ? currentGame.currentRound
-                  : currentGame.currentRound + 1,
-              totalRounds: currentGame.totalRounds,
-              modeState: {
-                ...fixture.modeState,
-                comebackRound:
-                  isComebackRound ? comebackRound : currentGame.currentRound + 1,
-              },
-            }),
-          );
-        } else if (currentGame.status === "FINAL_RESULTS") {
-          next = withScenarioGame("matchslop-final");
-        }
-
-        if (next) setGame(next);
+        setSharedState(
+          mutateSharedMatchSlopState(
+            scenario.slug,
+            scenario.game,
+            `next (${gameRef.current.status})`,
+            advanceMockMatchSlopGame,
+          ),
+        );
         return jsonResponse({ ok: true });
       }
 
       if (method === "POST" && endpoint === "/end") {
-        log("end");
-        const next = withScenarioGame("matchslop-final");
-        if (next) setGame(next);
+        setSharedState(
+          mutateSharedMatchSlopState(scenario.slug, scenario.game, "end", endMockMatchSlopGame),
+        );
         return jsonResponse({ ok: true });
       }
 
@@ -215,7 +154,7 @@ export function MockMatchSlopGameShell({
       }
       stateStreams.clear();
     };
-  }, [mockCode]);
+  }, [mockCode, scenario.game, scenario.slug]);
 
   useEffect(() => {
     for (const stream of stateStreamsRef.current) {
@@ -271,8 +210,7 @@ export function MockMatchSlopGameShell({
             <button
               type="button"
               onClick={() => {
-                setGame(cloneGame(scenario.game));
-                setActionLog([]);
+                setSharedState(resetSharedMatchSlopState(scenario.slug, scenario.game));
               }}
               className="cursor-pointer rounded-md border border-edge px-2 py-1 text-ink-dim hover:border-edge-strong hover:text-ink"
             >
@@ -307,6 +245,14 @@ export function MockMatchSlopGameShell({
 
       <div className="min-h-0 flex-1 overflow-hidden [&>div]:h-full [&>main]:h-full">
         {storageReady ? <MatchSlopGameShell code={mockCode} viewMode="stage" /> : null}
+      </div>
+
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[80] w-full max-w-md px-4">
+        <MockMatchSlopDebugPanel
+          clientLabel={clientLabel}
+          scenarioSlug={scenario.slug}
+          sharedState={sharedState}
+        />
       </div>
     </div>
   );
