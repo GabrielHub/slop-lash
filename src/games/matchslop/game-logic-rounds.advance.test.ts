@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks } = vi.hoisted(() => ({
+const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks, lockMocks } = vi.hoisted(() => ({
   prismaMock: {
     game: {
       findUnique: vi.fn(),
       update: vi.fn(),
-      updateMany: vi.fn(),
     },
     round: {
       create: vi.fn(),
@@ -52,9 +51,13 @@ const { prismaMock, txMock, aiMocks, coreMocks, sloplashLogicMocks } = vi.hoiste
   sloplashLogicMocks: {
     accumulateUsage: vi.fn(),
   },
+  lockMocks: {
+    withGameOperationLock: vi.fn(),
+  },
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("@/lib/game-operation-lock", () => lockMocks);
 vi.mock("@/games/sloplash/game-logic-ai", () => sloplashLogicMocks);
 vi.mock("./ai", () => aiMocks);
 vi.mock("./game-logic-core", () => coreMocks);
@@ -64,9 +67,16 @@ import { advanceGame, startGame } from "./game-logic-rounds";
 describe("advanceGame", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
 
     prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof txMock) => unknown) =>
       callback(txMock),
+    );
+    lockMocks.withGameOperationLock.mockImplementation(
+      async (_gameId: string, _scope: string, operation: () => Promise<unknown>) => ({
+        acquired: true,
+        result: await operation(),
+      }),
     );
     prismaMock.game.update.mockResolvedValue({});
     prismaMock.round.create.mockResolvedValue({});
@@ -79,14 +89,13 @@ describe("advanceGame", () => {
     coreMocks.isComebackRound.mockReturnValue(false);
   });
 
-  it("claims the round before generating the persona reply", async () => {
+  it("returns null without generating a reply when the phase is no longer advanceable", async () => {
     prismaMock.game.findUnique.mockResolvedValue({
-      status: "ROUND_RESULTS",
+      status: "VOTING",
       currentRound: 2,
       totalRounds: 5,
       personaModelId: "persona-model",
       timersDisabled: false,
-      votingRevealing: false,
       modeState: { ok: true },
     });
     coreMocks.parseModeState.mockReturnValue({
@@ -105,23 +114,10 @@ describe("advanceGame", () => {
       comebackRound: null,
       mood: 50,
     });
-    prismaMock.game.updateMany.mockResolvedValue({ count: 0 });
 
     const advanced = await advanceGame("game-1");
 
-    expect(advanced).toBe(false);
-    expect(prismaMock.game.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: "game-1",
-        status: "ROUND_RESULTS",
-        votingRevealing: false,
-      },
-      data: {
-        votingRevealing: true,
-        phaseDeadline: null,
-        version: { increment: 1 },
-      },
-    });
+    expect(advanced).toBeNull();
     expect(aiMocks.generatePersonaReply).not.toHaveBeenCalled();
     expect(sloplashLogicMocks.accumulateUsage).not.toHaveBeenCalled();
   });
@@ -133,7 +129,6 @@ describe("advanceGame", () => {
       totalRounds: 5,
       personaModelId: "persona-model",
       timersDisabled: false,
-      votingRevealing: false,
       modeState: { ok: true },
     });
     coreMocks.parseModeState.mockReturnValue({
@@ -168,11 +163,13 @@ describe("advanceGame", () => {
         generationId: null,
       },
     });
-    prismaMock.game.updateMany.mockResolvedValue({ count: 1 });
     aiMocks.generatePersonaReply.mockResolvedValue({
       reply: "persona follow-up",
       outcome: "CONTINUE",
       moodDelta: 5,
+      signalCategory: null,
+      sideComment: null,
+      nextSignal: null,
       usage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -184,14 +181,12 @@ describe("advanceGame", () => {
     });
     txMock.game.findUnique.mockResolvedValue({
       status: "ROUND_RESULTS",
-      votingRevealing: true,
     });
 
     const advanced = await advanceGame("game-1");
 
-    expect(advanced).toBe(true);
+    expect(advanced).toBe("WRITING");
     expect(aiMocks.generatePersonaReply).toHaveBeenCalledTimes(1);
-    expect(prismaMock.game.updateMany).toHaveBeenCalledTimes(1);
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(txMock.round.create).toHaveBeenCalledWith({
       data: {
@@ -215,7 +210,6 @@ describe("advanceGame", () => {
         currentRound: 3,
         status: "WRITING",
         votingPromptIndex: 0,
-        votingRevealing: false,
         phaseDeadline: new Date("2026-03-19T12:01:00.000Z"),
         modeState: {
           transcript: [
@@ -267,7 +261,7 @@ describe("advanceGame", () => {
             nextSignal: null,
           },
           latestSignalCategory: "fallback",
-          latestSideComment: undefined,
+          latestSideComment: null,
           latestNextSignal: "fallback guidance",
           latestMoodDelta: 5,
         },
@@ -283,7 +277,6 @@ describe("advanceGame", () => {
       totalRounds: 5,
       personaModelId: "persona-model",
       timersDisabled: false,
-      votingRevealing: false,
       modeState: { ok: true },
     });
     coreMocks.parseModeState.mockReturnValue({
@@ -312,7 +305,6 @@ describe("advanceGame", () => {
         nextSignal: null,
       },
     });
-    prismaMock.game.updateMany.mockResolvedValue({ count: 1 });
     aiMocks.generatePersonaReply.mockResolvedValue({
       reply: "yeah no",
       outcome: "UNMATCHED",
@@ -331,12 +323,11 @@ describe("advanceGame", () => {
     });
     txMock.game.findUnique.mockResolvedValue({
       status: "ROUND_RESULTS",
-      votingRevealing: true,
     });
 
     const advanced = await advanceGame("game-1");
 
-    expect(advanced).toBe(true);
+    expect(advanced).toBe("WRITING");
     expect(txMock.game.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -348,6 +339,33 @@ describe("advanceGame", () => {
         }),
       }),
     );
+  });
+
+  it("waits for the winning concurrent advance to commit before returning", async () => {
+    vi.useFakeTimers();
+    prismaMock.game.findUnique
+      .mockResolvedValueOnce({
+        status: "ROUND_RESULTS",
+        currentRound: 2,
+        personaModelId: "persona-model",
+      })
+      .mockResolvedValueOnce({
+        status: "ROUND_RESULTS",
+        currentRound: 2,
+      })
+      .mockResolvedValueOnce({
+        status: "WRITING",
+        currentRound: 3,
+      });
+    lockMocks.withGameOperationLock.mockResolvedValue({
+      acquired: false,
+    });
+
+    const advancePromise = advanceGame("game-1");
+    await vi.advanceTimersByTimeAsync(25);
+
+    await expect(advancePromise).resolves.toBe("WRITING");
+    expect(aiMocks.generatePersonaReply).not.toHaveBeenCalled();
   });
 
   it("resets pending persona reply state when starting a new game", async () => {

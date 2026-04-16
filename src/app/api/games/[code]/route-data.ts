@@ -148,7 +148,9 @@ export function findGamePayloadByStatus(
     }
   })();
 
-  if (cacheKey) {
+  const shouldCache = cacheKey != null && status === "FINAL_RESULTS";
+
+  if (shouldCache) {
     return gamePayloadCache.getOrLoad(
       `${roomCode}:${status}:${cacheKey}`,
       GAME_PAYLOAD_CACHE_TTL_MS,

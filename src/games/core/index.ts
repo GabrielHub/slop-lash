@@ -5,9 +5,11 @@ export type {
   GameDefinition,
   GameHandlers,
   PhaseAdvanceResult,
+  RoundAdvanceResult,
 } from "./types";
 
 export { resolveGameType } from "./resolve-game-type";
+export { resolveRaceLostAdvanceResult } from "./round-advance";
 export { getActivePlayerIds } from "./active-players";
 export {
   comparePlayersByScore,

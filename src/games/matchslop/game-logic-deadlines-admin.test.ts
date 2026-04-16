@@ -50,52 +50,37 @@ describe("forceAdvancePhase", () => {
   });
 
   it("reports final results when round-results advancement already completed elsewhere", async () => {
-    prismaMock.game.findUnique
-      .mockResolvedValueOnce({
-        status: "ROUND_RESULTS",
-        votingRevealing: false,
-        currentRound: 2,
-        modeState: {},
-      })
-      .mockResolvedValueOnce({
-        status: "FINAL_RESULTS",
-        currentRound: 2,
-      });
-    roundLogicMocks.advanceGame.mockResolvedValue(false);
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      status: "ROUND_RESULTS",
+      votingRevealing: false,
+      currentRound: 2,
+      modeState: {},
+    });
+    roundLogicMocks.advanceGame.mockResolvedValue("FINAL_RESULTS");
 
     await expect(forceAdvancePhase("game-1")).resolves.toBe("FINAL_RESULTS");
   });
 
   it("reports writing when round-results advancement already moved into the next round", async () => {
-    prismaMock.game.findUnique
-      .mockResolvedValueOnce({
-        status: "ROUND_RESULTS",
-        votingRevealing: false,
-        currentRound: 2,
-        modeState: {},
-      })
-      .mockResolvedValueOnce({
-        status: "WRITING",
-        currentRound: 3,
-      });
-    roundLogicMocks.advanceGame.mockResolvedValue(false);
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      status: "ROUND_RESULTS",
+      votingRevealing: false,
+      currentRound: 2,
+      modeState: {},
+    });
+    roundLogicMocks.advanceGame.mockResolvedValue("WRITING");
 
     await expect(forceAdvancePhase("game-1")).resolves.toBe("WRITING");
   });
 
   it("returns null when round-results advancement did not actually move state", async () => {
-    prismaMock.game.findUnique
-      .mockResolvedValueOnce({
-        status: "ROUND_RESULTS",
-        votingRevealing: false,
-        currentRound: 2,
-        modeState: {},
-      })
-      .mockResolvedValueOnce({
-        status: "ROUND_RESULTS",
-        currentRound: 2,
-      });
-    roundLogicMocks.advanceGame.mockResolvedValue(false);
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      status: "ROUND_RESULTS",
+      votingRevealing: false,
+      currentRound: 2,
+      modeState: {},
+    });
+    roundLogicMocks.advanceGame.mockResolvedValue(null);
 
     await expect(forceAdvancePhase("game-1")).resolves.toBeNull();
   });

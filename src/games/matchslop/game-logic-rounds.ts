@@ -1,9 +1,10 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { withGameOperationLock } from "@/lib/game-operation-lock";
 import { accumulateUsage } from "@/games/sloplash/game-logic-ai";
+import { resolveRaceLostAdvanceResult, type RoundAdvanceResult } from "@/games/core";
 import { generatePersonaReply, deriveFallbackSignal } from "./ai";
 import {
-  buildResultsDeadline,
   buildWritingDeadline,
   buildRoundPromptText,
   createInitialPendingPersonaReply,
@@ -46,6 +47,7 @@ type AdvanceClaim = {
   currentRound: number;
   totalRounds: number;
   timersDisabled: boolean;
+  personaModelId: string;
   modeState: ReturnType<typeof parseModeState>;
 };
 
@@ -168,60 +170,22 @@ async function createTurnRound(
   });
 }
 
-async function claimRoundAdvance(args: {
-  gameId: string;
-}): Promise<boolean> {
-  const { gameId } = args;
-  const claimed = await prisma.game.updateMany({
-    where: {
-      id: gameId,
-      status: "ROUND_RESULTS",
-      votingRevealing: false,
-    },
-    data: {
-      votingRevealing: true,
-      phaseDeadline: null,
-      version: { increment: 1 },
-    },
-  });
-
-  return claimed.count > 0;
-}
-
-async function releaseRoundAdvanceClaim(args: {
-  gameId: string;
-  timersDisabled: boolean;
-}): Promise<void> {
-  const { gameId, timersDisabled } = args;
-  await prisma.game.updateMany({
-    where: {
-      id: gameId,
-      status: "ROUND_RESULTS",
-      votingRevealing: true,
-    },
-    data: {
-      votingRevealing: false,
-      phaseDeadline: buildResultsDeadline(timersDisabled),
-    },
-  });
-}
-
-async function finalizeClaimedAdvance(args: {
+async function finalizeAdvance(args: {
   gameId: string;
   modeState: ReturnType<typeof parseModeState>;
   outcome: Exclude<MatchSlopOutcome, "IN_PROGRESS">;
   transcript: MatchSlopTranscriptEntry[];
   lastRoundResult: unknown;
   comebackRound: number | null;
-}): Promise<boolean> {
+}): Promise<RoundAdvanceResult> {
   const { gameId, modeState, outcome, transcript, lastRoundResult, comebackRound } = args;
   return prisma.$transaction(async (tx) => {
     const game = await tx.game.findUnique({
       where: { id: gameId },
-      select: { status: true, votingRevealing: true },
+      select: { status: true },
     });
-    if (!game || game.status !== "ROUND_RESULTS" || !game.votingRevealing) {
-      return false;
+    if (!game || game.status !== "ROUND_RESULTS") {
+      return null;
     }
 
     await tx.game.update({
@@ -229,7 +193,6 @@ async function finalizeClaimedAdvance(args: {
       data: {
         status: "FINAL_RESULTS",
         phaseDeadline: null,
-        votingRevealing: false,
         modeState: toJson({
           ...modeState,
           transcript,
@@ -248,11 +211,11 @@ async function finalizeClaimedAdvance(args: {
       },
     });
 
-    return true;
+    return "FINAL_RESULTS";
   });
 }
 
-async function transitionClaimedAdvanceToNextRound(args: {
+async function transitionAdvanceToNextRound(args: {
   gameId: string;
   nextRound: number;
   promptText: string;
@@ -261,7 +224,7 @@ async function transitionClaimedAdvanceToNextRound(args: {
   transcript: MatchSlopTranscriptEntry[];
   outcome: MatchSlopOutcome;
   comebackRound: number | null;
-}): Promise<boolean> {
+}): Promise<RoundAdvanceResult> {
   const {
     gameId,
     nextRound,
@@ -277,10 +240,10 @@ async function transitionClaimedAdvanceToNextRound(args: {
   return prisma.$transaction(async (tx) => {
     const game = await tx.game.findUnique({
       where: { id: gameId },
-      select: { status: true, votingRevealing: true },
+      select: { status: true },
     });
-    if (!game || game.status !== "ROUND_RESULTS" || !game.votingRevealing) {
-      return false;
+    if (!game || game.status !== "ROUND_RESULTS") {
+      return null;
     }
 
     await tx.round.create({
@@ -306,7 +269,6 @@ async function transitionClaimedAdvanceToNextRound(args: {
         currentRound: nextRound,
         status: "WRITING",
         votingPromptIndex: 0,
-        votingRevealing: false,
         phaseDeadline: buildWritingDeadline(timersDisabled),
         modeState: toJson({
           ...modeState,
@@ -319,7 +281,7 @@ async function transitionClaimedAdvanceToNextRound(args: {
       },
     });
 
-    return true;
+    return "WRITING";
   });
 }
 
@@ -402,179 +364,185 @@ export async function startGame(gameId: string, roundNumber: number): Promise<vo
   await createTurnRound(gameId, roundNumber, { startDeadline: profileReady });
 }
 
-export async function advanceGame(gameId: string): Promise<boolean> {
-  const game = await prisma.game.findUnique({
+export async function advanceGame(gameId: string): Promise<RoundAdvanceResult> {
+  const gameBeforeLock = await prisma.game.findUnique({
     where: { id: gameId },
     select: {
       status: true,
       currentRound: true,
-      totalRounds: true,
       personaModelId: true,
-      timersDisabled: true,
-      votingRevealing: true,
-      modeState: true,
     },
   });
 
-  if (!game?.personaModelId) return false;
-  if (game.status !== "ROUND_RESULTS" || game.votingRevealing) return false;
+  if (!gameBeforeLock?.personaModelId || gameBeforeLock.status !== "ROUND_RESULTS") {
+    return null;
+  }
 
-  const modeState = parseModeState(game.modeState);
-  const claim: AdvanceClaim | null = await (async () => {
-    const claimed = await claimRoundAdvance({ gameId });
-    if (!claimed) return null;
-    return {
-      currentRound: game.currentRound,
-      totalRounds: game.totalRounds,
-      timersDisabled: game.timersDisabled,
-      modeState,
-    };
-  })();
-  if (!claim) return false;
-
-  const result = claim.modeState.lastRoundResult;
-  const profile = claim.modeState.profile;
-
-  try {
-    if (!result || !profile) {
-      const fallbackOutcome = isComebackRound(claim.modeState, claim.currentRound)
-        ? "UNMATCHED"
-        : "TURN_LIMIT";
-      const fallbackFinalized = await finalizeClaimedAdvance({
-        gameId,
-        modeState: claim.modeState,
-        transcript: claim.modeState.transcript,
-        lastRoundResult: null,
-        outcome: fallbackOutcome,
-        comebackRound: claim.modeState.comebackRound,
+  const { acquired, result } = await withGameOperationLock(
+    gameId,
+    "matchslop-round-advance",
+    async () => {
+      const game = await prisma.game.findUnique({
+        where: { id: gameId },
+        select: {
+          status: true,
+          currentRound: true,
+          totalRounds: true,
+          personaModelId: true,
+          timersDisabled: true,
+          modeState: true,
+        },
       });
-      if (fallbackFinalized) {
-        void ensurePersonaPostMortem(gameId);
+
+      if (!game?.personaModelId || game.status !== "ROUND_RESULTS") {
+        return null;
       }
-      return false;
-    }
 
-    const winnerEntry: MatchSlopTranscriptEntry = {
-      id: `players-turn-${claim.currentRound}`,
-      speaker: "PLAYERS",
-      text: result.winnerText,
-      turn: claim.currentRound,
-      outcome: null,
-      authorName: result.authorName,
-      selectedPromptText: claim.currentRound === 1 ? (result.selectedPromptText ?? null) : null,
-      selectedPromptId: claim.currentRound === 1 ? (result.selectedPromptId ?? null) : null,
-    };
-    const transcriptWithWinner = [...claim.modeState.transcript, winnerEntry];
-    const forceContinue = claim.currentRound === 1;
+      const claim: AdvanceClaim = {
+        currentRound: game.currentRound,
+        totalRounds: game.totalRounds,
+        timersDisabled: game.timersDisabled,
+        personaModelId: game.personaModelId,
+        modeState: parseModeState(game.modeState),
+      };
 
-    // Use the cached reply from the background generation if available
-    const cached = claim.modeState.pendingPersonaReply;
-    let reply: string;
-    let outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
-    let moodDelta: number;
-    let signalCategory: string | null = null;
-    let sideComment: string | null = null;
-    let nextSignal: string | null = null;
+      const roundResult = claim.modeState.lastRoundResult;
+      const profile = claim.modeState.profile;
 
-    if (cached.status === "READY" && cached.reply && cached.outcome != null && cached.moodDelta != null) {
-      reply = cached.reply;
-      outcome = cached.outcome;
-      moodDelta = cached.moodDelta;
-      signalCategory = cached.signalCategory ?? null;
-      sideComment = cached.sideComment ?? null;
-      nextSignal = cached.nextSignal ?? null;
-    } else {
-      const generated = await generatePersonaReply(
-        game.personaModelId,
-        claim.modeState.seekerIdentity,
-        claim.modeState.personaIdentity,
-        profile,
-        transcriptWithWinner,
-        { forceContinue, currentMood: claim.modeState.mood },
-      );
-      reply = generated.reply;
-      outcome = generated.outcome;
-      moodDelta = generated.moodDelta;
-      signalCategory = generated.signalCategory;
-      sideComment = generated.sideComment;
-      nextSignal = generated.nextSignal;
-      await accumulateUsage(gameId, [generated.usage]);
-    }
+      if (!roundResult || !profile) {
+        const fallbackOutcome = isComebackRound(claim.modeState, claim.currentRound)
+          ? "UNMATCHED"
+          : "TURN_LIMIT";
+        const finalized = await finalizeAdvance({
+          gameId,
+          modeState: claim.modeState,
+          transcript: claim.modeState.transcript,
+          lastRoundResult: null,
+          outcome: fallbackOutcome,
+          comebackRound: claim.modeState.comebackRound,
+        });
+        if (finalized === "FINAL_RESULTS") {
+          void ensurePersonaPostMortem(gameId);
+        }
+        return finalized;
+      }
 
-    // Compute new mood deterministically from the AI's delta
-    const newMood = clampMatchSlopMood(claim.modeState.mood + moodDelta);
+      const winnerEntry: MatchSlopTranscriptEntry = {
+        id: `players-turn-${claim.currentRound}`,
+        speaker: "PLAYERS",
+        text: roundResult.winnerText,
+        turn: claim.currentRound,
+        outcome: null,
+        authorName: roundResult.authorName,
+        selectedPromptText: claim.currentRound === 1 ? (roundResult.selectedPromptText ?? null) : null,
+        selectedPromptId: claim.currentRound === 1 ? (roundResult.selectedPromptId ?? null) : null,
+      };
+      const transcriptWithWinner = [...claim.modeState.transcript, winnerEntry];
+      const forceContinue = claim.currentRound === 1;
 
-    // Override outcome based on mood threshold
-    const effectiveOutcome = !forceContinue && newMood <= MATCHSLOP_MOOD_THRESHOLD_UNMATCH
-      ? "UNMATCHED" as const
-      : outcome;
+      // Use the cached reply from the background generation if available.
+      const cached = claim.modeState.pendingPersonaReply;
+      let reply: string;
+      let outcome: "CONTINUE" | "DATE_SEALED" | "UNMATCHED";
+      let moodDelta: number;
+      let signalCategory: string | null = null;
+      let sideComment: string | null = null;
+      let nextSignal: string | null = null;
 
-    const advancePlan = resolveAdvancePlan({
-      currentRound: claim.currentRound,
-      totalRounds: claim.totalRounds,
-      comebackRound: claim.modeState.comebackRound,
-      personaOutcome: effectiveOutcome,
-    });
-    const personaEntry: MatchSlopTranscriptEntry = {
-      id: `persona-turn-${claim.currentRound}`,
-      speaker: "PERSONA",
-      text: reply,
-      turn: claim.currentRound,
-      outcome: advancePlan.transcriptOutcome,
-      authorName: profile.displayName,
-      mood: newMood,
-    };
-    const nextTranscript = [...transcriptWithWinner, personaEntry];
-    // Derive fallback signals if the AI didn't provide them. When an unmatch
-    // transitions into a comeback round, keep the fallback guidance consistent
-    // with the fact that the game is still continuing.
-    const fallbackSignals =
-      effectiveOutcome === "UNMATCHED" && advancePlan.kind === "NEXT_ROUND"
-        ? { signalCategory: "danger zone", nextSignal: "last chance, make it count" }
-        : deriveFallbackSignal(moodDelta, newMood, effectiveOutcome);
-    const resolvedSignalCategory = signalCategory ?? fallbackSignals.signalCategory;
-    const resolvedNextSignal = nextSignal ?? fallbackSignals.nextSignal;
+      if (cached.status === "READY" && cached.reply && cached.outcome != null && cached.moodDelta != null) {
+        reply = cached.reply;
+        outcome = cached.outcome;
+        moodDelta = cached.moodDelta;
+        signalCategory = cached.signalCategory ?? null;
+        sideComment = cached.sideComment ?? null;
+        nextSignal = cached.nextSignal ?? null;
+      } else {
+        const generated = await generatePersonaReply(
+          claim.personaModelId,
+          claim.modeState.seekerIdentity,
+          claim.modeState.personaIdentity,
+          profile,
+          transcriptWithWinner,
+          { forceContinue, currentMood: claim.modeState.mood },
+        );
+        reply = generated.reply;
+        outcome = generated.outcome;
+        moodDelta = generated.moodDelta;
+        signalCategory = generated.signalCategory;
+        sideComment = generated.sideComment;
+        nextSignal = generated.nextSignal;
+        await accumulateUsage(gameId, [generated.usage]);
+      }
 
-    const updatedModeState = {
-      ...claim.modeState,
-      mood: newMood,
-      pendingPersonaReply: createInitialPendingPersonaReply(),
-      latestMoodDelta: moodDelta,
-      latestSignalCategory: resolvedSignalCategory,
-      latestSideComment: sideComment,
-      latestNextSignal: resolvedNextSignal,
-    };
+      const newMood = clampMatchSlopMood(claim.modeState.mood + moodDelta);
+      const effectiveOutcome =
+        !forceContinue && newMood <= MATCHSLOP_MOOD_THRESHOLD_UNMATCH
+          ? "UNMATCHED" as const
+          : outcome;
 
-    if (advancePlan.kind === "NEXT_ROUND") {
-      return await transitionClaimedAdvanceToNextRound({
+      const advancePlan = resolveAdvancePlan({
+        currentRound: claim.currentRound,
+        totalRounds: claim.totalRounds,
+        comebackRound: claim.modeState.comebackRound,
+        personaOutcome: effectiveOutcome,
+      });
+      const personaEntry: MatchSlopTranscriptEntry = {
+        id: `persona-turn-${claim.currentRound}`,
+        speaker: "PERSONA",
+        text: reply,
+        turn: claim.currentRound,
+        outcome: advancePlan.transcriptOutcome,
+        authorName: profile.displayName,
+        mood: newMood,
+      };
+      const nextTranscript = [...transcriptWithWinner, personaEntry];
+      const fallbackSignals =
+        effectiveOutcome === "UNMATCHED" && advancePlan.kind === "NEXT_ROUND"
+          ? { signalCategory: "danger zone", nextSignal: "last chance, make it count" }
+          : deriveFallbackSignal(moodDelta, newMood, effectiveOutcome);
+      const resolvedSignalCategory = signalCategory ?? fallbackSignals.signalCategory;
+      const resolvedNextSignal = nextSignal ?? fallbackSignals.nextSignal;
+
+      const updatedModeState = {
+        ...claim.modeState,
+        mood: newMood,
+        pendingPersonaReply: createInitialPendingPersonaReply(),
+        latestMoodDelta: moodDelta,
+        latestSignalCategory: resolvedSignalCategory,
+        latestSideComment: sideComment,
+        latestNextSignal: resolvedNextSignal,
+      };
+
+      if (advancePlan.kind === "NEXT_ROUND") {
+        return transitionAdvanceToNextRound({
+          gameId,
+          nextRound: advancePlan.nextRound,
+          promptText: personaEntry.text,
+          timersDisabled: claim.timersDisabled,
+          modeState: updatedModeState,
+          transcript: nextTranscript,
+          outcome: advancePlan.nextOutcome,
+          comebackRound: advancePlan.comebackRound,
+        });
+      }
+
+      const finalized = await finalizeAdvance({
         gameId,
-        nextRound: advancePlan.nextRound,
-        promptText: personaEntry.text,
-        timersDisabled: claim.timersDisabled,
         modeState: updatedModeState,
         transcript: nextTranscript,
+        lastRoundResult: roundResult,
         outcome: advancePlan.nextOutcome,
         comebackRound: advancePlan.comebackRound,
       });
-    }
+      if (finalized === "FINAL_RESULTS") {
+        void ensurePersonaPostMortem(gameId);
+      }
+      return finalized;
+    },
+  );
 
-    const finalized = await finalizeClaimedAdvance({
-      gameId,
-      modeState: updatedModeState,
-      transcript: nextTranscript,
-      lastRoundResult: result,
-      outcome: advancePlan.nextOutcome,
-      comebackRound: advancePlan.comebackRound,
-    });
-    if (finalized) {
-      void ensurePersonaPostMortem(gameId);
-    }
-    return false;
-  } catch (error) {
-    await releaseRoundAdvanceClaim({
-      gameId,
-      timersDisabled: claim.timersDisabled,
-    });
-    throw error;
+  if (!acquired) {
+    return resolveRaceLostAdvanceResult(gameId, gameBeforeLock.currentRound);
   }
+  return result ?? null;
 }

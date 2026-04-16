@@ -88,21 +88,16 @@ describe("/api/games/[code]/next", () => {
   });
 
   it("does not clear the writing deadline before a failed forced advance", async () => {
-    prismaMock.game.findUnique
-      .mockResolvedValueOnce({
-        id: "game-1",
-        gameType: "MATCHSLOP",
-        status: "WRITING",
-        currentRound: 1,
-        hostPlayerId: "host-1",
-        hostControlTokenHash: null,
-        hostControlLastSeen: null,
-        players: [],
-      })
-      .mockResolvedValueOnce({
-        status: "WRITING",
-        currentRound: 1,
-      });
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      id: "game-1",
+      gameType: "MATCHSLOP",
+      status: "WRITING",
+      currentRound: 1,
+      hostPlayerId: "host-1",
+      hostControlTokenHash: null,
+      hostControlLastSeen: null,
+      players: [],
+    });
     handlerMocks.forceAdvancePhase.mockResolvedValue(null);
 
     const res = await POST(
@@ -132,7 +127,7 @@ describe("/api/games/[code]/next", () => {
         status: "ROUND_RESULTS",
         currentRound: 2,
       });
-    handlerMocks.advanceGame.mockResolvedValue(false);
+    handlerMocks.advanceGame.mockResolvedValue(null);
 
     const res = await POST(
       jsonRequest({ playerId: "host-1" }),
@@ -145,22 +140,17 @@ describe("/api/games/[code]/next", () => {
   });
 
   it("treats a finalized match as a successful round-results advance", async () => {
-    prismaMock.game.findUnique
-      .mockResolvedValueOnce({
-        id: "game-1",
-        gameType: "MATCHSLOP",
-        status: "ROUND_RESULTS",
-        currentRound: 2,
-        hostPlayerId: "host-1",
-        hostControlTokenHash: null,
-        hostControlLastSeen: null,
-        players: [],
-      })
-      .mockResolvedValueOnce({
-        status: "FINAL_RESULTS",
-        currentRound: 2,
-      });
-    handlerMocks.advanceGame.mockResolvedValue(false);
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      id: "game-1",
+      gameType: "MATCHSLOP",
+      status: "ROUND_RESULTS",
+      currentRound: 2,
+      hostPlayerId: "host-1",
+      hostControlTokenHash: null,
+      hostControlLastSeen: null,
+      players: [],
+    });
+    handlerMocks.advanceGame.mockResolvedValue("FINAL_RESULTS");
 
     const res = await POST(
       jsonRequest({ playerId: "host-1" }),
@@ -174,22 +164,17 @@ describe("/api/games/[code]/next", () => {
   });
 
   it("treats a concurrently started next round as a successful round-results advance", async () => {
-    prismaMock.game.findUnique
-      .mockResolvedValueOnce({
-        id: "game-1",
-        gameType: "MATCHSLOP",
-        status: "ROUND_RESULTS",
-        currentRound: 2,
-        hostPlayerId: "host-1",
-        hostControlTokenHash: null,
-        hostControlLastSeen: null,
-        players: [],
-      })
-      .mockResolvedValueOnce({
-        status: "WRITING",
-        currentRound: 3,
-      });
-    handlerMocks.advanceGame.mockResolvedValue(false);
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      id: "game-1",
+      gameType: "MATCHSLOP",
+      status: "ROUND_RESULTS",
+      currentRound: 2,
+      hostPlayerId: "host-1",
+      hostControlTokenHash: null,
+      hostControlLastSeen: null,
+      players: [],
+    });
+    handlerMocks.advanceGame.mockResolvedValue("WRITING");
 
     const res = await POST(
       jsonRequest({ playerId: "host-1" }),
@@ -200,10 +185,33 @@ describe("/api/games/[code]/next", () => {
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(publishMocks.publishGameStateEvent).toHaveBeenCalledWith("game-1");
-    expect(publishMocks.runAiResponsesGeneration).not.toHaveBeenCalled();
   });
 
-  it("treats a concurrently forced writing advance as successful instead of leaving the phase stuck", async () => {
+  it("treats an explicit forced writing advance as successful", async () => {
+    prismaMock.game.findUnique.mockResolvedValueOnce({
+      id: "game-1",
+      gameType: "MATCHSLOP",
+      status: "WRITING",
+      currentRound: 1,
+      hostPlayerId: "host-1",
+      hostControlTokenHash: null,
+      hostControlLastSeen: null,
+      players: [],
+    });
+    handlerMocks.forceAdvancePhase.mockResolvedValue("VOTING");
+
+    const res = await POST(
+      jsonRequest({ playerId: "host-1" }),
+      { params: Promise.resolve({ code: "ROOM" }) },
+    );
+    const { status, body } = await readJson(res);
+
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(publishMocks.publishGameStateEvent).toHaveBeenCalledWith("game-1");
+  });
+
+  it("treats a concurrently forced writing advance as successful instead of returning a conflict", async () => {
     prismaMock.game.findUnique
       .mockResolvedValueOnce({
         id: "game-1",

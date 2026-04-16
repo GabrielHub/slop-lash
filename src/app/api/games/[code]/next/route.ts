@@ -8,6 +8,7 @@ import { parseJsonBody } from "@/lib/http";
 import { isAuthorizedHostControl, readHostAuth } from "@/lib/host-control-auth";
 import { logGameEvent } from "@/games/core/observability";
 import { runAiResponsesGeneration, runAiVotesGeneration, runGameStateMaintenance } from "@/games/core/runtime";
+import type { PhaseAdvanceResult } from "@/games/core";
 import { publishGameStateEvent } from "@/lib/realtime-events";
 
 async function findAdvanceSnapshot(gameId: string) {
@@ -15,6 +16,19 @@ async function findAdvanceSnapshot(gameId: string) {
     where: { id: gameId },
     select: { status: true, currentRound: true },
   });
+}
+
+function toPhaseAdvanceResult(status: string): Exclude<PhaseAdvanceResult, null> | null {
+  switch (status) {
+    case "WRITING":
+    case "VOTING":
+    case "VOTING_SUBPHASE":
+    case "ROUND_RESULTS":
+    case "FINAL_RESULTS":
+      return status;
+    default:
+      return null;
+  }
 }
 
 export async function POST(
@@ -80,13 +94,21 @@ export async function POST(
         );
       }
     }
-    const newRoundStarted = await def.handlers.advanceGame(game.id);
-    const latestGame = newRoundStarted ? null : await findAdvanceSnapshot(game.id);
-    const advancedToWriting =
-      latestGame?.status === "WRITING" && latestGame.currentRound > game.currentRound;
-    const advancedToFinal = latestGame?.status === "FINAL_RESULTS";
+    let advancedTo = await def.handlers.advanceGame(game.id);
 
-    if (!newRoundStarted && !advancedToWriting && !advancedToFinal) {
+    if (advancedTo == null) {
+      const latestGame = await findAdvanceSnapshot(game.id);
+      if (latestGame?.status === "FINAL_RESULTS") {
+        advancedTo = "FINAL_RESULTS";
+      } else if (
+        latestGame?.status === "WRITING" &&
+        latestGame.currentRound > game.currentRound
+      ) {
+        advancedTo = "WRITING";
+      }
+    }
+
+    if (advancedTo == null) {
       return NextResponse.json(
         { error: "Could not advance game state" },
         { status: 409 }
@@ -94,9 +116,10 @@ export async function POST(
     }
     logGameEvent("phaseAdvanced", { gameType: game.gameType, gameId: game.id, roomCode: code.toUpperCase() }, {
       from: "ROUND_RESULTS",
-      newRound: newRoundStarted || advancedToWriting,
+      to: advancedTo,
+      newRound: advancedTo === "WRITING",
     });
-    if (newRoundStarted || advancedToWriting) {
+    if (advancedTo === "WRITING") {
       await publishGameStateEvent(game.id);
       after(async () => {
         const ran = await runAiResponsesGeneration(game.id, game.gameType);
@@ -135,7 +158,7 @@ export async function POST(
         latestGame != null &&
         (latestGame.status !== game.status || latestGame.currentRound !== game.currentRound)
       ) {
-        advancedTo = latestGame.status as NonNullable<typeof advancedTo>;
+        advancedTo = toPhaseAdvanceResult(latestGame.status);
       }
     }
     if (advancedTo == null) {

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { getActivePlayerIds, assignAllPlayerPrompt } from "./game-logic-core";
+import { resolveRaceLostAdvanceResult, type RoundAdvanceResult } from "@/games/core";
 
 /** Create a round with a single prompt assigned to all active players. */
 export async function startRound(gameId: string, roundNumber: number): Promise<void> {
@@ -36,31 +37,28 @@ export async function startRound(gameId: string, roundNumber: number): Promise<v
 }
 
 /** Advance from ROUND_RESULTS to next round or FINAL_RESULTS. */
-export async function advanceGame(gameId: string): Promise<boolean> {
+export async function advanceGame(gameId: string): Promise<RoundAdvanceResult> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
-    select: { currentRound: true, totalRounds: true },
+    select: { status: true, currentRound: true, totalRounds: true },
   });
 
-  if (!game) return false;
+  if (!game || game.status !== "ROUND_RESULTS") return null;
 
   if (game.currentRound >= game.totalRounds) {
     await prisma.game.update({
       where: { id: gameId },
       data: { status: "FINAL_RESULTS", winnerTagline: null, version: { increment: 1 } },
     });
-    return false;
+    return "FINAL_RESULTS";
   }
 
   try {
     await startRound(gameId, game.currentRound + 1);
-    return true;
+    return "WRITING";
   } catch (error) {
     if (!hasPrismaErrorCode(error, "P2002")) throw error;
 
-    // Race loser: the round was already created by another caller.
-    // Return false so the loser does NOT re-trigger AI generation
-    // (the winner already kicked it off).
-    return false;
+    return resolveRaceLostAdvanceResult(gameId, game.currentRound);
   }
 }

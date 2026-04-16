@@ -229,8 +229,7 @@ export async function forceAdvancePhase(gameId: string): Promise<PhaseAdvanceRes
       return claimed ? "ROUND_RESULTS" : null;
     }
     case "ROUND_RESULTS": {
-      const newRoundStarted = await advanceGame(gameId);
-      return newRoundStarted ? "WRITING" : "FINAL_RESULTS";
+      return advanceGame(gameId);
     }
     default:
       return null;

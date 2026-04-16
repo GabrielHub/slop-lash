@@ -50,14 +50,14 @@ The host can enable text-to-speech during game creation:
 AI players are served through the Vercel AI Gateway. The host picks which models to include (one per provider):
 
 - Google (Gemini 3 Flash)
-- Zhipu AI (GLM-5)
+- Zhipu AI (GLM-5.1)
 - MiniMax (M2.5)
 - DeepSeek (V3.2)
 - OpenAI (GPT-5.2 Chat)
 - Moonshot AI (Kimi K2.5)
 - Xiaomi (MiMo V2 Flash)
-- xAI (Grok 4.1 Fast)
-- Anthropic (Claude Sonnet 4.6)
+- xAI (Grok 4.20)
+- Anthropic (Claude Haiku 4.5)
 
 ## Tech Stack
 

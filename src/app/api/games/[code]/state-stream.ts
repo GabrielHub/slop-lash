@@ -13,8 +13,6 @@ import {
 
 const SAFETY_CHECK_INTERVAL_MS = 10_000;
 const IDLE_WAKE_INTERVAL_MS = 30_000;
-const PERIODIC_META_RESYNC_MS = 30_000;
-
 type StreamMeta = {
   id: string;
   gameType: GameType;
@@ -69,7 +67,6 @@ export function createStateStreamResponse<
   let lastStateKey = "";
   let lastKeepaliveAt = Date.now();
   let latestMeta: TMeta | null = null;
-  let lastMetaSyncAt = 0;
   let resolvedPlayerId: string | null = null;
   let playerResolved = false;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -93,18 +90,18 @@ export function createStateStreamResponse<
         }
       }
 
-      async function syncState(force: boolean): Promise<boolean> {
-        const meta =
-          !force && latestMeta && Date.now() - lastMetaSyncAt < PERIODIC_META_RESYNC_MS
-            ? latestMeta
-            : await findMeta(roomCode);
+      async function syncState(options?: {
+        forceMeta?: boolean;
+        forceState?: boolean;
+      }): Promise<boolean> {
+        const { forceMeta = false, forceState = false } = options ?? {};
+        const meta = !forceMeta && latestMeta ? latestMeta : await findMeta(roomCode);
         if (!meta) {
           enqueue(sseEvent("server-error", { code: "NOT_FOUND", message: "Game not found" }));
           return false;
         }
 
         latestMeta = meta;
-        lastMetaSyncAt = Date.now();
 
         if (!playerResolved) {
           resolvedPlayerId = (await findAuthenticatedPlayer(meta.id, playerToken))?.id ?? null;
@@ -112,7 +109,7 @@ export function createStateStreamResponse<
         }
 
         const nextStateKey = getStateKey(meta);
-        if (!force && nextStateKey === lastStateKey) {
+        if (!forceState && nextStateKey === lastStateKey) {
           return true;
         }
 
@@ -140,14 +137,18 @@ export function createStateStreamResponse<
       }
 
       try {
-        if (!(await syncState(true))) return;
+        if (!(await syncState({ forceMeta: true, forceState: true }))) return;
 
         // Run maintenance after the first state push so clients get data immediately.
-        // The lock ensures only one concurrent caller does actual work.
+        // The lock ensures only one concurrent caller does actual work. Always
+        // re-check fresh metadata afterward because maintenance can clear a
+        // deadline or bump the version even when it reports no phase change.
         if (latestMeta) {
           void runGameStateMaintenance(latestMeta.id, latestMeta.gameType).then(
-            async (changed) => {
-              if (changed && !request.signal.aborted) await syncState(true);
+            async () => {
+              if (!request.signal.aborted) {
+                await syncState({ forceMeta: true });
+              }
             },
           );
         }
@@ -188,21 +189,14 @@ export function createStateStreamResponse<
           if (request.signal.aborted) break;
 
           if (event) {
-            if (!(await syncState(true))) break;
+            if (!(await syncState({ forceMeta: true }))) break;
             continue;
           }
 
           sendKeepalive();
-          const stateChanged = await runGameStateMaintenance(meta.id, meta.gameType);
+          await runGameStateMaintenance(meta.id, meta.gameType);
 
-          if (stateChanged) {
-            if (!(await syncState(true))) {
-              break;
-            }
-            continue;
-          }
-
-          if (!(await syncState(false))) {
+          if (!(await syncState({ forceMeta: true }))) {
             break;
           }
         }

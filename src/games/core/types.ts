@@ -24,6 +24,9 @@ export type PhaseAdvanceResult =
   | "FINAL_RESULTS"
   | null;
 
+/** Advance from round results into the next stable phase, or no-op on race/lost claim. */
+export type RoundAdvanceResult = Extract<PhaseAdvanceResult, "WRITING" | "FINAL_RESULTS" | null>;
+
 /** Concrete operations that API routes dispatch through per game type. */
 export interface GameHandlers {
   /** Start a new round (e.g., assign prompts, set deadlines). */
@@ -32,8 +35,8 @@ export interface GameHandlers {
   /** End the game early (host ends during active play). */
   endGameEarly(gameId: string): Promise<void>;
 
-  /** Advance from round results to next round. Returns true if a new round started. */
-  advanceGame(gameId: string): Promise<boolean>;
+  /** Advance from round results to next round or final results. */
+  advanceGame(gameId: string): Promise<RoundAdvanceResult>;
 
   /** Force advance past current timed phase (host skip). Returns the phase advanced to. */
   forceAdvancePhase(gameId: string): Promise<PhaseAdvanceResult>;

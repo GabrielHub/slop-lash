@@ -3,6 +3,7 @@ import { WRITING_DURATION_SECONDS } from "./game-constants";
 import { assignPrompts } from "./game-logic-core";
 import { hasPrismaErrorCode } from "@/lib/prisma-errors";
 import { resolveWinnerTaglinePlaceholder } from "./winner-tagline";
+import { resolveRaceLostAdvanceResult, type RoundAdvanceResult } from "@/games/core";
 
 /**
  * Create the round and set the game to WRITING. Fast DB-only operation.
@@ -50,12 +51,13 @@ export async function startRound(gameId: string, roundNumber: number): Promise<v
 
 /**
  * Advance from ROUND_RESULTS to next round or FINAL_RESULTS.
- * Returns true if a new round was started (caller should trigger AI generation).
+ * Returns the stable phase reached after attempting the round-results advance.
  */
-export async function advanceGame(gameId: string): Promise<boolean> {
+export async function advanceGame(gameId: string): Promise<RoundAdvanceResult> {
   const game = await prisma.game.findUnique({
     where: { id: gameId },
     select: {
+      status: true,
       currentRound: true,
       totalRounds: true,
       players: {
@@ -66,7 +68,7 @@ export async function advanceGame(gameId: string): Promise<boolean> {
     },
   });
 
-  if (!game) return false;
+  if (!game || game.status !== "ROUND_RESULTS") return null;
 
   if (game.currentRound >= game.totalRounds) {
     await prisma.game.update({
@@ -77,20 +79,17 @@ export async function advanceGame(gameId: string): Promise<boolean> {
         version: { increment: 1 },
       },
     });
-    return false;
+    return "FINAL_RESULTS";
   }
 
   try {
     await startRound(gameId, game.currentRound + 1);
-    return true;
+    return "WRITING";
   } catch (error) {
     if (!hasPrismaErrorCode(error, "P2002")) {
       throw error;
     }
 
-    // Race loser: the round was already created by another caller.
-    // Return false so the loser does NOT re-trigger AI generation
-    // (the winner already kicked it off).
-    return false;
+    return resolveRaceLostAdvanceResult(gameId, game.currentRound);
   }
 }

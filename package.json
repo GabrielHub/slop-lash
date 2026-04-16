@@ -14,16 +14,16 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@google/genai": "^1.42.0",
-    "@prisma/adapter-pg": "^7.4.1",
-    "@prisma/client": "^7.4.1",
+    "@google/genai": "^1.50.1",
+    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/client": "^7.7.0",
     "@vercel/analytics": "^1.6.1",
-    "ai": "^6.0.97",
+    "ai": "^6.0.162",
     "canvas-confetti": "^1.9.4",
-    "motion": "^12.34.3",
+    "motion": "^12.38.0",
     "next": "16.1.6",
-    "pg": "^8.18.0",
-    "prisma": "^7.4.1",
+    "pg": "^8.20.0",
+    "prisma": "^7.7.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "zod": "^4.3.6"
@@ -37,17 +37,17 @@
     ]
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.2.2",
     "@types/canvas-confetti": "^1.9.0",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "dotenv": "^17.3.1",
-    "eslint": "^9",
+    "@types/node": "^20.19.39",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "dotenv": "^17.4.2",
+    "eslint": "^9.39.4",
     "eslint-config-next": "16.1.6",
     "husky": "^9.1.7",
-    "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^4.0.18"
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.4"
   }
 }

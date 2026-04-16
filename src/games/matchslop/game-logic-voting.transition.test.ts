@@ -5,6 +5,7 @@ const { prismaMock, txMock, coreMocks } = vi.hoisted(() => ({
     game: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     round: {
       findFirst: vi.fn(),
@@ -43,7 +44,7 @@ const { prismaMock, txMock, coreMocks } = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
 vi.mock("./game-logic-core", () => coreMocks);
 
-import { calculateRoundScores } from "./game-logic-voting";
+import { calculateRoundScores, revealCurrentPrompt } from "./game-logic-voting";
 
 describe("calculateRoundScores transitions", () => {
   beforeEach(() => {
@@ -57,7 +58,9 @@ describe("calculateRoundScores transitions", () => {
     txMock.response.updateMany.mockResolvedValue({});
     txMock.response.update.mockResolvedValue({});
     prismaMock.game.update.mockResolvedValue({});
+    prismaMock.game.updateMany.mockResolvedValue({ count: 1 });
     coreMocks.buildResultsDeadline.mockReturnValue(new Date("2026-03-20T05:00:00.000Z"));
+    coreMocks.buildVotingDeadline.mockReturnValue(new Date("2026-03-20T05:01:00.000Z"));
     coreMocks.parseModeState.mockReturnValue({
       aiVoteWeight: 1,
       humanVoteWeight: 2,
@@ -161,6 +164,40 @@ describe("calculateRoundScores transitions", () => {
         votingRevealing: false,
         phaseDeadline: null,
       }),
+    });
+  });
+
+  it("restores the voting phase if scoring fails after claiming reveal", async () => {
+    prismaMock.game.findUnique
+      .mockResolvedValueOnce({
+        status: "VOTING",
+        timersDisabled: false,
+      })
+      .mockResolvedValueOnce({
+        status: "VOTING",
+        timersDisabled: false,
+        modeState: {},
+        currentRound: 1,
+      });
+    prismaMock.round.findFirst.mockRejectedValueOnce(new Error("score explosion"));
+
+    await expect(revealCurrentPrompt("game-1")).rejects.toThrow("score explosion");
+
+    expect(prismaMock.game.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: "game-1", status: "VOTING", votingRevealing: false },
+      data: {
+        votingRevealing: true,
+        phaseDeadline: null,
+        version: { increment: 1 },
+      },
+    });
+    expect(prismaMock.game.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: "game-1", status: "VOTING", votingRevealing: true },
+      data: {
+        votingRevealing: false,
+        phaseDeadline: new Date("2026-03-20T05:01:00.000Z"),
+        version: { increment: 1 },
+      },
     });
   });
 });

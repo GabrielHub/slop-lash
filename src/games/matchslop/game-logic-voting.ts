@@ -308,6 +308,12 @@ export async function calculateRoundScores(gameId: string): Promise<void> {
 }
 
 export async function revealCurrentPrompt(gameId: string): Promise<boolean> {
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    select: { status: true, timersDisabled: true },
+  });
+  if (!game || game.status !== "VOTING") return false;
+
   const claim = await prisma.game.updateMany({
     where: { id: gameId, status: "VOTING", votingRevealing: false },
     data: {
@@ -317,6 +323,19 @@ export async function revealCurrentPrompt(gameId: string): Promise<boolean> {
     },
   });
   if (claim.count === 0) return false;
-  await calculateRoundScores(gameId);
-  return true;
+
+  try {
+    await calculateRoundScores(gameId);
+    return true;
+  } catch (error) {
+    await prisma.game.updateMany({
+      where: { id: gameId, status: "VOTING", votingRevealing: true },
+      data: {
+        votingRevealing: false,
+        phaseDeadline: buildVotingDeadline(game.timersDisabled),
+        version: { increment: 1 },
+      },
+    });
+    throw error;
+  }
 }
