@@ -1,4 +1,4 @@
-import type { GameDefinition } from "@/games/core";
+import type { GameDefinition } from "@/games/core/types";
 import {
   advanceGame,
   checkAllResponsesIn,

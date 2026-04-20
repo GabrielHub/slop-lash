@@ -13,9 +13,11 @@ export const ABANDONED_LOBBY_IDLE_MS = 2 * HOUR_MS;
 /** Grace period before cron deletes completed transient (non-retained) games. */
 export const TRANSIENT_COMPLETED_GAME_RETENTION_MS = HOUR_MS;
 
-const TRANSIENT_GAME_TYPES = getAllGameTypes().filter(
-  (gameType) => !getGameDefinition(gameType).capabilities.retainsCompletedData,
-);
+function getTransientGameTypes(): GameType[] {
+  return getAllGameTypes().filter(
+    (gameType) => !getGameDefinition(gameType).capabilities.retainsCompletedData,
+  );
+}
 
 export type GameCleanupSummary = {
   autoFinalizedAbandonedActive: number;
@@ -87,7 +89,7 @@ export async function cleanupOldGames(now = new Date()): Promise<GameCleanupSumm
 
   // Delete completed transient games past grace period (no leaderboard data to clean up).
   const transientCompletedWhere = {
-    gameType: { in: TRANSIENT_GAME_TYPES },
+    gameType: { in: getTransientGameTypes() },
     status: "FINAL_RESULTS" as const,
     createdAt: { lt: transientCompletedCutoff },
   };

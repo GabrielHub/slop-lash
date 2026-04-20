@@ -1,4 +1,4 @@
-import type { GameDefinition, GameType } from "@/games/core";
+import type { GameDefinition, GameType } from "@/games/core/types";
 import { sloplashDefinition } from "@/games/sloplash/definition";
 import { aiChatShowdownDefinition } from "@/games/ai-chat-showdown/definition";
 import { matchslopDefinition } from "@/games/matchslop/definition";
