@@ -7,13 +7,17 @@ import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { setPlayerSession } from "@/lib/client-session";
+import { useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { persistRoomSessionResult } from "@/lib/convex-room-client";
 
 const NAME_MAX_LENGTH = 20;
-
+const ROOM_CODE_LENGTH = 6;
 
 export default function JoinPage() {
   const router = useRouter();
+  const joinRoom = useAction(api.rooms.join);
   const { triggerElement } = usePixelDissolve();
   const [roomCode, setRoomCode] = useState("");
   const [name, setName] = useState("");
@@ -32,8 +36,8 @@ export default function JoinPage() {
       setError("Enter your name");
       return;
     }
-    if (roomCode.length !== 4) {
-      setError("Room code must be 4 characters");
+    if (roomCode.length !== ROOM_CODE_LENGTH) {
+      setError(`Room code must be ${ROOM_CODE_LENGTH} characters`);
       return;
     }
 
@@ -42,31 +46,16 @@ export default function JoinPage() {
 
     try {
       const code = roomCode.toUpperCase();
-      const res = await fetch(`/api/games/${code}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+      const room = await joinRoom({
+        name: name.trim(),
+        roomCode: code,
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to join");
-        return;
-      }
-
-      setPlayerSession({
-        playerId: data.playerId,
-        playerName: name.trim(),
-        rejoinToken: data.rejoinToken ?? null,
-        playerType: data.playerType ?? null,
-      });
+      persistRoomSessionResult(room);
       const targetRoute =
-        controllerMode || data.gameType === "MATCHSLOP"
-          ? `/controller/${code}`
-          : `/game/${code}`;
+        controllerMode || room.gameType === "MATCHSLOP" ? `/controller/${code}` : `/game/${code}`;
       router.push(targetRoute);
-    } catch {
-      setError("Something went wrong");
+    } catch (error) {
+      setError(getConvexErrorMessage(error, "Failed to join"));
     } finally {
       setLoading(false);
     }
@@ -100,27 +89,31 @@ export default function JoinPage() {
           Back
         </Link>
 
-        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-10 text-ink">
-          Join a Game
-        </h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-10 text-ink">Join a Game</h1>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            joinGame();
+            void joinGame();
           }}
         >
           {/* Name */}
           <div className="mb-6">
-            <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
+            <label
+              htmlFor="join-player-name"
+              className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2"
+            >
               Your Name
               {name.length >= 15 && (
-                <span className={`text-xs tabular-nums ${name.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}>
+                <span
+                  className={`text-xs tabular-nums ${name.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}
+                >
                   {name.length}/{NAME_MAX_LENGTH}
                 </span>
               )}
             </label>
             <input
+              id="join-player-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -135,16 +128,17 @@ export default function JoinPage() {
 
           {/* Room Code */}
           <div className="mb-8">
-            <label className="block text-sm font-medium text-ink-dim mb-2">
+            <label htmlFor="join-room-code" className="block text-sm font-medium text-ink-dim mb-2">
               Room Code
             </label>
             <input
+              id="join-room-code"
               type="text"
               value={roomCode}
               onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-              placeholder="ABCD"
+              placeholder="ABC234"
               className="w-full py-4 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/30 focus:outline-none focus:border-punch transition-colors text-center text-3xl tracking-[0.3em] font-mono font-bold"
-              maxLength={4}
+              maxLength={ROOM_CODE_LENGTH}
               autoComplete="off"
               autoCapitalize="characters"
               spellCheck={false}
@@ -156,6 +150,7 @@ export default function JoinPage() {
           <div className="mb-6">
             <label className="flex items-start gap-3 rounded-xl border border-edge bg-surface/60 p-4">
               <input
+                aria-label="Use phone controller mode"
                 type="checkbox"
                 checked={controllerMode}
                 onChange={(e) => setControllerMode(e.target.checked)}

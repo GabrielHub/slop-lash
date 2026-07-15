@@ -1,41 +1,4 @@
-# CLAUDE.md
+# Claude Code
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Package Manager
-
-Uses **pnpm**.
-
-## Development
-
-- Never start the dev server (`pnpm dev`) or run builds (`pnpm build`). Assume the dev server is already running.
-- Always run `pnpm check` after making changes to catch lint and type errors.
-- When creating **new UI screens or components**, always use the `frontend-design` skill.
-
-## UI Iteration Routes
-
-- Use `/dev/ui` for fixture-driven mock game flow routes that render the real game screens (`Lobby`, `Writing`, `Voting`, `Results`) with local mock actions.
-- The `/dev/ui/*` routes support local-only interactions (start, submit, vote, reactions, next, play again) so UI transitions and animations can be iterated without playing a real game.
-- Use `/dev/components` for the isolated component playground (timers, player list, score chart, reaction bar, results components, etc.).
-- Prefer iterating UI styling/layout in these dev routes first, then verify in the live game flow.
-
-## Database
-
-- **Single Neon PostgreSQL database** shared across local dev and production (no separate environments).
-- Managed via the Vercel + Neon integration. Connection strings are auto-injected as Vercel env vars.
-- ORM: **Prisma 7** with the Neon serverless adapter (`@neondatabase/serverless` + `@prisma/adapter-pg`).
-- Schema: `prisma/schema.prisma`. Config: `prisma.config.ts`.
-- Migrations: `pnpm prisma migrate dev` — runs against the single production database. Never run `prisma migrate reset`.
-- The `prisma.config.ts` loads env vars from `.env.local` (pulled via `npx vercel env pull .env.local`).
-
-## Proxy (Request Interception)
-
-- Next.js 16 uses `src/proxy.ts` as the convention file for request interception (rate limiting, bot blocking, etc.).
-- **Do NOT create `middleware.ts`** — it is deprecated in Next.js 16 and replaced by `proxy.ts`.
-- The exported function must be named `proxy` (not `middleware`). The `config` object with `matcher` is exported alongside it.
-- Proxy runs on the Node.js runtime (not Edge). The `runtime` config option is not available.
-
-## Deployment
-
-- Hosted on **Vercel**. Pushes to `master` trigger deployments.
-- Neon database is connected via Vercel's native Neon integration (Storage tab).
+Follow [`AGENTS.md`](./AGENTS.md). It is the canonical source of project-wide
+agent instructions; keep durable rules there instead of duplicating them here.

@@ -1,9 +1,5 @@
-import { describe, expect, it } from "vitest";
-import {
-  comparePlayersByScore,
-  pickTopScoringPlayer,
-  sortPlayersByScore,
-} from "./player-rankings";
+import { describe, expect, it } from "vite-plus/test";
+import { comparePlayersByScore, pickTopScoringPlayer, sortPlayersByScore } from "./player-rankings";
 
 describe("player rankings", () => {
   it("sorts by score descending with id as the tiebreaker", () => {
@@ -13,11 +9,7 @@ describe("player rankings", () => {
       { id: "c", score: 12 },
     ];
 
-    expect(sortPlayersByScore(players).map((player) => player.id)).toEqual([
-      "c",
-      "a",
-      "b",
-    ]);
+    expect(sortPlayersByScore(players).map((player) => player.id)).toEqual(["c", "a", "b"]);
   });
 
   it("picks the same player the comparator ranks first", () => {

@@ -25,10 +25,9 @@ export function NarratorIndicator({ state }: NarratorIndicatorProps) {
         exit={{ opacity: 0, scale: 0.8 }}
         transition={{ duration: 0.2 }}
       >
-        <div
+        <output
           className="flex items-end gap-[2px]"
           style={{ height: 14, width: 16 }}
-          role="status"
           aria-label={state === "speaking" ? "Narrator is speaking" : "Narrator connected"}
         >
           {state === "speaking" ? (
@@ -38,7 +37,13 @@ export function NarratorIndicator({ state }: NarratorIndicatorProps) {
                 className="w-[3px] rounded-full bg-teal"
                 initial={{ height: "20%" }}
                 animate={{
-                  height: ["20%", `${BAR_HEIGHTS[i] * 100}%`, "30%", `${BAR_HEIGHTS[(i + 2) % BAR_COUNT] * 100}%`, "20%"],
+                  height: [
+                    "20%",
+                    `${BAR_HEIGHTS[i] * 100}%`,
+                    "30%",
+                    `${BAR_HEIGHTS[(i + 2) % BAR_COUNT] * 100}%`,
+                    "20%",
+                  ],
                 }}
                 transition={{
                   duration: 0.8,
@@ -57,7 +62,7 @@ export function NarratorIndicator({ state }: NarratorIndicatorProps) {
               />
             </div>
           )}
-        </div>
+        </output>
 
         <span className="text-[10px] font-bold uppercase tracking-wider text-teal select-none hidden sm:inline">
           {state === "speaking" ? "Live" : "On Air"}

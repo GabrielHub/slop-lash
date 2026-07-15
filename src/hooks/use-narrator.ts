@@ -4,15 +4,20 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from "@google/genai";
 import type { GameStatus, GamePlayer } from "@/lib/types";
 import { getAudioContext, setNarratorDucking } from "@/lib/sounds";
-import { NarratorPlaybackQueue, base64ToPCM, pcm16ToFloat32 } from "@/games/sloplash/narrator-audio";
+import {
+  NarratorPlaybackQueue,
+  base64ToPCM,
+  pcm16ToFloat32,
+} from "@/games/sloplash/narrator-audio";
 import { buildSystemPrompt, NARRATOR_MODEL } from "@/games/sloplash/narrator-events";
+import { useAction } from "convex/react";
+import { ConvexError } from "convex/values";
+import { api } from "../../convex/_generated/api";
 
 function noop() {}
 
 interface UseNarratorOptions {
-  code: string;
-  playerId: string | null;
-  hostToken?: string | null;
+  roomCapability?: string | null;
   isHost: boolean;
   ttsMode: string;
   gameStatus: GameStatus | undefined;
@@ -27,15 +32,14 @@ interface UseNarratorReturn {
 }
 
 export function useNarrator({
-  code,
-  playerId,
-  hostToken = null,
+  roomCapability = null,
   isHost,
   ttsMode,
   gameStatus,
   players,
   totalRounds,
 }: UseNarratorOptions): UseNarratorReturn {
+  const requestNarratorToken = useAction(api.narrator.createToken);
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const sessionRef = useRef<Session | null>(null);
@@ -53,9 +57,22 @@ export function useNarrator({
     setIsSpeaking(active);
   }, []);
 
+  // Derived so the effect does not re-run on every phase change. Depending on
+  // gameStatus directly tore down the closure on each transition, permanently
+  // cancelling the live session's reconnect path while it stayed connected.
+  const shouldConnect =
+    isHost &&
+    ttsMode === "ON" &&
+    Boolean(roomCapability) &&
+    Boolean(gameStatus) &&
+    gameStatus !== "LOBBY" &&
+    gameStatus !== "FINAL_RESULTS";
+
   useEffect(() => {
-    if (!isHost || ttsMode !== "ON" || (!playerId && !hostToken)) return;
-    if (!gameStatus || gameStatus === "LOBBY" || gameStatus === "FINAL_RESULTS") return;
+    if (!shouldConnect || !roomCapability) {
+      return;
+    }
+    const capability = roomCapability;
     if (connectedOnceRef.current) return;
     if (connectingRef.current || sessionRef.current) return;
 
@@ -75,35 +92,34 @@ export function useNarrator({
       retryCount++;
       retryTimer = setTimeout(() => {
         retryTimer = null;
-        if (cancelled || gameEndedRef.current || sessionRef.current || connectingRef.current) return;
+        if (cancelled || gameEndedRef.current || sessionRef.current || connectingRef.current)
+          return;
         connectingRef.current = true;
         void connect();
       }, capped);
     }
 
     async function connect(handle?: string) {
+      let credentials: { token?: string | null; voiceName?: string | null };
       try {
-        const res = await fetch(`/api/games/${code}/narrator`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, hostToken }),
-        });
-        if (!res.ok) {
-          resumeHandleRef.current = null;
-          connectedOnceRef.current = false;
-          const errorText = await res.text().catch(() => "");
-          console.warn("[narrator] token request failed:", res.status, errorText);
-          connectingRef.current = false;
-          if (res.status >= 500 || res.status === 429) {
-            scheduleRetry();
-          }
-          return;
-        }
+        credentials = await requestNarratorToken({ capability });
+      } catch (err) {
+        console.warn("[narrator] token request failed:", err);
+        resumeHandleRef.current = null;
+        connectingRef.current = false;
+        connectedOnceRef.current = false;
+        // A ConvexError is a deliberate rejection from the action (revoked or
+        // expired capability), so retrying cannot succeed. Transport failures can.
+        if (!(err instanceof ConvexError)) scheduleRetry();
+        return;
+      }
+
+      try {
         if (cancelled) {
           connectingRef.current = false;
           return;
         }
-        const { token, voiceName } = await res.json();
+        const { token, voiceName } = credentials;
         if (!token || !voiceName) {
           console.warn("[narrator] token response missing fields");
           connectingRef.current = false;
@@ -138,9 +154,7 @@ export function useNarrator({
               automaticActivityDetection: { disabled: true },
             },
             thinkingConfig: { thinkingBudget: 0 },
-            ...(handle
-              ? { sessionResumption: { handle } }
-              : { sessionResumption: {} }),
+            ...(handle ? { sessionResumption: { handle } } : { sessionResumption: {} }),
           },
           callbacks: {
             onmessage(msg: LiveServerMessage) {
@@ -170,7 +184,12 @@ export function useNarrator({
               if (resumeHandleRef.current && !gameEndedRef.current) {
                 const handle = resumeHandleRef.current;
                 setTimeout(() => {
-                  if (mountedRef.current && !sessionRef.current && !gameEndedRef.current && !connectingRef.current) {
+                  if (
+                    mountedRef.current &&
+                    !sessionRef.current &&
+                    !gameEndedRef.current &&
+                    !connectingRef.current
+                  ) {
                     connectingRef.current = true;
                     void connect(handle);
                   }
@@ -208,8 +227,8 @@ export function useNarrator({
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameStatus, isHost, ttsMode, playerId, hostToken, code]);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldConnect, requestNarratorToken, roomCapability]);
 
   useEffect(() => {
     if (gameStatus !== "FINAL_RESULTS") return;

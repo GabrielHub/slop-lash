@@ -6,11 +6,17 @@ import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { buttonTap, fadeInUp, staggerContainer } from "@/lib/animations";
 import type { GameState } from "@/lib/types";
+import type { Id } from "../../convex/_generated/dataModel";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import {
+  useLobbyAddAiPlayerMutation,
+  useLobbyRemoveAiPlayerMutation,
+} from "@/hooks/use-game-runtime";
 
 function getCostTier(model: AIModel): string {
   const perGame =
-    (3 * 8 * 100 / 1_000_000) * model.inputPer1M +
-    (3 * 8 * 50 / 1_000_000) * model.outputPer1M;
+    ((3 * 8 * 100) / 1_000_000) * model.inputPer1M + ((3 * 8 * 50) / 1_000_000) * model.outputPer1M;
   if (perGame < 0.001) return "$";
   if (perGame < 0.005) return "$$";
   return "$$$";
@@ -28,20 +34,22 @@ export function LobbyAiManager({
   const [open, setOpen] = useState(false);
   const [busyModels, setBusyModels] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const roomSession = useConvexRoomSession(code);
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const addConvexAiPlayer = useLobbyAddAiPlayerMutation();
+  const removeConvexAiPlayer = useLobbyRemoveAiPlayerMutation();
 
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
   const aiPlayers = activePlayers.filter((p) => p.type === "AI");
-  const activeAiModelIds = aiPlayers
-    .map((p) => p.modelId)
-    .filter((id): id is string => id != null);
+  const activeAiModelIds = aiPlayers.map((p) => p.modelId).filter((id): id is string => id != null);
 
   const toggleModel = useCallback(
     async (model: AIModel) => {
       if (busyModels.has(model.id)) return;
-
-      const playerId = localStorage.getItem("playerId");
-      const hostToken = localStorage.getItem("hostControlToken");
-      if (!playerId && !hostToken) return;
+      if (!hostCapability) {
+        setError("Host room access is required to update AI players");
+        return;
+      }
 
       const existingPlayer = aiPlayers.find((p) => p.modelId === model.id);
       const isRemoving = !!existingPlayer;
@@ -49,21 +57,19 @@ export function LobbyAiManager({
       setBusyModels((prev) => new Set(prev).add(model.id));
       setError(null);
       try {
-        const response = await fetch(`/api/games/${code}/ai-players`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            isRemoving
-              ? { playerId, hostToken, action: "remove", targetPlayerId: existingPlayer.id }
-              : { playerId, hostToken, action: "add", modelId: model.id },
-          ),
-        });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          setError(payload?.error ?? "Unable to update AI players");
+        if (isRemoving) {
+          await removeConvexAiPlayer({
+            capability: hostCapability,
+            targetPlayerId: existingPlayer.id as Id<"players">,
+          });
+        } else {
+          await addConvexAiPlayer({
+            capability: hostCapability,
+            modelId: model.id,
+          });
         }
-      } catch {
-        setError("Unable to reach the AI player controls");
+      } catch (cause) {
+        setError(getConvexErrorMessage(cause, "Unable to reach the AI player controls"));
       } finally {
         setBusyModels((prev) => {
           const next = new Set(prev);
@@ -72,13 +78,15 @@ export function LobbyAiManager({
         });
       }
     },
-    [code, aiPlayers, busyModels],
+    [addConvexAiPlayer, aiPlayers, busyModels, hostCapability, removeConvexAiPlayer],
   );
 
   return (
     <div>
       <button
         type="button"
+        aria-expanded={open}
+        aria-label="Manage AI players"
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border-2 border-edge bg-surface/80 backdrop-blur-sm text-left transition-colors cursor-pointer hover:border-edge-strong group"
       >
@@ -100,9 +108,7 @@ export function LobbyAiManager({
             <path d="M12 2v20" />
           </svg>
           <span className="text-sm font-semibold text-ink">AI Players</span>
-          <span className="text-xs font-mono tabular-nums text-ink-dim/50">
-            {aiPlayers.length}
-          </span>
+          <span className="text-xs font-mono tabular-nums text-ink-dim/50">{aiPlayers.length}</span>
         </span>
         <svg
           width="12"
@@ -131,9 +137,7 @@ export function LobbyAiManager({
           >
             <div className="pt-2">
               <div className="flex items-baseline justify-between mb-2 px-0.5">
-                <span className="text-xs text-ink-dim/60">
-                  Tap to add or remove
-                </span>
+                <span className="text-xs text-ink-dim/60">Tap to add or remove</span>
                 <span className="text-xs font-mono tabular-nums text-ink-dim/50">
                   {activePlayers.length}/{maxPlayers} players
                 </span>
@@ -154,17 +158,13 @@ export function LobbyAiManager({
                       return m?.provider === model.provider;
                     });
                   const atLimit =
-                    activePlayers.length >= maxPlayers &&
-                    !selected &&
-                    !replacesSameProvider;
+                    activePlayers.length >= maxPlayers && !selected && !replacesSameProvider;
 
                   let stateClass: string;
                   if (selected) {
-                    stateClass =
-                      "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
+                    stateClass = "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
                   } else if (atLimit) {
-                    stateClass =
-                      "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
+                    stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
                   } else {
                     stateClass =
                       "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
@@ -182,11 +182,7 @@ export function LobbyAiManager({
                       {...buttonTap}
                     >
                       <div className="relative shrink-0">
-                        <ModelIcon
-                          model={model}
-                          size={22}
-                          className={busy ? "opacity-40" : ""}
-                        />
+                        <ModelIcon model={model} size={22} className={busy ? "opacity-40" : ""} />
                         {busy && (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <svg
@@ -215,9 +211,7 @@ export function LobbyAiManager({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-1.5">
-                          <span className="font-semibold text-sm truncate">
-                            {model.shortName}
-                          </span>
+                          <span className="font-semibold text-sm truncate">{model.shortName}</span>
                           <span className="text-[11px] text-ink-dim/50 shrink-0">
                             {model.provider}
                           </span>
@@ -246,9 +240,7 @@ export function LobbyAiManager({
                 })}
               </motion.div>
             </div>
-            {error ? (
-              <p className="mt-2 px-0.5 text-xs text-fail">{error}</p>
-            ) : null}
+            {error ? <p className="mt-2 px-0.5 text-xs text-fail">{error}</p> : null}
           </motion.div>
         )}
       </AnimatePresence>

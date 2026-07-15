@@ -1,14 +1,11 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  useRef,
-  useSyncExternalStore,
-} from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useMutation } from "convex/react";
 import { motion, AnimatePresence } from "motion/react";
+import type { Id } from "../../../../convex/_generated/dataModel";
+import { api } from "../../../../convex/_generated/api";
 import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { CompletionCard } from "@/components/completion-card";
@@ -23,7 +20,8 @@ import { MIN_PLAYERS } from "../game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
-import { getPlayerId, getPlayerToken, setPlayerSession, subscribeSession } from "@/lib/client-session";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
 
 function phaseAccent(status: string) {
   switch (status) {
@@ -91,18 +89,10 @@ function ChatControllerHeader({
               {phaseLabel(phase!)}
             </span>
           )}
-          {roundLabel && (
-            <span className="text-[11px] text-ink-dim font-mono">
-              {roundLabel}
-            </span>
-          )}
+          {roundLabel && <span className="text-[11px] text-ink-dim font-mono">{roundLabel}</span>}
         </div>
       </div>
-      {accent && (
-        <div
-          className={`h-[2px] w-full transition-colors duration-500 ${accent.line}`}
-        />
-      )}
+      {accent && <div className={`h-[2px] w-full transition-colors duration-500 ${accent.line}`} />}
     </div>
   );
 }
@@ -110,36 +100,30 @@ function ChatControllerHeader({
 function PromptCard({ text }: { text: string }) {
   return (
     <div className="rounded-2xl border border-gold/25 bg-gold-soft/30 px-4 py-3.5">
-      <p className="font-display font-bold text-base leading-snug text-ink">
-        {text}
-      </p>
+      <p className="font-display font-bold text-base leading-snug text-ink">{text}</p>
     </div>
   );
 }
 
 export function ChatControllerShell({ code }: { code: string }) {
-  const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
-  const playerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
-  const { gameState, error, refresh } = useControllerStream(code, playerToken);
+  const roomSession = useConvexRoomSession(code);
+  const playerCapability = roomSession?.playerCapability ?? null;
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const { gameState, error } = useControllerStream(code);
+  const respondMutation = useMutation(api.chatslop.respond);
+  const voteMutation = useMutation(api.chatslop.vote);
+  const advanceMutation = useMutation(api.chatslop.advance);
+  const startMutation = useMutation(api.lobby.start);
   useScreenWakeLock(gameState != null);
 
   const [responseText, setResponseText] = useState("");
-  const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [submittingPromptId, setSubmittingPromptId] = useState<string | null>(
-    null,
-  );
-  const [votingPromptIds, setVotingPromptIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [submittedPromptIds, setSubmittedPromptIds] = useState<Set<string>>(new Set());
+  const [submittingPromptId, setSubmittingPromptId] = useState<string | null>(null);
+  const [votingPromptIds, setVotingPromptIds] = useState<Set<string>>(new Set());
   const [votingBusy, setVotingBusy] = useState(false);
   const [hostActionBusy, setHostActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [reconnecting, setReconnecting] = useState(false);
-  const rejoinAttempted = useRef(false);
   const phaseKeyRef = useRef("");
 
   // Reset transient state on phase change
@@ -159,137 +143,71 @@ export function ChatControllerShell({ code }: { code: string }) {
     }
   }, [gameState]);
 
-  // Rejoin attempt
-  useEffect(() => {
-    if (!gameState || rejoinAttempted.current) return;
-    if (!playerId) return;
-    const inGame = gameState.players.some((p) => p.id === playerId);
-    if (inGame) return;
-
-    rejoinAttempted.current = true;
-    const token =
-      searchParams.get("rejoin") ?? getPlayerToken();
-    if (!token) return;
-
-    setReconnecting(true);
-    fetch(`/api/games/${code}/rejoin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        setPlayerSession({
-          playerId: data.playerId,
-          playerName: data.playerName,
-          rejoinToken: token,
-          playerType: data.playerType ?? null,
-        });
-        refresh();
-      })
-      .catch(() => {
-        rejoinAttempted.current = false;
-      })
-      .finally(() => setReconnecting(false));
-  }, [gameState, playerId, code, searchParams, refresh]);
-
-  const isHost = !!(
-    gameState &&
-    playerId &&
-    gameState.hostPlayerId === playerId
-  );
+  const isHost = hostCapability !== null;
   const activePlayerCount =
-    gameState?.players.filter((p) => p.type !== "SPECTATOR").length ?? 0;
+    gameState?.players.filter(
+      (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
+    ).length ?? 0;
 
   // --- Actions ---
 
   async function postHostAction(path: "start" | "next") {
-    const hostToken = localStorage.getItem("hostControlToken");
-    if (!playerId && !hostToken) return;
+    if (!hostCapability) return;
     setHostActionBusy(true);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Action failed");
+      if (path === "start") {
+        await startMutation({ capability: hostCapability });
+      } else {
+        await advanceMutation({ capability: hostCapability });
       }
-    } catch {
-      setActionError("Something went wrong");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Action failed"));
     } finally {
       setHostActionBusy(false);
     }
   }
 
   async function submitResponse(promptId: string) {
-    if (!playerToken) return;
+    if (!playerCapability) return;
     const text = responseText.trim();
     if (!text) return;
     setSubmittingPromptId(promptId);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId, text }),
+      await respondMutation({
+        capability: playerCapability,
+        promptId: promptId as Id<"prompts">,
+        text,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to submit");
-        return;
-      }
       setSubmittedPromptIds((prev) => new Set(prev).add(promptId));
       setResponseText("");
-    } catch {
-      setActionError("Something went wrong");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to submit"));
     } finally {
       setSubmittingPromptId(null);
     }
   }
 
   async function castVote(promptId: string, responseId: string) {
-    if (!playerToken) return;
+    if (!playerCapability) return;
     setVotingBusy(true);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId, responseId }),
+      await voteMutation({
+        capability: playerCapability,
+        promptId: promptId as Id<"prompts">,
+        responseId: responseId as Id<"responses">,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to vote");
-        return;
-      }
       setVotingPromptIds((prev) => new Set(prev).add(promptId));
-    } catch {
-      setActionError("Something went wrong");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to vote"));
     } finally {
       setVotingBusy(false);
     }
   }
 
   // --- Loading / Error states ---
-
-  if (reconnecting) {
-    return (
-      <>
-        <ChatControllerHeader roomCode={null} roundLabel={null} phase={null} />
-        <main className="min-h-svh flex items-center justify-center px-6 pt-16">
-          <div className="text-center">
-            <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
-            <p className="text-ink-dim text-sm">Reconnecting...</p>
-          </div>
-        </main>
-      </>
-    );
-  }
 
   if (error) {
     return (
@@ -316,16 +234,12 @@ export function ChatControllerShell({ code }: { code: string }) {
   // --- Render ---
 
   const roundLabel =
-    gameState.status === "LOBBY"
-      ? null
-      : `R${gameState.currentRound}/${gameState.totalRounds}`;
+    gameState.status === "LOBBY" ? null : `R${gameState.currentRound}/${gameState.totalRounds}`;
 
   const writingPrompts = gameState.writing?.prompts ?? [];
   const allWritingDone =
-    writingPrompts.length === 0 ||
-    writingPrompts.every(
-      (p) => p.submitted || submittedPromptIds.has(p.id),
-    );
+    playerCapability !== null &&
+    writingPrompts.every((prompt) => prompt.submitted || submittedPromptIds.has(prompt.id));
 
   const votingState = gameState.voting;
   const currentVotePrompt = votingState?.currentPrompt ?? null;
@@ -391,9 +305,7 @@ export function ChatControllerShell({ code }: { code: string }) {
                       triggerElement(e.currentTarget);
                       void postHostAction("start");
                     }}
-                    disabled={
-                      hostActionBusy || activePlayerCount < MIN_PLAYERS
-                    }
+                    disabled={hostActionBusy || activePlayerCount < MIN_PLAYERS}
                     className="w-full bg-teal hover:bg-teal-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-2xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed shadow-sm"
                     {...buttonTapPrimary}
                   >
@@ -414,15 +326,16 @@ export function ChatControllerShell({ code }: { code: string }) {
             {/* ── WRITING ── */}
             {gameState.status === "WRITING" && (
               <div className="space-y-4">
-                {allWritingDone ? (
+                {!playerCapability ? (
                   <CompletionCard
-                    title="Submitted!"
-                    subtitle="Waiting for everyone else..."
+                    title="Players are writing"
+                    subtitle="Use Force Advance if you need to move on."
                   />
+                ) : allWritingDone ? (
+                  <CompletionCard title="Submitted!" subtitle="Waiting for everyone else..." />
                 ) : (
                   writingPrompts.map((prompt) => {
-                    const isDone =
-                      prompt.submitted || submittedPromptIds.has(prompt.id);
+                    const isDone = prompt.submitted || submittedPromptIds.has(prompt.id);
                     return (
                       <div key={prompt.id} className="space-y-3">
                         <PromptCard text={prompt.text} />
@@ -441,9 +354,7 @@ export function ChatControllerShell({ code }: { code: string }) {
                             >
                               <polyline points="20 6 9 17 4 12" />
                             </svg>
-                            <span className="text-sm text-win font-semibold">
-                              Submitted
-                            </span>
+                            <span className="text-sm text-win font-semibold">Submitted</span>
                           </div>
                         ) : (
                           <div className="flex gap-2">
@@ -452,8 +363,7 @@ export function ChatControllerShell({ code }: { code: string }) {
                               value={responseText}
                               onChange={(e) => setResponseText(e.target.value)}
                               onKeyDown={(e) => {
-                                if (e.key === "Enter")
-                                  void submitResponse(prompt.id);
+                                if (e.key === "Enter") void submitResponse(prompt.id);
                               }}
                               placeholder="Type your answer..."
                               maxLength={100}
@@ -465,16 +375,11 @@ export function ChatControllerShell({ code }: { code: string }) {
                                 triggerElement(e.currentTarget);
                                 void submitResponse(prompt.id);
                               }}
-                              disabled={
-                                submittingPromptId === prompt.id ||
-                                !responseText.trim()
-                              }
+                              disabled={submittingPromptId === prompt.id || !responseText.trim()}
                               className="flex-none px-5 py-3.5 bg-teal hover:bg-teal-hover disabled:opacity-40 text-white rounded-2xl font-bold transition-colors cursor-pointer disabled:cursor-not-allowed"
                               {...buttonTap}
                             >
-                              {submittingPromptId === prompt.id
-                                ? "..."
-                                : "Send"}
+                              {submittingPromptId === prompt.id ? "..." : "Send"}
                             </motion.button>
                           </div>
                         )}
@@ -496,16 +401,10 @@ export function ChatControllerShell({ code }: { code: string }) {
                   );
 
                   if (gameState.votingRevealing) {
-                    return statusCard(
-                      <PulsingDot>Results are being calculated...</PulsingDot>,
-                    );
+                    return statusCard(<PulsingDot>Results are being calculated...</PulsingDot>);
                   }
                   if (!currentVotePrompt) {
-                    return statusCard(
-                      <PulsingDot>
-                        Waiting for voting to start...
-                      </PulsingDot>,
-                    );
+                    return statusCard(<PulsingDot>Waiting for voting to start...</PulsingDot>);
                   }
                   if (hasVotedCurrent) {
                     return statusCard(
@@ -546,9 +445,7 @@ export function ChatControllerShell({ code }: { code: string }) {
                             className="w-full text-left py-3.5 px-4 rounded-2xl border-2 border-edge bg-raised/60 hover:bg-surface hover:border-teal/50 active:scale-[0.98] text-ink transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             {...buttonTap}
                           >
-                            <span className="text-[15px] leading-relaxed">
-                              {resp.text}
-                            </span>
+                            <span className="text-[15px] leading-relaxed">{resp.text}</span>
                           </motion.button>
                         ))}
                       </motion.div>
@@ -559,8 +456,7 @@ export function ChatControllerShell({ code }: { code: string }) {
             )}
 
             {/* ── ROUND_RESULTS / FINAL_RESULTS ── */}
-            {(gameState.status === "ROUND_RESULTS" ||
-              gameState.status === "FINAL_RESULTS") && (
+            {(gameState.status === "ROUND_RESULTS" || gameState.status === "FINAL_RESULTS") && (
               <div className="space-y-4">
                 <div className="rounded-2xl border border-edge bg-surface/70 p-6 text-center">
                   <p className="font-display font-bold text-lg text-ink mb-2">
@@ -615,8 +511,7 @@ export function ChatControllerShell({ code }: { code: string }) {
 
             {/* ── Host force-advance (writing/voting) ── */}
             {canHostAdvance &&
-              (gameState.status === "WRITING" ||
-                gameState.status === "VOTING") && (
+              (gameState.status === "WRITING" || gameState.status === "VOTING") && (
                 <div className="mt-5 pt-4 border-t border-edge/50">
                   <motion.button
                     type="button"

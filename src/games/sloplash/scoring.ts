@@ -1,6 +1,6 @@
 /**
- * Comedy Heat scoring engine — pure functions, no Prisma.
- * Shared by server (game-logic.ts) and client (achievements.ts).
+ * Comedy Heat scoring engine — pure, deterministic domain functions.
+ * Shared by the Convex state machine and client-side result previews.
  */
 
 import type { PlayerType } from "@/lib/types";
@@ -15,7 +15,7 @@ const HR_WIN_DELTA = 0.2;
 const HR_LOSE_DELTA = -0.1;
 const HR_FLOOR = 0.5;
 const FLAWLESS_BONUS = 0.25;
-const UPSET_PCT = 0.10;
+const UPSET_PCT = 0.1;
 const UPSET_CAP_PER_ROUND = 500;
 const ABSTAIN_AI_PENALTY_PER_HUMAN = 100;
 const ABSTAIN_HUMAN_PENALTY = 75;
@@ -38,9 +38,12 @@ export function streakMultiplier(streak: number): number {
 
 function voteMultiplier(type: PlayerType): number {
   switch (type) {
-    case "HUMAN": return HUMAN_VOTE_MULT;
-    case "SPECTATOR": return SPECTATOR_VOTE_MULT;
-    case "AI": return AI_VOTE_MULT;
+    case "HUMAN":
+      return HUMAN_VOTE_MULT;
+    case "SPECTATOR":
+      return SPECTATOR_VOTE_MULT;
+    case "AI":
+      return AI_VOTE_MULT;
   }
 }
 
@@ -79,7 +82,7 @@ export interface ScorePromptResult {
 
 /**
  * Apply a ScorePromptResult's deltas to mutable player states.
- * Used by game-logic.ts, achievements.ts, and client-side scoring in voting.tsx.
+ * Used by the Convex state machine, achievements, and client-side voting previews.
  */
 export function applyScoreResult(
   result: ScorePromptResult,
@@ -153,16 +156,21 @@ export function scorePrompt(
   const result = emptyResult(responses);
   const roundMult = roundMultiplier(roundNumber);
 
-  if (responses.some((r) => r.text === FORFEIT_MARKER)) {
+  // A forfeited response is never votable and never wins. The prompt is only
+  // uncontested when a single contender remains -- the 2-way Slop-Lash case.
+  // With more contenders (ChatSlop runs one N-way prompt), the others still
+  // competed for real votes, so score them normally and leave forfeiters at 0.
+  const contenders = responses.filter((r) => r.text !== FORFEIT_MARKER);
+  if (contenders.length < responses.length && contenders.length <= 1) {
     return scoreForfeit(responses, playerStates, roundMult, eligibleVoterCount, result);
   }
 
   // Compute vote power per response
-  const votePowerByResponse = new Map<string, number>(
-    responses.map((r) => [r.id, 0]),
-  );
+  const votePowerByResponse = new Map<string, number>(contenders.map((r) => [r.id, 0]));
 
-  const castVoters = voters.filter((v) => v.responseId != null);
+  const castVoters = voters.filter(
+    (v) => v.responseId != null && votePowerByResponse.has(v.responseId),
+  );
 
   for (const voter of castVoters) {
     const voterHR = playerStates.get(voter.id)?.humorRating ?? 1.0;
@@ -173,7 +181,7 @@ export function scorePrompt(
   }
 
   // Rank by vote power
-  const ranked = responses
+  const ranked = contenders
     .map((r) => ({ response: r, votePower: votePowerByResponse.get(r.id) ?? 0 }))
     .sort((a, b) => b.votePower - a.votePower);
 
@@ -181,7 +189,9 @@ export function scorePrompt(
   const winner = !isTie ? ranked[0] : null;
   const loser = !isTie && ranked.length >= 2 ? ranked[ranked.length - 1] : null;
 
-  const isUnanimous = winner != null && castVoters.length >= 1 &&
+  const isUnanimous =
+    winner != null &&
+    castVoters.length >= 1 &&
     castVoters.every((v) => v.responseId === winner.response.id);
 
   // Calculate points for each response
@@ -199,7 +209,10 @@ export function scorePrompt(
       const winnerScore = state?.score ?? 0;
       const loserScore = playerStates.get(loser.response.playerId)?.score ?? 0;
       if (loserScore > winnerScore) {
-        const upsetBonus = Math.min(Math.floor((loserScore - winnerScore) * UPSET_PCT), UPSET_CAP_PER_ROUND * roundMult);
+        const upsetBonus = Math.min(
+          Math.floor((loserScore - winnerScore) * UPSET_PCT),
+          UPSET_CAP_PER_ROUND * roundMult,
+        );
         pts += upsetBonus;
         result.upsetResponseIds.add(entry.response.id);
       }
@@ -214,7 +227,8 @@ export function scorePrompt(
 
   // Abstain penalties: check if ALL human voters abstained
   const humanVoters = voters.filter((v) => v.type === "HUMAN");
-  const allHumansAbstained = humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
+  const allHumansAbstained =
+    humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
 
   if (allHumansAbstained) {
     const bothAI = responses.every((r) => r.playerType === "AI");
@@ -253,7 +267,9 @@ function scoreForfeit(
   const state = playerStates.get(winner.playerId);
   const streakMult = streakMultiplier(state?.winStreak ?? 0);
 
-  let pts = Math.floor(syntheticVotePower * syntheticVotePower * BASE_COEFF * roundMult * streakMult);
+  let pts = Math.floor(
+    syntheticVotePower * syntheticVotePower * BASE_COEFF * roundMult * streakMult,
+  );
   pts += Math.floor(pts * FLAWLESS_BONUS);
 
   result.points[winner.id] = pts;

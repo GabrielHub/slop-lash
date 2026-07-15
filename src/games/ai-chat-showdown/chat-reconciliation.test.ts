@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   confirmMessage,
@@ -47,10 +47,7 @@ describe("post reconciliation helpers", () => {
   });
 
   it("transitions failed -> pending and supports failed dismissal", () => {
-    const base = [
-      createPendingMessage("p1", "one", "c1"),
-      createPendingMessage("p2", "two", "c2"),
-    ];
+    const base = [createPendingMessage("p1", "one", "c1"), createPendingMessage("p2", "two", "c2")];
 
     const failed = setMessageStatus(base, "c1", "failed");
     expect(failed[0].status).toBe("failed");
@@ -78,11 +75,7 @@ describe("stream reconciliation", () => {
       },
     ];
 
-    const { messages, knownIds } = reconcileIncomingChatMessages(
-      local,
-      incoming,
-      new Set(),
-    );
+    const { messages, knownIds } = reconcileIncomingChatMessages(local, incoming, new Set());
 
     expect(messages).toHaveLength(1);
     expect(messages[0].id).toBe("s1");
@@ -105,11 +98,7 @@ describe("stream reconciliation", () => {
     ];
 
     const first = reconcileIncomingChatMessages(existing, incoming, new Set());
-    const second = reconcileIncomingChatMessages(
-      first.messages,
-      incoming,
-      first.knownIds,
-    );
+    const second = reconcileIncomingChatMessages(first.messages, incoming, first.knownIds);
 
     expect(first.messages).toHaveLength(1);
     expect(first.messages[0].status).toBe("confirmed");

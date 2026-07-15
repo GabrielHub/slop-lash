@@ -1,24 +1,27 @@
 "use client";
 
-import { useCallback } from "react";
-import type { ControllerGameState } from "@/lib/controller-types";
-import { useStateStream } from "./use-state-stream";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { useConvexRoomPresence } from "./use-convex-room-presence";
+import { useConvexRoomSession } from "./use-convex-room-session";
+import { useGameRuntime } from "./use-game-runtime";
 
-export function useControllerStream(code: string, playerToken: string | null) {
-  const createUrl = useCallback(
-    (currentCode: string) => {
-      const params = new URLSearchParams();
-      if (playerToken) params.set("playerToken", playerToken);
-      const query = params.toString();
-      return `/api/games/${currentCode}/controller/stream${query ? `?${query}` : ""}`;
-    },
-    [playerToken],
+export function useControllerStream(code: string) {
+  const runtime = useGameRuntime(code);
+  const roomSession = useConvexRoomSession(code);
+  const convexCapability = roomSession
+    ? (roomSession.playerCapability ?? roomSession.hostCapability)
+    : null;
+  useConvexRoomPresence({
+    capability: runtime ? null : convexCapability,
+  });
+  const convexState = useQuery(
+    api.gameViews.controller,
+    !runtime && convexCapability ? { capability: convexCapability } : "skip",
   );
 
-  const { state, error, refresh } = useStateStream<ControllerGameState>({
-    code,
-    createUrl,
-  });
-
-  return { gameState: state, error, refresh };
+  return {
+    gameState: runtime?.controllerState ?? convexState,
+    error: runtime?.error ?? null,
+  };
 }

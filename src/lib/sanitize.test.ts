@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { sanitize } from "./sanitize";
 
 describe("sanitize", () => {
@@ -28,7 +28,7 @@ describe("sanitize", () => {
     expect(sanitize("short", 100)).toBe("short");
   });
 
-  it("returns empty string for empty/whitespace input", () => {
+  it("returns empty string for empty or whitespace-only input", () => {
     expect(sanitize("", 100)).toBe("");
     expect(sanitize("   ", 100)).toBe("");
   });

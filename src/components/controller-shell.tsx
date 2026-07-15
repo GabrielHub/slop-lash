@@ -1,19 +1,28 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
-import { MIN_PLAYERS, WRITING_DURATION_SECONDS, VOTE_PER_PROMPT_SECONDS, REVEAL_SECONDS, ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
+import {
+  MIN_PLAYERS,
+  WRITING_DURATION_SECONDS,
+  VOTE_PER_PROMPT_SECONDS,
+  REVEAL_SECONDS,
+  ROUND_RESULTS_SECONDS,
+} from "@/games/sloplash/game-constants";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useControllerStream } from "@/hooks/use-controller-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
-import { getPlayerId, getPlayerToken, setPlayerSession, subscribeSession } from "@/lib/client-session";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 function ControllerHeader({
   roomCode,
@@ -25,7 +34,10 @@ function ControllerHeader({
   return (
     <div className="fixed top-0 left-0 right-0 z-30 pl-4 pr-16 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
-        <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
+        <Link
+          href="/"
+          className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors"
+        >
           SLOP-LASH
         </Link>
         <span className="text-edge-strong">|</span>
@@ -39,11 +51,16 @@ function ControllerHeader({
 }
 
 export function ControllerShell({ code }: { code: string }) {
-  const searchParams = useSearchParams();
   const { triggerElement } = usePixelDissolve();
-  const playerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
-  const { gameState, error, refresh } = useControllerStream(code, playerToken);
+  const roomSession = useConvexRoomSession(code);
+  const playerId = roomSession?.playerId ?? null;
+  const playerCapability = roomSession?.playerCapability ?? null;
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const startGameMutation = useMutation(api.lobby.start);
+  const advanceGameMutation = useMutation(api.sloplash.advance);
+  const submitResponseMutation = useMutation(api.sloplash.submitResponse);
+  const castVoteMutation = useMutation(api.sloplash.castVote);
+  const { gameState, error } = useControllerStream(code);
   useScreenWakeLock(gameState != null);
 
   const [responses, setResponses] = useState<Record<string, string>>({});
@@ -53,8 +70,6 @@ export function ControllerShell({ code }: { code: string }) {
   const [votingBusy, setVotingBusy] = useState(false);
   const [hostActionBusy, setHostActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [reconnecting, setReconnecting] = useState(false);
-  const rejoinAttempted = useRef(false);
   const phaseKeyRef = useRef<string>("");
 
   useEffect(() => {
@@ -73,135 +88,66 @@ export function ControllerShell({ code }: { code: string }) {
     }
   }, [gameState]);
 
-  useEffect(() => {
-    if (!gameState || rejoinAttempted.current) return;
-    const localPlayer = playerId
-      ? gameState.players.find((p) => p.id === playerId)
-      : null;
-    const needsRejoin =
-      playerId == null ||
-      localPlayer == null ||
-      localPlayer.participationStatus === "DISCONNECTED";
-    if (!needsRejoin) return;
-
-    rejoinAttempted.current = true;
-    const token = searchParams.get("rejoin") ?? getPlayerToken();
-    if (!token) {
-      rejoinAttempted.current = false;
-      return;
-    }
-
-    setReconnecting(true);
-    fetch(`/api/games/${code}/rejoin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          rejoinAttempted.current = false;
-          return;
-        }
-        const data = await res.json();
-        setPlayerSession({
-          playerId: data.playerId,
-          playerName: data.playerName,
-          rejoinToken: token,
-          playerType: data.playerType ?? null,
-        });
-        refresh();
-      })
-      .catch(() => {
-        rejoinAttempted.current = false;
-      })
-      .finally(() => setReconnecting(false));
-  }, [gameState, playerId, code, searchParams, refresh]);
-
-  const isHost = !!(gameState && playerId && gameState.hostPlayerId === playerId);
+  const isHost =
+    !!hostCapability || !!(gameState && playerId && gameState.hostPlayerId === playerId);
   const activePlayerCount = gameState?.players.filter((p) => p.type !== "SPECTATOR").length ?? 0;
 
   async function postHostAction(path: "start" | "next") {
-    const hostToken = localStorage.getItem("hostControlToken");
-    if (!playerId && !hostToken) return;
+    if (!hostCapability) {
+      setActionError("Host room access is required for this action.");
+      return;
+    }
     setHostActionBusy(true);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Action failed");
+      if (path === "start") {
+        await startGameMutation({ capability: hostCapability });
+      } else {
+        await advanceGameMutation({ capability: hostCapability });
       }
-    } catch {
-      setActionError("Something went wrong");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
       setHostActionBusy(false);
     }
   }
 
   async function submitResponse(promptId: string) {
-    if (!playerToken) return;
+    if (!playerCapability) return;
     const text = responses[promptId]?.trim();
     if (!text) return;
     setSubmittingPromptId(promptId);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId, text }),
+      await submitResponseMutation({
+        capability: playerCapability,
+        promptId: promptId as Id<"prompts">,
+        text,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to submit");
-        return;
-      }
       setSubmittedPromptIds((prev) => new Set(prev).add(promptId));
-    } catch {
-      setActionError("Something went wrong");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
       setSubmittingPromptId(null);
     }
   }
 
   async function castVote(promptId: string, responseId: string | null) {
-    if (!playerToken) return;
+    if (!playerCapability) return;
     setVotingBusy(true);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId, responseId }),
+      await castVoteMutation({
+        capability: playerCapability,
+        promptId: promptId as Id<"prompts">,
+        responseId: responseId as Id<"responses"> | null,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to vote");
-        return;
-      }
       setVotingPromptIds((prev) => new Set(prev).add(promptId));
-    } catch {
-      setActionError("Something went wrong");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
       setVotingBusy(false);
     }
-  }
-
-  if (reconnecting) {
-    return (
-      <>
-        <ControllerHeader roomCode={null} roundLabel="Controller" />
-        <main className="min-h-svh flex items-center justify-center px-6 pt-14">
-          <div className="text-center">
-            <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
-            <p className="text-ink-dim text-sm">Reconnecting...</p>
-          </div>
-        </main>
-      </>
-    );
   }
 
   if (error) {
@@ -237,15 +183,16 @@ export function ControllerShell({ code }: { code: string }) {
     !gameState.timersDisabled &&
     gameState.phaseDeadline != null;
 
-  const showTimer = !gameState.timersDisabled && (gameState.status === "WRITING" || gameState.status === "VOTING");
+  const showTimer =
+    !gameState.timersDisabled && (gameState.status === "WRITING" || gameState.status === "VOTING");
   const canHostAdvance =
     isHost &&
-    (gameState.status === "WRITING" || gameState.status === "VOTING" || gameState.status === "ROUND_RESULTS");
+    (gameState.status === "WRITING" ||
+      gameState.status === "VOTING" ||
+      gameState.status === "ROUND_RESULTS");
 
   const writingPrompts = gameState.writing?.prompts ?? [];
-  const allWritingDone =
-    writingPrompts.length === 0 ||
-    writingPrompts.every((p) => p.submitted || submittedPromptIds.has(p.id));
+  const allWritingDone = writingPrompts.every((p) => p.submitted || submittedPromptIds.has(p.id));
 
   const votingState = gameState.voting;
   const currentVotePrompt = votingState?.currentPrompt ?? null;
@@ -285,7 +232,9 @@ export function ControllerShell({ code }: { code: string }) {
                   gameState.status === "WRITING"
                     ? WRITING_DURATION_SECONDS
                     : gameState.status === "VOTING"
-                      ? (gameState.votingRevealing ? REVEAL_SECONDS : VOTE_PER_PROMPT_SECONDS)
+                      ? gameState.votingRevealing
+                        ? REVEAL_SECONDS
+                        : VOTE_PER_PROMPT_SECONDS
                       : undefined
                 }
               />
@@ -296,9 +245,7 @@ export function ControllerShell({ code }: { code: string }) {
             <div className="space-y-4">
               <div className="rounded-xl border border-edge bg-surface/70 p-4">
                 <p className="text-sm text-ink-dim mb-2">Players</p>
-                <p className="font-mono text-lg text-ink">
-                  {activePlayerCount} active
-                </p>
+                <p className="font-mono text-lg text-ink">{activePlayerCount} active</p>
                 <p className="text-xs text-ink-dim mt-2">
                   {gameState.players.map((p) => p.name).join(", ")}
                 </p>
@@ -311,10 +258,14 @@ export function ControllerShell({ code }: { code: string }) {
                     void postHostAction("start");
                   }}
                   disabled={hostActionBusy || activePlayerCount < MIN_PLAYERS}
-                  className="w-full bg-teal/90 hover:bg-teal-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  className="w-full bg-teal/90 hover:bg-teal-hover disabled:opacity-50 text-accent-ink font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
                   {...buttonTapPrimary}
                 >
-                  {hostActionBusy ? "Starting..." : activePlayerCount < MIN_PLAYERS ? `Need ${MIN_PLAYERS - activePlayerCount} more` : "Start Game"}
+                  {hostActionBusy
+                    ? "Starting..."
+                    : activePlayerCount < MIN_PLAYERS
+                      ? `Need ${MIN_PLAYERS - activePlayerCount} more`
+                      : "Start Game"}
                 </motion.button>
               ) : (
                 <div className="text-center py-3">
@@ -333,16 +284,16 @@ export function ControllerShell({ code }: { code: string }) {
               {(() => {
                 if (allWritingDone) {
                   return (
-                    <CompletionCard
-                      title="Submitted!"
-                      subtitle="Waiting for everyone else..."
-                    />
+                    <CompletionCard title="Submitted!" subtitle="Waiting for everyone else..." />
                   );
                 }
                 return writingPrompts.map((prompt) => {
                   const isDone = prompt.submitted || submittedPromptIds.has(prompt.id);
                   return (
-                    <div key={prompt.id} className="rounded-xl border border-edge bg-surface/70 p-4">
+                    <div
+                      key={prompt.id}
+                      className="rounded-xl border border-edge bg-surface/70 p-4"
+                    >
                       <p className="font-display font-semibold text-base text-gold mb-3">
                         {prompt.text}
                       </p>
@@ -369,8 +320,10 @@ export function ControllerShell({ code }: { code: string }) {
                               triggerElement(e.currentTarget);
                               void submitResponse(prompt.id);
                             }}
-                            disabled={submittingPromptId === prompt.id || !responses[prompt.id]?.trim()}
-                            className="w-full py-3 bg-punch/90 hover:bg-punch-hover disabled:opacity-50 text-white rounded-xl font-bold transition-colors cursor-pointer disabled:cursor-not-allowed"
+                            disabled={
+                              submittingPromptId === prompt.id || !responses[prompt.id]?.trim()
+                            }
+                            className="w-full py-3 bg-punch/90 hover:bg-punch-hover disabled:opacity-50 text-accent-ink rounded-xl font-bold transition-colors cursor-pointer disabled:cursor-not-allowed"
                             {...buttonTap}
                           >
                             {submittingPromptId === prompt.id ? "Sending..." : "Send"}
@@ -388,11 +341,15 @@ export function ControllerShell({ code }: { code: string }) {
             <div className="space-y-4">
               {(() => {
                 const statusCard = (children: React.ReactNode) => (
-                  <div className="rounded-xl border border-edge bg-surface/70 p-5 text-center">{children}</div>
+                  <div className="rounded-xl border border-edge bg-surface/70 p-5 text-center">
+                    {children}
+                  </div>
                 );
 
                 if (gameState.votingRevealing) {
-                  return statusCard(<PulsingDot>Results are revealing on the main screen...</PulsingDot>);
+                  return statusCard(
+                    <PulsingDot>Results are revealing on the main screen...</PulsingDot>,
+                  );
                 }
                 if (!currentVotePrompt) {
                   return statusCard(<PulsingDot>Waiting for the next matchup...</PulsingDot>);
@@ -400,17 +357,21 @@ export function ControllerShell({ code }: { code: string }) {
                 if (currentVotePrompt.isRespondent) {
                   return statusCard(
                     <>
-                      <p className="font-display font-semibold text-gold mb-2">{currentVotePrompt.text}</p>
+                      <p className="font-display font-semibold text-gold mb-2">
+                        {currentVotePrompt.text}
+                      </p>
                       <PulsingDot>You wrote one of these. Waiting...</PulsingDot>
-                    </>
+                    </>,
                   );
                 }
                 if (hasVotedCurrent) {
                   return statusCard(
                     <>
-                      <p className="font-display font-semibold text-gold mb-2">{currentVotePrompt.text}</p>
+                      <p className="font-display font-semibold text-gold mb-2">
+                        {currentVotePrompt.text}
+                      </p>
                       <CompletionCard title="Vote Cast" subtitle="Waiting for other players..." />
-                    </>
+                    </>,
                   );
                 }
 
@@ -418,7 +379,8 @@ export function ControllerShell({ code }: { code: string }) {
                 return (
                   <div className="rounded-xl border border-edge bg-surface/70 p-4">
                     <p className="text-xs uppercase tracking-wider text-ink-dim mb-2">
-                      Prompt {Math.min(gameState.votingPromptIndex + 1, totalPrompts)}/{totalPrompts}
+                      Prompt {Math.min(gameState.votingPromptIndex + 1, totalPrompts)}/
+                      {totalPrompts}
                     </p>
                     <p className="font-display font-semibold text-lg text-gold mb-4">
                       {currentVotePrompt.text}
@@ -491,10 +453,14 @@ export function ControllerShell({ code }: { code: string }) {
                     void postHostAction("next");
                   }}
                   disabled={hostActionBusy}
-                  className="w-full bg-punch/90 hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  className="w-full bg-punch/90 hover:bg-punch-hover disabled:opacity-50 text-accent-ink font-display font-bold py-4 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
                   {...buttonTapPrimary}
                 >
-                  {hostActionBusy ? "Advancing..." : (gameState.currentRound >= gameState.totalRounds ? "Finish Game" : "Next Round")}
+                  {hostActionBusy
+                    ? "Advancing..."
+                    : gameState.currentRound >= gameState.totalRounds
+                      ? "Finish Game"
+                      : "Next Round"}
                 </motion.button>
               ) : (
                 <div className="text-center py-2">
@@ -502,9 +468,9 @@ export function ControllerShell({ code }: { code: string }) {
                     {gameState.status === "FINAL_RESULTS"
                       ? "Waiting for the next game..."
                       : isAutoAdvancingResults
-                        ? (gameState.currentRound >= gameState.totalRounds
+                        ? gameState.currentRound >= gameState.totalRounds
                           ? "Waiting for the game to finish automatically..."
-                          : "Waiting for the next round to start automatically...")
+                          : "Waiting for the next round to start automatically..."
                         : "Waiting for host to continue..."}
                   </PulsingDot>
                 </div>
@@ -538,7 +504,11 @@ export function ControllerShell({ code }: { code: string }) {
                 className="w-full py-2.5 rounded-xl border border-edge text-ink-dim hover:text-ink hover:bg-surface transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 {...buttonTap}
               >
-                {hostActionBusy ? "Working..." : (gameState.timersDisabled ? "Advance" : "Skip Timer")}
+                {hostActionBusy
+                  ? "Working..."
+                  : gameState.timersDisabled
+                    ? "Advance"
+                    : "Skip Timer"}
               </motion.button>
             </div>
           )}

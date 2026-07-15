@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import { computeAchievements } from "./achievements";
 import type { GameState } from "@/lib/types";
 
@@ -24,9 +24,42 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
     aiCostUsd: 0,
     modelUsages: [],
     players: [
-      { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-      { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-      { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 200, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+      {
+        id: "p1",
+        name: "Alice",
+        type: "HUMAN",
+        modelId: null,
+        score: 300,
+        humorRating: 1.0,
+        winStreak: 0,
+        idleRounds: 0,
+        participationStatus: "ACTIVE",
+        lastSeen: "",
+      },
+      {
+        id: "p2",
+        name: "Bob",
+        type: "HUMAN",
+        modelId: null,
+        score: 100,
+        humorRating: 1.0,
+        winStreak: 0,
+        idleRounds: 0,
+        participationStatus: "ACTIVE",
+        lastSeen: "",
+      },
+      {
+        id: "ai1",
+        name: "GPT",
+        type: "AI",
+        modelId: "openai/gpt-5.4-mini",
+        score: 200,
+        humorRating: 1.0,
+        winStreak: 0,
+        idleRounds: 0,
+        participationStatus: "ACTIVE",
+        lastSeen: "",
+      },
     ],
     rounds: [],
     ...overrides,
@@ -35,7 +68,13 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
 
 function makePrompt(
   id: string,
-  responses: { id: string; playerId: string; text: string; playerType: "HUMAN" | "AI" | "SPECTATOR"; modelId: string | null }[],
+  responses: {
+    id: string;
+    playerId: string;
+    text: string;
+    playerType: "HUMAN" | "AI" | "SPECTATOR";
+    modelId: string | null;
+  }[],
   votes: { responseId: string; voterId: string; voterType?: "HUMAN" | "AI" | "SPECTATOR" }[],
   assignments?: { promptId: string; playerId: string }[],
 ) {
@@ -59,7 +98,8 @@ function makePrompt(
         idleRounds: 0,
         humorRating: 1.0,
         winStreak: 0,
-        participationStatus: "ACTIVE" as const, lastSeen: "",
+        participationStatus: "ACTIVE" as const,
+        lastSeen: "",
       },
     })),
     votes: votes.map((v, i) => ({
@@ -78,8 +118,30 @@ describe("computeAchievements", () => {
   it("returns empty for a game with no rounds and zero scores", () => {
     const game = makeGame({
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     expect(computeAchievements(game)).toEqual([]);
@@ -88,8 +150,30 @@ describe("computeAchievements", () => {
   it("awards MVP to the player with highest score", () => {
     const game = makeGame({
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 500, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 500,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 300,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -101,8 +185,30 @@ describe("computeAchievements", () => {
   it("does not award MVP on tie", () => {
     const game = makeGame({
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 300,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 300,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -111,27 +217,75 @@ describe("computeAchievements", () => {
 
   it("awards Slop Master for unanimous win", () => {
     const game = makeGame({
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [makePrompt(
-          "pr1",
-          [
-            { id: "resp1", playerId: "p1", text: "Funny", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "p2", text: "Meh", playerType: "HUMAN", modelId: null },
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                { id: "resp1", playerId: "p1", text: "Funny", playerType: "HUMAN", modelId: null },
+                { id: "resp2", playerId: "p2", text: "Meh", playerType: "HUMAN", modelId: null },
+              ],
+              [
+                { responseId: "resp1", voterId: "ai1" },
+                { responseId: "resp1", voterId: "p3" },
+              ],
+            ),
           ],
-          [
-            { responseId: "resp1", voterId: "ai1" },
-            { responseId: "resp1", voterId: "p3" },
-          ],
-        )],
-      }],
+        },
+      ],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 300,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 100,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "ai1",
+          name: "GPT",
+          type: "AI",
+          modelId: "openai/gpt-5.4-mini",
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p3",
+          name: "Carol",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -140,27 +294,75 @@ describe("computeAchievements", () => {
 
   it("awards Slopped for getting 0 votes unanimously", () => {
     const game = makeGame({
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [makePrompt(
-          "pr1",
-          [
-            { id: "resp1", playerId: "p1", text: "Great", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "p2", text: "Bad", playerType: "HUMAN", modelId: null },
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                { id: "resp1", playerId: "p1", text: "Great", playerType: "HUMAN", modelId: null },
+                { id: "resp2", playerId: "p2", text: "Bad", playerType: "HUMAN", modelId: null },
+              ],
+              [
+                { responseId: "resp1", voterId: "ai1" },
+                { responseId: "resp1", voterId: "p3" },
+              ],
+            ),
           ],
-          [
-            { responseId: "resp1", voterId: "ai1" },
-            { responseId: "resp1", voterId: "p3" },
-          ],
-        )],
-      }],
+        },
+      ],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 300,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "ai1",
+          name: "GPT",
+          type: "AI",
+          modelId: "openai/gpt-5.4-mini",
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p3",
+          name: "Carol",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -171,29 +373,100 @@ describe("computeAchievements", () => {
 
   it("awards AI Slayer when human beats AI", () => {
     const game = makeGame({
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [makePrompt(
-          "pr1",
-          [
-            { id: "resp1", playerId: "p1", text: "Human wins", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "ai1", text: "AI loses", playerType: "AI", modelId: "openai/gpt-5.4-mini" },
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                {
+                  id: "resp1",
+                  playerId: "p1",
+                  text: "Human wins",
+                  playerType: "HUMAN",
+                  modelId: null,
+                },
+                {
+                  id: "resp2",
+                  playerId: "ai1",
+                  text: "AI loses",
+                  playerType: "AI",
+                  modelId: "openai/gpt-5.4-mini",
+                },
+              ],
+              [
+                { responseId: "resp1", voterId: "p2" },
+                { responseId: "resp1", voterId: "p3" },
+                { responseId: "resp2", voterId: "p4" },
+              ],
+            ),
           ],
-          [
-            { responseId: "resp1", voterId: "p2" },
-            { responseId: "resp1", voterId: "p3" },
-            { responseId: "resp2", voterId: "p4" },
-          ],
-        )],
-      }],
+        },
+      ],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 200,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p3",
+          name: "Carol",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p4",
+          name: "Dave",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "ai1",
+          name: "GPT",
+          type: "AI",
+          modelId: "openai/gpt-5.4-mini",
+          score: 100,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -204,29 +477,94 @@ describe("computeAchievements", () => {
 
   it("awards Clutch for winning by exactly 1 vote", () => {
     const game = makeGame({
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [makePrompt(
-          "pr1",
-          [
-            { id: "resp1", playerId: "p1", text: "Close", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "p2", text: "Also close", playerType: "HUMAN", modelId: null },
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                { id: "resp1", playerId: "p1", text: "Close", playerType: "HUMAN", modelId: null },
+                {
+                  id: "resp2",
+                  playerId: "p2",
+                  text: "Also close",
+                  playerType: "HUMAN",
+                  modelId: null,
+                },
+              ],
+              [
+                { responseId: "resp1", voterId: "ai1" },
+                { responseId: "resp1", voterId: "p3" },
+                { responseId: "resp2", voterId: "p4" },
+              ],
+            ),
           ],
-          [
-            { responseId: "resp1", voterId: "ai1" },
-            { responseId: "resp1", voterId: "p3" },
-            { responseId: "resp2", voterId: "p4" },
-          ],
-        )],
-      }],
+        },
+      ],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 200, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 100, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p3", name: "Carol", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p4", name: "Dave", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 200,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 100,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "ai1",
+          name: "GPT",
+          type: "AI",
+          modelId: "openai/gpt-5.4-mini",
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p3",
+          name: "Carol",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p4",
+          name: "Dave",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -235,33 +573,86 @@ describe("computeAchievements", () => {
 
   it("awards Iron Will for submitting all responses without placeholders", () => {
     const game = makeGame({
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [
-          makePrompt(
-            "pr1",
-            [
-              { id: "resp1", playerId: "p1", text: "Answer 1", playerType: "HUMAN", modelId: null },
-              { id: "resp2", playerId: "p2", text: "...", playerType: "HUMAN", modelId: null },
-            ],
-            [],
-          ),
-          makePrompt(
-            "pr2",
-            [
-              { id: "resp3", playerId: "p1", text: "Answer 2", playerType: "HUMAN", modelId: null },
-              { id: "resp4", playerId: "ai1", text: "AI answer", playerType: "AI", modelId: "openai/gpt-5.4-mini" },
-            ],
-            [],
-          ),
-        ],
-      }],
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                {
+                  id: "resp1",
+                  playerId: "p1",
+                  text: "Answer 1",
+                  playerType: "HUMAN",
+                  modelId: null,
+                },
+                { id: "resp2", playerId: "p2", text: "...", playerType: "HUMAN", modelId: null },
+              ],
+              [],
+            ),
+            makePrompt(
+              "pr2",
+              [
+                {
+                  id: "resp3",
+                  playerId: "p1",
+                  text: "Answer 2",
+                  playerType: "HUMAN",
+                  modelId: null,
+                },
+                {
+                  id: "resp4",
+                  playerId: "ai1",
+                  text: "AI answer",
+                  playerType: "AI",
+                  modelId: "openai/gpt-5.4-mini",
+                },
+              ],
+              [],
+            ),
+          ],
+        },
+      ],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "ai1", name: "GPT", type: "AI", modelId: "openai/gpt-5.4-mini", score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "ai1",
+          name: "GPT",
+          type: "AI",
+          modelId: "openai/gpt-5.4-mini",
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);
@@ -274,47 +665,99 @@ describe("computeAchievements", () => {
     const game = makeGame({
       gameType: "AI_CHAT_SHOWDOWN",
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 500, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 300, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 500,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 300,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [makePrompt(
-          "pr1",
-          [
-            { id: "resp1", playerId: "p1", text: "Funny", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "p2", text: "Meh", playerType: "HUMAN", modelId: null },
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                { id: "resp1", playerId: "p1", text: "Funny", playerType: "HUMAN", modelId: null },
+                { id: "resp2", playerId: "p2", text: "Meh", playerType: "HUMAN", modelId: null },
+              ],
+              [
+                { responseId: "resp1", voterId: "p3" },
+                { responseId: "resp1", voterId: "p4" },
+              ],
+            ),
           ],
-          [
-            { responseId: "resp1", voterId: "p3" },
-            { responseId: "resp1", voterId: "p4" },
-          ],
-        )],
-      }],
+        },
+      ],
     });
     expect(computeAchievements(game)).toEqual([]);
   });
 
   it("does not award Iron Will to a player with placeholder responses", () => {
     const game = makeGame({
-      rounds: [{
-        id: "r1",
-        gameId: "game1",
-        roundNumber: 1,
-        prompts: [makePrompt(
-          "pr1",
-          [
-            { id: "resp1", playerId: "p1", text: "...", playerType: "HUMAN", modelId: null },
-            { id: "resp2", playerId: "p2", text: "Answer", playerType: "HUMAN", modelId: null },
+      rounds: [
+        {
+          id: "r1",
+          gameId: "game1",
+          roundNumber: 1,
+          prompts: [
+            makePrompt(
+              "pr1",
+              [
+                { id: "resp1", playerId: "p1", text: "...", playerType: "HUMAN", modelId: null },
+                { id: "resp2", playerId: "p2", text: "Answer", playerType: "HUMAN", modelId: null },
+              ],
+              [],
+            ),
           ],
-          [],
-        )],
-      }],
+        },
+      ],
       players: [
-        { id: "p1", name: "Alice", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
-        { id: "p2", name: "Bob", type: "HUMAN", modelId: null, score: 0, humorRating: 1.0, winStreak: 0, idleRounds: 0, participationStatus: "ACTIVE", lastSeen: "" },
+        {
+          id: "p1",
+          name: "Alice",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          type: "HUMAN",
+          modelId: null,
+          score: 0,
+          humorRating: 1.0,
+          winStreak: 0,
+          idleRounds: 0,
+          participationStatus: "ACTIVE",
+          lastSeen: "",
+        },
       ],
     });
     const achievements = computeAchievements(game);

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
-import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
@@ -10,10 +9,21 @@ import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
 import { Results } from "@/app/game/[code]/results";
 import { phaseTransition, fadeInUp } from "@/lib/animations";
-import { playSound, preloadSounds, subscribeAudio, isMuted, toggleMute, getVolume, setVolume, SOUND_NAMES } from "@/lib/sounds";
+import {
+  playSound,
+  preloadSounds,
+  subscribeAudio,
+  isMuted,
+  toggleMute,
+  getVolume,
+  setVolume,
+  SOUND_NAMES,
+} from "@/lib/sounds";
 import { useNarrator } from "@/hooks/use-narrator";
 import { useGameStream } from "@/hooks/use-game-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { useSloplashEndMutation } from "@/hooks/use-game-runtime";
 import { NarratorIndicator } from "@/components/narrator-indicator";
 import {
   buildGameStartEvent,
@@ -26,15 +36,6 @@ import {
   getVotablePrompts,
 } from "@/games/sloplash/narrator-events";
 
-import {
-  getPlayerId,
-  getPlayerToken,
-  getHostControlToken,
-  setHostControlToken,
-  setPlayerSession,
-  subscribeSession,
-} from "@/lib/client-session";
-
 export function GameShell({
   code,
   viewMode = "game",
@@ -42,78 +43,16 @@ export function GameShell({
   code: string;
   viewMode?: "game" | "stage";
 }) {
-  const searchParams = useSearchParams();
-  const storedPlayerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
-  const storedHostControlToken = useSyncExternalStore(subscribeSession, getHostControlToken, () => null);
-  const urlHostToken = viewMode === "stage" ? searchParams.get("token") : null;
-  const hostControlToken = urlHostToken ?? storedHostControlToken;
+  const roomSession = useConvexRoomSession(code);
+  const endGameMutation = useSloplashEndMutation();
   // Stage/TV mode is display-only and should never impersonate a player from
   // stale localStorage state left over from another session.
-  const playerId = viewMode === "stage" ? null : storedPlayerId;
-  const { gameState, error, refresh } = useGameStream(
-    code,
-    playerToken,
-    hostControlToken,
-    viewMode,
-  );
+  const playerId = viewMode === "stage" ? null : (roomSession?.playerId ?? null);
+  const { gameState, error } = useGameStream(code, viewMode);
   useScreenWakeLock(gameState != null);
   const [endingGame, setEndingGame] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
-  const rejoinAttempted = useRef(false);
   const soundsMuted = useSyncExternalStore(subscribeAudio, isMuted, () => false);
   const soundsVolume = useSyncExternalStore(subscribeAudio, getVolume, () => 0.5);
-
-  useEffect(() => {
-    if (viewMode !== "stage" || !urlHostToken) return;
-    setHostControlToken(urlHostToken);
-  }, [viewMode, urlHostToken]);
-
-
-  useEffect(() => {
-    if (viewMode === "stage") return;
-    if (!gameState || rejoinAttempted.current) return;
-    const localPlayer = playerId
-      ? gameState.players.find((p) => p.id === playerId)
-      : null;
-    const needsRejoin =
-      playerId == null ||
-      localPlayer == null ||
-      localPlayer.participationStatus === "DISCONNECTED";
-    if (!needsRejoin) return;
-
-    rejoinAttempted.current = true;
-    const token = searchParams.get("rejoin") ?? getPlayerToken();
-    if (!token) {
-      rejoinAttempted.current = false;
-      return;
-    }
-
-    queueMicrotask(() => setReconnecting(true));
-    fetch(`/api/games/${code}/rejoin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          setPlayerSession({
-            playerId: data.playerId,
-            playerName: data.playerName,
-            rejoinToken: token,
-            playerType: data.playerType ?? null,
-          });
-          refresh();
-          return;
-        }
-        rejoinAttempted.current = false;
-      })
-      .catch(() => {
-        rejoinAttempted.current = false;
-      })
-      .finally(() => setReconnecting(false));
-  }, [gameState, playerId, code, searchParams, refresh, viewMode]);
 
   useEffect(() => {
     window.addEventListener("pointerdown", preloadSounds, { once: true });
@@ -143,13 +82,13 @@ export function GameShell({
     prevVotingIndex.current = idx;
   }, [gameState?.status, gameState?.votingPromptIndex]);
 
-  const isHost =
-    playerId === gameState?.hostPlayerId ||
-    (viewMode === "stage" && !!hostControlToken && gameState?.hostPlayerId == null);
-  const { narrate, isConnected: narratorConnected, isSpeaking: narratorSpeaking } = useNarrator({
-    code,
-    playerId,
-    hostToken: hostControlToken,
+  const isHost = !!roomSession?.hostCapability || playerId === gameState?.hostPlayerId;
+  const {
+    narrate,
+    isConnected: narratorConnected,
+    isSpeaking: narratorSpeaking,
+  } = useNarrator({
+    roomCapability: roomSession?.hostCapability,
     isHost,
     ttsMode: gameState?.ttsMode ?? "OFF",
     gameStatus: gameState?.status,
@@ -185,11 +124,7 @@ export function GameShell({
 
     switch (status) {
       case "WRITING":
-        narrate(
-          prev === "LOBBY"
-            ? buildGameStartEvent(gs)
-            : buildNextRoundEvent(gs),
-        );
+        narrate(prev === "LOBBY" ? buildGameStartEvent(gs) : buildNextRoundEvent(gs));
         break;
       case "VOTING":
         narrate(buildVotingStartEvent(gs));
@@ -232,31 +167,10 @@ export function GameShell({
     return () => clearTimeout(timer);
   }, [gameState?.status, gameState?.phaseDeadline, narratorConnected, narrate]);
 
-  if (reconnecting) {
-    return (
-      <main className="min-h-svh flex items-center justify-center px-6">
-        <motion.div
-          className="text-center"
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-        >
-          <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-edge border-t-teal animate-spin" />
-          <p className="text-ink-dim text-sm">Reconnecting...</p>
-        </motion.div>
-      </main>
-    );
-  }
-
   if (error) {
     return (
       <main className="min-h-svh flex items-center justify-center px-6">
-        <motion.div
-          className="text-center"
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-        >
+        <motion.div className="text-center" variants={fadeInUp} initial="hidden" animate="visible">
           <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-fail-soft border-2 border-fail/30 flex items-center justify-center">
             <svg
               width="24"
@@ -330,18 +244,15 @@ export function GameShell({
       gameState.status === "ROUND_RESULTS");
 
   async function handleEndGame() {
-    if ((!playerId && !hostControlToken) || !canEndGame) return;
-    if (!window.confirm("End the game early? Scores will be calculated for completed rounds.")) return;
+    const convexHostCapability = roomSession?.hostCapability ?? null;
+    if (!convexHostCapability || !canEndGame) return;
+    if (!window.confirm("End the game early? Scores will be calculated for completed rounds."))
+      return;
     setEndingGame(true);
     try {
-      const res = await fetch(`/api/games/${code}/end`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken: hostControlToken }),
+      await endGameMutation({
+        capability: convexHostCapability,
       });
-      if (!res.ok) {
-        setEndingGame(false);
-      }
     } catch {
       setEndingGame(false);
     }
@@ -349,9 +260,14 @@ export function GameShell({
 
   function volumeIcon(): React.ReactNode {
     const svgProps = {
-      width: 16, height: 16, viewBox: "0 0 24 24",
-      fill: "none", stroke: "currentColor", strokeWidth: 2,
-      strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
+      width: 16,
+      height: 16,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round" as const,
+      strokeLinejoin: "round" as const,
     };
 
     if (soundsMuted) {
@@ -376,7 +292,10 @@ export function GameShell({
   const gameHeader = (
     <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
-        <Link href="/" className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors">
+        <Link
+          href="/"
+          className="font-display font-bold text-xs text-punch tracking-tight hover:text-punch-hover transition-colors"
+        >
           SLOP-LASH
         </Link>
         <span className="text-edge-strong">|</span>
@@ -418,7 +337,16 @@ export function GameShell({
             title="Play a random sound to test volume"
             className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M9 18V5l12-2v13" />
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
@@ -464,7 +392,6 @@ export function GameShell({
               game={gameState}
               isHost={isHost}
               code={code}
-              onRefresh={refresh}
               compactStage={forceStageView}
             />
           )}
@@ -490,7 +417,6 @@ export function GameShell({
             <Results
               game={gameState}
               isHost={isHost}
-              playerId={playerId}
               code={code}
               isFinal={gameState.status === "FINAL_RESULTS"}
               compactStage={forceStageView}

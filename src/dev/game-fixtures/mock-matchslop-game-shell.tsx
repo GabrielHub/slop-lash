@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MockEventSource } from "./mock-event-source";
 import { MockMatchSlopDebugPanel } from "./mock-matchslop-debug-panel";
 import {
   advanceMockMatchSlopGame,
@@ -15,7 +14,10 @@ import {
   startMockMatchSlopGame,
   subscribeToSharedMatchSlopState,
 } from "./mock-matchslop-state";
-import { MatchSlopGameShell } from "@/games/matchslop/ui/matchslop-game-shell";
+import {
+  MatchSlopGameShell,
+  type MatchSlopGameShellFixture,
+} from "@/games/matchslop/ui/matchslop-game-shell";
 import { useTheme } from "@/components/theme-provider";
 import type { MockScenario } from "./scenarios";
 
@@ -24,23 +26,6 @@ interface MockMatchSlopGameShellProps {
   scenario: MockScenario;
   previousSlug?: string;
   nextSlug?: string;
-}
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function parseUrl(input: RequestInfo | URL): URL {
-  if (typeof input === "string") return new URL(input, window.location.origin);
-  if (input instanceof URL) return input;
-  return new URL(input.url, window.location.origin);
 }
 
 export function MockMatchSlopGameShell({
@@ -52,119 +37,40 @@ export function MockMatchSlopGameShell({
   const [sharedState, setSharedState] = useState(() =>
     createMockMatchSlopSharedState(scenario.game),
   );
-  const [storageReady, setStorageReady] = useState(false);
   const game = sharedState.game;
   const actionLog = sharedState.actionLog;
   const mockCode = makeMockCode(scenario.slug);
-  const gameRef = useRef(game);
-  const stateStreamsRef = useRef(new Set<MockEventSource>());
-
-  useEffect(() => {
-    gameRef.current = game;
-  }, [game]);
 
   useEffect(() => {
     setSharedState(readSharedMatchSlopState(scenario.slug, scenario.game));
     return subscribeToSharedMatchSlopState(scenario.slug, scenario.game, setSharedState);
   }, [scenario.game, scenario.slug]);
 
-  useLayoutEffect(() => {
-    localStorage.setItem("hostControlToken", "mock-matchslop-host");
-    setStorageReady(true);
-  }, []);
-
-  useLayoutEffect(() => {
-    const originalFetch = window.fetch.bind(window);
-    const OriginalEventSource = window.EventSource;
-    const stateStreams = stateStreamsRef.current;
-
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = parseUrl(input);
-      if (!url.pathname.startsWith(`/api/games/${mockCode}`)) {
-        return originalFetch(input as RequestInfo, init);
-      }
-
-      const endpoint = url.pathname.replace(`/api/games/${mockCode}`, "");
-      const method = (init?.method ?? "GET").toUpperCase();
-      await delay(120);
-
-      if (method === "POST" && endpoint === "/start") {
-        setSharedState(
-          mutateSharedMatchSlopState(scenario.slug, scenario.game, "start", startMockMatchSlopGame),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/next") {
-        setSharedState(
-          mutateSharedMatchSlopState(
-            scenario.slug,
-            scenario.game,
-            `next (${gameRef.current.status})`,
-            advanceMockMatchSlopGame,
-          ),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/end") {
-        setSharedState(
-          mutateSharedMatchSlopState(scenario.slug, scenario.game, "end", endMockMatchSlopGame),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      return jsonResponse({ ok: true, mock: true });
-    };
-
-    window.EventSource = class extends MockEventSource {
-      constructor(url: string | URL) {
-        super(url);
-
-        queueMicrotask(() => {
-          if (this.readyState === MockEventSource.CLOSED) return;
-
-          const parsed = new URL(this.url);
-          if (parsed.pathname !== `/api/games/${mockCode}/stream`) {
-            this.fail();
-            return;
-          }
-
-          stateStreams.add(this);
-          this.setCleanup(() => {
-            stateStreams.delete(this);
-          });
-          this.open();
-
-          const currentGame = gameRef.current;
-          this.emit("state", currentGame);
-          if (currentGame.status === "FINAL_RESULTS") {
-            this.emit("done", {});
-            this.close();
-          }
-        });
-      }
-    } as typeof EventSource;
-
-    return () => {
-      window.fetch = originalFetch;
-      window.EventSource = OriginalEventSource;
-      for (const stream of stateStreams) {
-        stream.close();
-      }
-      stateStreams.clear();
-    };
-  }, [mockCode, scenario.game, scenario.slug]);
-
-  useEffect(() => {
-    for (const stream of stateStreamsRef.current) {
-      stream.emit("state", game);
-      if (game.status === "FINAL_RESULTS") {
-        stream.emit("done", {});
-        stream.close();
-      }
-    }
-  }, [game]);
+  const fixture: MatchSlopGameShellFixture = {
+    gameState: game,
+    isHost: true,
+    start: () => {
+      setSharedState(
+        mutateSharedMatchSlopState(scenario.slug, scenario.game, "start", startMockMatchSlopGame),
+      );
+    },
+    advance: () => {
+      setSharedState(
+        mutateSharedMatchSlopState(
+          scenario.slug,
+          scenario.game,
+          `next (${game.status})`,
+          advanceMockMatchSlopGame,
+        ),
+      );
+    },
+    end: () => {
+      setSharedState(
+        mutateSharedMatchSlopState(scenario.slug, scenario.game, "end", endMockMatchSlopGame),
+      );
+    },
+    managePersona: () => undefined,
+  };
 
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -244,7 +150,7 @@ export function MockMatchSlopGameShell({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden [&>div]:h-full [&>main]:h-full">
-        {storageReady ? <MatchSlopGameShell code={mockCode} viewMode="stage" /> : null}
+        <MatchSlopGameShell code={mockCode} fixture={fixture} viewMode="stage" />
       </div>
 
       <div className="pointer-events-none fixed bottom-4 right-4 z-[80] w-full max-w-md px-4">

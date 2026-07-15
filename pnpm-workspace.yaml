@@ -1,0 +1,23 @@
+onlyBuiltDependencies:
+  - sharp
+  - unrs-resolver
+minimumReleaseAgeExclude:
+  - ai@7.0.29
+  - '@ai-sdk/gateway@4.0.21'
+  - '@ai-sdk/provider@4.0.3'
+  - '@ai-sdk/provider-utils@5.0.10'
+  - convex@1.42.2
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.4
+  vite-plus: 0.2.4
+overrides:
+  vite: 'catalog:'
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: '*'
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+  sharp: true

@@ -7,26 +7,31 @@ A reference for writing Quiplash-style prompts that consistently produce funny a
 ## The Golden Rules
 
 ### 1. One Unexpected Specific Detail
+
 The single most important rule. The sweet spot is between too vague and too specific.
 
-| Quality | Example |
-|---------|---------|
-| Too vague | "A funny movie title" |
-| Just right | "A funny movie title for a film about sentient furniture" |
+| Quality      | Example                                                                     |
+| ------------ | --------------------------------------------------------------------------- |
+| Too vague    | "A funny movie title"                                                       |
+| Just right   | "A funny movie title for a film about sentient furniture"                   |
 | Too specific | "A funny 1940s noir movie title about sentient IKEA furniture in Cleveland" |
 
 One qualifier reframes the prompt. More than one constrains it into a corner.
 
 ### 2. The 10-Answer Test
+
 If you can't brainstorm 10+ possible funny answers in 5 seconds, the prompt is either too vague (infinite boring answers) or too specific (only one answer works). Both are bad.
 
 ### 3. Funny Words Do Half the Work
-Certain words are inherently funny and prime the player for comedy: *boogeyman, grandma, clown, goblin, dumpster, Florida Man, pirate, wizard, raccoon, medieval, butt*. If your prompt feels flat, swap in a funnier noun.
+
+Certain words are inherently funny and prime the player for comedy: _boogeyman, grandma, clown, goblin, dumpster, Florida Man, pirate, wizard, raccoon, medieval, butt_. If your prompt feels flat, swap in a funnier noun.
 
 ### 4. Variety Over Volume
+
 Don't write 50 prompts in the same format. Alternate between structures to keep the game feeling fresh. See the Structural Patterns section below.
 
 ### 5. Don't Overthink It
+
 Simple prompts often outperform clever ones. "What's that smell?" is a legendary prompt and it's three words.
 
 ---
@@ -36,6 +41,7 @@ Simple prompts often outperform clever ones. "What's that smell?" is a legendary
 These are the reusable templates that consistently produce laughs. Mix them freely.
 
 ### A. Worst/Best of (Superlative Frame)
+
 The bread and butter. Set a scenario, ask for the worst/best/most version.
 
 ```
@@ -47,6 +53,7 @@ The bread and butter. Set a scenario, ask for the worst/best/most version.
 **Tip:** The more specific the context, the funnier. "The worst thing to say" < "The worst thing to say while being wheeled into surgery."
 
 ### B. Name/Create (Generative)
+
 Consistently the highest-performing format in Quiplash. Players love naming things.
 
 ```
@@ -59,6 +66,7 @@ Consistently the highest-performing format in Quiplash. Players love naming thin
 **Tip:** The qualifier should be unexpected but not random. "Name a candle scent for guys who peaked in high school" works because the target is specific and relatable.
 
 ### C. Fill-in-the-Blank (Mad Lib)
+
 A familiar phrase or scenario with a blank. The structure guides the player toward comedy.
 
 ```
@@ -71,6 +79,7 @@ A familiar phrase or scenario with a blank. The structure guides the player towa
 **Tip:** The best fill-in-the-blanks set up a specific voice or scenario. "I'm sorry officer" immediately puts the player in character.
 
 ### D. Authority/Formality Bomb
+
 Set up a context of authority, formality, or gravitas — and the answer shatters it. From Cards Against Humanity, this is one of the most reliable comedy engines.
 
 ```
@@ -84,6 +93,7 @@ Set up a context of authority, formality, or gravitas — and the answer shatter
 **Why it works:** The comedy comes from incongruity — the gap between the formal frame and the absurd answer. The more "serious" the authority, the funnier.
 
 ### E. Cultural Subversion
+
 Take a well-known phrase, slogan, or cultural touchstone and subvert it with a blank.
 
 ```
@@ -96,6 +106,7 @@ Take a well-known phrase, slogan, or cultural touchstone and subvert it with a b
 **Why it works:** Everyone knows the original, so the subversion creates instant recognition + surprise. The audience does half the comedy work.
 
 ### F. Innocent Witness
+
 A naive or innocent perspective encounters something terrible.
 
 ```
@@ -108,6 +119,7 @@ A naive or innocent perspective encounters something terrible.
 **Why it works:** Innocence + darkness = taboo-breaking tension that generates laughter.
 
 ### G. Hidden Truth / Secret Life
+
 What X really thinks, does, or is hiding. Anthropomorphic humor and conspiracy-style absurdism.
 
 ```
@@ -118,6 +130,7 @@ What X really thinks, does, or is hiding. Anthropomorphic humor and conspiracy-s
 ```
 
 ### H. Ironic Inversion
+
 The best of the worst. Find the upside of something terrible.
 
 ```
@@ -129,6 +142,7 @@ The best of the worst. Find the upside of something terrible.
 **Tip:** Works best when the bad thing is universally agreed to be bad. Prison, haunted houses, getting struck by lightning.
 
 ### I. Constraint Prompts
+
 Limit the player's response to force creativity.
 
 ```
@@ -140,6 +154,7 @@ Limit the player's response to force creativity.
 **Why it works:** Constraints breed creativity. Players can't rely on rambling — they have to find the perfect words.
 
 ### J. Confession / Self-Roast
+
 First-person admissions. Players roleplay as their worst selves.
 
 ```
@@ -150,6 +165,7 @@ First-person admissions. Players roleplay as their worst selves.
 ```
 
 ### K. Little-Known "Facts"
+
 Pseudo-authoritative claims that players fill with absurdity.
 
 ```
@@ -159,6 +175,7 @@ Pseudo-authoritative claims that players fill with absurdity.
 ```
 
 ### L. Hypothetical / What-If
+
 Speculative scenarios that open up creative space.
 
 ```
@@ -168,6 +185,7 @@ Speculative scenarios that open up creative space.
 ```
 
 ### M. Juxtaposition (Dual Blank)
+
 Two blanks that force unexpected pairings. The relationship between the two answers creates emergent humor.
 
 ```
@@ -183,6 +201,7 @@ Two blanks that force unexpected pairings. The relationship between the two answ
 These are the topics that top comedians and internet culture keep returning to. Prompts that reference these will feel current and relatable.
 
 ### Universal (Evergreen)
+
 - **Domestic mundanity elevated** — pizza ordering drama, thermostat politics, IKEA trips, parking lot arguments
 - **Pet culture** — emotional support animals, dogs sleeping in bed, "doodles are barely dogs"
 - **Parenting nightmares** — kid art class disasters, school pickup hierarchies, birthday party chaos
@@ -190,6 +209,7 @@ These are the topics that top comedians and internet culture keep returning to. 
 - **Medical/health absurdity** — WebMD spirals, dentist dread, "is it serious?" anxiety
 
 ### Current (2025-2026 Specific)
+
 - **Ozempic/GLP-1 culture** — Hollywood thinness, weight loss drug absurdity, shortage jokes
 - **AI replacing human connection** — ChatGPT writing vows, AI dating messages, AI therapy, AI-generated comedy
 - **Generational warfare** — Gen Z can't read cursive, Boomers can't use technology, Millennials are in therapy
@@ -201,7 +221,9 @@ These are the topics that top comedians and internet culture keep returning to. 
 - **Climate/disaster anxiety** — played for dark humor, not despair
 
 ### Comedian Bit Inspiration
+
 When stuck, think about what comedians are riffing on:
+
 - **Nate Bargatze**: Clean observational — pizza ordering logistics, dog sleeping arrangements, his wife running everything
 - **Nikki Glaser**: Award show roasts — Ozempic, Hollywood hypocrisy, hot criminals
 - **Shane Gillis**: Sports roasts — nepotism, "he went 13-12 and almost won the Alamo Bowl"
@@ -218,7 +240,7 @@ CAH's design offers key insights for Quiplash-style prompts:
 
 1. **The comedy is in the combination.** The best prompts are relatively neutral on their own but become explosive when paired with answers. Don't try to make the prompt itself the joke.
 
-2. **Taboo topics need structure.** "During sex, I like to think about ______" works because the taboo frame provides distance — the player isn't confessing, they're playing a character.
+2. **Taboo topics need structure.** "During sex, I like to think about **\_\_**" works because the taboo frame provides distance — the player isn't confessing, they're playing a character.
 
 3. **Formal setups amplify absurd answers.** Authority figures, official documents, news broadcasts — the more serious the context, the funnier the disruption.
 
@@ -245,20 +267,20 @@ CAH's design offers key insights for Quiplash-style prompts:
 
 A healthy prompt bank should roughly follow this distribution:
 
-| Category | Target % | Description |
-|----------|----------|-------------|
-| Social Landmines | 15-20% | Worst thing to say/do in specific situations |
-| Naming & Creating | 5-8% | Name a product, band, app, etc. |
-| Hidden Truths | 5-8% | What X really thinks/does |
-| Corporate & Modern Life | 8-10% | Workplace, tech, adulting |
-| History & Pop Culture | 8-10% | Historical rewrites, celebrity absurdity |
-| Kids, Animals & Food | 5-8% | Childhood, fairy tales, food crimes |
-| Existential & Absurd | 5-8% | 3 AM thoughts, inversions, hypotheticals |
-| Confessions | 3-5% | First-person admissions |
-| Fill-in-the-Blank | 15-20% | Mad lib style completions |
-| Memes & Internet | 8-10% | Meme formats, current references |
-| Themed (NBA, etc.) | 5-10% | Audience-specific sections |
-| Foreign Language | 3-5% | Multilingual Easter eggs |
+| Category                | Target % | Description                                  |
+| ----------------------- | -------- | -------------------------------------------- |
+| Social Landmines        | 15-20%   | Worst thing to say/do in specific situations |
+| Naming & Creating       | 5-8%     | Name a product, band, app, etc.              |
+| Hidden Truths           | 5-8%     | What X really thinks/does                    |
+| Corporate & Modern Life | 8-10%    | Workplace, tech, adulting                    |
+| History & Pop Culture   | 8-10%    | Historical rewrites, celebrity absurdity     |
+| Kids, Animals & Food    | 5-8%     | Childhood, fairy tales, food crimes          |
+| Existential & Absurd    | 5-8%     | 3 AM thoughts, inversions, hypotheticals     |
+| Confessions             | 3-5%     | First-person admissions                      |
+| Fill-in-the-Blank       | 15-20%   | Mad lib style completions                    |
+| Memes & Internet        | 8-10%    | Meme formats, current references             |
+| Themed (NBA, etc.)      | 5-10%    | Audience-specific sections                   |
+| Foreign Language        | 3-5%     | Multilingual Easter eggs                     |
 
 ---
 
@@ -269,5 +291,5 @@ A healthy prompt bank should roughly follow this distribution:
 3. **Check for redundancy** — is there already a structurally similar prompt? (e.g., don't add a 5th "worst thing to say at a funeral")
 4. **Check specificity** — does it have exactly one unexpected detail?
 5. **Read it out loud** — does it sound natural when read to a group?
-6. **Categorize it** — place it in the correct section of `src/lib/prompts.ts`
-7. **Run `pnpm check`** — ensure no syntax/lint errors
+6. **Categorize it** — place it in the correct section of `src/games/core/prompts.ts`
+7. **Run `vp check`** — ensure no syntax/lint errors

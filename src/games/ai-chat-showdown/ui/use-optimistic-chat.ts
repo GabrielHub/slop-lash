@@ -1,4 +1,8 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePaginatedQuery } from "convex/react";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { useChatSendMutation, useGameRuntime } from "@/hooks/use-game-runtime";
+import { api } from "../../../../convex/_generated/api";
 
 export type ChatMessageStatus = "pending" | "confirmed" | "failed";
 
@@ -28,10 +32,7 @@ type ChatCursor = {
 
 const EMPTY_MESSAGES: OptimisticChatMessage[] = [];
 const INCOMING_TICK_BATCH_MS = 120;
-
-function isDocumentHidden() {
-  return typeof document !== "undefined" && document.visibilityState === "hidden";
-}
+const CHAT_PAGE_SIZE = 50;
 
 function makeClientMessageId() {
   return `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -47,6 +48,28 @@ function compareCursor(a: ChatCursor, b: ChatCursor): number {
 function advanceCursor(cursor: ChatCursor | null, next: ChatCursor): ChatCursor {
   if (!cursor) return next;
   return compareCursor(cursor, next) < 0 ? next : cursor;
+}
+
+function latestCursor(messages: ServerChatMessage[]): ChatCursor | null {
+  let cursor: ChatCursor | null = null;
+  for (const message of messages) {
+    cursor = advanceCursor(cursor, { createdAt: message.createdAt, id: message.id });
+  }
+  return cursor;
+}
+
+export function hasNewerOtherPlayerMessage(
+  incoming: ServerChatMessage[],
+  knownIds: ReadonlySet<string>,
+  cursor: ChatCursor | null,
+  playerId: string | null,
+): boolean {
+  return incoming.some(
+    (message) =>
+      !knownIds.has(message.id) &&
+      message.playerId !== playerId &&
+      (!cursor || compareCursor({ createdAt: message.createdAt, id: message.id }, cursor) > 0),
+  );
 }
 
 export function createPendingMessage(
@@ -107,24 +130,24 @@ export function reconcileIncomingChatMessages(
   for (const message of incoming) {
     if (nextKnownIds.has(message.id)) continue;
 
-    let pendingIdx = -1;
-    if (message.clientId) {
-      pendingIdx = updated.findIndex((entry) => entry.clientId === message.clientId);
-    }
-
-    if (pendingIdx === -1) {
-      pendingIdx = updated.findIndex(
-        (entry) =>
-          (entry.status === "pending" || entry.status === "failed") &&
-          entry.playerId === message.playerId &&
-          entry.content === message.content,
-      );
-    }
+    // A server message carrying a clientId can only match the pending entry with
+    // that exact clientId. Falling back to content matching would let an echo be
+    // absorbed into an unrelated send with the same text, dropping a real message.
+    const pendingIdx = message.clientId
+      ? updated.findIndex((entry) => entry.clientId === message.clientId)
+      : updated.findIndex(
+          (entry) =>
+            (entry.status === "pending" || entry.status === "failed") &&
+            entry.playerId === message.playerId &&
+            entry.content === message.content,
+        );
 
     if (pendingIdx !== -1) {
       updated[pendingIdx] = {
         ...updated[pendingIdx],
         id: message.id,
+        content: message.content,
+        playerId: message.playerId,
         replyToId: message.replyToId,
         createdAt: message.createdAt,
         status: "confirmed",
@@ -144,18 +167,37 @@ export function reconcileIncomingChatMessages(
     nextKnownIds.add(message.id);
   }
 
-  updated.sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
+  updated.sort((left, right) => compareCursor(left, right));
 
   return { messages: updated, knownIds: nextKnownIds };
 }
 
-export function useOptimisticChat(
-  code: string,
-  playerId: string | null,
-  enabled: boolean,
-) {
+export function useOptimisticChat(code: string, playerId: string | null, enabled: boolean) {
+  const runtime = useGameRuntime(code);
+  const runtimeChat = runtime?.chat;
+  const roomSession = useConvexRoomSession(code);
+  const readCapability = roomSession?.playerCapability ?? roomSession?.hostCapability ?? null;
+  const writeCapability = roomSession?.playerCapability ?? null;
+  const roomIdentity = `${code}:${readCapability ?? ""}`;
+  const sendChatMutation = useChatSendMutation();
+  const {
+    isLoading: isLoadingLiveHistory,
+    loadMore: loadMoreLiveMessages,
+    results: liveServerMessages,
+    status: livePaginationStatus,
+  } = usePaginatedQuery(
+    api.chat.list,
+    enabled && readCapability && !runtimeChat ? { capability: readCapability } : "skip",
+    { initialNumItems: CHAT_PAGE_SIZE },
+  );
+  const isLoadingHistory = runtimeChat?.isLoading ?? isLoadingLiveHistory;
+  const loadMore = runtimeChat?.loadMore ?? loadMoreLiveMessages;
+  const serverMessages = runtimeChat?.messages ?? liveServerMessages;
+  const paginationStatus = runtimeChat
+    ? runtimeChat.canLoadMore
+      ? "CanLoadMore"
+      : "Exhausted"
+    : livePaginationStatus;
   const [messagesState, setMessagesState] = useState<{
     code: string;
     messages: OptimisticChatMessage[];
@@ -164,13 +206,13 @@ export function useOptimisticChat(
     code: string;
     tick: number;
   }>({ code, tick: 0 });
-  const cursorRef = useRef<ChatCursor | null>(null);
+  const latestCursorRef = useRef<ChatCursor | null>(null);
   const knownIdsRef = useRef(new Set<string>());
   const messagesRef = useRef<OptimisticChatMessage[]>([]);
-  const esRef = useRef<EventSource | null>(null);
-  const retriesRef = useRef(0);
-  const terminalRef = useRef(false);
+  const historyInitializedRef = useRef(false);
   const incomingTickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRoomIdentityRef = useRef(roomIdentity);
+  activeRoomIdentityRef.current = roomIdentity;
 
   const messages = useMemo(
     () => (messagesState.code === code ? messagesState.messages : EMPTY_MESSAGES),
@@ -180,10 +222,9 @@ export function useOptimisticChat(
 
   const setMessagesForCode = useCallback(
     (updater: (prev: OptimisticChatMessage[]) => OptimisticChatMessage[]) => {
-      setMessagesState((prev) => {
-        const current = prev.code === code ? prev.messages : [];
-        return { code, messages: updater(current) };
-      });
+      const next = updater(messagesRef.current);
+      messagesRef.current = next;
+      setMessagesState({ code, messages: next });
     },
     [code],
   );
@@ -208,184 +249,112 @@ export function useOptimisticChat(
   }, [messages]);
 
   useEffect(() => {
-    cursorRef.current = null;
-    knownIdsRef.current = new Set();
-    terminalRef.current = false;
-    retriesRef.current = 0;
-
-    if (!enabled) {
-      esRef.current?.close();
-      esRef.current = null;
-      return;
+    if (incomingTickTimerRef.current) {
+      clearTimeout(incomingTickTimerRef.current);
+      incomingTickTimerRef.current = null;
     }
+    latestCursorRef.current = null;
+    knownIdsRef.current = new Set();
+    historyInitializedRef.current = false;
+    messagesRef.current = [];
+    setMessagesState({ code, messages: [] });
+    setIncomingTickState({ code, tick: 0 });
+  }, [code, readCapability]);
 
-    let cancelled = false;
+  useEffect(() => {
+    if (!enabled || !readCapability || paginationStatus === "LoadingFirstPage") return;
 
-    function registerMessages(incoming: ServerChatMessage[]) {
-      if (incoming.length === 0) return;
-
-      const hasOtherPlayerMessage = incoming.some((message) => message.playerId !== playerId);
+    const shouldTick =
+      historyInitializedRef.current &&
+      hasNewerOtherPlayerMessage(
+        serverMessages,
+        knownIdsRef.current,
+        latestCursorRef.current,
+        playerId,
+      );
+    const unseen = serverMessages.filter((message) => !knownIdsRef.current.has(message.id));
+    const nextCursor = latestCursor(serverMessages);
+    if (nextCursor) {
+      latestCursorRef.current = advanceCursor(latestCursorRef.current, nextCursor);
+    }
+    historyInitializedRef.current = true;
+    if (unseen.length > 0) {
       const reconciled = reconcileIncomingChatMessages(
         messagesRef.current,
-        incoming,
+        unseen,
         knownIdsRef.current,
       );
-
       knownIdsRef.current = reconciled.knownIds;
-      messagesRef.current = reconciled.messages;
       setMessagesForCode(() => reconciled.messages);
-
-      const last = incoming[incoming.length - 1];
-      cursorRef.current = advanceCursor(cursorRef.current, {
-        createdAt: last.createdAt,
-        id: last.id,
-      });
-
-      if (hasOtherPlayerMessage) {
-        scheduleIncomingTick();
-      }
     }
+    if (shouldTick) scheduleIncomingTick();
+  }, [
+    enabled,
+    paginationStatus,
+    playerId,
+    readCapability,
+    scheduleIncomingTick,
+    serverMessages,
+    setMessagesForCode,
+  ]);
 
-    function connect() {
-      if (cancelled || terminalRef.current || isDocumentHidden()) return;
-
-      const params = new URLSearchParams();
-      if (cursorRef.current) {
-        params.set("after", cursorRef.current.createdAt);
-        params.set("afterId", cursorRef.current.id);
-      }
-      const qs = params.toString();
-      const es = new EventSource(`/api/games/${code}/chat/stream${qs ? `?${qs}` : ""}`);
-      esRef.current = es;
-
-      es.addEventListener("message", (event) => {
-        if (cancelled) return;
-        try {
-          const message = JSON.parse(event.data) as ServerChatMessage;
-          registerMessages([message]);
-          retriesRef.current = 0;
-        } catch {
-          // Ignore malformed data.
-        }
-      });
-
-      es.addEventListener("done", () => {
-        terminalRef.current = true;
-        es.close();
-        if (esRef.current === es) {
-          esRef.current = null;
-        }
-      });
-
-      es.addEventListener("server-error", () => {
-        es.close();
-        if (esRef.current === es) {
-          esRef.current = null;
-        }
-      });
-
-      es.onerror = () => {
-        if (cancelled) return;
-
-        es.close();
-        if (esRef.current === es) {
-          esRef.current = null;
-        }
-
-        if (terminalRef.current || isDocumentHidden()) {
-          return;
-        }
-
-        const delay = Math.min(2_000 * 2 ** retriesRef.current, 30_000);
-        retriesRef.current++;
-        setTimeout(() => {
-          if (!cancelled && !esRef.current && !terminalRef.current) {
-            connect();
-          }
-        }, delay);
-      };
-    }
-
-    function onVisibilityChange() {
-      if (isDocumentHidden()) {
-        esRef.current?.close();
-        esRef.current = null;
-        return;
-      }
-
-      if (!cancelled && !esRef.current && !terminalRef.current) {
-        retriesRef.current = 0;
-        connect();
-      }
-    }
-
-    connect();
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      esRef.current?.close();
-      esRef.current = null;
+  useEffect(
+    () => () => {
       if (incomingTickTimerRef.current) {
         clearTimeout(incomingTickTimerRef.current);
         incomingTickTimerRef.current = null;
       }
-    };
-  }, [code, enabled, playerId, scheduleIncomingTick, setMessagesForCode]);
+    },
+    [],
+  );
 
   const postAndReconcile = useCallback(
     async (clientId: string, content: string) => {
-      if (!playerId) return;
+      if (!playerId || !writeCapability) return;
+      const requestedRoomIdentity = roomIdentity;
 
       try {
-        const res = await fetch(`/api/games/${code}/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, content, clientId }),
+        const message = await sendChatMutation({
+          capability: writeCapability,
+          clientId,
+          content,
         });
-
-        if (!res.ok) {
-          setMessagesForCode((prev) => setMessageStatus(prev, clientId, "failed"));
-          return;
-        }
-
-        const data = (await res.json()) as {
-          id: string;
-          createdAt: string;
-          clientId: string | null;
-        };
-        knownIdsRef.current.add(data.id);
-        setMessagesForCode((prev) =>
-          confirmMessage(prev, data.clientId ?? clientId, data.id, data.createdAt),
+        if (activeRoomIdentityRef.current !== requestedRoomIdentity) return;
+        const reconciled = reconcileIncomingChatMessages(
+          messagesRef.current,
+          [message],
+          knownIdsRef.current,
         );
+        knownIdsRef.current = reconciled.knownIds;
+        setMessagesForCode(() => reconciled.messages);
       } catch {
+        if (activeRoomIdentityRef.current !== requestedRoomIdentity) return;
         setMessagesForCode((prev) => setMessageStatus(prev, clientId, "failed"));
       }
     },
-    [code, playerId, setMessagesForCode],
+    [playerId, roomIdentity, sendChatMutation, setMessagesForCode, writeCapability],
   );
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!playerId || !content.trim()) return;
+      if (!playerId || !writeCapability || !content.trim()) return;
 
       const optimistic = createPendingMessage(playerId, content);
       setMessagesForCode((prev) => [...prev, optimistic]);
       await postAndReconcile(optimistic.clientId, optimistic.content);
     },
-    [playerId, postAndReconcile, setMessagesForCode],
+    [playerId, postAndReconcile, setMessagesForCode, writeCapability],
   );
 
   const retryMessage = useCallback(
     async (clientId: string) => {
       const message = messagesRef.current.find((entry) => entry.clientId === clientId);
-      if (!message || message.status !== "failed" || !playerId) return;
+      if (!message || message.status !== "failed" || !playerId || !writeCapability) return;
 
       setMessagesForCode((prev) => setMessageStatus(prev, clientId, "pending"));
       await postAndReconcile(clientId, message.content);
     },
-    [playerId, postAndReconcile, setMessagesForCode],
+    [playerId, postAndReconcile, setMessagesForCode, writeCapability],
   );
 
   const dismissFailed = useCallback(
@@ -395,5 +364,19 @@ export function useOptimisticChat(
     [setMessagesForCode],
   );
 
-  return { messages, sendMessage, retryMessage, dismissFailed, incomingTick };
+  const loadOlderMessages = useCallback(() => {
+    if (paginationStatus === "CanLoadMore") loadMore(CHAT_PAGE_SIZE);
+  }, [loadMore, paginationStatus]);
+
+  return {
+    canLoadMore: enabled && paginationStatus === "CanLoadMore",
+    dismissFailed,
+    incomingTick,
+    isLoadingHistory: enabled && isLoadingHistory,
+    isLoadingMore: enabled && paginationStatus === "LoadingMore",
+    loadOlderMessages,
+    messages,
+    retryMessage,
+    sendMessage,
+  };
 }

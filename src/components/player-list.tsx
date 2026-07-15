@@ -8,7 +8,13 @@ import { getPlayerColor } from "@/lib/player-colors";
 import { staggerContainer, fadeInUp, popIn } from "@/lib/animations";
 import { HumorBadge } from "@/components/humor-badge";
 
-function TypeBadge({ label, variant }: { label: string; variant: "ai" | "spectator" | "afk" | "disconnected" }) {
+function TypeBadge({
+  label,
+  variant,
+}: {
+  label: string;
+  variant: "ai" | "spectator" | "afk" | "disconnected";
+}) {
   const styles = {
     ai: "bg-ai-soft text-ai",
     spectator: "bg-surface text-ink-dim",
@@ -16,7 +22,9 @@ function TypeBadge({ label, variant }: { label: string; variant: "ai" | "spectat
     disconnected: "bg-surface text-ink-dim",
   };
   return (
-    <span className={`text-xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md shrink-0 ${styles[variant]}`}>
+    <span
+      className={`text-xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md shrink-0 ${styles[variant]}`}
+    >
       {label}
     </span>
   );
@@ -42,9 +50,7 @@ export function PlayerList({
     >
       <AnimatePresence mode="popLayout">
         {players.map((player) => {
-          const model = player.modelId
-            ? getModelByModelId(player.modelId)
-            : null;
+          const model = player.modelId ? getModelByModelId(player.modelId) : null;
           const isAfk = player.idleRounds >= 1 && player.type === "HUMAN";
           const isDisconnected = player.participationStatus === "DISCONNECTED";
 
@@ -71,7 +77,9 @@ export function PlayerList({
                     {player.name[0]?.toUpperCase() ?? "?"}
                   </span>
                 )}
-                <span className={`font-semibold text-base truncate${isDisconnected ? " text-ink-dim line-through" : " text-ink"}`}>
+                <span
+                  className={`font-semibold text-base truncate${isDisconnected ? " text-ink-dim line-through" : " text-ink"}`}
+                >
                   {player.name}
                 </span>
                 {isDisconnected && <TypeBadge label="LEFT" variant="disconnected" />}
@@ -94,11 +102,22 @@ export function PlayerList({
                 )}
                 {onKick && player.id !== hostPlayerId && !isDisconnected && (
                   <button
+                    type="button"
+                    aria-label={`Kick ${player.name}`}
                     onClick={() => onKick(player.id)}
                     className="text-xs text-ink-dim hover:text-fail transition-colors cursor-pointer px-1.5 py-0.5 rounded"
                     title="Kick player"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>

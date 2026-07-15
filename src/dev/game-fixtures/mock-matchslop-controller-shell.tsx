@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { MockEventSource } from "./mock-event-source";
 import { MockMatchSlopDebugPanel } from "./mock-matchslop-debug-panel";
 import {
   advanceMockMatchSlopGame,
@@ -17,7 +16,10 @@ import {
   subscribeToSharedMatchSlopState,
   voteMockMatchSlopResponse,
 } from "./mock-matchslop-state";
-import { MatchSlopControllerShell } from "@/games/matchslop/ui/matchslop-controller-shell";
+import {
+  MatchSlopControllerShell,
+  type MatchSlopControllerShellFixture,
+} from "@/games/matchslop/ui/matchslop-controller-shell";
 import type { ControllerGameState } from "@/lib/controller-types";
 import type { GameState } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
@@ -29,12 +31,6 @@ interface MockMatchSlopControllerShellProps {
   previousSlug?: string;
   nextSlug?: string;
 }
-
-type JsonObject = Record<string, unknown>;
-type ControllerStreamEntry = {
-  playerId: string | null;
-  stream: MockEventSource;
-};
 
 type MatchSlopModeState = {
   aiVoteWeight?: number;
@@ -69,7 +65,7 @@ type MatchSlopModeState = {
     authorName?: string | null;
     id?: string;
     outcome?: "CONTINUE" | "DATE_SEALED" | "UNMATCHED" | "TURN_LIMIT" | "COMEBACK" | null;
-    speaker?: "PERSONA" | "PLAYERS" | string;
+    speaker?: "PERSONA" | "PLAYERS";
     text?: string;
     turn?: number;
   }>;
@@ -80,35 +76,6 @@ type MatchSlopModeState = {
   mood?: number;
 };
 
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function parseUrl(input: RequestInfo | URL): URL {
-  if (typeof input === "string") return new URL(input, window.location.origin);
-  if (input instanceof URL) return input;
-  return new URL(input.url, window.location.origin);
-}
-
-async function parseJsonBody(init?: RequestInit): Promise<JsonObject> {
-  if (!init?.body) return {};
-  if (typeof init.body === "string") {
-    try {
-      return JSON.parse(init.body) as JsonObject;
-    } catch {
-      return {};
-    }
-  }
-  return {};
-}
-
 function asMatchSlopModeState(game: GameState): MatchSlopModeState {
   return (game.modeState ?? {}) as MatchSlopModeState;
 }
@@ -117,6 +84,7 @@ function deriveControllerState(
   game: GameState,
   playerId: string | null,
   hostPlayerId: string | null,
+  serverNow: string,
 ): ControllerGameState {
   const players = game.players.map((player) => ({
     id: player.id,
@@ -124,7 +92,7 @@ function deriveControllerState(
     type: player.type,
     participationStatus: player.participationStatus,
   }));
-  const me = playerId ? players.find((player) => player.id === playerId) ?? null : null;
+  const me = playerId ? (players.find((player) => player.id === playerId) ?? null) : null;
   const currentRound = game.rounds[0] ?? null;
   const modeState = asMatchSlopModeState(game);
   const activePlayerIds = new Set(
@@ -134,10 +102,11 @@ function deriveControllerState(
   );
   const activeTotal = activePlayerIds.size;
   const profile = modeState.profile ?? null;
-  const profilePrompts = profile?.prompts?.flatMap((prompt) => {
-    if (!prompt.id || !prompt.prompt || !prompt.answer) return [];
-    return [{ id: prompt.id, prompt: prompt.prompt, answer: prompt.answer }];
-  }) ?? [];
+  const profilePrompts =
+    profile?.prompts?.flatMap((prompt) => {
+      if (!prompt.id || !prompt.prompt || !prompt.answer) return [];
+      return [{ id: prompt.id, prompt: prompt.prompt, answer: prompt.answer }];
+    }) ?? [];
   const latestAssignedPrompt =
     currentRound?.prompts.find((prompt) =>
       prompt.assignments.some((assignment) => assignment.playerId === playerId),
@@ -159,16 +128,17 @@ function deriveControllerState(
 
   const votingPrompt =
     game.status === "VOTING" && currentRound
-      ? currentRound.prompts[game.votingPromptIndex] ?? currentRound.prompts[0] ?? null
+      ? (currentRound.prompts[game.votingPromptIndex] ?? currentRound.prompts[0] ?? null)
       : null;
   const ownVote =
     votingPrompt && playerId
-      ? votingPrompt.votes.find((vote) => vote.voterId === playerId) ?? null
+      ? (votingPrompt.votes.find((vote) => vote.voterId === playerId) ?? null)
       : null;
 
   return {
     id: game.id,
     roomCode: game.roomCode,
+    serverNow,
     gameType: game.gameType,
     status: game.status,
     currentRound: game.currentRound,
@@ -215,9 +185,7 @@ function deriveControllerState(
               isRespondent: false,
               hasVoted: ownVote != null,
               hasAbstained:
-                ownVote != null &&
-                ownVote.responseId == null &&
-                ownVote.failReason == null,
+                ownVote != null && ownVote.responseId == null && ownVote.failReason == null,
               forfeitCount: 0,
             },
           },
@@ -228,28 +196,29 @@ function deriveControllerState(
       humanVoteWeight: modeState.humanVoteWeight ?? 2,
       aiVoteWeight: modeState.aiVoteWeight ?? 1,
       comebackRound: modeState.comebackRound ?? null,
-      profile: profile == null
-        ? null
-        : {
-            displayName: profile.displayName ?? "Mystery Match",
-            age: profile.age ?? null,
-            location: profile.location ?? null,
-            bio: profile.bio ?? null,
-            tagline: profile.tagline ?? null,
-            prompts: profilePrompts,
-            details: profile.details
-              ? {
-                  job: profile.details.job ?? null,
-                  school: profile.details.school ?? null,
-                  height: profile.details.height ?? null,
-                  languages: profile.details.languages ?? [],
-                }
-              : null,
-            image: {
-              status: modeState.personaImage?.status ?? "NOT_REQUESTED",
-              imageUrl: modeState.personaImage?.imageUrl ?? null,
+      profile:
+        profile == null
+          ? null
+          : {
+              displayName: profile.displayName ?? "Mystery Match",
+              age: profile.age ?? null,
+              location: profile.location ?? null,
+              bio: profile.bio ?? null,
+              tagline: profile.tagline ?? null,
+              prompts: profilePrompts,
+              details: profile.details
+                ? {
+                    job: profile.details.job ?? null,
+                    school: profile.details.school ?? null,
+                    height: profile.details.height ?? null,
+                    languages: profile.details.languages ?? [],
+                  }
+                : null,
+              image: {
+                status: modeState.personaImage?.status ?? "NOT_REQUESTED",
+                imageUrl: modeState.personaImage?.imageUrl ?? null,
+              },
             },
-          },
       transcript:
         modeState.transcript?.flatMap((entry, index) => {
           if (!entry.text) return [];
@@ -270,49 +239,30 @@ function deriveControllerState(
       latestNextSignal: modeState.latestNextSignal ?? null,
       latestMoodDelta: modeState.latestMoodDelta ?? null,
       mood: modeState.mood ?? null,
-      progressCount: game.status === "WRITING" && currentRound
-        ? {
-            submitted: new Set(
-              (currentRound.prompts[0]?.responses ?? [])
-                .map((response) => response.playerId)
-                .filter((currentPlayerId) => activePlayerIds.has(currentPlayerId)),
-            ).size,
-            total: activeTotal,
-          }
-        : null,
-      voteProgressCount: game.status === "VOTING" && currentRound
-        ? {
-            voted: new Set(
-              (currentRound.prompts[game.votingPromptIndex]?.votes ?? [])
-                .map((vote) => vote.voter.id)
-                .filter((currentPlayerId) => activePlayerIds.has(currentPlayerId)),
-            ).size,
-            total: activeTotal,
-          }
-        : null,
+      progressCount:
+        game.status === "WRITING" && currentRound
+          ? {
+              submitted: new Set(
+                (currentRound.prompts[0]?.responses ?? [])
+                  .map((response) => response.playerId)
+                  .filter((currentPlayerId) => activePlayerIds.has(currentPlayerId)),
+              ).size,
+              total: activeTotal,
+            }
+          : null,
+      voteProgressCount:
+        game.status === "VOTING" && currentRound
+          ? {
+              voted: new Set(
+                (currentRound.prompts[game.votingPromptIndex]?.votes ?? [])
+                  .map((vote) => vote.voter.id)
+                  .filter((currentPlayerId) => activePlayerIds.has(currentPlayerId)),
+              ).size,
+              total: activeTotal,
+            }
+          : null,
     },
   };
-}
-
-function syncMockViewer(game: GameState, playerId: string | null, hostPlayerId: string | null) {
-  if (playerId) {
-    const player = game.players.find((entry) => entry.id === playerId);
-    if (player) {
-      localStorage.setItem("playerId", playerId);
-      localStorage.setItem("playerName", player.name);
-      localStorage.setItem("playerType", player.type);
-    }
-  } else {
-    localStorage.removeItem("playerId");
-    localStorage.removeItem("playerName");
-    localStorage.removeItem("playerType");
-  }
-
-  if (playerId != null && playerId === hostPlayerId) {
-    localStorage.setItem("hostControlToken", "mock-matchslop-host");
-  } else {
-    localStorage.removeItem("hostControlToken");
-  }
 }
 
 export function MockMatchSlopControllerShell({
@@ -324,7 +274,6 @@ export function MockMatchSlopControllerShell({
   const [sharedState, setSharedState] = useState(() =>
     createMockMatchSlopSharedState(scenario.game),
   );
-  const [storageReady, setStorageReady] = useState(false);
   const humanPlayers = useMemo(
     () => scenario.game.players.filter((player) => player.type === "HUMAN"),
     [scenario.game.players],
@@ -336,12 +285,6 @@ export function MockMatchSlopControllerShell({
   const game = sharedState.game;
   const actionLog = sharedState.actionLog;
   const mockCode = makeMockCode(scenario.slug);
-  const gameRef = useRef(game);
-  const controllerStreamsRef = useRef(new Set<ControllerStreamEntry>());
-
-  useEffect(() => {
-    gameRef.current = game;
-  }, [game]);
 
   useEffect(() => {
     setSharedState(readSharedMatchSlopState(scenario.slug, scenario.game));
@@ -349,183 +292,72 @@ export function MockMatchSlopControllerShell({
     return subscribeToSharedMatchSlopState(scenario.slug, scenario.game, setSharedState);
   }, [hostPlayerId, scenario.game, scenario.playerId, scenario.slug]);
 
-  useLayoutEffect(() => {
-    syncMockViewer(game, viewerPlayerId, hostPlayerId);
-    setStorageReady(true);
-  }, [game, viewerPlayerId, hostPlayerId]);
-
-  useLayoutEffect(() => {
-    const originalFetch = window.fetch.bind(window);
-    const OriginalEventSource = window.EventSource;
-    const controllerStreams = controllerStreamsRef.current;
-
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = parseUrl(input);
-      if (!url.pathname.startsWith(`/api/games/${mockCode}`)) {
-        return originalFetch(input as RequestInfo, init);
-      }
-
-      const endpoint = url.pathname.replace(`/api/games/${mockCode}`, "");
-      const method = (init?.method ?? "GET").toUpperCase();
-      const body = await parseJsonBody(init);
-      await delay(120);
-
-      if (method === "POST" && endpoint === "/start") {
-        setSharedState(
-          mutateSharedMatchSlopState(scenario.slug, scenario.game, "start", startMockMatchSlopGame),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/respond") {
-        const promptId = String(body.promptId ?? "");
-        const responderId = String(body.playerId ?? viewerPlayerId ?? "");
-        const text = String(body.text ?? "").trim();
-        const selectedPromptId =
-          typeof body.metadata === "object" &&
-          body.metadata != null &&
-          typeof (body.metadata as JsonObject).selectedPromptId === "string"
-            ? String((body.metadata as JsonObject).selectedPromptId)
-            : null;
-        if (!promptId || !responderId || !text) {
-          return jsonResponse({ error: "Invalid response payload" }, 400);
-        }
-
-        setSharedState(
-          mutateSharedMatchSlopState(
-            scenario.slug,
-            scenario.game,
-            `respond (${promptId})`,
-            (currentGame) =>
-              recordMockMatchSlopResponse(
-                currentGame,
-                promptId,
-                responderId,
-                text,
-                selectedPromptId,
-              ),
-          ),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/vote") {
-        const promptId = String(body.promptId ?? "");
-        const voterId = String(body.voterId ?? viewerPlayerId ?? "");
-        const responseId =
-          body.responseId == null ? null : String(body.responseId);
-        if (!promptId || !voterId) {
-          return jsonResponse({ error: "Invalid vote payload" }, 400);
-        }
-
-        const voteResult = voteMockMatchSlopResponse(gameRef.current, promptId, voterId, responseId);
-        if (voteResult.error) {
-          return jsonResponse({ error: voteResult.error }, 400);
-        }
-
-        setSharedState(
-          mutateSharedMatchSlopState(scenario.slug, scenario.game, `vote (${promptId})`, () => {
-            return voteResult.game;
-          }),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/next") {
-        setSharedState(
-          mutateSharedMatchSlopState(
-            scenario.slug,
-            scenario.game,
-            `next (${gameRef.current.status})`,
-            advanceMockMatchSlopGame,
-          ),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/end") {
-        setSharedState(
-          mutateSharedMatchSlopState(scenario.slug, scenario.game, "end", endMockMatchSlopGame),
-        );
-        return jsonResponse({ ok: true });
-      }
-
-      if (method === "POST" && endpoint === "/rejoin") {
-        const player =
-          gameRef.current.players.find((entry) => entry.id === viewerPlayerId) ??
-          gameRef.current.players.find((entry) => entry.id === hostPlayerId) ??
-          null;
-        return jsonResponse({
-          playerId: player?.id ?? null,
-          playerName: player?.name ?? "Player",
-          playerType: player?.type ?? "HUMAN",
-        });
-      }
-
-      return jsonResponse({ ok: true, mock: true });
-    };
-
-    window.EventSource = class extends MockEventSource {
-      constructor(url: string | URL) {
-        super(url);
-
-        queueMicrotask(() => {
-          if (this.readyState === MockEventSource.CLOSED) return;
-
-          const parsed = new URL(this.url);
-          if (parsed.pathname !== `/api/games/${mockCode}/controller/stream`) {
-            this.fail();
-            return;
-          }
-
-          const playerId = parsed.searchParams.get("playerId");
-          const entry = { playerId, stream: this };
-          controllerStreams.add(entry);
-          this.setCleanup(() => {
-            controllerStreams.delete(entry);
-          });
-          this.open();
-
-          const currentGame = gameRef.current;
-          this.emit("state", deriveControllerState(currentGame, playerId, hostPlayerId));
-          if (currentGame.status === "FINAL_RESULTS") {
-            this.emit("done", {});
-            this.close();
-          }
-        });
-      }
-    } as typeof EventSource;
-
-    return () => {
-      window.fetch = originalFetch;
-      window.EventSource = OriginalEventSource;
-      for (const entry of controllerStreams) {
-        entry.stream.close();
-      }
-      controllerStreams.clear();
-    };
-  }, [hostPlayerId, mockCode, scenario.game, scenario.slug, viewerPlayerId]);
-
-  useEffect(() => {
-    for (const entry of controllerStreamsRef.current) {
-      entry.stream.emit("state", deriveControllerState(game, entry.playerId, hostPlayerId));
-      if (game.status === "FINAL_RESULTS") {
-        entry.stream.emit("done", {});
-        entry.stream.close();
-      }
-    }
-  }, [game, hostPlayerId]);
+  const fixture: MatchSlopControllerShellFixture = {
+    gameState: deriveControllerState(game, viewerPlayerId, hostPlayerId, sharedState.updatedAt),
+    isHost: viewerPlayerId != null && viewerPlayerId === hostPlayerId,
+    start: () => {
+      setSharedState(
+        mutateSharedMatchSlopState(scenario.slug, scenario.game, "start", startMockMatchSlopGame),
+      );
+    },
+    advance: () => {
+      setSharedState(
+        mutateSharedMatchSlopState(
+          scenario.slug,
+          scenario.game,
+          `next (${game.status})`,
+          advanceMockMatchSlopGame,
+        ),
+      );
+    },
+    end: () => {
+      setSharedState(
+        mutateSharedMatchSlopState(scenario.slug, scenario.game, "end", endMockMatchSlopGame),
+      );
+    },
+    managePersona: () => undefined,
+    submitResponse: (promptId, text, selectedPromptId) => {
+      if (!viewerPlayerId) throw new Error("Select a player before responding");
+      setSharedState(
+        mutateSharedMatchSlopState(
+          scenario.slug,
+          scenario.game,
+          `respond (${promptId})`,
+          (currentGame) =>
+            recordMockMatchSlopResponse(
+              currentGame,
+              promptId,
+              viewerPlayerId,
+              text,
+              selectedPromptId,
+            ),
+        ),
+      );
+    },
+    castVote: (promptId, responseId) => {
+      if (!viewerPlayerId) throw new Error("Select a player before voting");
+      const result = voteMockMatchSlopResponse(game, promptId, viewerPlayerId, responseId);
+      if (result.error) throw new Error(result.error);
+      setSharedState(
+        mutateSharedMatchSlopState(
+          scenario.slug,
+          scenario.game,
+          `vote (${promptId})`,
+          () => result.game,
+        ),
+      );
+    },
+  };
 
   const { theme, toggle: toggleTheme } = useTheme();
 
   return (
     <div className="min-h-svh">
-      {storageReady ? (
-        <MatchSlopControllerShell
-          key={`${mockCode}:${viewerPlayerId ?? "none"}`}
-          code={mockCode}
-        />
-      ) : null}
+      <MatchSlopControllerShell
+        key={`${mockCode}:${viewerPlayerId ?? "none"}`}
+        code={mockCode}
+        fixture={fixture}
+      />
 
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[70] px-4">
         <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 rounded-3xl border border-edge bg-base/90 p-3 shadow-lg backdrop-blur-md">
@@ -545,10 +377,7 @@ export function MockMatchSlopControllerShell({
             <span>Viewer</span>
             <select
               value={viewerPlayerId ?? ""}
-              onChange={(event) => {
-                setStorageReady(false);
-                setViewerPlayerId(event.target.value || null);
-              }}
+              onChange={(event) => setViewerPlayerId(event.target.value || null)}
               className="bg-transparent font-mono text-ink outline-none"
             >
               {humanPlayers.map((player) => (
@@ -570,7 +399,6 @@ export function MockMatchSlopControllerShell({
             type="button"
             onClick={() => {
               setSharedState(resetSharedMatchSlopState(scenario.slug, scenario.game));
-              setStorageReady(false);
             }}
             className="rounded-xl border border-edge px-3 py-2 text-xs text-ink-dim hover:border-edge-strong hover:text-ink"
           >

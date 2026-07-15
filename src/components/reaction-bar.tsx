@@ -1,15 +1,21 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  REACTION_EMOJIS,
-  REACTION_EMOJI_KEYS,
-  type ReactionEmoji,
-} from "@/lib/reactions";
+import { REACTION_EMOJIS, REACTION_EMOJI_KEYS, type ReactionEmoji } from "@/lib/reactions";
 import type { GameReaction } from "@/lib/types";
 import { springBouncy, springDefault } from "@/lib/animations";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { useReactionToggleMutation } from "@/hooks/use-game-runtime";
+import type { Id } from "../../convex/_generated/dataModel";
 
 interface ReactionBarProps {
   responseId: string;
@@ -147,8 +153,7 @@ function NamesTooltip({ names, emoji }: { names: string[]; emoji: ReactionEmoji 
       <div
         className="px-2.5 py-1.5 rounded-lg bg-raised/95 backdrop-blur-xl border border-edge whitespace-nowrap"
         style={{
-          boxShadow:
-            "0 4px 16px color-mix(in srgb, var(--ink) 12%, transparent)",
+          boxShadow: "0 4px 16px color-mix(in srgb, var(--ink) 12%, transparent)",
         }}
       >
         <p className="text-[11px] text-ink-dim leading-snug text-center">
@@ -208,9 +213,7 @@ function ReactionChip({
       onMouseLeave={!isMobile ? () => setShowTooltip(false) : undefined}
     >
       <AnimatePresence>
-        {showTooltip && r.names.length > 0 && (
-          <NamesTooltip names={r.names} emoji={r.emoji} />
-        )}
+        {showTooltip && r.names.length > 0 && <NamesTooltip names={r.names} emoji={r.emoji} />}
       </AnimatePresence>
       <motion.button
         type="button"
@@ -220,18 +223,14 @@ function ReactionChip({
             ? activeClasses(accent)
             : "bg-surface/40 border-edge backdrop-blur-sm text-ink-dim hover:border-edge-strong"
         } ${isPending ? "opacity-50" : ""}`}
-        style={
-          r.reacted ? { boxShadow: glowShadow(accent) } : undefined
-        }
+        style={r.reacted ? { boxShadow: glowShadow(accent) } : undefined}
         initial={{ opacity: 0, scale: 0.5, rotate: -12 }}
         animate={{ opacity: 1, scale: 1, rotate: 0 }}
         exit={{ opacity: 0, scale: 0.5, rotate: 12 }}
         transition={springBouncy}
         whileTap={{ scale: 0.82 }}
       >
-        <span className={sizeClasses.emoji}>
-          {REACTION_EMOJIS[r.emoji]}
-        </span>
+        <span className={sizeClasses.emoji}>{REACTION_EMOJIS[r.emoji]}</span>
         <motion.span
           key={r.count}
           className={`${sizeClasses.count} font-mono tabular-nums ${r.reacted ? "text-ink" : "text-ink-dim"}`}
@@ -261,6 +260,9 @@ export function ReactionBar({
   pendingRef.current = pending;
   const anchorRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const roomSession = useConvexRoomSession(code);
+  const playerCapability = roomSession?.playerCapability ?? null;
+  const toggleReaction = useReactionToggleMutation();
 
   // Optimistic local reactions so clicks feel instant
   const [optimistic, setOptimistic] = useState<GameReaction[]>(reactions);
@@ -270,34 +272,31 @@ export function ReactionBar({
 
   const aggregated = aggregate(optimistic, playerId, playerNames);
   const sizeClasses = SIZE_CLASSES[size];
-  const canInteract = !disabled && !!playerId;
+  const canInteract = !disabled && !!playerId && !!playerCapability;
   const hasNames = !!playerNames && playerNames.size > 0;
 
   const toggle = useCallback(
     async (emoji: string) => {
-      if (disabled || !playerId || pendingRef.current.has(emoji)) return;
+      if (disabled || !playerId || !playerCapability || pendingRef.current.has(emoji)) return;
       setPending((prev) => new Set(prev).add(emoji));
 
       // Optimistic update
       setOptimistic((prev) => {
-        const idx = prev.findIndex(
-          (r) => r.emoji === emoji && r.playerId === playerId,
-        );
+        const idx = prev.findIndex((r) => r.emoji === emoji && r.playerId === playerId);
         if (idx >= 0) {
           return prev.filter((_, i) => i !== idx);
         }
-        return [
-          ...prev,
-          { id: `optimistic-${emoji}`, responseId, playerId, emoji },
-        ];
+        return [...prev, { id: `optimistic-${emoji}`, responseId, playerId, emoji }];
       });
 
       try {
-        await fetch(`/api/games/${code}/react`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, responseId, emoji }),
+        await toggleReaction({
+          capability: playerCapability,
+          emoji: emoji as ReactionEmoji,
+          responseId: responseId as Id<"responses">,
         });
+      } catch {
+        setOptimistic(reactions);
       } finally {
         setPending((prev) => {
           const next = new Set(prev);
@@ -306,12 +305,12 @@ export function ReactionBar({
         });
       }
     },
-    [disabled, playerId, code, responseId],
+    [disabled, playerId, responseId, playerCapability, reactions, toggleReaction],
   );
 
   const handlePick = useCallback(
     (key: ReactionEmoji) => {
-      toggle(key);
+      void toggle(key);
       setOpen(false);
     },
     [toggle],
@@ -409,7 +408,12 @@ function DesktopPopover({ aggregated, onPick, onClose, anchorRef }: PickerProps)
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close reaction picker"
+        className="fixed inset-0 z-40"
+        onClick={onClose}
+      />
       <motion.div
         className="fixed z-50 p-2 rounded-xl bg-raised/90 backdrop-blur-xl border border-edge"
         style={{
@@ -427,9 +431,7 @@ function DesktopPopover({ aggregated, onPick, onClose, anchorRef }: PickerProps)
         <div className="grid grid-cols-5 gap-1">
           {REACTION_EMOJI_KEYS.map((key, i) => {
             const accent = EMOJI_ACCENT[key];
-            const reacted = aggregated.some(
-              (r) => r.emoji === key && r.reacted,
-            );
+            const reacted = aggregated.some((r) => r.emoji === key && r.reacted);
             return (
               <motion.button
                 key={key}
@@ -440,9 +442,7 @@ function DesktopPopover({ aggregated, onPick, onClose, anchorRef }: PickerProps)
                     ? `${activeClasses(accent)} border`
                     : "border border-transparent hover:bg-surface/80"
                 }`}
-                style={
-                  reacted ? { boxShadow: glowShadow(accent) } : undefined
-                }
+                style={reacted ? { boxShadow: glowShadow(accent) } : undefined}
                 initial={{ opacity: 0, scale: 0.4 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ ...springBouncy, delay: i * 0.025 }}
@@ -466,8 +466,7 @@ function MobileSheet({ aggregated, onPick, onClose }: PickerProps) {
       <motion.div
         className="fixed inset-0 z-40 backdrop-blur-[2px]"
         style={{
-          background:
-            "color-mix(in srgb, var(--ink) 22%, transparent)",
+          background: "color-mix(in srgb, var(--ink) 22%, transparent)",
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -485,8 +484,7 @@ function MobileSheet({ aggregated, onPick, onClose }: PickerProps) {
         <div
           className="bg-raised/95 backdrop-blur-xl rounded-t-2xl border border-b-0 border-edge overflow-hidden pb-[env(safe-area-inset-bottom,12px)]"
           style={{
-            boxShadow:
-              "0 -4px 24px color-mix(in srgb, var(--ink) 10%, transparent)",
+            boxShadow: "0 -4px 24px color-mix(in srgb, var(--ink) 10%, transparent)",
           }}
         >
           <div className="flex justify-center pt-3 pb-2">
@@ -500,9 +498,7 @@ function MobileSheet({ aggregated, onPick, onClose }: PickerProps) {
           <div className="grid grid-cols-5 gap-2 px-4 pb-4">
             {REACTION_EMOJI_KEYS.map((key, i) => {
               const accent = EMOJI_ACCENT[key];
-              const reacted = aggregated.some(
-                (r) => r.emoji === key && r.reacted,
-              );
+              const reacted = aggregated.some((r) => r.emoji === key && r.reacted);
               return (
                 <motion.button
                   key={key}
@@ -513,9 +509,7 @@ function MobileSheet({ aggregated, onPick, onClose }: PickerProps) {
                       ? `${activeClasses(accent)} border`
                       : "bg-surface/40 border border-edge/40 active:bg-surface/80"
                   }`}
-                  style={
-                    reacted ? { boxShadow: glowShadow(accent) } : undefined
-                  }
+                  style={reacted ? { boxShadow: glowShadow(accent) } : undefined}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ ...springBouncy, delay: i * 0.035 }}

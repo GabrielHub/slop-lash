@@ -15,12 +15,11 @@ type StoredMockMatchSlopSharedState = MockMatchSlopSharedState & {
 };
 
 type JsonObject = Record<string, unknown>;
-type VoteResult =
-  | { error: string; game: null }
-  | { error: null; game: GameState | null };
+type VoteResult = { error: string; game: null } | { error: null; game: GameState | null };
 
 const MAX_ACTION_LOG = 12;
 const STORAGE_VERSION = 1;
+const INITIAL_UPDATED_AT = "1970-01-01T00:00:00.000Z";
 
 function cloneGame(game: GameState): GameState {
   return structuredClone(game);
@@ -57,10 +56,7 @@ function futureDeadline(seconds: number): string {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }
 
-function withScenarioGame(
-  slug: string,
-  patch?: (game: GameState) => GameState,
-): GameState | null {
+function withScenarioGame(slug: string, patch?: (game: GameState) => GameState): GameState | null {
   const found = getMockScenario(slug);
   if (!found) return null;
   const next = cloneGame(found.game);
@@ -104,7 +100,10 @@ function isRecord(value: unknown): value is JsonObject {
   return typeof value === "object" && value != null;
 }
 
-function parseStoredState(raw: string | null, fallbackGame: GameState): StoredMockMatchSlopSharedState {
+function parseStoredState(
+  raw: string | null,
+  fallbackGame: GameState,
+): StoredMockMatchSlopSharedState {
   if (!raw) return createStoredState(fallbackGame);
 
   try {
@@ -119,7 +118,9 @@ function parseStoredState(raw: string | null, fallbackGame: GameState): StoredMo
     return {
       storageVersion: STORAGE_VERSION,
       actionLog: Array.isArray(parsed.actionLog)
-        ? parsed.actionLog.filter((entry): entry is string => typeof entry === "string").slice(0, MAX_ACTION_LOG)
+        ? parsed.actionLog
+            .filter((entry): entry is string => typeof entry === "string")
+            .slice(0, MAX_ACTION_LOG)
         : [],
       game: cloneGame(parsed.game as unknown as GameState),
       lastAction: typeof parsed.lastAction === "string" ? parsed.lastAction : null,
@@ -167,7 +168,10 @@ function mergeRoundResponses(currentGame: GameState, fixture: GameState) {
 export function createMockMatchSlopSharedState(game: GameState): MockMatchSlopSharedState {
   const { storageVersion, ...state } = createStoredState(game);
   void storageVersion;
-  return state;
+  return {
+    ...state,
+    updatedAt: game.serverNow ?? INITIAL_UPDATED_AT,
+  };
 }
 
 export function readSharedMatchSlopState(
@@ -232,7 +236,8 @@ export function resetSharedMatchSlopState(
   slug: string,
   fallbackGame: GameState,
 ): MockMatchSlopSharedState {
-  const next = createMockMatchSlopSharedState(fallbackGame);
+  const { storageVersion, ...next } = createStoredState(fallbackGame);
+  void storageVersion;
   persistSharedState(slug, next);
   return next;
 }
@@ -364,8 +369,7 @@ export function endMockMatchSlopGame(currentGame: GameState): GameState | null {
   }
 
   const currentOutcome = asOutcome(currentGame);
-  const terminalOutcome =
-    currentOutcome === "IN_PROGRESS" ? "TURN_LIMIT" : currentOutcome;
+  const terminalOutcome = currentOutcome === "IN_PROGRESS" ? "TURN_LIMIT" : currentOutcome;
   const slug = finalScenarioSlugForOutcome(terminalOutcome);
 
   return withScenarioGame(slug, (fixture) => ({

@@ -11,14 +11,17 @@ import {
   ResultRow,
   ProgressPill,
   ChatBar,
-} from "@/games/ai-chat-showdown/ui/chat-game-shell";
+} from "@/games/ai-chat-showdown/ui/chat-components";
 import type { OptimisticChatMessage } from "@/games/ai-chat-showdown/ui/use-optimistic-chat";
 
 /* ─── Demo wrapper card (matches shared playground styling) ─── */
 
 function DemoCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border-2 border-edge bg-surface/80 p-4" style={{ boxShadow: "var(--shadow-card)" }}>
+    <div
+      className="rounded-xl border-2 border-edge bg-surface/80 p-4"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
       <h2 className="mb-3 font-display text-lg font-bold text-ink">{title}</h2>
       {/* ChatSlop CSS vars scope */}
       <div data-game="chatslop" className="rounded-xl p-4" style={{ background: "var(--cs-bg)" }}>
@@ -58,7 +61,9 @@ export function DevChatslopPlayground() {
       <div className="mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-start justify-between gap-4">
           <div>
-            <p className="mb-2 text-xs font-mono tracking-widest text-ink-dim">DEV COMPONENTS / CHATSLOP</p>
+            <p className="mb-2 text-xs font-mono tracking-widest text-ink-dim">
+              DEV COMPONENTS / CHATSLOP
+            </p>
             <h1 className="font-display text-3xl font-bold text-ink">ChatSlop Components</h1>
             <p className="mt-2 max-w-2xl text-sm text-ink-dim">
               Chat-native UI components rendered with static fixture data. Each card wraps content
@@ -87,11 +92,74 @@ export function DevChatslopPlayground() {
         <section className="mb-10 grid gap-5 lg:grid-cols-2">
           <DemoCard title="Chat Bubbles">
             <div className="space-y-4">
-              <Bubble message={fakeMsg({ content: "Has anyone tried the new ramen place on 5th?", playerId: "amy" })} playerName="Amy" modelId={null} isMe={false} allMessages={[]} players={[]} onRetry={noop} onDismiss={noop} />
-              <Bubble message={fakeMsg({ content: "Yeah it slaps, the tonkotsu is unreal", playerId: "me" })} playerName="You" modelId={null} isMe allMessages={[]} players={[]} onRetry={noop} onDismiss={noop} />
-              <Bubble message={fakeMsg({ content: "I've analyzed 847 ramen restaurants and this one ranks #3 in the tri-state area.", playerId: "gpt" })} playerName="GPT-5.4 Mini" modelId="openai/gpt-5.4-mini" isMe={false} allMessages={[]} players={[]} onRetry={noop} onDismiss={noop} />
-              <Bubble message={fakeMsg({ content: "Sending this now...", playerId: "me", status: "pending" })} playerName="You" modelId={null} isMe allMessages={[]} players={[]} onRetry={noop} onDismiss={noop} />
-              <Bubble message={fakeMsg({ content: "This message failed to send", playerId: "me", status: "failed" })} playerName="You" modelId={null} isMe allMessages={[]} players={[]} onRetry={noop} onDismiss={noop} />
+              <Bubble
+                message={fakeMsg({
+                  content: "Has anyone tried the new ramen place on 5th?",
+                  playerId: "amy",
+                })}
+                playerName="Amy"
+                modelId={null}
+                isMe={false}
+                allMessages={[]}
+                players={[]}
+                onRetry={noop}
+                onDismiss={noop}
+              />
+              <Bubble
+                message={fakeMsg({
+                  content: "Yeah it slaps, the tonkotsu is unreal",
+                  playerId: "me",
+                })}
+                playerName="You"
+                modelId={null}
+                isMe
+                allMessages={[]}
+                players={[]}
+                onRetry={noop}
+                onDismiss={noop}
+              />
+              <Bubble
+                message={fakeMsg({
+                  content:
+                    "I've analyzed 847 ramen restaurants and this one ranks #3 in the tri-state area.",
+                  playerId: "gpt",
+                })}
+                playerName="GPT-5.4 Mini"
+                modelId="openai/gpt-5.4-mini"
+                isMe={false}
+                allMessages={[]}
+                players={[]}
+                onRetry={noop}
+                onDismiss={noop}
+              />
+              <Bubble
+                message={fakeMsg({
+                  content: "Sending this now...",
+                  playerId: "me",
+                  status: "pending",
+                })}
+                playerName="You"
+                modelId={null}
+                isMe
+                allMessages={[]}
+                players={[]}
+                onRetry={noop}
+                onDismiss={noop}
+              />
+              <Bubble
+                message={fakeMsg({
+                  content: "This message failed to send",
+                  playerId: "me",
+                  status: "failed",
+                })}
+                playerName="You"
+                modelId={null}
+                isMe
+                allMessages={[]}
+                players={[]}
+                onRetry={noop}
+                onDismiss={noop}
+              />
               <TypingDots label="Someone is typing..." />
             </div>
           </DemoCard>
@@ -128,10 +196,30 @@ export function DevChatslopPlayground() {
 
           <DemoCard title="Vote Options">
             <div className="space-y-2">
-              <VoteOption text="It texts your ex when it detects loneliness." isMine={false} disabled={false} onVote={noop} />
-              <VoteOption text="A passive-aggressive sticky note generator." isMine disabled={false} onVote={noop} />
-              <VoteOption text="Calorie-shaming every time you open the door." isMine={false} disabled={false} onVote={noop} />
-              <VoteOption text="Milk futures trading without your consent." isMine={false} disabled={false} onVote={noop} />
+              <VoteOption
+                text="It texts your ex when it detects loneliness."
+                isMine={false}
+                disabled={false}
+                onVote={noop}
+              />
+              <VoteOption
+                text="A passive-aggressive sticky note generator."
+                isMine
+                disabled={false}
+                onVote={noop}
+              />
+              <VoteOption
+                text="Calorie-shaming every time you open the door."
+                isMine={false}
+                disabled={false}
+                onVote={noop}
+              />
+              <VoteOption
+                text="Milk futures trading without your consent."
+                isMine={false}
+                disabled={false}
+                onVote={noop}
+              />
             </div>
           </DemoCard>
         </section>
@@ -140,9 +228,36 @@ export function DevChatslopPlayground() {
         <section className="mb-10 grid gap-5 lg:grid-cols-2">
           <DemoCard title="Result Rows">
             <div className="space-y-2">
-              <ResultRow text="It texts your ex when it detects loneliness." playerName="Amy" modelId={null} voteCount={3} totalVotes={4} points={160} isWinner delay={0} />
-              <ResultRow text="A passive-aggressive sticky note generator." playerName="Beau" modelId={null} voteCount={1} totalVotes={4} points={80} isWinner={false} delay={0.1} />
-              <ResultRow text="Calorie-shaming every time you open the door." playerName="GPT-5.4 Mini" modelId="openai/gpt-5.4-mini" voteCount={0} totalVotes={4} points={0} isWinner={false} delay={0.2} />
+              <ResultRow
+                text="It texts your ex when it detects loneliness."
+                playerName="Amy"
+                modelId={null}
+                voteCount={3}
+                totalVotes={4}
+                points={160}
+                isWinner
+                delay={0}
+              />
+              <ResultRow
+                text="A passive-aggressive sticky note generator."
+                playerName="Beau"
+                modelId={null}
+                voteCount={1}
+                totalVotes={4}
+                points={80}
+                isWinner={false}
+                delay={0.1}
+              />
+              <ResultRow
+                text="Calorie-shaming every time you open the door."
+                playerName="GPT-5.4 Mini"
+                modelId="openai/gpt-5.4-mini"
+                voteCount={0}
+                totalVotes={4}
+                points={0}
+                isWinner={false}
+                delay={0.2}
+              />
             </div>
           </DemoCard>
 
@@ -162,7 +277,12 @@ export function DevChatslopPlayground() {
           </DemoCard>
 
           <DemoCard title="Chat Bar (Response Mode)">
-            <ChatBar mode="response" onSend={noop} disabled={false} placeholder="Submit your answer..." />
+            <ChatBar
+              mode="response"
+              onSend={noop}
+              disabled={false}
+              placeholder="Submit your answer..."
+            />
           </DemoCard>
         </section>
 
@@ -171,7 +291,10 @@ export function DevChatslopPlayground() {
             <ChatBar mode="disabled" onSend={noop} disabled placeholder="Chat is disabled" />
           </DemoCard>
 
-          <div className="rounded-xl border-2 border-edge bg-surface/80 p-4" style={{ boxShadow: "var(--shadow-card)" }}>
+          <div
+            className="rounded-xl border-2 border-edge bg-surface/80 p-4"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
             <h2 className="mb-3 font-display text-lg font-bold text-ink">Fixture Quick Links</h2>
             <div className="space-y-2 text-sm">
               <Link href="/dev/ui/chat-lobby" className="block text-ink-dim hover:text-ink">

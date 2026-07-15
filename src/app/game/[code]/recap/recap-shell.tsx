@@ -1,50 +1,31 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
+import { useQuery } from "convex/react";
 import { motion } from "motion/react";
+import { api } from "../../../../../convex/_generated/api";
 import { GameState, filterCastVotes } from "@/lib/types";
 import { getModelByModelId } from "@/lib/models";
 import { analyzePromptOutcome, getPromptCardBorder } from "@/app/game/[code]/results";
 import { ModelIcon } from "@/components/model-icon";
 import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
 import { ScoreBarChart } from "@/components/score-bar-chart";
-import {
-  BestPromptsCarousel,
-  extractBestPrompts,
-} from "@/components/best-prompts-carousel";
+import { BestPromptsCarousel, extractBestPrompts } from "@/components/best-prompts-carousel";
 import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
-import {
-  fadeInUp,
-  floatIn,
-  staggerContainerSlow,
-  springGentle,
-  popIn,
-} from "@/lib/animations";
+import { fadeInUp, floatIn, staggerContainerSlow, springGentle, popIn } from "@/lib/animations";
 
 export function RecapShell({ code }: { code: string }) {
-  const [game, setGame] = useState<GameState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [errorStatus, setErrorStatus] = useState<string | null>(null);
+  const recap = useQuery(api.recaps.getByRoomCode, { roomCode: code });
+  const game: GameState | null = recap?.kind === "READY" ? recap.game : null;
+  const error =
+    recap?.kind === "NOT_FOUND"
+      ? "Game not found"
+      : recap?.kind === "IN_PROGRESS"
+        ? "Game is still in progress"
+        : null;
+  const errorStatus = recap?.kind === "IN_PROGRESS" ? recap.status : null;
   const confettiFired = useRef(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`/api/games/${code}/recap`);
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.error || "Failed to load recap");
-          setErrorStatus(data.status || null);
-          return;
-        }
-        setGame(await res.json());
-      } catch {
-        setError("Something went wrong");
-      }
-    }
-    void load();
-  }, [code]);
 
   // Fire confetti once on load
   useEffect(() => {
@@ -52,10 +33,10 @@ export function RecapShell({ code }: { code: string }) {
     confettiFired.current = true;
 
     const colors = ["#FF5647", "#2DD4B8", "#FFD644"];
-    import("canvas-confetti").then(({ default: confetti }) => {
-      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors });
+    void import("canvas-confetti").then(({ default: confetti }) => {
+      void confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors });
       setTimeout(() => {
-        confetti({
+        void confetti({
           particleCount: 50,
           angle: 120,
           spread: 60,
@@ -100,15 +81,10 @@ export function RecapShell({ code }: { code: string }) {
 
   /* ---- Error state ---- */
   if (error) {
-    const isInProgress = errorStatus && errorStatus !== "FINAL_RESULTS";
+    const isInProgress = errorStatus !== null;
     return (
       <main className="flex-1 flex items-center justify-center px-6">
-        <motion.div
-          className="text-center"
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-        >
+        <motion.div className="text-center" variants={fadeInUp} initial="hidden" animate="visible">
           <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-fail-soft border-2 border-fail/30 flex items-center justify-center">
             <svg
               width="24"
@@ -126,9 +102,7 @@ export function RecapShell({ code }: { code: string }) {
               <line x1="9" y1="9" x2="15" y2="15" />
             </svg>
           </div>
-          <p className="text-fail font-display font-bold text-xl mb-2">
-            {error}
-          </p>
+          <p className="text-fail font-display font-bold text-xl mb-2">{error}</p>
           {isInProgress && (
             <Link
               href={`/game/${code}`}
@@ -138,10 +112,7 @@ export function RecapShell({ code }: { code: string }) {
             </Link>
           )}
           <div className="mt-4">
-            <Link
-              href="/"
-              className="text-sm text-ink-dim hover:text-ink transition-colors"
-            >
+            <Link href="/" className="text-sm text-ink-dim hover:text-ink transition-colors">
               Back to Home
             </Link>
           </div>
@@ -158,9 +129,7 @@ export function RecapShell({ code }: { code: string }) {
     <div className="min-h-svh flex flex-col bg-base">
       {/* Static header */}
       <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
-        <span className="font-display font-bold text-xs text-punch tracking-tight">
-          SLOP-LASH
-        </span>
+        <span className="font-display font-bold text-xs text-punch tracking-tight">SLOP-LASH</span>
         <span className="text-edge-strong">|</span>
         <span className="font-mono font-bold text-xs tracking-widest text-ink-dim">
           {game.roomCode}
@@ -192,9 +161,7 @@ export function RecapShell({ code }: { code: string }) {
               initial="hidden"
               animate="visible"
             >
-              <h2 className="text-sm font-medium text-ink-dim mb-3">
-                Scoreboard
-              </h2>
+              <h2 className="text-sm font-medium text-ink-dim mb-3">Scoreboard</h2>
               <ScoreBarChart game={game} />
             </motion.div>
 
@@ -207,9 +174,7 @@ export function RecapShell({ code }: { code: string }) {
                 animate="visible"
                 transition={{ delay: 0.3 }}
               >
-                <h2 className="text-sm font-medium text-ink-dim mb-3">
-                  Best Moments
-                </h2>
+                <h2 className="text-sm font-medium text-ink-dim mb-3">Best Moments</h2>
                 <BestPromptsCarousel prompts={bestPrompts} />
               </motion.div>
             )}
@@ -224,9 +189,7 @@ export function RecapShell({ code }: { code: string }) {
               initial="hidden"
               animate="visible"
             >
-              <h2 className="text-sm font-medium text-ink-dim mb-3">
-                Round {round.roundNumber}
-              </h2>
+              <h2 className="text-sm font-medium text-ink-dim mb-3">Round {round.roundNumber}</h2>
               <motion.div
                 className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5"
                 variants={staggerContainerSlow}
@@ -235,7 +198,8 @@ export function RecapShell({ code }: { code: string }) {
               >
                 {round.prompts.map((prompt, promptIdx) => {
                   const outcome = analyzePromptOutcome(prompt);
-                  const { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } = outcome;
+                  const { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } =
+                    outcome;
                   const cardStyle = getPromptCardBorder(outcome);
 
                   return (
@@ -251,12 +215,10 @@ export function RecapShell({ code }: { code: string }) {
                       <div className="space-y-3">
                         {prompt.responses.map((resp, respIdx) => {
                           const voteCount = filterCastVotes(prompt.votes).filter(
-                            (v) => v.responseId === resp.id
+                            (v) => v.responseId === resp.id,
                           ).length;
                           const pct =
-                            totalVotes > 0
-                              ? Math.round((voteCount / totalVotes) * 100)
-                              : 0;
+                            totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
                           const isWinner = winnerResponseId === resp.id;
                           const pts = resp.pointsEarned;
                           const respModel =
@@ -291,15 +253,8 @@ export function RecapShell({ code }: { code: string }) {
                                     {resp.text}
                                   </p>
                                   <p className="flex items-center gap-1.5 mt-1">
-                                    {respModel && (
-                                      <ModelIcon
-                                        model={respModel}
-                                        size={14}
-                                      />
-                                    )}
-                                    <span className="text-xs text-ink-dim">
-                                      {resp.player.name}
-                                    </span>
+                                    {respModel && <ModelIcon model={respModel} size={14} />}
+                                    <span className="text-xs text-ink-dim">{resp.player.name}</span>
                                     {isWinner && (
                                       <motion.span
                                         className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gold/20 text-gold ml-1"
@@ -310,7 +265,11 @@ export function RecapShell({ code }: { code: string }) {
                                           delay: 0.6 + respIdx * 0.15,
                                         }}
                                       >
-                                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-2.5 h-2.5">
+                                        <svg
+                                          viewBox="0 0 24 24"
+                                          fill="currentColor"
+                                          className="w-2.5 h-2.5"
+                                        >
                                           <path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.14-3.47-6.22c-.42-.75-1.64-.75-2.06 0L7.01 9.72l-4.23-1.14c-.8-.22-1.63.26-1.84 1.06-.11.4-.02.82.24 1.13L5.5 15.5h13l4.32-4.73c.26-.31.35-.73.25-1.13z" />
                                         </svg>
                                         Winner
@@ -321,7 +280,11 @@ export function RecapShell({ code }: { code: string }) {
                                 <div className="text-right shrink-0">
                                   <span
                                     className={`font-mono font-bold text-sm tabular-nums ${
-                                      pts < 0 ? "text-punch" : isWinner ? "text-gold" : "text-ink-dim"
+                                      pts < 0
+                                        ? "text-punch"
+                                        : isWinner
+                                          ? "text-gold"
+                                          : "text-ink-dim"
                                     }`}
                                   >
                                     {pts < 0 ? pts.toLocaleString() : `+${pts.toLocaleString()}`}
@@ -351,15 +314,8 @@ export function RecapShell({ code }: { code: string }) {
           ))}
 
           {/* AI Usage Stats */}
-          <motion.div
-            className="mb-10"
-            variants={fadeInUp}
-            initial="hidden"
-            animate="visible"
-          >
-            <h2 className="text-sm font-medium text-ink-dim mb-3">
-              AI Usage
-            </h2>
+          <motion.div className="mb-10" variants={fadeInUp} initial="hidden" animate="visible">
+            <h2 className="text-sm font-medium text-ink-dim mb-3">AI Usage</h2>
             <AiUsageBreakdown
               modelUsages={game.modelUsages}
               totalInput={game.aiInputTokens}
@@ -370,10 +326,7 @@ export function RecapShell({ code }: { code: string }) {
 
           {/* Back to Home */}
           <div className="text-center pb-8">
-            <Link
-              href="/"
-              className="inline-block text-sm font-medium text-teal hover:underline"
-            >
+            <Link href="/" className="inline-block text-sm font-medium text-teal hover:underline">
               &larr; Back to Home
             </Link>
           </div>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const { generateTextMock } = vi.hoisted(() => ({
   generateTextMock: vi.fn(),
@@ -38,7 +38,7 @@ describe("aiVoteNWay", () => {
         { id: "resp-b", label: "B", text: "B joke" },
       ],
       1,
-      { abortSignal: controller.signal },
+      { abortSignal: controller.signal, apiKey: "test-api-key" },
     );
 
     expect(result).toEqual({

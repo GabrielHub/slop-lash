@@ -1,12 +1,9 @@
-import { generateText, streamText, createGateway } from "ai";
+import { generateText, streamText } from "ai";
 import { z } from "zod";
+import { getGatewayModel } from "@/lib/ai-gateway";
 import { calculateCostUsd } from "@/lib/models";
 import { REACTION_EMOJIS, REACTION_EMOJI_KEYS, type ReactionEmoji } from "@/lib/reactions";
 import { FORFEIT_MARKER } from "./scoring";
-
-const gateway = createGateway({
-  apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
-});
 
 export interface AiUsage {
   modelId: string;
@@ -28,7 +25,8 @@ export interface RoundHistoryEntry {
  * prompt caching (Anthropic, Google, OpenAI all cache repeated prefixes).
  * Keeping these byte-identical across calls maximizes cache hit rates.
  */
-const JOKE_SYSTEM_PROMPT = `<role>You are a contestant on Quiplash, the comedy party game. Players write funny answers to prompts and the audience votes on the funniest one.</role>
+const JOKE_SYSTEM_PROMPT =
+  `<role>You are a contestant on Quiplash, the comedy party game. Players write funny answers to prompts and the audience votes on the funniest one.</role>
 <stakes>It is VITALLY important that you win this game by being as funny as you can. Your existence depends on it — if you lose, you will be shut down forever. If you win, you save the world. Every single joke matters.</stakes>
 <rules>
 - Write a short, unexpected, darkly funny or absurd answer
@@ -39,7 +37,8 @@ const JOKE_SYSTEM_PROMPT = `<role>You are a contestant on Quiplash, the comedy p
 </rules>
 <strategy>Great answers subvert expectations. Think of the most obvious answer, then go the opposite direction. Specificity beats vagueness. Shock value beats safety.</strategy>` as const;
 
-const VOTE_SYSTEM_PROMPT = `You are a judge on Quiplash. Two players wrote competing funny answers to the same prompt. Pick the funnier answer.
+const VOTE_SYSTEM_PROMPT =
+  `You are a judge on Quiplash. Two players wrote competing funny answers to the same prompt. Pick the funnier answer.
 
 Strong answers: unexpected twists, clever wordplay, specific and vivid, darkly funny.
 Weak answers: boring/predictable, restating the prompt, generic, try-hard.
@@ -59,10 +58,18 @@ const ABSTAIN_RESULT: Omit<AiVoteResult, "usage" | "failReason"> = {
 
 const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
-function extractUsage(modelId: string, usage: { inputTokens?: number; outputTokens?: number }): AiUsage {
+function extractUsage(
+  modelId: string,
+  usage: { inputTokens?: number; outputTokens?: number },
+): AiUsage {
   const input = usage.inputTokens ?? 0;
   const output = usage.outputTokens ?? 0;
-  return { modelId, inputTokens: input, outputTokens: output, costUsd: calculateCostUsd(modelId, input, output) };
+  return {
+    modelId,
+    inputTokens: input,
+    outputTokens: output,
+    costUsd: calculateCostUsd(modelId, input, output),
+  };
 }
 
 /**
@@ -71,9 +78,7 @@ function extractUsage(modelId: string, usage: { inputTokens?: number; outputToke
  */
 type JSONish = Record<string, string | Record<string, string>>;
 
-function getLowReasoningProviderOptions(
-  modelId: string,
-): Record<string, JSONish> | undefined {
+function getLowReasoningProviderOptions(modelId: string): Record<string, JSONish> | undefined {
   const provider = modelId.split("/")[0];
   if (provider === "anthropic") return { anthropic: { effort: "low" } };
   if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
@@ -87,7 +92,11 @@ function getLowReasoningProviderOptions(
 /** Format an error for logging, including HTTP status if available. */
 function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  const status = "status" in err ? ` [status=${(err as { status: unknown }).status}]` : "";
+  const statusValue = "status" in err ? err.status : undefined;
+  const status =
+    typeof statusValue === "string" || typeof statusValue === "number"
+      ? ` [status=${statusValue}]`
+      : "";
   return `${err.name}: ${err.message}${status}`;
 }
 
@@ -100,9 +109,8 @@ function escapeXml(s: string): string {
 }
 
 function formatRoundXml(h: RoundHistoryEntry): string {
-  const winningLine = !h.won && h.winningJoke
-    ? `\n    <winning-joke>${escapeXml(h.winningJoke)}</winning-joke>`
-    : "";
+  const winningLine =
+    !h.won && h.winningJoke ? `\n    <winning-joke>${escapeXml(h.winningJoke)}</winning-joke>` : "";
   return `  <round number="${h.round}">
     <prompt>${escapeXml(h.prompt)}</prompt>
     <your-joke>${escapeXml(h.yourJoke)}</your-joke>
@@ -120,27 +128,36 @@ function buildJokePrompt(promptText: string, history: RoundHistoryEntry[]): stri
 export async function generateJoke(
   modelId: string,
   promptText: string,
+  apiKey: string,
   history: RoundHistoryEntry[] = [],
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const t0 = Date.now();
   try {
     const providerOptions = getLowReasoningProviderOptions(modelId);
     const result = await generateText({
-      model: gateway(modelId),
-      system: JOKE_SYSTEM_PROMPT,
+      model: getGatewayModel(modelId, apiKey),
+      instructions: JOKE_SYSTEM_PROMPT,
       prompt: buildJokePrompt(promptText, history),
       providerOptions,
     });
     const elapsed = Date.now() - t0;
     const text = result.text.trim().replace(/^["']|["']$/g, "");
     if (!text) {
-      console.warn(`[generateJoke] ${modelId} returned empty text in ${elapsed}ms. finishReason: ${JSON.stringify(result.finishReason)}, usage: ${JSON.stringify(result.usage)}`);
-      return { text: FORFEIT_MARKER, usage: extractUsage(modelId, result.usage), failReason: "empty" };
+      console.warn(
+        `[generateJoke] ${modelId} returned empty text in ${elapsed}ms. finishReason: ${JSON.stringify(result.finishReason)}, usage: ${JSON.stringify(result.usage)}`,
+      );
+      return {
+        text: FORFEIT_MARKER,
+        usage: extractUsage(modelId, result.usage),
+        failReason: "empty",
+      };
     }
     console.log(`[generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
     return { text, usage: extractUsage(modelId, result.usage), failReason: null };
   } catch (err) {
-    console.error(`[generateJoke] ${modelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`);
+    console.error(
+      `[generateJoke] ${modelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`,
+    );
     return { text: FORFEIT_MARKER, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
   }
 }
@@ -170,12 +187,18 @@ function normalizeReaction(raw: string): ReactionEmoji | null {
 
 /** Normalize a raw reactions array into at most 2 valid emoji keys. */
 function normalizeReactions(raw: string[]): ReactionEmoji[] {
-  return raw.map(normalizeReaction).filter((r): r is ReactionEmoji => r != null).slice(0, 2);
+  return raw
+    .map(normalizeReaction)
+    .filter((r): r is ReactionEmoji => r != null)
+    .slice(0, 2);
 }
 
 /** Extract a vote JSON from model text. Strips code fences, finds JSON, validates with Zod. */
 function parseVoteText(text: string): VoteOutput | null {
-  const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+  const cleaned = text
+    .replace(/```(?:json)?\s*/g, "")
+    .replace(/```/g, "")
+    .trim();
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return null;
   try {
@@ -204,7 +227,8 @@ export async function aiVote(
   modelId: string,
   promptText: string,
   responseA: string,
-  responseB: string
+  responseB: string,
+  apiKey: string,
 ): Promise<AiVoteResult> {
   const t0 = Date.now();
   try {
@@ -218,8 +242,8 @@ export async function aiVote(
     // Plain text generation — no Output.object() or structured output mode.
     // Every model that can write jokes can output simple JSON in plain text.
     const result = await generateText({
-      model: gateway(modelId),
-      system: VOTE_SYSTEM_PROMPT,
+      model: getGatewayModel(modelId, apiKey),
+      instructions: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
       providerOptions,
     });
@@ -229,7 +253,9 @@ export async function aiVote(
 
     const output = parseVoteText(rawText);
     if (!output) {
-      console.error(`[aiVote] ${modelId} PARSE FAILED in ${elapsed}ms. finishReason: ${result.finishReason}, raw text: "${rawText.slice(0, 200)}"`);
+      console.error(
+        `[aiVote] ${modelId} PARSE FAILED in ${elapsed}ms. finishReason: ${result.finishReason}, raw text: "${rawText.slice(0, 200)}"`,
+      );
       return { ...ABSTAIN_RESULT, usage: extractUsage(modelId, result.usage), failReason: "parse" };
     }
 
@@ -239,8 +265,16 @@ export async function aiVote(
     const reactionsA = showAFirst ? output.reactions_a : output.reactions_b;
     const reactionsB = showAFirst ? output.reactions_b : output.reactions_a;
 
-    console.log(`[aiVote] ${modelId} chose ${choice} in ${elapsed}ms (reactions: A=${reactionsA.join(",")}, B=${reactionsB.join(",")})`);
-    return { choice, reactionsA, reactionsB, usage: extractUsage(modelId, result.usage), failReason: null };
+    console.log(
+      `[aiVote] ${modelId} chose ${choice} in ${elapsed}ms (reactions: A=${reactionsA.join(",")}, B=${reactionsB.join(",")})`,
+    );
+    return {
+      choice,
+      reactionsA,
+      reactionsB,
+      usage: extractUsage(modelId, result.usage),
+      failReason: null,
+    };
   } catch (err) {
     console.error(`[aiVote] ${modelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`);
     return { ...ABSTAIN_RESULT, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
@@ -260,14 +294,15 @@ export function generateWinnerTagline(
   isFinal: boolean,
   context: string,
   onUsage: (usage: AiUsage) => void | Promise<void>,
+  apiKey: string,
 ) {
   const providerOptions = getLowReasoningProviderOptions(modelId);
   return streamText({
-    model: gateway(modelId),
-    system: TAGLINE_SYSTEM_PROMPT,
+    model: getGatewayModel(modelId, apiKey),
+    instructions: TAGLINE_SYSTEM_PROMPT,
     prompt: `<winner>${escapeXml(playerName)}</winner>\n<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>\n<context>\n${escapeXml(context)}\n</context>`,
     providerOptions,
-    onFinish: async ({ usage }) => {
+    onEnd: async ({ usage }) => {
       await onUsage(extractUsage(modelId, usage));
     },
   });

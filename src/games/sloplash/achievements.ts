@@ -1,6 +1,12 @@
 import { filterCastVotes } from "@/lib/types";
 import type { GameState } from "@/lib/types";
-import { scorePrompt, applyScoreResult, FORFEIT_MARKER, type PlayerState, type ScorePromptResult } from "./scoring";
+import {
+  scorePrompt,
+  applyScoreResult,
+  FORFEIT_MARKER,
+  type PlayerState,
+  type ScorePromptResult,
+} from "./scoring";
 
 export interface Achievement {
   id: string;
@@ -163,10 +169,7 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
       }));
 
       for (const vc of voteCounts) {
-        totalVotesReceived.set(
-          vc.playerId,
-          (totalVotesReceived.get(vc.playerId) ?? 0) + vc.count,
-        );
+        totalVotesReceived.set(vc.playerId, (totalVotesReceived.get(vc.playerId) ?? 0) + vc.count);
       }
 
       const sorted = [...voteCounts].sort((a, b) => b.count - a.count);
@@ -206,12 +209,17 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
         underdogIds.add(winner.playerId);
       }
 
-      // Use scorePrompt to update running scores/HR/streak (matches game-logic.ts)
+      // Use scorePrompt to update running scores/HR/streak exactly as the backend does.
       const respondentIds = new Set(prompt.responses.map((r) => r.playerId));
       const eligibleVoterCount = game.players.filter((p) => !respondentIds.has(p.id)).length;
 
       const result = scorePrompt(
-        prompt.responses.map((r) => ({ id: r.id, playerId: r.playerId, playerType: r.player.type, text: r.text })),
+        prompt.responses.map((r) => ({
+          id: r.id,
+          playerId: r.playerId,
+          playerType: r.player.type,
+          text: r.text,
+        })),
         prompt.votes.map((v) => ({ id: v.voter.id, type: v.voter.type, responseId: v.responseId })),
         playerStates,
         round.roundNumber,
@@ -236,9 +244,7 @@ export function computeAchievements(game: GameState): PlayerAchievement[] {
   // Crowd Favorite: most total votes (no tie)
   const maxVotes = Math.max(...totalVotesReceived.values());
   if (maxVotes > 0) {
-    const favorites = [...totalVotesReceived.entries()].filter(
-      ([, v]) => v === maxVotes,
-    );
+    const favorites = [...totalVotesReceived.entries()].filter(([, v]) => v === maxVotes);
     if (favorites.length === 1) {
       const [playerId] = favorites[0];
       const player = playerMap.get(playerId);

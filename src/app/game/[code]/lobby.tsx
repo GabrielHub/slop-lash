@@ -6,20 +6,28 @@ import { GameState } from "@/lib/types";
 import { PlayerList } from "@/components/player-list";
 import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
-import {
-  staggerContainer,
-  popIn,
-  fadeInUp,
-  buttonTapPrimary,
-} from "@/lib/animations";
+import { staggerContainer, popIn, fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { MIN_PLAYERS, MAX_PLAYERS } from "@/games/sloplash/game-constants";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+import type { Id } from "../../../../convex/_generated/dataModel";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { useLobbyKickHumanMutation, useLobbyStartMutation } from "@/hooks/use-game-runtime";
 
 function CheckIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="20 6 9 17 4 12" />
     </svg>
   );
@@ -38,13 +46,11 @@ export function Lobby({
   game,
   isHost,
   code,
-  onRefresh,
   compactStage = false,
 }: {
   game: GameState;
   isHost: boolean;
   code: string;
-  onRefresh: () => void;
   compactStage?: boolean;
 }) {
   const [starting, setStarting] = useState(false);
@@ -52,6 +58,10 @@ export function Lobby({
   const [copied, copyToClipboard] = useCopyToClipboard();
   const [tvCopied, copyTvToClipboard] = useCopyToClipboard();
   const startPendingRef = useRef(false);
+  const roomSession = useConvexRoomSession(code);
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const kickConvexHuman = useLobbyKickHumanMutation();
+  const startConvexGame = useLobbyStartMutation();
   const { triggerElement } = usePixelDissolve();
   const activePlayers = game.players.filter((p) => p.type !== "SPECTATOR");
   const isDisplayOnlyHostMode = game.hostPlayerId == null;
@@ -83,22 +93,22 @@ export function Lobby({
 
   const handleKick = useCallback(
     async (targetPlayerId: string) => {
-      const playerId = localStorage.getItem("playerId");
-      const hostToken = localStorage.getItem("hostControlToken");
-      if (!playerId && !hostToken) return;
+      if (!hostCapability) {
+        setError("Host room access is required to kick a player.");
+        return;
+      }
       const target = game.players.find((p) => p.id === targetPlayerId);
       if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
       try {
-        await fetch(`/api/games/${code}/kick`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId, hostToken, targetPlayerId }),
+        await kickConvexHuman({
+          capability: hostCapability,
+          targetPlayerId: targetPlayerId as Id<"players">,
         });
-      } catch {
-        // ignore
+      } catch (cause) {
+        setError(getConvexErrorMessage(cause, "Failed to kick player"));
       }
     },
-    [code, game.players],
+    [game.players, hostCapability, kickConvexHuman],
   );
 
   const copyCode = useCallback(() => {
@@ -107,37 +117,27 @@ export function Lobby({
   }, [game.roomCode, copyToClipboard]);
 
   const copyTvLink = useCallback(() => {
-    const hostToken = localStorage.getItem("hostControlToken");
+    if (!hostCapability) return;
     const base = `${window.location.origin}/stage/${game.roomCode}`;
-    const url = hostToken ? `${base}?token=${encodeURIComponent(hostToken)}` : base;
-    copyTvToClipboard(url);
-  }, [game.roomCode, copyTvToClipboard]);
+    copyTvToClipboard(`${base}?capability=${encodeURIComponent(hostCapability)}`);
+  }, [game.roomCode, copyTvToClipboard, hostCapability]);
 
   async function startGame() {
     if (startPendingRef.current) return;
-    const playerId = localStorage.getItem("playerId");
-    const hostToken = localStorage.getItem("hostControlToken");
-    if (!playerId && !hostToken) return;
+    if (!hostCapability) {
+      setError("Host room access is required to start the game.");
+      return;
+    }
     startPendingRef.current = true;
     setStarting(true);
     setError("");
     let keepPending = false;
     try {
-      const res = await fetch(`/api/games/${code}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to start");
-      } else {
-        keepPending = true;
-        playSound("game-start");
-        onRefresh();
-      }
-    } catch {
-      setError("Something went wrong");
+      await startConvexGame({ capability: hostCapability });
+      keepPending = true;
+      playSound("game-start");
+    } catch (cause) {
+      setError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
       if (!keepPending) {
         startPendingRef.current = false;
@@ -185,7 +185,9 @@ export function Lobby({
                 </motion.div>
               ))}
             </motion.div>
-            <div className={`mt-4 flex items-center gap-4 ${compactStage ? "justify-center lg:justify-start" : "justify-center"}`}>
+            <div
+              className={`mt-4 flex items-center gap-4 ${compactStage ? "justify-center lg:justify-start" : "justify-center"}`}
+            >
               <button
                 onClick={copyCode}
                 className="inline-flex items-center gap-1.5 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
@@ -197,7 +199,16 @@ export function Lobby({
                   </>
                 ) : (
                   <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                     </svg>
@@ -217,7 +228,16 @@ export function Lobby({
                     </>
                   ) : (
                     <>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
                         <polyline points="17 2 12 7 7 2" />
                       </svg>
@@ -235,8 +255,11 @@ export function Lobby({
             {isHost ? (
               <div className="space-y-3">
                 {isDisplayOnlyHostMode && (
-                  <p className={`text-ink-dim ${compactStage ? "text-center lg:text-left text-base" : "text-center text-sm"}`}>
-                    This TV screen is the host in TV mode. Start the game here when everyone is ready.
+                  <p
+                    className={`text-ink-dim ${compactStage ? "text-center lg:text-left text-base" : "text-center text-sm"}`}
+                  >
+                    This TV screen is the host in TV mode. Start the game here when everyone is
+                    ready.
                   </p>
                 )}
                 <motion.button
@@ -277,12 +300,20 @@ export function Lobby({
 
         <div className={compactStage ? "mt-8 lg:mt-0" : "mb-8"}>
           <div className="flex items-baseline justify-between mb-3">
-            <h2 className={`font-medium text-ink-dim ${compactStage ? "text-base lg:text-lg" : "text-sm"}`}>Players</h2>
+            <h2
+              className={`font-medium text-ink-dim ${compactStage ? "text-base lg:text-lg" : "text-sm"}`}
+            >
+              Players
+            </h2>
             <span className={`font-mono text-ink-dim/60 ${compactStage ? "text-sm" : "text-xs"}`}>
               {activePlayers.length}/{MAX_PLAYERS}
             </span>
           </div>
-          <div className={compactStage ? "rounded-2xl border border-edge/80 bg-surface/45 p-4 lg:p-5" : ""}>
+          <div
+            className={
+              compactStage ? "rounded-2xl border border-edge/80 bg-surface/45 p-4 lg:p-5" : ""
+            }
+          >
             <PlayerList
               players={activePlayers}
               onKick={isHost ? handleKick : undefined}

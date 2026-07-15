@@ -2,54 +2,65 @@
   "name": "slop-lash",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "vp lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vp test",
     "test:ui:matchslop-sync": "playwright test -c playwright.dev-ui.config.ts src/dev/game-fixtures/matchslop-sync.spec.ts",
-    "check": "pnpm lint && pnpm typecheck",
+    "check": "vp check",
     "check:theme-colors": "node scripts/check-theme-colors.mjs",
+    "convex:codegen": "convex codegen",
+    "convex:dev": "convex dev",
     "prepare": "husky"
   },
   "dependencies": {
+    "@convex-dev/presence": "0.3.2",
+    "@convex-dev/workflow": "0.4.4",
+    "@convex-dev/workpool": "0.4.7",
+    "@fal-ai/client": "1.10.1",
     "@google/genai": "^1.50.1",
-    "@prisma/adapter-pg": "^7.7.0",
-    "@prisma/client": "^7.7.0",
     "@vercel/analytics": "^1.6.1",
-    "ai": "^6.0.162",
+    "ai": "^7.0.29",
     "canvas-confetti": "^1.9.4",
+    "convex": "^1.42.2",
     "motion": "^12.38.0",
-    "next": "16.1.6",
-    "pg": "^8.20.0",
-    "prisma": "^7.7.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "zod": "^4.3.6"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@prisma/engines",
-      "prisma",
-      "sharp",
-      "unrs-resolver"
-    ]
-  },
   "devDependencies": {
+    "@edge-runtime/vm": "5.0.0",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/canvas-confetti": "^1.9.0",
-    "@types/node": "^20.19.39",
-    "@types/react": "^19.2.14",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "dotenv": "^17.4.2",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "16.1.6",
+    "convex-test": "0.0.54",
     "husky": "^9.1.7",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.4"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.13.0",
+      "onFail": "download"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "24.18.0",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": "24.x"
   }
 }

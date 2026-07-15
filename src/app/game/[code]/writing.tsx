@@ -3,37 +3,45 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
-import { PLAYER_TOKEN_KEY } from "@/lib/client-session";
 import { Timer } from "@/components/timer";
 import { WRITING_DURATION_SECONDS } from "@/games/sloplash/game-constants";
 import { CompletionCard } from "@/components/completion-card";
 import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
-import {
-  fadeInUp,
-  floatIn,
-  popIn,
-  staggerContainer,
-  buttonTap,
-} from "@/lib/animations";
+import { fadeInUp, floatIn, popIn, staggerContainer, buttonTap } from "@/lib/animations";
 import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import type { Id } from "../../../../convex/_generated/dataModel";
+import {
+  useSloplashAdvanceMutation,
+  useSloplashSubmitResponseMutation,
+} from "@/hooks/use-game-runtime";
 
 /** Inline character counter that appears as input approaches the limit. */
-function CharCount({ length, max, threshold, show }: { length: number; max: number; threshold: number; show: boolean }) {
+function CharCount({
+  length,
+  max,
+  threshold,
+  show,
+}: {
+  length: number;
+  max: number;
+  threshold: number;
+  show: boolean;
+}) {
   if (!show || length < threshold) return null;
   return (
-    <span className={`text-xs tabular-nums shrink-0 pt-0.5 ${length >= max ? "text-punch" : "text-ink-dim/50"}`}>
+    <span
+      className={`text-xs tabular-nums shrink-0 pt-0.5 ${length >= max ? "text-punch" : "text-ink-dim/50"}`}
+    >
       {length}/{max}
     </span>
   );
 }
 
-function getSkipButtonText(
-  skipping: boolean,
-  timersDisabled: boolean,
-  phase: string
-): string {
+function getSkipButtonText(skipping: boolean, timersDisabled: boolean, phase: string): string {
   if (skipping) return "Skipping...";
   if (timersDisabled) return `End ${phase}`;
   return "Skip Timer";
@@ -58,13 +66,16 @@ export function Writing({
   const [skipping, setSkipping] = useState(false);
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
+  const roomSession = useConvexRoomSession(code);
+  const playerCapability = roomSession?.playerCapability ?? null;
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const submitConvexResponse = useSloplashSubmitResponseMutation();
+  const advanceConvexGame = useSloplashAdvanceMutation();
 
   const currentRound = game.rounds[0];
   const myPrompts = useMemo(() => {
     if (!currentRound || !playerId) return [];
-    return currentRound.prompts.filter((p) =>
-      p.assignments.some((a) => a.playerId === playerId)
-    );
+    return currentRound.prompts.filter((p) => p.assignments.some((a) => a.playerId === playerId));
   }, [currentRound, playerId]);
 
   const alreadyAnswered = useMemo(() => {
@@ -87,8 +98,7 @@ export function Writing({
   async function submitResponse(promptId: string) {
     const text = responses[promptId];
     if (!text?.trim()) return;
-    const playerToken = localStorage.getItem(PLAYER_TOKEN_KEY);
-    if (!playerToken) {
+    if (!playerCapability) {
       setError("Session expired. Refresh or rejoin the game.");
       return;
     }
@@ -97,46 +107,35 @@ export function Writing({
     setError("");
 
     try {
-      const res = await fetch(`/api/games/${code}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId, text: text.trim() }),
+      await submitConvexResponse({
+        capability: playerCapability,
+        promptId: promptId as Id<"prompts">,
+        text: text.trim(),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to submit");
-        return;
-      }
-
       playSound("submitted");
       setSubmitted((prev) => new Set(prev).add(promptId));
-    } catch {
-      setError("Something went wrong");
+    } catch (cause) {
+      setError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
       setSubmitting(null);
     }
   }
 
   async function skipTimer() {
-    const hostToken = localStorage.getItem("hostControlToken");
+    if (!hostCapability) {
+      setError("Host room access is required to advance the game.");
+      return;
+    }
     setSkipping(true);
     setError("");
     let keepPending = false;
     try {
-      const res = await fetch(`/api/games/${code}/next`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
+      await advanceConvexGame({
+        capability: hostCapability,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to skip");
-      } else {
-        keepPending = true;
-      }
-    } catch {
-      setError("Something went wrong");
+      keepPending = true;
+    } catch (cause) {
+      setError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
       if (!keepPending) {
         setSkipping(false);
@@ -149,7 +148,9 @@ export function Writing({
 
   if (forceStageView) {
     return (
-      <main className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}>
+      <main
+        className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}
+      >
         <motion.div
           className="w-full max-w-lg"
           variants={fadeInUp}
@@ -164,12 +165,16 @@ export function Writing({
           </div>
           {!game.timersDisabled && (
             <div className="mb-6">
-              <Timer deadline={game.phaseDeadline} serverNow={game.serverNow} total={WRITING_DURATION_SECONDS} />
+              <Timer
+                deadline={game.phaseDeadline}
+                serverNow={game.serverNow}
+                total={WRITING_DURATION_SECONDS}
+              />
             </div>
           )}
           {isHost && (
             <motion.button
-              onClick={skipTimer}
+              onClick={() => void skipTimer()}
               disabled={skipping}
               className="w-full py-2 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               {...buttonTap}
@@ -184,13 +189,10 @@ export function Writing({
 
   if (isAI || !playerId) {
     return (
-      <main className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}>
-        <motion.div
-          className="text-center"
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-        >
+      <main
+        className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}
+      >
+        <motion.div className="text-center" variants={fadeInUp} initial="hidden" animate="visible">
           <h1 className="font-display text-3xl font-bold mb-3 text-ink">
             Round {game.currentRound}
           </h1>
@@ -200,14 +202,12 @@ export function Writing({
     );
   }
 
-  const allDone =
-    myPrompts.length === 0 ||
-    myPrompts.every(
-      (p) => submitted.has(p.id) || alreadyAnswered.has(p.id)
-    );
+  const allDone = myPrompts.every((p) => submitted.has(p.id) || alreadyAnswered.has(p.id));
 
   return (
-    <main className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}>
+    <main
+      className={`flex-1 flex flex-col items-center px-6 ${forceStageView ? "py-6 lg:py-5" : "py-12"}`}
+    >
       <motion.div
         className="w-full max-w-lg"
         variants={fadeInUp}
@@ -219,19 +219,21 @@ export function Writing({
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">
             Round {game.currentRound}
           </h1>
-          <p className="text-ink-dim text-sm mt-1">
-            Write your funniest answers
-          </p>
+          <p className="text-ink-dim text-sm mt-1">Write your funniest answers</p>
         </div>
 
         {/* Timer */}
         <div className="mb-8">
           {!game.timersDisabled && (
-            <Timer deadline={game.phaseDeadline} serverNow={game.serverNow} total={WRITING_DURATION_SECONDS} />
+            <Timer
+              deadline={game.phaseDeadline}
+              serverNow={game.serverNow}
+              total={WRITING_DURATION_SECONDS}
+            />
           )}
           {isHost && (
             <motion.button
-              onClick={skipTimer}
+              onClick={() => void skipTimer()}
               disabled={skipping}
               className={`${game.timersDisabled ? "" : "mt-3 "}w-full py-2 text-sm font-medium text-ink-dim hover:text-ink bg-raised/80 backdrop-blur-sm hover:bg-surface border border-edge rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               {...buttonTap}
@@ -256,8 +258,7 @@ export function Writing({
               animate="visible"
             >
               {myPrompts.map((prompt) => {
-                const isDone =
-                  submitted.has(prompt.id) || alreadyAnswered.has(prompt.id);
+                const isDone = submitted.has(prompt.id) || alreadyAnswered.has(prompt.id);
                 return (
                   <motion.div
                     key={prompt.id}
@@ -274,7 +275,12 @@ export function Writing({
                       <p className="font-display font-semibold text-base sm:text-lg leading-snug text-ink">
                         {prompt.text}
                       </p>
-                      <CharCount length={responses[prompt.id]?.length ?? 0} max={100} threshold={80} show={!isDone} />
+                      <CharCount
+                        length={responses[prompt.id]?.length ?? 0}
+                        max={100}
+                        threshold={80}
+                        show={!isDone}
+                      />
                     </div>
                     <AnimatePresence mode="wait">
                       {isDone ? (
@@ -317,7 +323,7 @@ export function Writing({
                             }
                             onKeyDown={(e) => {
                               if (e.key === "Enter" && responses[prompt.id]?.trim()) {
-                                submitResponse(prompt.id);
+                                void submitResponse(prompt.id);
                               }
                             }}
                             placeholder="Your answer..."
@@ -331,12 +337,9 @@ export function Writing({
                           <motion.button
                             onClick={(e) => {
                               triggerElement(e.currentTarget);
-                              submitResponse(prompt.id);
+                              void submitResponse(prompt.id);
                             }}
-                            disabled={
-                              submitting === prompt.id ||
-                              !responses[prompt.id]?.trim()
-                            }
+                            disabled={submitting === prompt.id || !responses[prompt.id]?.trim()}
                             className="px-5 py-3 bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-40 text-white rounded-xl font-bold text-sm transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0"
                             {...buttonTap}
                           >

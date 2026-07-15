@@ -1,412 +1,29 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useSyncExternalStore,
-} from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "motion/react";
-import { filterCastVotes } from "@/lib/types";
-import { FORFEIT_MARKER } from "@/games/core/constants";
-import { springGentle, springBouncy } from "@/lib/animations";
+import { AnimatePresence, motion } from "motion/react";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { PlayerAvatar } from "@/components/player-avatar";
-import { ScoreBarChart } from "@/components/score-bar-chart";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { MIN_PLAYERS, MAX_PLAYERS } from "../game-constants";
-import {
-  useOptimisticChat,
-  type OptimisticChatMessage,
-} from "./use-optimistic-chat";
+import { MIN_PLAYERS } from "../game-constants";
+import { useOptimisticChat } from "./use-optimistic-chat";
 import { useChatParticles, ChatParticleLayer } from "./chat-particles";
 import { useGameStream } from "@/hooks/use-game-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
-
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import {
-  getPlayerId,
-  getPlayerToken,
-  getHostControlToken,
-  setHostControlToken,
-  setPlayerSession,
-  subscribeSession,
-} from "@/lib/client-session";
-
-/* ─── Shared animation configs ─── */
-
-export const msgSpring = { type: "spring" as const, stiffness: 500, damping: 32 };
-export const gentleSpring = { type: "spring" as const, stiffness: 300, damping: 25 };
-
-/* ─── Typing indicator ─── */
-
-export function TypingDots({ label }: { label?: string }) {
-  return (
-    <div className="flex items-center gap-2 px-1">
-      <div className="flex gap-1">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="w-1.5 h-1.5 rounded-full bg-[var(--cs-ink-dim)]"
-            style={{ animation: `cs-typing-dot 1.4s ease-in-out ${i * 0.2}s infinite` }}
-          />
-        ))}
-      </div>
-      {label && (
-        <span className="text-[11px] text-[var(--cs-ink-dim)] font-medium">{label}</span>
-      )}
-    </div>
-  );
-}
-
-/* ─── System message (inline in feed) ─── */
-
-export function SystemMsg({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
-  return (
-    <motion.div
-      className="flex items-center justify-center gap-2 py-2"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={msgSpring}
-    >
-      {icon}
-      <span className="text-[11px] font-medium text-[var(--cs-ink-dim)] tracking-wide">
-        {children}
-      </span>
-    </motion.div>
-  );
-}
-
-/* ─── Chat bubble ─── */
-
-export function Bubble({
-  message,
-  playerName,
-  modelId,
-  isMe,
-  allMessages,
-  players,
-  onRetry,
-  onDismiss,
-}: {
-  message: OptimisticChatMessage;
-  playerName: string;
-  modelId: string | null;
-  isMe: boolean;
-  allMessages: OptimisticChatMessage[];
-  players: { id: string; name: string; modelId: string | null }[];
-  onRetry: () => void;
-  onDismiss: () => void;
-}) {
-  const isPending = message.status === "pending";
-  const isFailed = message.status === "failed";
-  const isAi = !!modelId;
-
-  let bubbleBg: string;
-  if (isMe) bubbleBg = "bg-[var(--cs-bubble-me)]";
-  else if (isAi) bubbleBg = "bg-[var(--cs-bubble-ai)]";
-  else bubbleBg = "bg-[var(--cs-bubble-other)]";
-
-  const bubbleRadius = isMe
-    ? "rounded-2xl rounded-tr-sm"
-    : "rounded-2xl rounded-tl-sm";
-
-  let nameColor: string;
-  if (isAi) nameColor = "text-[var(--cs-violet)]";
-  else if (isMe) nameColor = "text-[var(--cs-accent)]";
-  else nameColor = "text-[var(--cs-ink-dim)]";
-
-  const replyTo = message.replyToId
-    ? allMessages.find((m) => m.id === message.replyToId)
-    : null;
-  const replyToPlayer = replyTo
-    ? players.find((p) => p.id === replyTo.playerId)
-    : null;
-
-  return (
-    <motion.div
-      className={`flex gap-2.5 max-w-[85%] lg:max-w-[70%] ${isMe ? "ml-auto flex-row-reverse" : ""}`}
-      initial={{ opacity: 0, y: 10, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={msgSpring}
-    >
-      <div className="shrink-0 mt-0.5">
-        <PlayerAvatar
-          name={playerName}
-          modelId={modelId}
-          size={28}
-          className="rounded-full ring-1 ring-[var(--cs-edge)]"
-        />
-      </div>
-      <div className={`min-w-0 flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-        <span className={`text-[10px] lg:text-[11px] font-semibold mb-0.5 ${nameColor}`}>
-          {playerName}
-        </span>
-        {replyTo && (
-          <div
-            className="flex items-center gap-1.5 mb-1 px-2.5 py-1 rounded-lg border-l-2 max-w-full"
-            style={{
-              borderColor: "var(--cs-violet)",
-              background: "color-mix(in srgb, var(--cs-violet) 8%, transparent)",
-            }}
-          >
-            <span className="text-[10px] font-semibold shrink-0" style={{ color: "var(--cs-violet)" }}>
-              {replyToPlayer?.name ?? "Unknown"}
-            </span>
-            <span className="text-[10px] truncate" style={{ color: "var(--cs-ink-dim)" }}>
-              {replyTo.content.length > 60 ? replyTo.content.slice(0, 57) + "..." : replyTo.content}
-            </span>
-          </div>
-        )}
-        <div
-          className={`px-3.5 py-2.5 lg:px-4 lg:py-3 text-sm lg:text-[15px] leading-relaxed break-words ${bubbleBg} ${bubbleRadius} ${isPending ? "opacity-50" : ""} ${isFailed ? "ring-1 ring-fail/40" : ""}`}
-          style={{ color: "var(--cs-ink)" }}
-        >
-          {message.content}
-        </div>
-        {isFailed && (
-          <div className={`flex gap-2 mt-0.5 text-[10px] font-medium ${isMe ? "justify-end" : ""}`}>
-            <button onClick={onRetry} className="text-[var(--cs-accent)] hover:underline cursor-pointer">Retry</button>
-            <button onClick={onDismiss} className="text-[var(--cs-ink-dim)] hover:text-[var(--cs-ink)] cursor-pointer">Dismiss</button>
-          </div>
-        )}
-        {isPending && (
-          <span className={`text-[10px] text-[var(--cs-ink-dim)] opacity-50 mt-0.5 ${isMe ? "text-right" : ""}`}>
-            Sending...
-          </span>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-/* ─── Game event cards (rendered as "messages" in the feed) ─── */
-
-export function GameCard({ children, accent = false }: { children: React.ReactNode; accent?: boolean }) {
-  return (
-    <motion.div
-      className="mx-auto w-full max-w-sm lg:max-w-md"
-      initial={{ opacity: 0, y: 14, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={gentleSpring}
-    >
-      <div
-        className={`rounded-2xl px-4 py-4 backdrop-blur-sm ${accent ? "bg-[var(--cs-bubble-game)] border border-[var(--cs-accent)]/20" : "bg-[var(--cs-surface)] border border-[var(--cs-edge)]"}`}
-        style={accent ? { boxShadow: "var(--cs-glow)" } : { boxShadow: "var(--cs-shadow)" }}
-      >
-        {children}
-      </div>
-    </motion.div>
-  );
-}
-
-/* ─── Vote option button ─── */
-
-export function VoteOption({
-  text,
-  isMine,
-  disabled,
-  onVote,
-}: {
-  text: string;
-  isMine: boolean;
-  disabled: boolean;
-  onVote: () => void;
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={isMine ? undefined : onVote}
-      disabled={disabled || isMine}
-      className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
-        isMine
-          ? "border-[var(--cs-violet)]/20 bg-[var(--cs-violet-soft)] opacity-60 cursor-not-allowed"
-          : "border-[var(--cs-edge)] bg-[var(--cs-surface)] hover:border-[var(--cs-accent)]/40 hover:bg-[var(--cs-accent-soft)] cursor-pointer"
-      }`}
-      whileHover={isMine ? {} : { scale: 1.01, y: -1 }}
-      whileTap={isMine ? {} : { scale: 0.98 }}
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={msgSpring}
-    >
-      <p className="text-sm font-medium" style={{ color: "var(--cs-ink)" }}>{text}</p>
-      {isMine && (
-        <span className="text-[10px] text-[var(--cs-violet)] font-medium mt-0.5 block">
-          Your answer
-        </span>
-      )}
-    </motion.button>
-  );
-}
-
-/* ─── Result row ─── */
-
-export function ResultRow({
-  text,
-  playerName,
-  modelId,
-  voteCount,
-  totalVotes,
-  points,
-  isWinner,
-  delay,
-}: {
-  text: string;
-  playerName: string;
-  modelId: string | null;
-  voteCount: number;
-  totalVotes: number;
-  points: number;
-  isWinner: boolean;
-  delay: number;
-}) {
-  const pct = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
-  return (
-    <motion.div
-      className={`relative overflow-hidden rounded-xl px-3.5 py-3 border ${
-        isWinner
-          ? "border-[var(--cs-accent)]/30 bg-[var(--cs-accent-soft)]"
-          : "border-[var(--cs-edge)] bg-[var(--cs-surface)]"
-      }`}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ ...gentleSpring, delay }}
-    >
-      {/* Vote bar bg */}
-      <motion.div
-        className="absolute inset-0"
-        style={{
-          background: isWinner
-            ? "linear-gradient(90deg, var(--cs-accent-soft), transparent)"
-            : "linear-gradient(90deg, var(--cs-raised), transparent)",
-        }}
-        initial={{ width: "0%" }}
-        animate={{ width: `${pct}%` }}
-        transition={{ ...springGentle, delay: delay + 0.2 }}
-      />
-      <div className="relative flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-snug" style={{ color: "var(--cs-ink)" }}>
-            {text}
-          </p>
-          <div className="flex items-center gap-1.5 mt-1">
-            <PlayerAvatar name={playerName} modelId={modelId} size={14} className="rounded-full" />
-            <span className="text-[11px] text-[var(--cs-ink-dim)] font-medium">{playerName}</span>
-            {isWinner && (
-              <motion.span
-                className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-[var(--cs-accent)]/20 text-[var(--cs-accent)]"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ ...springBouncy, delay: delay + 0.4 }}
-              >
-                Winner
-              </motion.span>
-            )}
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <span className={`font-mono font-bold text-base tabular-nums ${isWinner ? "text-[var(--cs-accent)]" : "text-[var(--cs-ink-dim)]"}`}>
-            {points >= 0 ? "+" : ""}{points}
-          </span>
-          <p className="text-[10px] text-[var(--cs-ink-dim)] tabular-nums">
-            {voteCount}v ({pct}%)
-          </p>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-/* ─── Progress pill ─── */
-
-export function ProgressPill({ current, total, label }: { current: number; total: number; label: string }) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  const done = current >= total && total > 0;
-  return (
-    <div className="flex items-center justify-center gap-2 py-1">
-      <div className="w-24 h-1 rounded-full bg-[var(--cs-edge)] overflow-hidden">
-        <motion.div
-          className="h-full rounded-full"
-          style={{
-            background: done
-              ? "var(--cs-accent)"
-              : "linear-gradient(90deg, var(--cs-accent), var(--cs-violet))",
-          }}
-          initial={{ width: "0%" }}
-          animate={{ width: `${pct}%` }}
-          transition={springGentle}
-        />
-      </div>
-      <span className="text-[10px] font-mono text-[var(--cs-ink-dim)] tabular-nums">
-        {current}/{total} {label}
-      </span>
-    </div>
-  );
-}
-
-/* ─── Chat input bar ─── */
-
-export function ChatBar({
-  mode,
-  onSend,
-  disabled,
-  placeholder,
-}: {
-  mode: "chat" | "response" | "disabled";
-  onSend: (text: string) => void;
-  disabled: boolean;
-  placeholder: string;
-}) {
-  const [text, setText] = useState("");
-
-  function handleSend() {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
-    setText("");
-  }
-
-  const isResponse = mode === "response";
-  const maxLen = isResponse ? 100 : 200;
-
-  return (
-    <div className="flex gap-2 items-end">
-      <input
-        type="text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-        placeholder={placeholder}
-        maxLength={maxLen}
-        disabled={disabled || mode === "disabled"}
-        className="flex-1 py-2.5 px-4 rounded-2xl text-sm transition-all focus:outline-none disabled:opacity-30"
-        style={{
-          background: "var(--cs-raised)",
-          color: "var(--cs-ink)",
-          border: `1px solid var(--cs-edge)`,
-        }}
-      />
-      <motion.button
-        type="button"
-        onClick={handleSend}
-        disabled={disabled || mode === "disabled" || !text.trim()}
-        className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-        style={{
-          background: isResponse ? "var(--cs-accent)" : "var(--cs-accent-soft)",
-          color: isResponse ? "var(--cs-bg)" : "var(--cs-accent)",
-        }}
-        whileHover={{ scale: 1.08 }}
-        whileTap={{ scale: 0.92 }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 12h14M12 5l7 7-7 7" />
-        </svg>
-      </motion.button>
-    </div>
-  );
-}
+  useChatslopAdvanceMutation,
+  useChatslopEndMutation,
+  useChatslopRespondMutation,
+  useChatslopVoteMutation,
+  useLobbyKickHumanMutation,
+  useLobbyStartMutation,
+} from "@/hooks/use-game-runtime";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { buildChatFeed } from "./chat-feed";
+import { ChatBar, TypingDots } from "./chat-components";
 
 /* ─── Main component ─── */
 
@@ -417,28 +34,41 @@ export function ChatGameShell({
   code: string;
   viewMode?: "game" | "stage";
 }) {
-  const searchParams = useSearchParams();
-  const storedPlayerId = useSyncExternalStore(subscribeSession, getPlayerId, () => null);
-  const playerToken = useSyncExternalStore(subscribeSession, getPlayerToken, () => null);
-  const storedHostControlToken = useSyncExternalStore(subscribeSession, getHostControlToken, () => null);
-  const urlHostToken = viewMode === "stage" ? searchParams.get("token") : null;
-  const hostControlToken = urlHostToken ?? storedHostControlToken;
-  const playerId = viewMode === "stage" ? null : storedPlayerId;
-  const { gameState, error, refresh } = useGameStream(code, playerToken, hostControlToken, viewMode);
+  const roomSession = useConvexRoomSession(code);
+  const playerId = viewMode === "stage" ? null : (roomSession?.playerId ?? null);
+  const playerCapability = viewMode === "stage" ? null : (roomSession?.playerCapability ?? null);
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const { gameState, error } = useGameStream(code, viewMode);
+  const respondMutation = useChatslopRespondMutation();
+  const voteMutation = useChatslopVoteMutation();
+  const advanceMutation = useChatslopAdvanceMutation();
+  const endMutation = useChatslopEndMutation();
+  const startMutation = useLobbyStartMutation();
+  const kickMutation = useLobbyKickHumanMutation();
   useScreenWakeLock(gameState != null);
   const { triggerElement } = usePixelDissolve();
 
-  useEffect(() => {
-    if (viewMode !== "stage" || !urlHostToken) return;
-    setHostControlToken(urlHostToken);
-  }, [urlHostToken, viewMode]);
-
   // Optimistic chat
   const chatEnabled = !!gameState && gameState.status !== "FINAL_RESULTS";
-  const { messages: chatMessages, sendMessage: sendChatMessage, retryMessage, dismissFailed, incomingTick } = useOptimisticChat(code, playerId, chatEnabled);
+  const {
+    canLoadMore: canLoadOlderMessages,
+    dismissFailed,
+    incomingTick,
+    isLoadingHistory: loadingChatHistory,
+    isLoadingMore: loadingOlderMessages,
+    loadOlderMessages,
+    messages: chatMessages,
+    retryMessage,
+    sendMessage: sendChatMessage,
+  } = useOptimisticChat(code, playerId, chatEnabled);
 
   // Chat particle effects (each message = one pixel in the rain)
-  const { particles: chatParticles, containerRef: particleContainerRef, emitIncoming, emitOutgoing } = useChatParticles();
+  const {
+    particles: chatParticles,
+    containerRef: particleContainerRef,
+    emitIncoming,
+    emitOutgoing,
+  } = useChatParticles();
 
   // Transient UI state
   const [submitting, setSubmitting] = useState(false);
@@ -447,11 +77,9 @@ export function ChatGameShell({
   const [actionError, setActionError] = useState("");
   const [endingGame, setEndingGame] = useState(false);
   const [advancing, setAdvancing] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
   const [playersOpen, setPlayersOpen] = useState(false);
 
   const feedEndRef = useRef<HTMLDivElement>(null);
-  const rejoinAttempted = useRef(false);
   const phaseKeyRef = useRef("");
   const prevStatus = useRef<string | undefined>(undefined);
   const advancePendingRef = useRef(false);
@@ -490,8 +118,13 @@ export function ChatGameShell({
     confettiFired.current = true;
     playSound("game-over");
     const timer = setTimeout(() => playSound("celebration"), 2000);
-    import("canvas-confetti").then(({ default: confetti }) => {
-      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors: ["#D4A853", "#C08B6E", "#F0E8D8"] });
+    void import("canvas-confetti").then(({ default: confetti }) => {
+      void confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ["#D4A853", "#C08B6E", "#F0E8D8"],
+      });
     });
     return () => clearTimeout(timer);
   }, [gameState?.status]);
@@ -564,38 +197,6 @@ export function ChatGameShell({
     }
   }, [gameState]);
 
-  // Rejoin attempt
-  useEffect(() => {
-    if (viewMode === "stage") return;
-    if (!gameState || rejoinAttempted.current) return;
-    const inGame = gameState.players.some((p) => p.id === playerId);
-    if (inGame || !playerId) return;
-    rejoinAttempted.current = true;
-    const token = searchParams.get("rejoin") ?? getPlayerToken();
-    if (!token) return;
-
-    setReconnecting(true);
-    fetch(`/api/games/${code}/rejoin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          setPlayerSession({
-            playerId: data.playerId,
-            playerName: data.playerName,
-            rejoinToken: token,
-            playerType: null,
-          });
-          refresh();
-        }
-      })
-      .catch(() => { rejoinAttempted.current = false; })
-      .finally(() => setReconnecting(false));
-  }, [gameState, playerId, code, searchParams, refresh, viewMode]);
-
   // Auto-scroll feed
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -608,11 +209,14 @@ export function ChatGameShell({
   }, []);
 
   // Derived state
-  const isHost = playerId === gameState?.hostPlayerId || (viewMode === "stage" && !!hostControlToken && gameState?.hostPlayerId == null);
+  const isHost = hostCapability !== null;
   const currentRound = gameState?.rounds[0];
   const currentPrompt = currentRound?.prompts[0];
   const activePlayers = useMemo(
-    () => gameState?.players.filter((p) => p.type !== "SPECTATOR" && p.participationStatus === "ACTIVE") ?? [],
+    () =>
+      gameState?.players.filter(
+        (p) => p.type !== "SPECTATOR" && p.participationStatus === "ACTIVE",
+      ) ?? [],
     [gameState?.players],
   );
   const hasSubmitted = useMemo(() => {
@@ -624,150 +228,131 @@ export function ChatGameShell({
     if (!currentPrompt || !playerId) return false;
     return currentPrompt.votes.some((v) => v.voterId === playerId);
   }, [currentPrompt, playerId, votedPromptId]);
-  const canEndGame = isHost && (gameState?.status === "WRITING" || gameState?.status === "VOTING" || gameState?.status === "ROUND_RESULTS");
+  const canEndGame =
+    isHost &&
+    (gameState?.status === "WRITING" ||
+      gameState?.status === "VOTING" ||
+      gameState?.status === "ROUND_RESULTS");
 
   // ─── Actions ───
 
-  function handleKick(targetPlayerId: string) {
-    const target = gameState!.players.find((p) => p.id === targetPlayerId);
+  async function handleKick(targetPlayerId: string) {
+    if (!hostCapability) return;
+    const target = gameState?.players.find((player) => player.id === targetPlayerId);
     if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
-    const hostToken = localStorage.getItem("hostControlToken");
-    fetch(`/api/games/${code}/kick`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ playerId, hostToken, targetPlayerId }),
-    }).catch(() => {});
+    setActionError("");
+    try {
+      await kickMutation({
+        capability: hostCapability,
+        targetPlayerId: targetPlayerId as Id<"players">,
+      });
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to kick player"));
+    }
   }
 
   async function handleStartGame() {
-    if (startPendingRef.current) return;
-    const hostToken = localStorage.getItem("hostControlToken");
-    if (!playerId && !hostToken) return;
+    if (startPendingRef.current || !hostCapability) return;
     startPendingRef.current = true;
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to start");
-        startPendingRef.current = false;
-      } else {
-        playSound("game-start");
-        refresh();
-      }
-    } catch {
-      setActionError("Something went wrong");
+      await startMutation({ capability: hostCapability });
+      playSound("game-start");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to start"));
       startPendingRef.current = false;
     }
   }
 
   async function handleVote(responseId: string) {
-    if (!playerToken || !currentPrompt || votingBusy) return;
+    if (!playerCapability || !currentPrompt || votingBusy) return;
     setVotingBusy(true);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId: currentPrompt.id, responseId }),
+      await voteMutation({
+        capability: playerCapability,
+        promptId: currentPrompt.id as Id<"prompts">,
+        responseId: responseId as Id<"responses">,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to vote");
-      } else {
-        setVotedPromptId(currentPrompt.id);
-        playSound("vote-cast");
-      }
-    } catch {
-      setActionError("Something went wrong");
+      setVotedPromptId(currentPrompt.id);
+      playSound("vote-cast");
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to vote"));
     } finally {
       setVotingBusy(false);
     }
   }
 
   async function handleNextRound() {
-    if (advancePendingRef.current) return;
-    const hostToken = localStorage.getItem("hostControlToken");
+    if (advancePendingRef.current || !hostCapability) return;
     advancePendingRef.current = true;
     setAdvancing(true);
     setActionError("");
     playSound("round-transition");
     try {
-      const res = await fetch(`/api/games/${code}/next`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Failed to advance");
-        advancePendingRef.current = false;
-        setAdvancing(false);
-      }
-    } catch {
-      setActionError("Something went wrong");
+      await advanceMutation({ capability: hostCapability });
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to advance"));
       advancePendingRef.current = false;
       setAdvancing(false);
     }
   }
 
   async function handleEndGame() {
-    if ((!playerId && !hostControlToken) || !canEndGame) return;
-    if (!window.confirm("End the game early? Scores will be calculated for completed rounds.")) return;
+    if (!hostCapability || !canEndGame) return;
+    if (!window.confirm("End the game early? Scores will be calculated for completed rounds."))
+      return;
     setEndingGame(true);
+    setActionError("");
     try {
-      await fetch(`/api/games/${code}/end`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken: hostControlToken }),
-      });
+      await endMutation({ capability: hostCapability });
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Failed to end game"));
     } finally {
       setEndingGame(false);
     }
   }
 
   async function handleForceAdvance() {
-    const hostToken = localStorage.getItem("hostControlToken");
-    if (!playerId && !hostToken) return;
+    if (!hostCapability || advancePendingRef.current) return;
+    advancePendingRef.current = true;
+    setAdvancing(true);
     setActionError("");
     try {
-      const res = await fetch(`/api/games/${code}/next`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setActionError(data.error || "Action failed");
-      }
-    } catch {
-      setActionError("Something went wrong");
+      await advanceMutation({ capability: hostCapability });
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "Action failed"));
+      advancePendingRef.current = false;
+      setAdvancing(false);
     }
   }
 
   // ─── Loading / Error states ───
 
-  if (reconnecting) {
-    return (
-      <div data-game="chatslop" className="h-svh flex items-center justify-center" style={{ background: "var(--cs-bg)" }}>
-        <motion.div className="text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-[var(--cs-edge)] border-t-[var(--cs-accent)] animate-spin" />
-          <p className="text-sm font-medium" style={{ color: "var(--cs-ink-dim)" }}>Reconnecting...</p>
-        </motion.div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
-      <div data-game="chatslop" className="h-svh flex items-center justify-center" style={{ background: "var(--cs-bg)" }}>
-        <motion.div className="text-center" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+      <div
+        data-game="chatslop"
+        className="h-svh flex items-center justify-center"
+        style={{ background: "var(--cs-bg)" }}
+      >
+        <motion.div
+          className="text-center"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-fail-soft border border-fail/30 flex items-center justify-center">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-fail">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-fail"
+            >
               <circle cx="12" cy="12" r="10" />
               <line x1="15" y1="9" x2="9" y2="15" />
               <line x1="9" y1="9" x2="15" y2="15" />
@@ -781,450 +366,64 @@ export function ChatGameShell({
 
   if (!gameState) {
     return (
-      <div data-game="chatslop" className="h-svh flex flex-col" style={{ background: "var(--cs-bg)" }}>
-        <div className="shrink-0 px-4 py-3 flex items-center gap-2.5 border-b" style={{ borderColor: "var(--cs-edge)" }}>
-          <div className="h-4 w-20 rounded-md animate-pulse" style={{ background: "var(--cs-edge)" }} />
+      <div
+        data-game="chatslop"
+        className="h-svh flex flex-col"
+        style={{ background: "var(--cs-bg)" }}
+      >
+        <div
+          className="shrink-0 px-4 py-3 flex items-center gap-2.5 border-b"
+          style={{ borderColor: "var(--cs-edge)" }}
+        >
+          <div
+            className="h-4 w-20 rounded-md animate-pulse"
+            style={{ background: "var(--cs-edge)" }}
+          />
         </div>
         <div className="flex-1 px-4 py-6 space-y-4">
           <div className="flex justify-center">
-            <div className="h-5 w-28 rounded-full animate-pulse" style={{ background: "var(--cs-edge)" }} />
+            <div
+              className="h-5 w-28 rounded-full animate-pulse"
+              style={{ background: "var(--cs-edge)" }}
+            />
           </div>
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-12 rounded-2xl animate-pulse" style={{ background: "var(--cs-edge)", opacity: 1 - i * 0.2, animationDelay: `${i * 150}ms` }} />
+            <div
+              key={i}
+              className="h-12 rounded-2xl animate-pulse"
+              style={{
+                background: "var(--cs-edge)",
+                opacity: 1 - i * 0.2,
+                animationDelay: `${i * 150}ms`,
+              }}
+            />
           ))}
         </div>
         <div className="shrink-0 px-4 py-3 border-t" style={{ borderColor: "var(--cs-edge)" }}>
-          <div className="h-10 rounded-2xl animate-pulse" style={{ background: "var(--cs-edge)" }} />
+          <div
+            className="h-10 rounded-2xl animate-pulse"
+            style={{ background: "var(--cs-edge)" }}
+          />
         </div>
       </div>
     );
   }
 
-  // ─── Feed items: Build a unified message list ───
-
   const game = gameState;
-  const feedItems: React.ReactNode[] = [];
-
-  // Lobby
-  if (game.status === "LOBBY") {
-    feedItems.push(
-      <SystemMsg key="sys-welcome" icon={
-        <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px]" style={{ background: "var(--cs-accent-soft)", color: "var(--cs-accent)" }}>
-          &#9835;
-        </span>
-      }>
-        The lounge is open
-      </SystemMsg>,
-    );
-
-    // Room code card
-    feedItems.push(
-      <GameCard key="lobby-code" accent>
-        <div className="text-center">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2" style={{ color: "var(--cs-ink-dim)" }}>
-            Room Code
-          </p>
-          <div className="flex justify-center gap-2">
-            {game.roomCode.split("").map((char, i) => (
-              <motion.span
-                key={i}
-                className="w-11 h-14 flex items-center justify-center rounded-lg font-mono font-extrabold text-2xl"
-                style={{
-                  background: "var(--cs-raised)",
-                  color: "var(--cs-accent)",
-                  border: "1px solid var(--cs-accent)",
-                  opacity: 0.9 + i * 0.025,
-                  boxShadow: "0 0 12px var(--cs-accent-glow)",
-                }}
-                initial={{ opacity: 0, y: 8, scale: 0.8 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ ...springBouncy, delay: i * 0.06 }}
-              >
-                {char}
-              </motion.span>
-            ))}
-          </div>
-          <p className="text-[11px] mt-3 font-medium" style={{ color: "var(--cs-ink-dim)" }}>
-            Share this code to invite players
-          </p>
-        </div>
-      </GameCard>,
-    );
-
-    // Player join messages
-    const actives = game.players.filter((p) => p.type !== "SPECTATOR");
-    actives.forEach((p, i) => {
-      feedItems.push(
-        <motion.div
-          key={`join-${p.id}`}
-          className="flex items-center justify-center gap-2 py-1"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...msgSpring, delay: i * 0.08 }}
-        >
-          <PlayerAvatar name={p.name} modelId={p.modelId} size={16} className="rounded-full" />
-          <span className="text-[11px] font-medium" style={{ color: "var(--cs-ink-dim)" }}>
-            <span style={{ color: "var(--cs-ink)" }}>{p.name}</span>
-            {p.modelId ? " (AI)" : ""} joined
-          </span>
-        </motion.div>,
-      );
-    });
-
-    // Player count
-    feedItems.push(
-      <div key="lobby-count" className="text-center py-1">
-        <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--cs-ink-dim)" }}>
-          {actives.length}/{MAX_PLAYERS} players
-          {actives.length < MIN_PLAYERS && ` (need ${MIN_PLAYERS - actives.length} more)`}
-        </span>
-      </div>,
-    );
-  }
-
-  // Writing
-  if (game.status === "WRITING" && currentPrompt) {
-    const submittedCount = currentPrompt.responses.length;
-    const totalCount = activePlayers.length;
-
-    feedItems.push(
-      <SystemMsg key="sys-round">
-        Round {game.currentRound} of {game.totalRounds}
-      </SystemMsg>,
-    );
-
-    // Prompt as a "bot message"
-    feedItems.push(
-      <motion.div
-        key="prompt-msg"
-        className="flex gap-2.5 max-w-[85%] lg:max-w-[70%]"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={msgSpring}
-      >
-        <div className="shrink-0 mt-0.5">
-          <span
-            className="w-7 h-7 lg:w-8 lg:h-8 rounded-full flex items-center justify-center text-sm lg:text-base"
-            style={{ background: "var(--cs-accent)", color: "var(--cs-bg)" }}
-          >
-            &#9835;
-          </span>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[10px] lg:text-[11px] font-semibold mb-0.5 block" style={{ color: "var(--cs-accent)" }}>
-            ChatSlop
-          </span>
-          <div
-            className="px-4 py-3 lg:px-5 lg:py-4 rounded-2xl rounded-tl-sm"
-            style={{
-              background: "var(--cs-bubble-game)",
-              border: "1px solid color-mix(in srgb, var(--cs-accent) 20%, transparent)",
-              boxShadow: "var(--cs-glow)",
-            }}
-          >
-            <p className="font-bold text-base lg:text-lg leading-snug" style={{ color: "var(--cs-accent)" }}>
-              {currentPrompt.text}
-            </p>
-            <p className="text-[10px] lg:text-[11px] mt-1.5 font-medium" style={{ color: "var(--cs-ink-dim)" }}>
-              Type your funniest answer below
-            </p>
-          </div>
-        </div>
-      </motion.div>,
-    );
-
-    // If submitted, show confirmation
-    if (hasSubmitted) {
-      const myResponse = currentPrompt.responses.find((r) => r.playerId === playerId);
-      if (myResponse) {
-        feedItems.push(
-          <motion.div
-            key="my-response"
-            className="flex gap-2.5 max-w-[85%] lg:max-w-[70%] ml-auto flex-row-reverse"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={msgSpring}
-          >
-            <div className="min-w-0 flex flex-col items-end">
-              <div className="px-3.5 py-2 rounded-2xl rounded-tr-sm" style={{ background: "var(--cs-bubble-me)", color: "var(--cs-ink)" }}>
-                <p className="text-sm leading-relaxed">{myResponse.text}</p>
-              </div>
-              <span className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: "var(--cs-accent)" }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                Submitted
-              </span>
-            </div>
-          </motion.div>,
-        );
-      }
-    }
-
-    // Progress
-    feedItems.push(
-      <ProgressPill key="writing-progress" current={submittedCount} total={totalCount} label="submitted" />,
-    );
-
-    // Stage view: show who submitted
-    if (viewMode === "stage") {
-      currentPrompt.responses.forEach((r) => {
-        const player = game.players.find((p) => p.id === r.playerId);
-        feedItems.push(
-          <SystemMsg key={`submitted-${r.id}`}>
-            {player?.name ?? "?"} submitted their answer
-          </SystemMsg>,
-        );
-      });
-    }
-
-    // Waiting indicator
-    if (hasSubmitted || viewMode === "stage") {
-      feedItems.push(<TypingDots key="writing-wait" label="Others are writing..." />);
-    }
-  }
-
-  // Voting
-  if (game.status === "VOTING" && currentPrompt) {
-    const votedCount = currentPrompt.votes.length;
-    const totalCount = activePlayers.length;
-    const responses = currentPrompt.responses.filter((r) => r.text !== FORFEIT_MARKER);
-
-    feedItems.push(
-      <SystemMsg key="sys-vote">Vote for the best answer!</SystemMsg>,
-    );
-
-    // Show prompt reminder
-    feedItems.push(
-      <motion.div
-        key="vote-prompt"
-        className="text-center py-1"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        <span className="text-xs font-medium" style={{ color: "var(--cs-ink-dim)" }}>
-          &ldquo;{currentPrompt.text}&rdquo;
-        </span>
-      </motion.div>,
-    );
-
-    if (!hasVoted) {
-      // Vote options as a card
-      feedItems.push(
-        <GameCard key="vote-card">
-          <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: "var(--cs-ink-dim)" }}>
-            Tap to vote
-          </p>
-          <div className="space-y-2">
-            {responses.map((resp) => {
-              const isMine = resp.playerId === playerId;
-              return (
-                <VoteOption
-                  key={resp.id}
-                  text={resp.text}
-                  isMine={isMine}
-                  disabled={votingBusy}
-                  onVote={() => {
-                    triggerElement(document.activeElement as HTMLElement);
-                    void handleVote(resp.id);
-                  }}
-                />
-              );
-            })}
-          </div>
-        </GameCard>,
-      );
-    } else {
-      // Vote cast confirmation
-      feedItems.push(
-        <motion.div
-          key="vote-done"
-          className="flex items-center justify-center gap-2 py-3"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={springBouncy}
-        >
-          <span className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "var(--cs-accent-soft)" }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--cs-accent)" }}>
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </span>
-          <span className="text-sm font-semibold" style={{ color: "var(--cs-accent)" }}>Vote cast!</span>
-        </motion.div>,
-      );
-      feedItems.push(<TypingDots key="vote-wait" label="Waiting for votes..." />);
-    }
-
-    feedItems.push(
-      <ProgressPill key="vote-progress" current={votedCount} total={totalCount} label="voted" />,
-    );
-  }
-
-  // Round Results
-  if (game.status === "ROUND_RESULTS" && currentPrompt) {
-    const castVotes = filterCastVotes(currentPrompt.votes);
-    const totalVotes = castVotes.length;
-    const sortedResponses = [...currentPrompt.responses]
-      .filter((r) => r.text !== FORFEIT_MARKER)
-      .sort((a, b) => b.pointsEarned - a.pointsEarned);
-    const winnerId = sortedResponses[0]?.id;
-
-    feedItems.push(
-      <SystemMsg key="sys-results">Round {game.currentRound} Results</SystemMsg>,
-    );
-
-    // Prompt reminder
-    feedItems.push(
-      <motion.div key="result-prompt" className="text-center py-1" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <span className="text-xs font-medium" style={{ color: "var(--cs-ink-dim)" }}>
-          &ldquo;{currentPrompt.text}&rdquo;
-        </span>
-      </motion.div>,
-    );
-
-    // Results card
-    feedItems.push(
-      <GameCard key="results-card" accent>
-        <div className="space-y-2">
-          {sortedResponses.map((resp, idx) => {
-            const voteCount = castVotes.filter((v) => v.responseId === resp.id).length;
-            const player = game.players.find((p) => p.id === resp.playerId);
-            return (
-              <ResultRow
-                key={resp.id}
-                text={resp.text}
-                playerName={player?.name ?? "?"}
-                modelId={player?.modelId ?? null}
-                voteCount={voteCount}
-                totalVotes={totalVotes}
-                points={resp.pointsEarned}
-                isWinner={resp.id === winnerId}
-                delay={idx * 0.1}
-              />
-            );
-          })}
-        </div>
-      </GameCard>,
-    );
-
-    // Standings
-    feedItems.push(
-      <GameCard key="standings-card">
-        <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--cs-ink-dim)" }}>
-          Standings
-        </p>
-        <div className="space-y-1.5">
-          {[...game.players].sort((a, b) => b.score - a.score).map((p, i) => (
-            <motion.div
-              key={p.id}
-              className="flex items-center gap-2 py-1"
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ ...gentleSpring, delay: 0.3 + i * 0.06 }}
-            >
-              <span className="w-4 text-center font-mono text-[11px] font-bold" style={{ color: i === 0 ? "var(--cs-accent)" : "var(--cs-ink-dim)" }}>
-                {i + 1}
-              </span>
-              <PlayerAvatar name={p.name} modelId={p.modelId} size={18} className="rounded-full" />
-              <span className="flex-1 text-sm font-medium truncate" style={{ color: i === 0 ? "var(--cs-accent)" : "var(--cs-ink)" }}>
-                {p.name}
-              </span>
-              <span className="font-mono text-sm font-bold tabular-nums" style={{ color: i === 0 ? "var(--cs-accent)" : "var(--cs-ink-dim)" }}>
-                {p.score}
-              </span>
-            </motion.div>
-          ))}
-        </div>
-      </GameCard>,
-    );
-  }
-
-  // Final Results
-  if (game.status === "FINAL_RESULTS") {
-    const sorted = [...game.players].sort((a, b) => b.score - a.score);
-    const winner = sorted[0];
-
-    feedItems.push(
-      <SystemMsg key="sys-gameover">Game Over</SystemMsg>,
-    );
-
-    // Winner announcement
-    feedItems.push(
-      <motion.div
-        key="winner-announce"
-        className="text-center py-4"
-        initial={{ opacity: 0, scale: 0.7, rotate: -2 }}
-        animate={{ opacity: 1, scale: 1, rotate: 0 }}
-        transition={springBouncy}
-      >
-        <motion.p
-          className="font-display text-3xl lg:text-4xl font-extrabold tracking-tight"
-          style={{ color: "var(--cs-accent)", textShadow: "0 0 40px var(--cs-accent-glow)" }}
-          initial={{ y: -15 }}
-          animate={{ y: 0 }}
-          transition={{ ...springBouncy, delay: 0.1 }}
-        >
-          Game Over!
-        </motion.p>
-        {winner && (
-          <motion.p
-            className="text-lg lg:text-xl font-display font-bold mt-2"
-            style={{ color: "var(--cs-violet)" }}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springGentle, delay: 0.3 }}
-          >
-            {winner.name} wins!
-          </motion.p>
-        )}
-      </motion.div>,
-    );
-
-    // Score chart
-    feedItems.push(
-      <motion.div
-        key="score-chart"
-        className="max-w-sm lg:max-w-md mx-auto w-full"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...springGentle, delay: 0.2 }}
-      >
-        <ScoreBarChart game={game} />
-      </motion.div>,
-    );
-
-    // AI cost
-    if (game.aiCostUsd > 0) {
-      feedItems.push(
-        <motion.div
-          key="ai-cost"
-          className="text-center py-2"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-        >
-          <span className="text-[10px] font-mono" style={{ color: "var(--cs-ink-dim)" }}>
-            AI Cost: ${game.aiCostUsd.toFixed(4)} &middot; {(game.aiInputTokens + game.aiOutputTokens).toLocaleString()} tokens
-          </span>
-        </motion.div>,
-      );
-    }
-  }
-
-  // Interleave chat messages
-  const chatBubbles = chatMessages.map((msg) => {
-    const player = game.players.find((p) => p.id === msg.playerId);
-    return (
-      <Bubble
-        key={`chat-${msg.clientId}`}
-        message={msg}
-        playerName={player?.name ?? "Unknown"}
-        modelId={player?.modelId ?? null}
-        isMe={msg.playerId === playerId}
-        allMessages={chatMessages}
-        players={game.players}
-        onRetry={() => void retryMessage(msg.clientId)}
-        onDismiss={() => dismissFailed(msg.clientId)}
-      />
-    );
+  const { chatBubbles, feedItems } = buildChatFeed({
+    activePlayers,
+    chatMessages,
+    currentPrompt: currentPrompt ?? null,
+    dismissFailed,
+    gameState,
+    handleVote,
+    hasSubmitted,
+    hasVoted,
+    playerId,
+    retryMessage,
+    triggerElement,
+    viewMode,
+    votingBusy,
   });
 
   // Determine input bar mode
@@ -1241,37 +440,34 @@ export function ChatGameShell({
     return "Say something...";
   })();
 
-  function handleInputSend(text: string) {
+  async function handleInputSend(text: string) {
     if (inputMode === "response") {
-      if (!playerToken || !currentPrompt) return;
+      if (!playerCapability || !currentPrompt) return;
       setSubmitting(true);
       setActionError("");
-      fetch(`/api/games/${code}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerToken, promptId: currentPrompt.id, text: text.trim() }),
-      })
-        .then(async (res) => {
-          if (!res.ok) {
-            const data = await res.json();
-            setActionError(data.error || "Failed to submit");
-          } else {
-            playSound("submitted");
-            // Response is a joke → particle rises into the rain
-            const container = particleContainerRef.current;
-            const originY = container ? container.clientHeight - 20 : 400;
-            emitOutgoing(originY, true);
-          }
-        })
-        .catch(() => setActionError("Something went wrong"))
-        .finally(() => setSubmitting(false));
+      try {
+        await respondMutation({
+          capability: playerCapability,
+          promptId: currentPrompt.id as Id<"prompts">,
+          text: text.trim(),
+        });
+        playSound("submitted");
+        // Response is a joke → particle rises into the rain
+        const container = particleContainerRef.current;
+        const originY = container ? container.clientHeight - 20 : 400;
+        emitOutgoing(originY, true);
+      } catch (cause) {
+        setActionError(getConvexErrorMessage(cause, "Failed to submit"));
+      } finally {
+        setSubmitting(false);
+      }
     } else {
       playSound("chat-send");
       // Particle rises from the input area into the rain above
       const container = particleContainerRef.current;
       const originY = container ? container.clientHeight - 20 : 400;
       emitOutgoing(originY, true);
-      void sendChatMessage(text);
+      await sendChatMessage(text);
     }
   }
 
@@ -1299,7 +495,11 @@ export function ChatGameShell({
           whileHover={canStart ? { scale: 1.02 } : {}}
           whileTap={canStart ? { scale: 0.98 } : {}}
         >
-          {startPendingRef.current ? "Starting..." : canStart ? "Start Game" : `Need ${needed} more player${needed === 1 ? "" : "s"}`}
+          {startPendingRef.current
+            ? "Starting..."
+            : canStart
+              ? "Start Game"
+              : `Need ${needed} more player${needed === 1 ? "" : "s"}`}
         </motion.button>
       );
     }
@@ -1309,10 +509,11 @@ export function ChatGameShell({
       return (
         <button
           onClick={() => void handleForceAdvance()}
-          className="w-full py-2 rounded-xl text-[11px] font-medium transition-all cursor-pointer"
+          disabled={advancing}
+          className="w-full py-2 rounded-xl text-[11px] font-medium transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           style={{ color: "var(--cs-ink-dim)", border: "1px solid var(--cs-edge)" }}
         >
-          {label}
+          {advancing ? "Working..." : label}
         </button>
       );
     }
@@ -1362,7 +563,11 @@ export function ChatGameShell({
 
     if (game.status === "ROUND_RESULTS") {
       const isLast = game.currentRound >= game.totalRounds;
-      return <TypingDots label={isLast ? "Waiting for host to finish..." : "Waiting for next round..."} />;
+      return (
+        <TypingDots
+          label={isLast ? "Waiting for host to finish..." : "Waiting for next round..."}
+        />
+      );
     }
 
     if (game.status === "FINAL_RESULTS") {
@@ -1370,7 +575,11 @@ export function ChatGameShell({
         <Link
           href="/join"
           className="block w-full text-center py-2.5 rounded-xl text-sm font-medium transition-all"
-          style={{ background: "var(--cs-raised)", color: "var(--cs-ink)", border: "1px solid var(--cs-edge)" }}
+          style={{
+            background: "var(--cs-raised)",
+            color: "var(--cs-ink)",
+            border: "1px solid var(--cs-edge)",
+          }}
         >
           Join Another Game
         </Link>
@@ -1383,24 +592,42 @@ export function ChatGameShell({
   // ─── Render ───
 
   return (
-    <div data-game="chatslop" className="h-svh flex flex-col" style={{ background: "var(--cs-bg)" }}>
+    <div
+      data-game="chatslop"
+      className="h-svh flex flex-col"
+      style={{ background: "var(--cs-bg)" }}
+    >
       {/* Header */}
       <header
         className="shrink-0 px-4 py-2.5 flex items-center justify-between z-30"
-        style={{ borderBottom: "1px solid var(--cs-edge)", background: "color-mix(in srgb, var(--cs-bg) 90%, transparent)", backdropFilter: "blur(12px)" }}
+        style={{
+          borderBottom: "1px solid var(--cs-edge)",
+          background: "color-mix(in srgb, var(--cs-bg) 90%, transparent)",
+          backdropFilter: "blur(12px)",
+        }}
       >
         <div className="flex items-center gap-2">
-          <Link href="/" className="font-display font-extrabold text-xs tracking-tight" style={{ color: "var(--cs-accent)" }}>
+          <Link
+            href="/"
+            className="font-display font-extrabold text-xs tracking-tight"
+            style={{ color: "var(--cs-accent)" }}
+          >
             CHAT<span style={{ color: "var(--cs-violet)" }}>SLOP</span>
           </Link>
           <span className="w-px h-3" style={{ background: "var(--cs-edge)" }} />
-          <span className="font-mono font-bold text-[11px] tracking-[0.15em]" style={{ color: "var(--cs-ink-dim)" }}>
+          <span
+            className="font-mono font-bold text-[11px] tracking-[0.15em]"
+            style={{ color: "var(--cs-ink-dim)" }}
+          >
             {game.roomCode}
           </span>
         </div>
         <div className="flex items-center gap-3">
           {game.status !== "LOBBY" && (
-            <span className="text-[10px] font-mono font-semibold tabular-nums" style={{ color: "var(--cs-ink-dim)" }}>
+            <span
+              className="text-[10px] font-mono font-semibold tabular-nums"
+              style={{ color: "var(--cs-ink-dim)" }}
+            >
               R{game.currentRound}/{game.totalRounds}
             </span>
           )}
@@ -1409,7 +636,16 @@ export function ChatGameShell({
             className="flex items-center gap-1.5 text-xs transition-colors cursor-pointer"
             style={{ color: "var(--cs-ink-dim)" }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -1445,23 +681,73 @@ export function ChatGameShell({
               {game.players.map((p) => {
                 const isDisconnected = p.participationStatus === "DISCONNECTED";
                 return (
-                  <div key={p.id} className={`flex items-center gap-2 py-1 ${isDisconnected ? "opacity-40" : ""}`}>
-                    <PlayerAvatar name={p.name} modelId={p.modelId} size={18} className="rounded-full" />
-                    <span className={`text-sm font-medium flex-1 ${isDisconnected ? "line-through" : ""}`} style={{ color: "var(--cs-ink)" }}>
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-2 py-1 ${isDisconnected ? "opacity-40" : ""}`}
+                  >
+                    <PlayerAvatar
+                      name={p.name}
+                      modelId={p.modelId}
+                      size={18}
+                      className="rounded-full"
+                    />
+                    <span
+                      className={`text-sm font-medium flex-1 ${isDisconnected ? "line-through" : ""}`}
+                      style={{ color: "var(--cs-ink)" }}
+                    >
                       {p.name}
                     </span>
-                    {p.modelId && <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded" style={{ background: "var(--cs-violet-soft)", color: "var(--cs-violet)" }}>AI</span>}
-                    {isDisconnected && <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded" style={{ background: "var(--cs-raised)", color: "var(--cs-ink-dim)" }}>Left</span>}
+                    {p.modelId && (
+                      <span
+                        className="text-[9px] font-bold uppercase px-1 py-0.5 rounded"
+                        style={{ background: "var(--cs-violet-soft)", color: "var(--cs-violet)" }}
+                      >
+                        AI
+                      </span>
+                    )}
+                    {isDisconnected && (
+                      <span
+                        className="text-[9px] font-bold uppercase px-1 py-0.5 rounded"
+                        style={{ background: "var(--cs-raised)", color: "var(--cs-ink-dim)" }}
+                      >
+                        Left
+                      </span>
+                    )}
                     {game.status !== "LOBBY" && (
-                      <span className="text-xs font-mono tabular-nums" style={{ color: "var(--cs-ink-dim)" }}>{p.score}</span>
+                      <span
+                        className="text-xs font-mono tabular-nums"
+                        style={{ color: "var(--cs-ink-dim)" }}
+                      >
+                        {p.score}
+                      </span>
                     )}
-                    {isHost && p.id !== playerId && !isDisconnected && (
-                      <button onClick={() => handleKick(p.id)} className="text-[10px] cursor-pointer" style={{ color: "var(--cs-ink-dim)" }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    )}
+                    {isHost &&
+                      game.status === "LOBBY" &&
+                      p.type === "HUMAN" &&
+                      p.id !== playerId &&
+                      !isDisconnected && (
+                        <button
+                          type="button"
+                          aria-label={`Kick ${p.name}`}
+                          onClick={() => void handleKick(p.id)}
+                          className="text-[10px] cursor-pointer"
+                          style={{ color: "var(--cs-ink-dim)" }}
+                        >
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      )}
                   </div>
                 );
               })}
@@ -1477,6 +763,30 @@ export function ChatGameShell({
           {/* Game events */}
           {feedItems}
 
+          {loadingChatHistory && chatMessages.length === 0 ? (
+            <p
+              className="py-1 text-center text-[10px] font-medium"
+              style={{ color: "var(--cs-ink-dim)" }}
+            >
+              Loading messages...
+            </p>
+          ) : canLoadOlderMessages || loadingOlderMessages ? (
+            <div className="flex justify-center py-1">
+              <button
+                type="button"
+                onClick={loadOlderMessages}
+                disabled={loadingOlderMessages}
+                className="rounded-full px-3 py-1 text-[10px] font-medium transition-colors disabled:opacity-50"
+                style={{
+                  border: "1px solid var(--cs-edge)",
+                  color: "var(--cs-ink-dim)",
+                }}
+              >
+                {loadingOlderMessages ? "Loading..." : "Load earlier messages"}
+              </button>
+            </div>
+          ) : null}
+
           {/* Chat messages */}
           {chatBubbles}
 
@@ -1487,14 +797,22 @@ export function ChatGameShell({
       {/* Action bar + input */}
       <div
         className="shrink-0 px-4 lg:px-8 py-3 space-y-2"
-        style={{ borderTop: "1px solid var(--cs-edge)", background: "color-mix(in srgb, var(--cs-bg) 92%, transparent)", backdropFilter: "blur(12px)" }}
+        style={{
+          borderTop: "1px solid var(--cs-edge)",
+          background: "color-mix(in srgb, var(--cs-bg) 92%, transparent)",
+          backdropFilter: "blur(12px)",
+        }}
       >
         {/* Error banner */}
         <AnimatePresence>
           {actionError && (
             <motion.div
               className="text-center text-[11px] font-medium py-1.5 px-3 rounded-lg"
-              style={{ background: "var(--fail-soft, #2A1010)", color: "var(--fail, #F87171)", border: "1px solid color-mix(in srgb, var(--fail, #F87171) 30%, transparent)" }}
+              style={{
+                background: "var(--fail-soft, #2A1010)",
+                color: "var(--fail, #F87171)",
+                border: "1px solid color-mix(in srgb, var(--fail, #F87171) 30%, transparent)",
+              }}
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}

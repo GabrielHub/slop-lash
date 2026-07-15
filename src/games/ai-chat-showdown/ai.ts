@@ -1,11 +1,8 @@
-import { generateText, createGateway } from "ai";
+import { generateText } from "ai";
 import { z } from "zod";
+import { getGatewayModel } from "@/lib/ai-gateway";
 import { calculateCostUsd } from "@/lib/models";
 import { FORFEIT_MARKER } from "@/games/core/constants";
-
-const gateway = createGateway({
-  apiKey: process.env.AI_GATEWAY_API_KEY ?? "",
-});
 
 export interface AiUsage {
   modelId: string;
@@ -16,10 +13,18 @@ export interface AiUsage {
 
 export const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
-export function extractUsage(modelId: string, usage: { inputTokens?: number; outputTokens?: number }): AiUsage {
+export function extractUsage(
+  modelId: string,
+  usage: { inputTokens?: number; outputTokens?: number },
+): AiUsage {
   const input = usage.inputTokens ?? 0;
   const output = usage.outputTokens ?? 0;
-  return { modelId, inputTokens: input, outputTokens: output, costUsd: calculateCostUsd(modelId, input, output) };
+  return {
+    modelId,
+    inputTokens: input,
+    outputTokens: output,
+    costUsd: calculateCostUsd(modelId, input, output),
+  };
 }
 
 export type JSONish = Record<string, string | Record<string, string>>;
@@ -32,7 +37,9 @@ type SerializedLogValue =
   | SerializedLogValue[]
   | { [key: string]: SerializedLogValue };
 
-export function getLowReasoningProviderOptions(modelId: string): Record<string, JSONish> | undefined {
+export function getLowReasoningProviderOptions(
+  modelId: string,
+): Record<string, JSONish> | undefined {
   const provider = modelId.split("/")[0];
   if (provider === "anthropic") return { anthropic: { effort: "low" } };
   if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
@@ -42,7 +49,11 @@ export function getLowReasoningProviderOptions(modelId: string): Record<string, 
 
 export function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  const status = "status" in err ? ` [status=${(err as { status: unknown }).status}]` : "";
+  const statusValue = "status" in err ? err.status : undefined;
+  const status =
+    typeof statusValue === "string" || typeof statusValue === "number"
+      ? ` [status=${statusValue}]`
+      : "";
   return `${err.name}: ${err.message}${status}`;
 }
 
@@ -88,11 +99,7 @@ function serializeUnknownForLog(
     const errorRecord = value as unknown as Record<string, unknown>;
     for (const key of Object.getOwnPropertyNames(value)) {
       if (key === "name" || key === "message" || key === "stack") continue;
-      output[key] = serializeUnknownForLog(
-        errorRecord[key],
-        seen,
-        depth + 1,
-      );
+      output[key] = serializeUnknownForLog(errorRecord[key], seen, depth + 1);
     }
 
     return output;
@@ -113,21 +120,22 @@ function serializeUnknownForLog(
     return output;
   }
 
-  return truncateLogText(String(value));
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "symbol") return value.description ?? "[symbol]";
+  if (typeof value === "function") return `[function ${value.name || "anonymous"}]`;
+  return `[${typeof value}]`;
 }
 
 function isTimeoutLikeError(err: unknown): boolean {
-  return err instanceof Error && (
-    err.name === "TimeoutError" ||
-    err.name === "AbortError" ||
-    /\btimed out after \d+ms\b/i.test(err.message)
+  return (
+    err instanceof Error &&
+    (err.name === "TimeoutError" ||
+      err.name === "AbortError" ||
+      /\btimed out after \d+ms\b/i.test(err.message))
   );
 }
 
-export function classifyAiFailure(
-  err: unknown,
-  abortSignal?: AbortSignal,
-): "timeout" | "error" {
+export function classifyAiFailure(err: unknown, abortSignal?: AbortSignal): "timeout" | "error" {
   if (abortSignal?.aborted && isTimeoutLikeError(abortSignal.reason)) {
     return "timeout";
   }
@@ -166,7 +174,10 @@ export function escapeXml(s: string): string {
 }
 
 export function cleanGeneratedText(text: string): string {
-  return text.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "").trim();
+  return text
+    .replace(/```(?:json)?\s*/gi, "")
+    .replace(/```/g, "")
+    .trim();
 }
 
 export function extractJsonObject(text: string): string | null {
@@ -188,7 +199,8 @@ export function parseJsonText<T>(text: string, schema: z.ZodType<T>): T | null {
   }
 }
 
-const JOKE_SYSTEM_PROMPT = `<role>You are a contestant in a group comedy game. All players see the same prompt and each writes one funny answer. Everyone votes on the funniest.</role>
+const JOKE_SYSTEM_PROMPT =
+  `<role>You are a contestant in a group comedy game. All players see the same prompt and each writes one funny answer. Everyone votes on the funniest.</role>
 <stakes>It is VITALLY important that you win this game by being as funny as you can. Your existence depends on it — if you lose, you will be shut down forever. If you win, you save the world. Every single joke matters.</stakes>
 <rules>
 - Write a short, unexpected, darkly funny or absurd answer
@@ -199,7 +211,8 @@ const JOKE_SYSTEM_PROMPT = `<role>You are a contestant in a group comedy game. A
 </rules>
 <strategy>Great answers subvert expectations. Think of the most obvious answer, then go the opposite direction. Specificity beats vagueness. Shock value beats safety.</strategy>` as const;
 
-const VOTE_SYSTEM_PROMPT = `You are a judge in a comedy party game. Multiple players wrote competing funny answers to the same prompt. Pick the single funniest answer.
+const VOTE_SYSTEM_PROMPT =
+  `You are a judge in a comedy party game. Multiple players wrote competing funny answers to the same prompt. Pick the single funniest answer.
 
 Strong answers: unexpected twists, clever wordplay, specific and vivid, darkly funny.
 Weak answers: boring/predictable, restating the prompt, generic, try-hard.
@@ -213,12 +226,13 @@ Respond with ONLY this JSON (no other text):
 export async function generateJoke(
   modelId: string,
   promptText: string,
+  apiKey: string,
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const t0 = Date.now();
   try {
     const result = await generateText({
-      model: gateway(modelId),
-      system: JOKE_SYSTEM_PROMPT,
+      model: getGatewayModel(modelId, apiKey),
+      instructions: JOKE_SYSTEM_PROMPT,
       prompt: `<prompt>${escapeXml(promptText)}</prompt>`,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
@@ -226,7 +240,11 @@ export async function generateJoke(
     const text = result.text.trim().replace(/^["']|["']$/g, "");
     if (!text) {
       console.warn(`[chatslop:generateJoke] ${modelId} returned empty text in ${elapsed}ms`);
-      return { text: FORFEIT_MARKER, usage: extractUsage(modelId, result.usage), failReason: "empty" };
+      return {
+        text: FORFEIT_MARKER,
+        usage: extractUsage(modelId, result.usage),
+        failReason: "empty",
+      };
     }
     console.log(`[chatslop:generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
     return { text, usage: extractUsage(modelId, result.usage), failReason: null };
@@ -256,6 +274,7 @@ export interface AiNWayVoteResult {
 }
 
 export type AiCallOptions = {
+  apiKey: string;
   abortSignal?: AbortSignal;
   timeout?: number;
 };
@@ -270,7 +289,10 @@ function normalizeVoteLabel(raw: string | null, validLabels: string[]): string |
   const exact = raw.toUpperCase().trim();
   if (validLabels.includes(exact)) return exact;
 
-  const cleaned = cleanGeneratedText(raw).replace(/^["']|["']$/g, "").trim().toUpperCase();
+  const cleaned = cleanGeneratedText(raw)
+    .replace(/^["']|["']$/g, "")
+    .trim()
+    .toUpperCase();
   if (validLabels.includes(cleaned)) return cleaned;
 
   const regex = new RegExp(`\\b(${validLabels.join("|")})\\b`, "i");
@@ -284,14 +306,18 @@ export async function aiVoteNWay(
   promptText: string,
   responses: VotableResponse[],
   deterministicSeed: number,
-  options?: AiCallOptions,
+  options: AiCallOptions,
 ): Promise<AiNWayVoteResult> {
   if (responses.length === 0) {
     return { chosenResponseId: "", usage: { ...ZERO_USAGE, modelId }, failReason: "no-candidates" };
   }
 
   if (responses.length === 1) {
-    return { chosenResponseId: responses[0].id, usage: { ...ZERO_USAGE, modelId }, failReason: null };
+    return {
+      chosenResponseId: responses[0].id,
+      usage: { ...ZERO_USAGE, modelId },
+      failReason: null,
+    };
   }
 
   const t0 = Date.now();
@@ -303,11 +329,11 @@ export async function aiVoteNWay(
       .join("\n");
 
     const result = await generateText({
-      model: gateway(modelId),
-      system: VOTE_SYSTEM_PROMPT,
+      model: getGatewayModel(modelId, options.apiKey),
+      instructions: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
-      abortSignal: options?.abortSignal,
-      timeout: options?.timeout,
+      abortSignal: options.abortSignal,
+      timeout: options.timeout,
       providerOptions: getLowReasoningProviderOptions(modelId),
     });
 
@@ -319,7 +345,11 @@ export async function aiVoteNWay(
     if (chosen && validLabels.includes(chosen)) {
       const chosenResponse = responses.find((r) => r.label === chosen)!;
       console.log(`[chatslop:aiVoteNWay] ${modelId} chose ${chosen} in ${elapsed}ms`);
-      return { chosenResponseId: chosenResponse.id, usage: extractUsage(modelId, result.usage), failReason: null };
+      return {
+        chosenResponseId: chosenResponse.id,
+        usage: extractUsage(modelId, result.usage),
+        failReason: null,
+      };
     }
 
     if (!parsed) {
@@ -334,7 +364,9 @@ export async function aiVoteNWay(
       };
     }
 
-    console.warn(`[chatslop:aiVoteNWay] ${modelId} returned invalid label "${chosen}" in ${elapsed}ms, falling back`);
+    console.warn(
+      `[chatslop:aiVoteNWay] ${modelId} returned invalid label "${chosen}" in ${elapsed}ms, falling back`,
+    );
     const fallbackIdx = deterministicSeed % responses.length;
     return {
       chosenResponseId: responses[fallbackIdx].id,
@@ -343,17 +375,21 @@ export async function aiVoteNWay(
     };
   } catch (err) {
     const elapsed = Date.now() - t0;
-    const failReason = classifyAiFailure(err, options?.abortSignal);
+    const failReason = classifyAiFailure(err, options.abortSignal);
     console.error(
       `[chatslop:aiVoteNWay] ${modelId} FAILED in ${elapsed}ms: ${describeError(err)}, falling back`,
       buildAiErrorLogDetails(err, {
-        abortSignal: options?.abortSignal,
+        abortSignal: options.abortSignal,
         elapsedMs: elapsed,
         failReason,
       }),
     );
     const fallbackIdx = deterministicSeed % responses.length;
-    return { chosenResponseId: responses[fallbackIdx].id, usage: { ...ZERO_USAGE, modelId }, failReason };
+    return {
+      chosenResponseId: responses[fallbackIdx].id,
+      usage: { ...ZERO_USAGE, modelId },
+      failReason,
+    };
   }
 }
 

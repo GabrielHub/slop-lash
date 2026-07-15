@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "convex/react";
 import { motion, AnimatePresence } from "motion/react";
+import { api } from "../../../convex/_generated/api";
 import { AI_MODELS } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { PlayerAvatar } from "@/components/player-avatar";
@@ -81,11 +83,7 @@ interface LeaderboardData {
 /*  Stats Banner                                                       */
 /* ------------------------------------------------------------------ */
 
-function StatsBanner({
-  stats,
-}: {
-  stats: LeaderboardData["stats"];
-}) {
+function StatsBanner({ stats }: { stats: LeaderboardData["stats"] }) {
   const items = [
     { label: "Games Played", value: stats.totalGames },
     { label: "Prompts Answered", value: stats.totalPrompts },
@@ -110,9 +108,7 @@ function StatsBanner({
           <p className="font-mono font-bold text-2xl sm:text-3xl stat-number tabular-nums relative">
             {item.value.toLocaleString()}
           </p>
-          <p className="text-xs sm:text-sm text-ink-dim mt-1 relative">
-            {item.label}
-          </p>
+          <p className="text-xs sm:text-sm text-ink-dim mt-1 relative">{item.label}</p>
         </motion.div>
       ))}
     </motion.div>
@@ -123,11 +119,7 @@ function StatsBanner({
 /*  Leaderboard Bar Chart                                              */
 /* ------------------------------------------------------------------ */
 
-function LeaderboardChart({
-  entries,
-}: {
-  entries: ContestantStats[];
-}) {
+function LeaderboardChart({ entries }: { entries: ContestantStats[] }) {
   const maxVotes = entries[0]?.totalVotes || 1;
 
   return (
@@ -193,11 +185,14 @@ function LeaderboardChart({
                   style={
                     isTop
                       ? {
-                          background: "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 70%, var(--punch) 30%) 100%)",
-                          boxShadow: "0 0 14px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 20%, transparent) inset",
+                          background:
+                            "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 70%, var(--punch) 30%) 100%)",
+                          boxShadow:
+                            "0 0 14px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 20%, transparent) inset",
                         }
                       : {
-                          background: "linear-gradient(90deg, var(--teal) 30%, color-mix(in srgb, var(--teal) 50%, transparent) 100%)",
+                          background:
+                            "linear-gradient(90deg, var(--teal) 30%, color-mix(in srgb, var(--teal) 50%, transparent) 100%)",
                           opacity: 0.45,
                         }
                   }
@@ -240,11 +235,7 @@ function LeaderboardChart({
 /*  Head-to-Head Cards                                                 */
 /* ------------------------------------------------------------------ */
 
-function HeadToHeadSection({
-  matchups,
-}: {
-  matchups: HeadToHead[];
-}) {
+function HeadToHeadSection({ matchups }: { matchups: HeadToHead[] }) {
   if (matchups.length === 0) return null;
 
   return (
@@ -256,14 +247,8 @@ function HeadToHeadSection({
     >
       {matchups.map((h2h) => {
         const model = AI_MODELS.find((m) => m.id === h2h.modelId);
-        const humanPct =
-          h2h.total > 0
-            ? Math.round((h2h.humanWins / h2h.total) * 100)
-            : 50;
-        const aiPct =
-          h2h.total > 0
-            ? Math.round((h2h.aiWins / h2h.total) * 100)
-            : 50;
+        const humanPct = h2h.total > 0 ? Math.round((h2h.humanWins / h2h.total) * 100) : 50;
+        const aiPct = h2h.total > 0 ? Math.round((h2h.aiWins / h2h.total) * 100) : 50;
 
         return (
           <motion.div
@@ -278,17 +263,13 @@ function HeadToHeadSection({
                 <span className="w-5 h-5 flex items-center justify-center rounded-sm bg-human-soft text-human text-[10px] font-bold">
                   H
                 </span>
-                <span className="text-xs font-semibold text-ink">
-                  Human
-                </span>
+                <span className="text-xs font-semibold text-ink">Human</span>
               </div>
               <span className="text-[10px] font-mono text-ink-dim uppercase tracking-widest">
                 vs
               </span>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-ink">
-                  {h2h.modelShortName}
-                </span>
+                <span className="text-xs font-semibold text-ink">{h2h.modelShortName}</span>
                 {model && <ModelIcon model={model} size={18} />}
               </div>
             </div>
@@ -338,11 +319,7 @@ function HeadToHeadSection({
 /*  Best Responses Hall of Fame                                        */
 /* ------------------------------------------------------------------ */
 
-function HallOfFame({
-  responses,
-}: {
-  responses: BestResponse[];
-}) {
+function HallOfFame({ responses }: { responses: BestResponse[] }) {
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -367,19 +344,12 @@ function HallOfFame({
             <button
               className="absolute left-0 top-0 bottom-0 w-1/4 z-10 cursor-pointer"
               aria-label="Previous"
-              onClick={() =>
-                setCurrent(
-                  (c) =>
-                    (c - 1 + responses.length) % responses.length
-                )
-              }
+              onClick={() => setCurrent((c) => (c - 1 + responses.length) % responses.length)}
             />
             <button
               className="absolute right-0 top-0 bottom-0 w-1/4 z-10 cursor-pointer"
               aria-label="Next"
-              onClick={() =>
-                setCurrent((c) => (c + 1) % responses.length)
-              }
+              onClick={() => setCurrent((c) => (c + 1) % responses.length)}
             />
           </>
         )}
@@ -399,15 +369,16 @@ function HallOfFame({
               <span className="text-[10px] font-bold uppercase tracking-widest text-gold bg-gold-soft px-2 py-0.5 rounded-md border border-gold/15">
                 #{current + 1} All Time
               </span>
-              <span className="font-mono font-bold text-sm text-gold tabular-nums" style={{ textShadow: "0 0 10px rgba(255, 214, 68, 0.2)" }}>
+              <span
+                className="font-mono font-bold text-sm text-gold tabular-nums"
+                style={{ textShadow: "0 0 10px rgba(255, 214, 68, 0.2)" }}
+              >
                 {item.votePct}%
               </span>
             </div>
 
             {/* Prompt */}
-            <p className="text-xs text-ink-dim mb-2 leading-snug">
-              {item.promptText}
-            </p>
+            <p className="text-xs text-ink-dim mb-2 leading-snug">{item.promptText}</p>
 
             {/* Response */}
             <p className="text-base sm:text-lg font-semibold text-ink leading-snug mb-3">
@@ -421,9 +392,7 @@ function HallOfFame({
                 modelId={item.playerType === "AI" ? item.modelId : null}
                 size={16}
               />
-              <span className="text-xs text-ink-dim truncate">
-                {item.playerName}
-              </span>
+              <span className="text-xs text-ink-dim truncate">{item.playerName}</span>
               <span className="text-[10px] text-ink-dim/50">
                 &middot; {item.voteCount}/{item.totalVotes} votes
               </span>
@@ -439,9 +408,7 @@ function HallOfFame({
             <button
               key={i}
               className={`w-2 h-2 rounded-full transition-all cursor-pointer ${
-                i === current
-                  ? "bg-gold w-5"
-                  : "bg-edge hover:bg-ink-dim/40"
+                i === current ? "bg-gold w-5" : "bg-edge hover:bg-ink-dim/40"
               }`}
               aria-label={`Go to response ${i + 1}`}
               onClick={() => setCurrent(i)}
@@ -555,12 +522,8 @@ function EmptyState() {
       initial="hidden"
       animate="visible"
     >
-      <p className="font-display text-2xl font-bold text-ink mb-3">
-        No games yet
-      </p>
-      <p className="text-ink-dim text-sm mb-6">
-        Play some games to see who&rsquo;s the funniest!
-      </p>
+      <p className="font-display text-2xl font-bold text-ink mb-3">No games yet</p>
+      <p className="text-ink-dim text-sm mb-6">Play some games to see who&rsquo;s the funniest!</p>
       <motion.div {...buttonTapPrimary}>
         <Link
           href="/host"
@@ -627,29 +590,13 @@ function LoadingSpinner() {
 /* ------------------------------------------------------------------ */
 
 export default function LeaderboardPage() {
-  const [data, setData] = useState<LeaderboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [retryCount, setRetryCount] = useState(0);
-
-  useEffect(() => {
-    fetch("/api/leaderboard")
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to load");
-        return res.json();
-      })
-      .then(setData)
-      .catch(() => setError("Failed to load leaderboard"))
-      .finally(() => setLoading(false));
-  }, [retryCount]);
+  const data: LeaderboardData | undefined = useQuery(api.leaderboards.get);
+  const loading = data === undefined;
 
   return (
     <main className="min-h-svh flex flex-col items-center px-4 sm:px-6 py-12 pt-16 relative overflow-hidden">
       {/* Background gradient blobs */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        aria-hidden="true"
-      >
+      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
         <div className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full blur-[120px] bg-gold opacity-[0.05]" />
         <div className="absolute bottom-[30%] right-[15%] w-[350px] h-[350px] rounded-full blur-[90px] bg-teal opacity-[0.04]" />
         <div className="absolute top-[55%] left-[8%] w-[250px] h-[250px] rounded-full blur-[70px] bg-punch opacity-[0.04]" />
@@ -663,10 +610,7 @@ export default function LeaderboardPage() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <Link
-            href="/"
-            className="text-sm text-ink-dim hover:text-ink transition-colors"
-          >
+          <Link href="/" className="text-sm text-ink-dim hover:text-ink transition-colors">
             &larr; Back
           </Link>
         </motion.div>
@@ -698,28 +642,8 @@ export default function LeaderboardPage() {
         {/* Loading state */}
         {loading && <LoadingSpinner />}
 
-        {/* Error state */}
-        {error && (
-          <div className="text-center py-16">
-            <p className="text-fail text-sm mb-4">{error}</p>
-            <button
-              onClick={() => {
-                setLoading(true);
-                setError("");
-                setRetryCount((c) => c + 1);
-              }}
-              className="text-sm text-ink-dim hover:text-ink underline transition-colors"
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
         {/* Empty state */}
-        {data &&
-          (data.stats.totalGames === 0 || data.leaderboard.length === 0) && (
-            <EmptyState />
-          )}
+        {data && (data.stats.totalGames === 0 || data.leaderboard.length === 0) && <EmptyState />}
 
         {/* Main content */}
         {data && data.stats.totalGames > 0 && data.leaderboard.length > 0 && (
@@ -735,7 +659,10 @@ export default function LeaderboardPage() {
               animate="visible"
             >
               <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                <span className="w-1.5 h-1.5 rounded-full bg-gold" style={{ boxShadow: "0 0 6px var(--gold)" }} />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-gold"
+                  style={{ boxShadow: "0 0 6px var(--gold)" }}
+                />
                 Rankings
               </h2>
               <LeaderboardChart entries={data.leaderboard} />
@@ -754,7 +681,10 @@ export default function LeaderboardPage() {
                     transition={{ delay: 0.15 }}
                   >
                     <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal" style={{ boxShadow: "0 0 6px var(--teal)" }} />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-teal"
+                        style={{ boxShadow: "0 0 6px var(--teal)" }}
+                      />
                       Human vs AI
                     </h2>
                     <HeadToHeadSection matchups={data.headToHead} />
@@ -773,7 +703,10 @@ export default function LeaderboardPage() {
                     transition={{ delay: 0.3 }}
                   >
                     <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <span className="w-1.5 h-1.5 rounded-full bg-punch" style={{ boxShadow: "0 0 6px var(--punch)" }} />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-punch"
+                        style={{ boxShadow: "0 0 6px var(--punch)" }}
+                      />
                       Hall of Fame
                     </h2>
                     <HallOfFame responses={data.bestResponses} />
@@ -789,7 +722,10 @@ export default function LeaderboardPage() {
                     transition={{ delay: 0.45 }}
                   >
                     <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal" style={{ boxShadow: "0 0 6px var(--teal)" }} />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-teal"
+                        style={{ boxShadow: "0 0 6px var(--teal)" }}
+                      />
                       AI Cost
                     </h2>
                     <ModelUsageSection

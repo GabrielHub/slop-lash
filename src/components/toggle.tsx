@@ -8,18 +8,13 @@ interface ToggleProps {
   children?: React.ReactNode;
 }
 
-export function Toggle({
-  checked,
-  onChange,
-  label,
-  description,
-  children,
-}: ToggleProps) {
+export function Toggle({ checked, onChange, label, description, children }: ToggleProps) {
   return (
     <div>
       <button
         type="button"
         role="switch"
+        aria-label={label}
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className="w-full p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink"

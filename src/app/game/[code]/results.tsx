@@ -12,10 +12,7 @@ import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { ScoreBarChart } from "@/components/score-bar-chart";
 import { Timer } from "@/components/timer";
-import {
-  BestPromptsCarousel,
-  extractBestPrompts,
-} from "@/components/best-prompts-carousel";
+import { BestPromptsCarousel, extractBestPrompts } from "@/components/best-prompts-carousel";
 import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
 import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
 import { CrownIcon } from "@/components/icons";
@@ -32,6 +29,10 @@ import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { WinnerTagline } from "@/components/winner-tagline";
 import { ROUND_RESULTS_SECONDS } from "@/games/sloplash/game-constants";
+import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import type { Id } from "../../../../convex/_generated/dataModel";
+import { useLobbyKickHumanMutation, useSloplashAdvanceMutation } from "@/hooks/use-game-runtime";
 
 function formatSigned(n: number): string {
   return n >= 0 ? `+${n.toLocaleString()}` : n.toLocaleString();
@@ -63,34 +64,25 @@ export interface PromptOutcome {
   allPassed: boolean;
 }
 
-export function analyzePromptOutcome(
-  prompt: GameState["rounds"][0]["prompts"][0],
-): PromptOutcome {
+export function analyzePromptOutcome(prompt: GameState["rounds"][0]["prompts"][0]): PromptOutcome {
   const castVotes = filterCastVotes(prompt.votes);
   const totalVotes = castVotes.length;
 
-  const byPoints = [...prompt.responses].sort(
-    (a, b) => b.pointsEarned - a.pointsEarned,
-  );
-  const pointsTie =
-    byPoints.length >= 2 && byPoints[0].pointsEarned === byPoints[1].pointsEarned;
-  const winnerResponseId = !pointsTie && byPoints.length > 0
-    ? byPoints[0].id
-    : null;
+  const byPoints = [...prompt.responses].sort((a, b) => b.pointsEarned - a.pointsEarned);
+  const pointsTie = byPoints.length >= 2 && byPoints[0].pointsEarned === byPoints[1].pointsEarned;
+  const winnerResponseId = !pointsTie && byPoints.length > 0 ? byPoints[0].id : null;
 
   const winner = winnerResponseId
-    ? prompt.responses.find((response) => response.id === winnerResponseId) ?? null
+    ? (prompt.responses.find((response) => response.id === winnerResponseId) ?? null)
     : null;
   const loser = winner
-    ? prompt.responses.find((response) => response.id !== winner.id) ?? null
+    ? (prompt.responses.find((response) => response.id !== winner.id) ?? null)
     : null;
   const isUnanimous =
     totalVotes >= 2 &&
     winnerResponseId != null &&
     castVotes.every((vote) => vote.responseId === winnerResponseId);
-  const aiBeatsHuman =
-    winner?.player.type === "AI" &&
-    loser?.player.type === "HUMAN";
+  const aiBeatsHuman = winner?.player.type === "AI" && loser?.player.type === "HUMAN";
 
   const humanVoters = prompt.votes.filter((v) => v.voter.type === "HUMAN");
   const allPassed = humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
@@ -149,24 +141,20 @@ function getBadgeColor(id: string) {
 interface ResultsProps {
   game: GameState;
   isHost: boolean;
-  playerId: string | null;
   code: string;
   isFinal: boolean;
   compactStage?: boolean;
 }
 
-export function Results({
-  game,
-  isHost,
-  playerId,
-  code,
-  isFinal,
-  compactStage = false,
-}: ResultsProps) {
+export function Results({ game, isHost, code, isFinal, compactStage = false }: ResultsProps) {
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState("");
   const { triggerElement } = usePixelDissolve();
   const advancePendingRef = useRef(false);
+  const roomSession = useConvexRoomSession(code);
+  const hostCapability = roomSession?.hostCapability ?? null;
+  const advanceConvexGame = useSloplashAdvanceMutation();
+  const kickConvexPlayer = useLobbyKickHumanMutation();
 
   const confettiFired = useRef(false);
   const sloppedFired = useRef(false);
@@ -188,23 +176,25 @@ export function Results({
     playSound("game-over");
     timers.push(setTimeout(() => playSound("celebration"), 2000));
 
-    import("canvas-confetti").then(({ default: confetti }) => {
-      confetti({
+    void import("canvas-confetti").then(({ default: confetti }) => {
+      void confetti({
         particleCount: 80,
         spread: 70,
         origin: { y: 0.6 },
         colors,
       });
 
-      timers.push(setTimeout(() => {
-        confetti({
-          particleCount: 50,
-          angle: 120,
-          spread: 60,
-          origin: { x: 0.75, y: 0.6 },
-          colors,
-        });
-      }, 200));
+      timers.push(
+        setTimeout(() => {
+          void confetti({
+            particleCount: 50,
+            angle: 120,
+            spread: 60,
+            origin: { x: 0.75, y: 0.6 },
+            colors,
+          });
+        }, 200),
+      );
     });
 
     return () => timers.forEach(clearTimeout);
@@ -212,27 +202,22 @@ export function Results({
 
   const currentRound = game.rounds[0];
   const isAutoAdvancingResults =
-    !isFinal &&
-    game.hostPlayerId == null &&
-    !game.timersDisabled &&
-    game.phaseDeadline != null;
+    !isFinal && game.hostPlayerId == null && !game.timersDisabled && game.phaseDeadline != null;
 
   useEffect(() => {
     if (isFinal || sloppedFired.current || !currentRound) return;
     const hasUnanimous = currentRound.prompts.some((prompt) => {
       const castVotes = filterCastVotes(prompt.votes);
       if (castVotes.length < 2) return false;
-      return prompt.responses.some(
-        (r) => castVotes.every((v) => v.responseId === r.id)
-      );
+      return prompt.responses.some((r) => castVotes.every((v) => v.responseId === r.id));
     });
     if (!hasUnanimous) return;
 
     sloppedFired.current = true;
     playSound("winner-reveal");
     const timer = setTimeout(() => {
-      import("canvas-confetti").then(({ default: confetti }) => {
-        confetti({
+      void import("canvas-confetti").then(({ default: confetti }) => {
+        void confetti({
           particleCount: 50,
           spread: 90,
           origin: { y: 0.5 },
@@ -249,23 +234,23 @@ export function Results({
   const taglineWinner = sortedPlayers[0]?.type === "AI" ? sortedPlayers[0] : null;
   const tagline = game.winnerTagline ?? "";
   const isStreaming =
-    game.gameType === "SLOPLASH" &&
-    taglineWinner != null &&
-    game.winnerTaglinePending === true;
+    game.gameType === "SLOPLASH" && taglineWinner != null && game.winnerTaglinePending === true;
   const afkPlayers = game.players.filter((p) => p.type === "HUMAN" && p.idleRounds >= 2);
 
   async function handleKick(targetPlayerId: string) {
-    const hostToken = localStorage.getItem("hostControlToken");
+    if (!hostCapability) {
+      setError("Host room access is required to kick a player.");
+      return;
+    }
     const target = game.players.find((p) => p.id === targetPlayerId);
     if (!window.confirm(`Kick ${target?.name ?? "this player"}?`)) return;
     try {
-      await fetch(`/api/games/${code}/kick`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken, targetPlayerId }),
+      await kickConvexPlayer({
+        capability: hostCapability,
+        targetPlayerId: targetPlayerId as Id<"players">,
       });
-    } catch {
-      // ignore
+    } catch (cause) {
+      setError(getConvexErrorMessage(cause, "Failed to kick player"));
     }
   }
 
@@ -274,27 +259,22 @@ export function Results({
 
   async function nextRound() {
     if (advancePendingRef.current) return;
-    const hostToken = localStorage.getItem("hostControlToken");
+    if (!hostCapability) {
+      setError("Host room access is required to advance the game.");
+      return;
+    }
     advancePendingRef.current = true;
     playSound("round-transition");
     setAdvancing(true);
     setError("");
     let keepPending = false;
     try {
-      const res = await fetch(`/api/games/${code}/next`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId, hostToken }),
+      await advanceConvexGame({
+        capability: hostCapability,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to advance");
-        advancePendingRef.current = false;
-      } else {
-        keepPending = true;
-      }
-    } catch {
-      setError("Something went wrong");
+      keepPending = true;
+    } catch (cause) {
+      setError(getConvexErrorMessage(cause, "Something went wrong"));
       advancePendingRef.current = false;
     } finally {
       if (!keepPending) {
@@ -305,7 +285,9 @@ export function Results({
 
   if (isFinal) {
     return (
-      <main className={`flex-1 flex flex-col items-center px-6 ${compactStage ? "py-8 lg:py-6" : "py-12"}`}>
+      <main
+        className={`flex-1 flex flex-col items-center px-6 ${compactStage ? "py-8 lg:py-6" : "py-12"}`}
+      >
         <div className="w-full max-w-lg lg:max-w-4xl">
           <div className="text-center mb-10">
             <motion.h1
@@ -329,9 +311,7 @@ export function Results({
               initial="hidden"
               animate="visible"
             >
-              <h2 className="text-base font-medium text-ink-dim mb-3">
-                Scoreboard
-              </h2>
+              <h2 className="text-base font-medium text-ink-dim mb-3">Scoreboard</h2>
               <ScoreBarChart game={game} />
             </motion.div>
 
@@ -343,9 +323,7 @@ export function Results({
                 animate="visible"
                 transition={{ delay: 0.3 }}
               >
-                <h2 className="text-base font-medium text-ink-dim mb-3">
-                  Best Moments
-                </h2>
+                <h2 className="text-base font-medium text-ink-dim mb-3">Best Moments</h2>
                 <BestPromptsCarousel prompts={bestPrompts} />
               </motion.div>
             )}
@@ -359,9 +337,7 @@ export function Results({
               animate="visible"
               transition={{ delay: 0.2 }}
             >
-              <h2 className="text-base font-medium text-ink-dim mb-3">
-                Awards
-              </h2>
+              <h2 className="text-base font-medium text-ink-dim mb-3">Awards</h2>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {achievements.map((a, i) => {
                   const badgeColor = getBadgeColor(a.achievement.id);
@@ -378,19 +354,20 @@ export function Results({
                         damping: 25,
                       }}
                     >
-                        <div className={`absolute inset-0 ${badgeColor.bg} opacity-30`} />
+                      <div className={`absolute inset-0 ${badgeColor.bg} opacity-30`} />
                       <div className="relative">
-                        <div className={`w-11 h-11 rounded-xl ${badgeColor.iconBg} flex items-center justify-center mb-2.5`}
+                        <div
+                          className={`w-11 h-11 rounded-xl ${badgeColor.iconBg} flex items-center justify-center mb-2.5`}
                           style={{ boxShadow: badgeColor.glow }}
                         >
                           <span className="text-2xl leading-none">{a.achievement.icon}</span>
                         </div>
-                        <p className={`font-display font-bold text-sm leading-tight ${badgeColor.text}`}>
+                        <p
+                          className={`font-display font-bold text-sm leading-tight ${badgeColor.text}`}
+                        >
                           {a.achievement.name}
                         </p>
-                        <p className="text-sm text-ink-dim truncate mt-0.5">
-                          {a.playerName}
-                        </p>
+                        <p className="text-sm text-ink-dim truncate mt-0.5">{a.playerName}</p>
                         <p className="text-xs text-ink-dim/60 mt-1 leading-tight">
                           {a.achievement.description}
                         </p>
@@ -409,9 +386,7 @@ export function Results({
             animate="visible"
             transition={{ delay: 0.4 }}
           >
-            <h2 className="text-base font-medium text-ink-dim mb-3">
-              AI Usage
-            </h2>
+            <h2 className="text-base font-medium text-ink-dim mb-3">AI Usage</h2>
             <AiUsageBreakdown
               modelUsages={game.modelUsages}
               totalInput={game.aiInputTokens}
@@ -470,14 +445,12 @@ export function Results({
   }
 
   return (
-    <main className={`flex-1 flex flex-col items-center px-6 ${compactStage ? "py-8 lg:py-6" : "py-12"}`}>
+    <main
+      className={`flex-1 flex flex-col items-center px-6 ${compactStage ? "py-8 lg:py-6" : "py-12"}`}
+    >
       <div className="w-full max-w-lg lg:max-w-5xl">
         <div className="text-center mb-10">
-          <motion.div
-            variants={fadeInUp}
-            initial="hidden"
-            animate="visible"
-          >
+          <motion.div variants={fadeInUp} initial="hidden" animate="visible">
             <h1 className="font-display text-3xl font-bold mb-1 text-ink">
               Round {game.currentRound} Results
             </h1>
@@ -494,9 +467,7 @@ export function Results({
         <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-8">
           <div className="mb-8 lg:mb-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-20 lg:self-start">
             <div className="mb-6 lg:mb-8">
-              <h2 className="text-base font-medium text-ink-dim mb-3">
-                Scoreboard
-              </h2>
+              <h2 className="text-base font-medium text-ink-dim mb-3">Scoreboard</h2>
               <PlayerList players={sortedPlayers} showScores />
             </div>
 
@@ -583,117 +554,121 @@ export function Results({
               animate="visible"
             >
               <div className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
-                {currentRound.prompts.filter((p) => !p.responses.some((r) => r.text === FORFEIT_MARKER)).map((prompt, promptIdx) => {
-                  const outcome = analyzePromptOutcome(prompt);
-                  const { totalVotes, castVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } = outcome;
-                  const cardStyle = getPromptCardBorder(outcome);
+                {currentRound.prompts
+                  .filter((p) => !p.responses.some((r) => r.text === FORFEIT_MARKER))
+                  .map((prompt, promptIdx) => {
+                    const outcome = analyzePromptOutcome(prompt);
+                    const {
+                      totalVotes,
+                      castVotes,
+                      isUnanimous,
+                      aiBeatsHuman,
+                      winnerResponseId,
+                      allPassed,
+                    } = outcome;
+                    const cardStyle = getPromptCardBorder(outcome);
 
-                  return (
-                    <motion.div
-                      key={prompt.id}
-                      className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${cardStyle.border}`}
-                      style={{ boxShadow: cardStyle.shadow }}
-                      variants={floatIn}
-                    >
-                      <p className="font-display font-semibold text-base text-gold mb-4">
-                        {prompt.text}
-                      </p>
-                      <div className="space-y-3">
-                        {prompt.responses.map((resp, respIdx) => {
-                          const voteCount = castVotes.filter(
-                            (v) => v.responseId === resp.id
-                          ).length;
-                          const pct =
-                            totalVotes > 0
-                              ? Math.round((voteCount / totalVotes) * 100)
-                              : 0;
-                          const isWinner = winnerResponseId === resp.id;
-                          const pts = resp.pointsEarned;
-                          const respModel =
-                            resp.player.type === "AI" && resp.player.modelId
-                              ? getModelByModelId(resp.player.modelId)
-                              : null;
+                    return (
+                      <motion.div
+                        key={prompt.id}
+                        className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${cardStyle.border}`}
+                        style={{ boxShadow: cardStyle.shadow }}
+                        variants={floatIn}
+                      >
+                        <p className="font-display font-semibold text-base text-gold mb-4">
+                          {prompt.text}
+                        </p>
+                        <div className="space-y-3">
+                          {prompt.responses.map((resp, respIdx) => {
+                            const voteCount = castVotes.filter(
+                              (v) => v.responseId === resp.id,
+                            ).length;
+                            const pct =
+                              totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+                            const isWinner = winnerResponseId === resp.id;
+                            const pts = resp.pointsEarned;
+                            const respModel =
+                              resp.player.type === "AI" && resp.player.modelId
+                                ? getModelByModelId(resp.player.modelId)
+                                : null;
 
-                          return (
-                            <div
-                              key={resp.id}
-                              className={`p-3 rounded-xl relative overflow-hidden border-2 ${
-                                isWinner
-                                  ? "border-gold bg-gold-soft/80 backdrop-blur-sm"
-                                  : "border-edge bg-raised/80 backdrop-blur-sm"
-                              }`}
-                            >
-                              <motion.div
-                                className={`absolute inset-0 ${
-                                  isWinner ? "bg-gold/10" : "bg-ink/[0.03]"
+                            return (
+                              <div
+                                key={resp.id}
+                                className={`p-3 rounded-xl relative overflow-hidden border-2 ${
+                                  isWinner
+                                    ? "border-gold bg-gold-soft/80 backdrop-blur-sm"
+                                    : "border-edge bg-raised/80 backdrop-blur-sm"
                                 }`}
-                                initial={{ width: "0%" }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{
-                                  ...springGentle,
-                                  delay: 0.3 + respIdx * 0.15,
-                                }}
-                              />
-                              <div className="relative flex justify-between items-center gap-3">
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-base leading-snug text-ink">
-                                    {resp.text}
-                                  </p>
-                                  <p className="flex items-center gap-1.5 mt-1">
-                                    {respModel && (
-                                      <ModelIcon model={respModel} size={16} />
-                                    )}
-                                    <span className="text-sm text-ink-dim">
-                                      {resp.player.name}
+                              >
+                                <motion.div
+                                  className={`absolute inset-0 ${
+                                    isWinner ? "bg-gold/10" : "bg-ink/[0.03]"
+                                  }`}
+                                  initial={{ width: "0%" }}
+                                  animate={{ width: `${pct}%` }}
+                                  transition={{
+                                    ...springGentle,
+                                    delay: 0.3 + respIdx * 0.15,
+                                  }}
+                                />
+                                <div className="relative flex justify-between items-center gap-3">
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-base leading-snug text-ink">
+                                      {resp.text}
+                                    </p>
+                                    <p className="flex items-center gap-1.5 mt-1">
+                                      {respModel && <ModelIcon model={respModel} size={16} />}
+                                      <span className="text-sm text-ink-dim">
+                                        {resp.player.name}
+                                      </span>
+                                      {isWinner && (
+                                        <motion.span
+                                          className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-gradient-to-r from-gold/25 to-gold/15 text-gold border border-gold/20 ml-1"
+                                          style={{ boxShadow: "0 0 8px rgba(255, 214, 68, 0.15)" }}
+                                          variants={popIn}
+                                          initial="hidden"
+                                          animate="visible"
+                                          transition={{
+                                            delay: 0.6 + respIdx * 0.15,
+                                          }}
+                                        >
+                                          <CrownIcon className="w-3 h-3 animate-crown-shimmer" />
+                                          Winner
+                                        </motion.span>
+                                      )}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span
+                                      className={`font-mono font-bold text-base tabular-nums ${getPointsTextColor(pts, isWinner)}`}
+                                    >
+                                      {formatSigned(pts)}
                                     </span>
-                                    {isWinner && (
-                                      <motion.span
-                                        className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-gradient-to-r from-gold/25 to-gold/15 text-gold border border-gold/20 ml-1"
-                                        style={{ boxShadow: "0 0 8px rgba(255, 214, 68, 0.15)" }}
-                                        variants={popIn}
-                                        initial="hidden"
-                                        animate="visible"
-                                        transition={{
-                                          delay: 0.6 + respIdx * 0.15,
-                                        }}
-                                      >
-                                        <CrownIcon className="w-3 h-3 animate-crown-shimmer" />
-                                        Winner
-                                      </motion.span>
-                                    )}
-                                  </p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span
-                                    className={`font-mono font-bold text-base tabular-nums ${getPointsTextColor(pts, isWinner)}`}
-                                  >
-                                    {formatSigned(pts)}
-                                  </span>
-                                  <p className="text-xs text-ink-dim/80 tabular-nums">
-                                    {voteCount} vote{voteCount !== 1 ? "s" : ""} ({pct}%)
-                                  </p>
+                                    <p className="text-xs text-ink-dim/80 tabular-nums">
+                                      {voteCount} vote{voteCount !== 1 ? "s" : ""} ({pct}%)
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
 
-                      <PromptOutcomeStamp
-                        isUnanimous={isUnanimous}
-                        aiBeatsHuman={aiBeatsHuman}
-                        allPassed={allPassed}
-                        delay={0.8 + promptIdx * 0.2}
-                      />
-                    </motion.div>
-                  );
-                })}
+                        <PromptOutcomeStamp
+                          isUnanimous={isUnanimous}
+                          aiBeatsHuman={aiBeatsHuman}
+                          allPassed={allPassed}
+                          delay={0.8 + promptIdx * 0.2}
+                        />
+                      </motion.div>
+                    );
+                  })}
               </div>
 
               <ForfeitedMatchups prompts={currentRound.prompts} players={game.players} />
             </motion.div>
           )}
-
         </div>
       </div>
     </main>
@@ -707,9 +682,7 @@ function ForfeitedMatchups({
   prompts: GamePrompt[];
   players: GameState["players"];
 }) {
-  const forfeited = prompts.filter((p) =>
-    p.responses.some((r) => r.text === FORFEIT_MARKER),
-  );
+  const forfeited = prompts.filter((p) => p.responses.some((r) => r.text === FORFEIT_MARKER));
   if (forfeited.length === 0) return null;
 
   return (
@@ -733,13 +706,10 @@ function ForfeitedMatchups({
               className="p-4 rounded-xl bg-surface/40 border border-edge/50 opacity-60"
               variants={fadeInUp}
             >
-              <p className="font-display font-semibold text-sm text-gold/70 mb-2">
-                {prompt.text}
-              </p>
+              <p className="font-display font-semibold text-sm text-gold/70 mb-2">{prompt.text}</p>
               {survivor && (
                 <p className="text-sm text-ink-dim mb-2">
-                  <span className="text-ink">{survivor.text}</span>
-                  {" "}
+                  <span className="text-ink">{survivor.text}</span>{" "}
                   <span className="text-ink-dim/60">&mdash; {survivor.player.name} (auto-win)</span>
                 </p>
               )}

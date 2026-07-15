@@ -1,33 +1,29 @@
 "use client";
 
-import { useCallback } from "react";
-import type { GameState } from "@/lib/types";
-import { shouldKeepGameStreamAlive } from "@/lib/game-stream-lifecycle";
-import { useStateStream } from "./use-state-stream";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { useConvexRoomPresence } from "./use-convex-room-presence";
+import { useConvexRoomSession } from "./use-convex-room-session";
+import { useGameRuntime } from "./use-game-runtime";
 
-export function useGameStream(
-  code: string,
-  playerToken: string | null,
-  hostControlToken: string | null,
-  viewMode: "game" | "stage",
-) {
-  const createUrl = useCallback(
-    (currentCode: string) => {
-      const params = new URLSearchParams();
-      if (playerToken) params.set("playerToken", playerToken);
-      if (hostControlToken && viewMode === "stage") params.set("hostToken", hostControlToken);
-      const query = params.toString();
-      return `/api/games/${currentCode}/stream${query ? `?${query}` : ""}`;
-    },
-    [hostControlToken, playerToken, viewMode],
+export function useGameStream(code: string, viewMode: "game" | "stage") {
+  const runtime = useGameRuntime(code);
+  const roomSession = useConvexRoomSession(code);
+  const convexCapability = roomSession
+    ? viewMode === "stage"
+      ? (roomSession.hostCapability ?? roomSession.playerCapability)
+      : (roomSession.playerCapability ?? roomSession.hostCapability)
+    : null;
+  useConvexRoomPresence({
+    capability: runtime ? null : convexCapability,
+  });
+  const convexState = useQuery(
+    api.gameViews.stage,
+    !runtime && convexCapability ? { capability: convexCapability } : "skip",
   );
 
-  const { state, error, refresh } = useStateStream<GameState>({
-    code,
-    transitionUpdates: true,
-    shouldReconnect: shouldKeepGameStreamAlive,
-    createUrl,
-  });
-
-  return { gameState: state, error, refresh };
+  return {
+    gameState: runtime?.gameState ?? convexState,
+    error: runtime?.error ?? null,
+  };
 }

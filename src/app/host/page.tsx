@@ -25,8 +25,11 @@ import { ErrorBanner } from "@/components/error-banner";
 import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { clearPlayerSession, setHostControlToken, setPlayerSession } from "@/lib/client-session";
 import { MATCHSLOP_IDENTITIES, type MatchSlopIdentity } from "@/games/matchslop/identities";
+import { useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { persistRoomSessionResult } from "@/lib/convex-room-client";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
 
@@ -65,7 +68,10 @@ const GAME_TYPE_OPTIONS: {
 ];
 
 const MATCHSLOP_IDENTITY_OPTIONS: { id: MatchSlopIdentity; label: string }[] =
-  MATCHSLOP_IDENTITIES.map((id) => ({ id, label: id === "NON_BINARY" ? "Non-binary" : id.charAt(0) + id.slice(1).toLowerCase() }));
+  MATCHSLOP_IDENTITIES.map((id) => ({
+    id,
+    label: id === "NON_BINARY" ? "Non-binary" : id.charAt(0) + id.slice(1).toLowerCase(),
+  }));
 
 function PlayerCountHint({
   selectedCount,
@@ -84,11 +90,7 @@ function PlayerCountHint({
   if (remaining <= 0) return null;
 
   if (total > 0 && total % 2 !== 0) {
-    return (
-      <p className="text-xs text-gold/85 mb-3">
-        1 more player needs to join for even teams
-      </p>
-    );
+    return <p className="text-xs text-gold/85 mb-3">1 more player needs to join for even teams</p>;
   }
 
   if (total >= minPlayers) {
@@ -106,8 +108,7 @@ const NAME_MAX_LENGTH = 20;
 
 function getCostTier(model: AIModel): string {
   const perGame =
-    (3 * 8 * 100 / 1_000_000) * model.inputPer1M +
-    (3 * 8 * 50 / 1_000_000) * model.outputPer1M;
+    ((3 * 8 * 100) / 1_000_000) * model.inputPer1M + ((3 * 8 * 50) / 1_000_000) * model.outputPer1M;
   if (perGame < 0.001) return "$";
   if (perGame < 0.005) return "$$";
   return "$$$";
@@ -115,6 +116,7 @@ function getCostTier(model: AIModel): string {
 
 export default function HostPage() {
   const router = useRouter();
+  const createRoom = useAction(api.rooms.create);
   const { triggerElement } = usePixelDissolve();
   const [gameType, setGameType] = useState<GameType>("SLOPLASH");
   const [hostSecret, setHostSecret] = useState("");
@@ -204,48 +206,23 @@ export default function HostPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/games/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameType,
-          hostSecret: hostSecret.trim(),
-          hostName: hostName.trim(),
-          hostParticipation,
-          aiModelIds: selectedModels,
-          personaModelId: isMatchSlop ? personaModelId : undefined,
-          seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
-          personaIdentity: isMatchSlop ? personaIdentity : undefined,
-          timersDisabled,
-          ttsMode,
-          ttsVoice: ttsMode === "ON" ? ttsVoice : undefined,
-        }),
+      const room = await createRoom({
+        aiModelIds: selectedModels,
+        gameType,
+        hostName: hostName.trim() || undefined,
+        hostParticipation,
+        hostSecret: hostSecret.trim(),
+        personaIdentity: isMatchSlop ? personaIdentity : undefined,
+        personaModelId: isMatchSlop ? (personaModelId ?? undefined) : undefined,
+        seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
+        timersDisabled,
+        ttsMode,
+        ttsVoice: ttsMode === "ON" ? ttsVoice : undefined,
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to create game");
-        return;
-      }
-
-      setHostControlToken(data.hostControlToken ?? null);
-      if (typeof data.hostPlayerId === "string") {
-        setPlayerSession({
-          playerId: data.hostPlayerId,
-          playerName: hostName.trim(),
-          rejoinToken: data.rejoinToken ?? null,
-          playerType: data.hostPlayerType ?? null,
-        });
-      } else {
-        clearPlayerSession();
-      }
-      router.push(
-        typeof data.hostPlayerId !== "string"
-          ? `/stage/${data.roomCode}`
-          : `/game/${data.roomCode}`,
-      );
-    } catch {
-      setError("Something went wrong");
+      persistRoomSessionResult(room);
+      router.push(room.playerId === null ? `/stage/${room.roomCode}` : `/game/${room.roomCode}`);
+    } catch (error) {
+      setError(getConvexErrorMessage(error, "Failed to create game"));
     } finally {
       setLoading(false);
     }
@@ -278,22 +255,18 @@ export default function HostPage() {
           Back
         </Link>
 
-        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-8 text-ink">
-          Host a Game
-        </h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-bold mb-8 text-ink">Host a Game</h1>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            createGame();
+            void createGame();
           }}
           className="flex flex-col lg:flex-row lg:gap-x-12 lg:items-start"
         >
           <div className="flex-1 min-w-0">
             <div className="mb-6">
-              <label className="block text-sm font-medium text-ink-dim mb-2">
-                Game Mode
-              </label>
+              <p className="block text-sm font-medium text-ink-dim mb-2">Game Mode</p>
               <div>
                 <motion.button
                   type="button"
@@ -307,10 +280,14 @@ export default function HostPage() {
                 >
                   <span className="flex items-center justify-between">
                     <span className="min-w-0">
-                      <span className={`text-sm font-semibold block ${gameModePickerOpen ? "text-punch" : "text-ink"}`}>
+                      <span
+                        className={`text-sm font-semibold block ${gameModePickerOpen ? "text-punch" : "text-ink"}`}
+                      >
                         {selectedGameType.displayName}
                       </span>
-                      <span className={`text-[11px] leading-snug block mt-0.5 ${gameModePickerOpen ? "text-punch/70" : "text-ink-dim/60"}`}>
+                      <span
+                        className={`text-[11px] leading-snug block mt-0.5 ${gameModePickerOpen ? "text-punch/70" : "text-ink-dim/60"}`}
+                      >
                         {selectedGameType.description}
                       </span>
                     </span>
@@ -352,14 +329,14 @@ export default function HostPage() {
                                 setGameModePickerOpen(false);
                               }}
                               className={`w-full border-b border-edge/40 px-4 py-3 text-left transition-colors cursor-pointer last:border-b-0 ${
-                                selected
-                                  ? "bg-punch/10"
-                                  : "hover:bg-raised/60"
+                                selected ? "bg-punch/10" : "hover:bg-raised/60"
                               }`}
                             >
                               <span className="flex items-center justify-between">
                                 <span className="min-w-0">
-                                  <span className={`font-semibold text-sm block ${selected ? "text-punch" : "text-ink"}`}>
+                                  <span
+                                    className={`font-semibold text-sm block ${selected ? "text-punch" : "text-ink"}`}
+                                  >
                                     {option.displayName}
                                   </span>
                                   <span className="text-[11px] text-ink-dim/60 leading-snug block mt-0.5">
@@ -394,9 +371,7 @@ export default function HostPage() {
 
             {isMatchSlop && (
               <div className="mb-6">
-                <label className="block text-sm font-medium text-ink-dim mb-1">
-                  Dating Setup
-                </label>
+                <p className="block text-sm font-medium text-ink-dim mb-1">Dating Setup</p>
                 <p className="text-xs text-ink-dim/50 mb-3">
                   Sets the shared persona framing for the whole table.
                 </p>
@@ -456,10 +431,11 @@ export default function HostPage() {
             )}
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-ink-dim mb-2">
+              <label htmlFor="host-secret" className="block text-sm font-medium text-ink-dim mb-2">
                 Host Password
               </label>
               <input
+                id="host-secret"
                 type="password"
                 value={hostSecret}
                 onChange={(e) => setHostSecret(e.target.value)}
@@ -473,15 +449,21 @@ export default function HostPage() {
             <div className="mb-6">
               {hostParticipation === "PLAYER" ? (
                 <>
-                  <label className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2">
+                  <label
+                    htmlFor="host-player-name"
+                    className="flex items-baseline justify-between text-sm font-medium text-ink-dim mb-2"
+                  >
                     Your Name
                     {hostName.length >= 15 && (
-                      <span className={`text-xs tabular-nums ${hostName.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}>
+                      <span
+                        className={`text-xs tabular-nums ${hostName.length >= NAME_MAX_LENGTH ? "text-punch" : "text-ink-dim/50"}`}
+                      >
                         {hostName.length}/{NAME_MAX_LENGTH}
                       </span>
                     )}
                   </label>
                   <input
+                    id="host-player-name"
                     type="text"
                     value={hostName}
                     onChange={(e) => setHostName(e.target.value)}
@@ -500,142 +482,150 @@ export default function HostPage() {
               )}
             </div>
 
-          {isMatchSlop && (
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-ink-dim mb-3">
-                Persona Model
-              </label>
-              <div>
-                <motion.button
-                  type="button"
-                  onClick={() => setPersonaModelPickerOpen((open) => !open)}
-                  className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
-                    personaModelPickerOpen
-                      ? "border-punch bg-punch/10 text-punch"
-                      : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
-                  }`}
-                  {...buttonTap}
-                >
-                  <span className="flex items-center gap-3">
-                    {selectedPersonaModel ? (
-                      <ModelIcon model={selectedPersonaModel} size={22} className="shrink-0" />
-                    ) : (
-                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-raised text-[10px] font-bold text-ink-dim">
-                        ?
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-2">
-                        <span className={`truncate text-sm font-semibold ${personaModelPickerOpen ? "text-punch" : "text-ink"}`}>
-                          {selectedPersonaModel?.name ?? "Pick model"}
+            {isMatchSlop && (
+              <div className="mb-6">
+                <p className="block text-sm font-medium text-ink-dim mb-3">Persona Model</p>
+                <div>
+                  <motion.button
+                    type="button"
+                    onClick={() => setPersonaModelPickerOpen((open) => !open)}
+                    className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
+                      personaModelPickerOpen
+                        ? "border-punch bg-punch/10 text-punch"
+                        : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
+                    }`}
+                    {...buttonTap}
+                  >
+                    <span className="flex items-center gap-3">
+                      {selectedPersonaModel ? (
+                        <ModelIcon model={selectedPersonaModel} size={22} className="shrink-0" />
+                      ) : (
+                        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-raised text-[10px] font-bold text-ink-dim">
+                          ?
                         </span>
-                        {selectedPersonaModel && (
-                          <span className="shrink-0 text-xs text-ink-dim/60">
-                            {selectedPersonaModel.provider}
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline gap-2">
+                          <span
+                            className={`truncate text-sm font-semibold ${personaModelPickerOpen ? "text-punch" : "text-ink"}`}
+                          >
+                            {selectedPersonaModel?.name ?? "Pick model"}
                           </span>
-                        )}
+                          {selectedPersonaModel && (
+                            <span className="shrink-0 text-xs text-ink-dim/60">
+                              {selectedPersonaModel.provider}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={`mt-0.5 block text-xs ${personaModelPickerOpen ? "text-punch/70" : "text-ink-dim/70"}`}
+                        >
+                          Persona runs on this model. AI teammates stay in the list on the right.
+                        </span>
                       </span>
-                      <span className={`mt-0.5 block text-xs ${personaModelPickerOpen ? "text-punch/70" : "text-ink-dim/70"}`}>
-                        Persona runs on this model. AI teammates stay in the list on the right.
-                      </span>
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0 transition-transform duration-200"
+                        style={{
+                          transform: personaModelPickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+                        }}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
                     </span>
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="shrink-0 transition-transform duration-200"
-                      style={{ transform: personaModelPickerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </span>
-                </motion.button>
+                  </motion.button>
 
-                <AnimatePresence>
-                  {personaModelPickerOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
-                        {AI_MODELS.map((model) => {
-                          const selected = personaModelId === model.id;
-                          const teammateSelected = selectedModels.includes(model.id);
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              onClick={() => {
-                                setPersonaModelId(model.id);
-                                setSelectedModels((prev) => prev.filter((id) => id !== model.id));
-                                setPersonaModelPickerOpen(false);
-                              }}
-                              className={`w-full border-b border-edge/40 px-3 py-2.5 text-left transition-colors last:border-b-0 ${
-                                selected
-                                  ? "bg-punch/10"
-                                  : "hover:bg-raised/60"
-                              }`}
-                            >
-                              <span className="flex items-center gap-3">
-                                <ModelIcon model={model} size={20} className="shrink-0" />
-                                <span className="min-w-0 flex-1">
-                                  <span className="flex items-baseline gap-2">
-                                    <span className={`truncate text-sm font-semibold ${selected ? "text-punch" : "text-ink"}`}>
-                                      {model.name}
-                                    </span>
-                                    <span className="shrink-0 text-xs text-ink-dim/60">
-                                      {model.provider}
-                                    </span>
-                                  </span>
-                                  <span className="mt-0.5 flex items-center gap-2 text-xs">
-                                    <span className={`font-mono ${selected ? "text-punch/70" : "text-ink-dim/60"}`}>
-                                      {getCostTier(model)}
-                                    </span>
-                                    {teammateSelected && (
-                                      <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                        selected
-                                          ? "bg-punch/15 text-punch"
-                                          : "bg-raised text-ink-dim"
-                                      }`}>
-                                        In AI lineup
+                  <AnimatePresence>
+                    {personaModelPickerOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
+                          {AI_MODELS.map((model) => {
+                            const selected = personaModelId === model.id;
+                            const teammateSelected = selectedModels.includes(model.id);
+                            return (
+                              <button
+                                key={model.id}
+                                type="button"
+                                onClick={() => {
+                                  setPersonaModelId(model.id);
+                                  setSelectedModels((prev) => prev.filter((id) => id !== model.id));
+                                  setPersonaModelPickerOpen(false);
+                                }}
+                                className={`w-full border-b border-edge/40 px-3 py-2.5 text-left transition-colors last:border-b-0 ${
+                                  selected ? "bg-punch/10" : "hover:bg-raised/60"
+                                }`}
+                              >
+                                <span className="flex items-center gap-3">
+                                  <ModelIcon model={model} size={20} className="shrink-0" />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="flex items-baseline gap-2">
+                                      <span
+                                        className={`truncate text-sm font-semibold ${selected ? "text-punch" : "text-ink"}`}
+                                      >
+                                        {model.name}
                                       </span>
-                                    )}
+                                      <span className="shrink-0 text-xs text-ink-dim/60">
+                                        {model.provider}
+                                      </span>
+                                    </span>
+                                    <span className="mt-0.5 flex items-center gap-2 text-xs">
+                                      <span
+                                        className={`font-mono ${selected ? "text-punch/70" : "text-ink-dim/60"}`}
+                                      >
+                                        {getCostTier(model)}
+                                      </span>
+                                      {teammateSelected && (
+                                        <span
+                                          className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                            selected
+                                              ? "bg-punch/15 text-punch"
+                                              : "bg-raised text-ink-dim"
+                                          }`}
+                                        >
+                                          In AI lineup
+                                        </span>
+                                      )}
+                                    </span>
                                   </span>
+                                  {selected && (
+                                    <svg
+                                      className="shrink-0 text-punch"
+                                      width="16"
+                                      height="16"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="3"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  )}
                                 </span>
-                                {selected && (
-                                  <svg
-                                    className="shrink-0 text-punch"
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="3"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                )}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
             {gameType === "SLOPLASH" && (
               <div className="mb-6">
@@ -663,146 +653,175 @@ export default function HostPage() {
               </div>
             )}
 
-            {selectedGameType.supportsNarrator && <div className="mb-6">
-              <Toggle
-                checked={ttsMode === "ON"}
-                onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
-                label="Live Narrator"
-                description="AI game-show host narrates the entire game aloud"
-              >
-                <AnimatePresence>
-                {ttsMode === "ON" && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-3">
-                      <div className="flex gap-2">
-                        <motion.button
-                          type="button"
-                          onClick={() => {
-                            setTtsVoice("RANDOM");
-                            setVoicePickerOpen(false);
-                          }}
-                          className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
-                            ttsVoice === "RANDOM"
-                              ? "bg-punch/15 border-punch text-punch"
-                              : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                          }`}
-                          {...buttonTap}
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="16 3 21 3 21 8" />
-                              <line x1="4" y1="20" x2="21" y2="3" />
-                              <polyline points="21 16 21 21 16 21" />
-                              <line x1="15" y1="15" x2="21" y2="21" />
-                              <line x1="4" y1="4" x2="9" y2="9" />
-                            </svg>
-                            Random
-                          </span>
-                        </motion.button>
-                        <motion.button
-                          type="button"
-                          onClick={() => setVoicePickerOpen((v) => !v)}
-                          className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold transition-colors cursor-pointer ${
-                            ttsVoice !== "RANDOM"
-                              ? "bg-punch/15 border-punch text-punch"
-                              : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                          }`}
-                          {...buttonTap}
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            {ttsVoice !== "RANDOM" ? ttsVoice : "Pick Voice"}
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="transition-transform duration-200"
-                              style={{ transform: voicePickerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+            {selectedGameType.supportsNarrator && (
+              <div className="mb-6">
+                <Toggle
+                  checked={ttsMode === "ON"}
+                  onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
+                  label="Live Narrator"
+                  description="AI game-show host narrates the entire game aloud"
+                >
+                  <AnimatePresence>
+                    {ttsMode === "ON" && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-3">
+                          <div className="flex gap-2">
+                            <motion.button
+                              type="button"
+                              onClick={() => {
+                                setTtsVoice("RANDOM");
+                                setVoicePickerOpen(false);
+                              }}
+                              className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
+                                ttsVoice === "RANDOM"
+                                  ? "bg-punch/15 border-punch text-punch"
+                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                              }`}
+                              {...buttonTap}
                             >
-                              <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                          </span>
-                        </motion.button>
-                      </div>
+                              <span className="inline-flex items-center gap-1.5">
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <polyline points="16 3 21 3 21 8" />
+                                  <line x1="4" y1="20" x2="21" y2="3" />
+                                  <polyline points="21 16 21 21 16 21" />
+                                  <line x1="15" y1="15" x2="21" y2="21" />
+                                  <line x1="4" y1="4" x2="9" y2="9" />
+                                </svg>
+                                Random
+                              </span>
+                            </motion.button>
+                            <motion.button
+                              type="button"
+                              onClick={() => setVoicePickerOpen((v) => !v)}
+                              className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold transition-colors cursor-pointer ${
+                                ttsVoice !== "RANDOM"
+                                  ? "bg-punch/15 border-punch text-punch"
+                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
+                              }`}
+                              {...buttonTap}
+                            >
+                              <span className="inline-flex items-center gap-1.5">
+                                {ttsVoice !== "RANDOM" ? ttsVoice : "Pick Voice"}
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="transition-transform duration-200"
+                                  style={{
+                                    transform: voicePickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+                                  }}
+                                >
+                                  <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                              </span>
+                            </motion.button>
+                          </div>
 
-                      <AnimatePresence>
-                        {voicePickerOpen && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
-                              {(["female", "male"] as const).map((gender) => (
-                                <div key={gender}>
-                                  <div className="sticky top-0 z-10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-ink-dim bg-raised border-b border-edge">
-                                    {gender}
-                                  </div>
-                                  {GEMINI_VOICES.filter((v) => v.gender === gender).map((voice) => {
-                                    const selected = ttsVoice === voice.name;
-                                    return (
-                                      <button
-                                        key={voice.name}
-                                        type="button"
-                                        onClick={() => {
-                                          setTtsVoice(voice.name);
-                                          setVoicePickerOpen(false);
-                                        }}
-                                        className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors cursor-pointer border-b border-edge/40 last:border-b-0 ${
-                                          selected
-                                            ? "bg-punch/10"
-                                            : "hover:bg-raised/60"
-                                        }`}
-                                      >
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex items-center gap-2">
-                                            <span className={`font-semibold text-sm ${selected ? "text-punch" : "text-ink"}`}>
-                                              {voice.name}
-                                            </span>
-                                            <span className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
-                                              selected
-                                                ? "bg-punch/15 text-punch"
-                                                : "bg-raised text-ink-dim"
-                                            }`}>
-                                              {voice.trait}
-                                            </span>
-                                          </div>
-                                          <p className={`text-xs mt-0.5 leading-snug ${selected ? "text-punch/70" : "text-ink-dim"}`}>
-                                            {voice.description}
-                                          </p>
-                                        </div>
-                                        {selected && (
-                                          <svg className="shrink-0 text-punch" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="20 6 9 17 4 12" />
-                                          </svg>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
+                          <AnimatePresence>
+                            {voicePickerOpen && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
+                                  {(["female", "male"] as const).map((gender) => (
+                                    <div key={gender}>
+                                      <div className="sticky top-0 z-10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-ink-dim bg-raised border-b border-edge">
+                                        {gender}
+                                      </div>
+                                      {GEMINI_VOICES.filter((v) => v.gender === gender).map(
+                                        (voice) => {
+                                          const selected = ttsVoice === voice.name;
+                                          return (
+                                            <button
+                                              key={voice.name}
+                                              type="button"
+                                              onClick={() => {
+                                                setTtsVoice(voice.name);
+                                                setVoicePickerOpen(false);
+                                              }}
+                                              className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors cursor-pointer border-b border-edge/40 last:border-b-0 ${
+                                                selected ? "bg-punch/10" : "hover:bg-raised/60"
+                                              }`}
+                                            >
+                                              <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                  <span
+                                                    className={`font-semibold text-sm ${selected ? "text-punch" : "text-ink"}`}
+                                                  >
+                                                    {voice.name}
+                                                  </span>
+                                                  <span
+                                                    className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
+                                                      selected
+                                                        ? "bg-punch/15 text-punch"
+                                                        : "bg-raised text-ink-dim"
+                                                    }`}
+                                                  >
+                                                    {voice.trait}
+                                                  </span>
+                                                </div>
+                                                <p
+                                                  className={`text-xs mt-0.5 leading-snug ${selected ? "text-punch/70" : "text-ink-dim"}`}
+                                                >
+                                                  {voice.description}
+                                                </p>
+                                              </div>
+                                              {selected && (
+                                                <svg
+                                                  className="shrink-0 text-punch"
+                                                  width="16"
+                                                  height="16"
+                                                  viewBox="0 0 24 24"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  strokeWidth="3"
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                >
+                                                  <polyline points="20 6 9 17 4 12" />
+                                                </svg>
+                                              )}
+                                            </button>
+                                          );
+                                        },
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              </Toggle>
-            </div>}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Toggle>
+              </div>
+            )}
 
             <ErrorBanner error={error} />
 
@@ -816,21 +835,32 @@ export default function HostPage() {
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
                   </svg>
                   Creating...
                 </span>
-              ) : "Create Game"}
+              ) : (
+                "Create Game"
+              )}
             </motion.button>
           </div>
 
           <div className="mb-8 lg:mb-0 lg:w-[340px] xl:w-[380px] shrink-0">
             <div className="flex items-baseline justify-between mb-3">
-              <label className="text-sm font-medium text-ink-dim">
-                Add AI Players
-              </label>
-                <span className="text-sm font-semibold tabular-nums text-ink-dim">
+              <span className="text-sm font-medium text-ink-dim">Add AI Players</span>
+              <span className="text-sm font-semibold tabular-nums text-ink-dim">
                 {activePlayerCount}
                 <span className="text-ink-dim/50">/{selectedGameType.maxPlayers}</span>
                 <span className="text-xs font-normal text-ink-dim/50 ml-1">active players</span>
@@ -845,14 +875,14 @@ export default function HostPage() {
             <div className="grid grid-cols-1 gap-2">
               {AI_MODELS.map((model) => {
                 const selected = selectedModels.includes(model.id);
-                const replacesSameProvider = !selected && selectedModels.some((id) => {
-                  const selectedModel = getModelByModelId(id);
-                  return selectedModel?.provider === model.provider;
-                });
-                const atLimit =
-                  selectedModels.length >= maxAiPlayers &&
+                const replacesSameProvider =
                   !selected &&
-                  !replacesSameProvider;
+                  selectedModels.some((id) => {
+                    const selectedModel = getModelByModelId(id);
+                    return selectedModel?.provider === model.provider;
+                  });
+                const atLimit =
+                  selectedModels.length >= maxAiPlayers && !selected && !replacesSameProvider;
 
                 let stateClass: string;
                 if (selected) {
@@ -860,7 +890,8 @@ export default function HostPage() {
                 } else if (atLimit) {
                   stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
                 } else {
-                  stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
+                  stateClass =
+                    "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
                 }
 
                 return (
@@ -876,12 +907,8 @@ export default function HostPage() {
                     <ModelIcon model={model} size={24} className="shrink-0" />
                     <div className="min-w-0">
                       <div className="flex items-baseline gap-2">
-                        <span className="font-semibold text-sm truncate">
-                          {model.name}
-                        </span>
-                        <span className="text-xs text-ink-dim/60 shrink-0">
-                          {model.provider}
-                        </span>
+                        <span className="font-semibold text-sm truncate">{model.name}</span>
+                        <span className="text-xs text-ink-dim/60 shrink-0">{model.provider}</span>
                       </div>
                       <span className="text-[11px] text-ink-dim/50 font-mono">
                         {getCostTier(model)}
