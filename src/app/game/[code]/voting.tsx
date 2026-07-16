@@ -251,6 +251,7 @@ export function Voting({
     try {
       await advanceConvexGame({
         capability: hostCapability,
+        expectedPhaseGeneration: game.version,
       });
       keepPending = true;
     } catch (cause) {

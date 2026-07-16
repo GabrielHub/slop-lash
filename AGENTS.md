@@ -35,7 +35,7 @@ architecture, and feature documentation in `README.md` or focused files under
   jobs. Workflow owns durable multi-step orchestration. Durable game state stays
   in application tables, not component presence records.
 - Browser code receives `NEXT_PUBLIC_CONVEX_URL`. Configure secrets such as
-  `AI_GATEWAY_API_KEY`, `HOST_SECRET`, `GEMINI_API_KEY`, and `FAL_KEY` in Convex.
+  `AI_GATEWAY_API_KEY`, `HOST_SECRET`, and `FAL_KEY` in Convex.
 - Before changing `convex/`, read its generated AI guidelines when present. Do
   not hand-edit `convex/_generated/`; regenerate it through the checked-in task.
 

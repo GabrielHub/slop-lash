@@ -24,6 +24,7 @@ import type * as chatslop from "../chatslop.js";
 import type * as cleanup from "../cleanup.js";
 import type * as components_ from "../components.js";
 import type * as crons from "../crons.js";
+import type * as gamePhase from "../gamePhase.js";
 import type * as gameViewData from "../gameViewData.js";
 import type * as gameViewValidators from "../gameViewValidators.js";
 import type * as gameViews from "../gameViews.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   cleanup: typeof cleanup;
   components: typeof components_;
   crons: typeof crons;
+  gamePhase: typeof gamePhase;
   gameViewData: typeof gameViewData;
   gameViewValidators: typeof gameViewValidators;
   gameViews: typeof gameViews;

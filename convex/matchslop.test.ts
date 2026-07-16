@@ -41,9 +41,11 @@ const castVoteRef = makeFunctionReference<
   { phase: Phase; voteId: Id<"votes"> }
 >("matchslop:castVote");
 
-const advanceRef = makeFunctionReference<"mutation", { capability: string }, { phase: Phase }>(
-  "matchslop:advance",
-);
+const advanceRef = makeFunctionReference<
+  "mutation",
+  { capability: string; expectedPhaseGeneration: number },
+  { phase: Phase }
+>("matchslop:advance");
 
 const managePersonaRef = makeFunctionReference<
   "mutation",
@@ -155,7 +157,7 @@ async function createMatch(
     gameType: "MATCHSLOP",
     hostSecret: "host-secret",
     personaIdentity: "WOMAN",
-    personaModelId: "openai/gpt-5.4-mini",
+    personaModelId: "openai/gpt-5.6-luna",
     seekerIdentity: "MAN",
     timersDisabled: options?.timersDisabled ?? true,
     totalRounds: 2,
@@ -219,7 +221,7 @@ describe("Convex MatchSlop backend", () => {
       gameType: "MATCHSLOP",
       hostSecret: "host-secret",
       personaIdentity: "WOMAN",
-      personaModelId: "openai/gpt-5.4-mini",
+      personaModelId: "openai/gpt-5.6-luna",
       seekerIdentity: "MAN",
     });
     const guest: Session = await backend.action(api.rooms.join, {
@@ -272,7 +274,7 @@ describe("Convex MatchSlop backend", () => {
       gameType: "MATCHSLOP",
       hostSecret: "host-secret",
       personaIdentity: "WOMAN",
-      personaModelId: "openai/gpt-5.4-mini",
+      personaModelId: "openai/gpt-5.6-luna",
       seekerIdentity: "MAN",
       timersDisabled: false,
       totalRounds: 2,
@@ -301,7 +303,7 @@ describe("Convex MatchSlop backend", () => {
         jobId: profileJob._id,
         profile: PROFILE,
         usage: {
-          modelId: "openai/gpt-5.4-mini",
+          modelId: "openai/gpt-5.6-luna",
           inputTokens: 100,
           outputTokens: 50,
           costUsd: 0.001,
@@ -342,7 +344,10 @@ describe("Convex MatchSlop backend", () => {
     const current = await loadCurrentRound(backend, fixture.host.gameId);
 
     await expect(
-      backend.mutation(advanceRef, { capability: fixture.guests[0]!.capability }),
+      backend.mutation(advanceRef, {
+        capability: fixture.guests[0]!.capability,
+        expectedPhaseGeneration: current.game.phaseGeneration,
+      }),
     ).rejects.toThrow("Host capability required");
 
     const submitted: Array<{ phase: Phase; responseId: Id<"responses"> }> = [];
@@ -432,7 +437,11 @@ describe("Convex MatchSlop backend", () => {
     });
     const oldDeadline = results.game?.phaseDeadline;
     const oldGeneration = results.game?.phaseGeneration;
-    const advanced = await backend.mutation(advanceRef, { capability: fixture.host.capability });
+    if (oldGeneration === undefined) throw new Error("Expected phase generation");
+    const advanced = await backend.mutation(advanceRef, {
+      capability: fixture.host.capability,
+      expectedPhaseGeneration: oldGeneration,
+    });
     expect(advanced.phase).toBe("WRITING");
 
     const advancedState = await backend.run(async (ctx) => {
@@ -573,7 +582,7 @@ describe("Convex MatchSlop backend", () => {
   test("starts mode-local AI workflows and cancels a response that becomes stale", async () => {
     const backend = createTestBackend();
     const fixture = await createMatch(backend, {
-      aiModelIds: ["google/gemini-3-flash"],
+      aiModelIds: ["google/gemini-3.1-flash-lite"],
       humanNames: ["Avery"],
     });
     const started = await backend.mutation(startGamePipelinesRef, {
@@ -612,7 +621,7 @@ describe("Convex MatchSlop backend", () => {
         selectedPromptId: "profile-1",
         failReason: null,
         usage: {
-          modelId: "google/gemini-3-flash",
+          modelId: "google/gemini-3.1-flash-lite",
           inputTokens: 10,
           outputTokens: 5,
           costUsd: 0.001,

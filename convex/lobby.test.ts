@@ -25,9 +25,9 @@ describe("Convex lobby controls", () => {
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
       aiModelIds: [
-        "google/gemini-3-flash",
-        "openai/gpt-5.4-mini",
-        "google/gemini-3-flash",
+        "google/gemini-3.1-flash-lite",
+        "openai/gpt-5.6-luna",
+        "google/gemini-3.1-flash-lite",
         "unknown/model",
       ],
       gameType: "SLOPLASH",
@@ -97,11 +97,41 @@ describe("Convex lobby controls", () => {
     expect(summary.game.playerCount).toBe(3);
   });
 
+  test("keeps AI additions idempotent and rejects duplicate human names", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const host = await backend.action(api.rooms.create, {
+      gameType: "SLOPLASH",
+      hostName: "Gemini",
+      hostSecret: "host-secret",
+    });
+
+    await expect(
+      backend.mutation(api.lobby.addAiPlayer, {
+        capability: host.capability,
+        modelId: "google/gemini-3.1-flash-lite",
+      }),
+    ).rejects.toThrow("That AI player's name is already taken");
+
+    const added = await backend.mutation(api.lobby.addAiPlayer, {
+      capability: host.capability,
+      modelId: "openai/gpt-5.6-luna",
+    });
+    await expect(
+      backend.mutation(api.lobby.addAiPlayer, {
+        capability: host.capability,
+        modelId: "openai/gpt-5.6-luna",
+      }),
+    ).resolves.toEqual({ playerId: added.playerId, replacedPlayerId: null });
+    const game = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    expect(game?.playerCount).toBe(2);
+  });
+
   test("starts Slop-Lash with paired prompts, a writing deadline, and AI jobs", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "SLOPLASH",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -172,7 +202,7 @@ describe("Convex lobby controls", () => {
       name: "Kicked Guest",
       roomCode: host.roomCode,
     });
-    await backend.action(api.rooms.join, {
+    const remaining = await backend.action(api.rooms.join, {
       name: "Remaining Guest",
       roomCode: host.roomCode,
     });
@@ -200,7 +230,27 @@ describe("Convex lobby controls", () => {
     expect(persisted.game?.playerCount).toBe(2);
 
     await expect(
-      backend.mutation(api.sloplash.advance, { capability: host.capability }),
+      backend.mutation(api.lobby.kickHuman, {
+        capability: host.capability,
+        targetPlayerId: kicked.playerId!,
+      }),
+    ).resolves.toEqual({ success: true });
+    const afterRetry = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    if (!afterRetry) throw new Error("Expected game after repeated kick");
+    expect(afterRetry?.playerCount).toBe(2);
+
+    await expect(
+      backend.mutation(api.lobby.kickHuman, {
+        capability: host.capability,
+        targetPlayerId: remaining.playerId!,
+      }),
+    ).rejects.toThrow("Need at least 2 active players to continue the game");
+
+    await expect(
+      backend.mutation(api.sloplash.advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: afterRetry.phaseGeneration,
+      }),
     ).resolves.toEqual({ phase: "WRITING" });
     const nextRound = await backend.run(async (ctx) => {
       const game = await ctx.db.get("games", host.gameId);
@@ -230,7 +280,7 @@ describe("Convex lobby controls", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -270,18 +320,18 @@ describe("Convex lobby controls", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["openai/gpt-5.4-mini", "google/gemini-3-flash", "anthropic/claude-haiku-4.5"],
+      aiModelIds: ["openai/gpt-5.6-luna", "google/gemini-3.1-flash-lite", "anthropic/claude-haiku-4.5"],
       gameType: "MATCHSLOP",
       hostSecret: "host-secret",
       personaIdentity: "WOMAN",
-      personaModelId: "openai/gpt-5.4-mini",
+      personaModelId: "openai/gpt-5.6-luna",
       seekerIdentity: "MAN",
     });
     const lobby = await backend.query(api.gameViews.lobby, {
       capability: host.capability,
     });
     expect(lobby.players.map((player) => player.modelId)).toEqual([
-      "google/gemini-3-flash",
+      "google/gemini-3.1-flash-lite",
       "anthropic/claude-haiku-4.5",
     ]);
 

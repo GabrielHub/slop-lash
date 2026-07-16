@@ -2,6 +2,8 @@ import { makeFunctionReference } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getRandomPrompts } from "../src/games/core/prompts";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
+import { requireContinuingPlayers } from "./gamePhase";
 import {
   REVEAL_SECONDS,
   ROUND_RESULTS_SECONDS,
@@ -69,10 +71,6 @@ const projectFinalGameReference = makeFunctionReference<
   { gameId: Id<"games"> },
   unknown
 >("leaderboards:projectFinalGame");
-
-function isActivePlayer(player: Doc<"players">): boolean {
-  return player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE";
-}
 
 async function queueSloplashGenerationJob(
   ctx: MutationCtx,
@@ -219,7 +217,7 @@ async function queueAiVoteJobs(
       responsesForPrompt(bundle, prompt._id).map((response) => response.playerId),
     );
     for (const player of players) {
-      if (player.type !== "AI" || !isActivePlayer(player) || respondentIds.has(player._id)) {
+      if (player.type !== "AI" || !isActiveCompetitor(player) || respondentIds.has(player._id)) {
         continue;
       }
       await queueSloplashGenerationJob(ctx, {
@@ -245,7 +243,8 @@ export async function createNextSloplashRound(
       .withIndex("by_gameId_and_roundId", (index) => index.eq("gameId", game._id))
       .take(MAX_ROUNDS * MAX_PLAYERS),
   ]);
-  const participants = players.filter(isActivePlayer);
+  const participants = players.filter(isActiveCompetitor);
+  requireContinuingPlayers(participants.length);
   const promptTexts = getRandomPrompts(
     participants.length,
     new Set(usedPrompts.map((prompt) => prompt.text)),
@@ -425,7 +424,7 @@ export async function fillAllAbstainVotes(
   if (!bundle) return;
   // The roster cannot change while this mutation runs, so load it once rather
   // than re-querying it for every prompt.
-  const players = (await listSloplashPlayers(ctx, game._id)).filter(isActivePlayer);
+  const players = (await listSloplashPlayers(ctx, game._id)).filter(isActiveCompetitor);
   for (const prompt of getVotableSloplashPrompts(bundle)) {
     await fillAbstainVotesForPrompt(ctx, game, bundle, prompt, players, now);
   }
@@ -444,7 +443,7 @@ async function currentVotablePrompt(
 export async function hasCurrentVoteQuorum(ctx: DatabaseCtx, game: Doc<"games">): Promise<boolean> {
   const current = await currentVotablePrompt(ctx, game);
   if (!current) return false;
-  const players = (await listSloplashPlayers(ctx, game._id)).filter(isActivePlayer);
+  const players = (await listSloplashPlayers(ctx, game._id)).filter(isActiveCompetitor);
   const respondentIds = new Set(
     responsesForPrompt(current.bundle, current.prompt._id).map((response) => response.playerId),
   );
@@ -468,7 +467,7 @@ export async function revealCurrentSloplashPrompt(
     // Legacy Slop-Lash still steps through a reveal subphase when every
     // matchup forfeits, which keeps host and deadline behavior predictable.
   } else if (fillAbstains) {
-    const players = (await listSloplashPlayers(ctx, game._id)).filter(isActivePlayer);
+    const players = (await listSloplashPlayers(ctx, game._id)).filter(isActiveCompetitor);
     await fillAbstainVotesForPrompt(ctx, game, current.bundle, current.prompt, players, now);
   }
 
@@ -688,14 +687,19 @@ export async function settleSloplashQuorum(
   return null;
 }
 
+/**
+ * "ALREADY_FINAL" is a successful no-op, "INVALID" a genuine error. Callers
+ * cannot tell the two apart from a boolean, so the engine names them itself.
+ */
+export type EndSloplashResult = "ENDED" | "ALREADY_FINAL" | "INVALID";
+
 export async function endSloplashEarly(
   ctx: MutationCtx,
   game: Doc<"games">,
   now: number,
-): Promise<boolean> {
-  if (game.gameType !== "SLOPLASH" || game.status === "LOBBY" || game.status === "FINAL_RESULTS") {
-    return false;
-  }
+): Promise<EndSloplashResult> {
+  if (game.gameType !== "SLOPLASH" || game.status === "LOBBY") return "INVALID";
+  if (game.status === "FINAL_RESULTS") return "ALREADY_FINAL";
   if (game.status === "WRITING" || game.status === "VOTING") {
     await fillPlaceholderResponses(ctx, game, now);
     if (game.status === "VOTING") await fillAllAbstainVotes(ctx, game, now);
@@ -719,5 +723,5 @@ export async function endSloplashEarly(
     phaseGeneration,
   });
   await ctx.scheduler.runAfter(0, projectFinalGameReference, { gameId: game._id });
-  return true;
+  return "ENDED";
 }

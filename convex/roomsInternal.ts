@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
+import { maxPlayersByGameType } from "./gameLimits";
 import {
   gameTypeValidator,
   matchSlopIdentityValidator,
@@ -74,7 +76,7 @@ export const createRoom = internalMutation({
       status: "LOBBY",
       currentRound: 0,
       totalRounds: args.totalRounds,
-      maxPlayers: 8,
+      maxPlayers: maxPlayersByGameType[args.gameType],
       playerCount: (args.hostParticipation === "PLAYER" ? 1 : 0) + args.aiPlayers.length,
       ...(args.personaModelId ? { personaModelId: args.personaModelId } : {}),
       phaseGeneration: 0,
@@ -176,48 +178,59 @@ export const joinRoom = internalMutation({
     }
 
     const now = Date.now();
-    const rateLimit = await ctx.db
-      .query("roomJoinRateLimits")
-      .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
+    // Look the name up through its own index rather than scanning the roster:
+    // the check must stay exact even if the roster ever outgrows maxPlayers.
+    const existingPlayer = await ctx.db
+      .query("players")
+      .withIndex("by_gameId_and_normalizedName", (index) =>
+        index.eq("gameId", game._id).eq("normalizedName", args.normalizedName),
+      )
       .unique();
-    const windowExpired = !rateLimit || now - rateLimit.windowStartedAt >= JOIN_ATTEMPT_WINDOW_MS;
-    if (rateLimit && !windowExpired && rateLimit.attempts >= MAX_JOIN_ATTEMPTS_PER_WINDOW) {
-      return {
-        kind: "REJECTED" as const,
-        reason: "Too many join attempts for this room. Wait a minute and try again",
-      };
+    if (existingPlayer) {
+      const rateLimit = await ctx.db
+        .query("roomJoinRateLimits")
+        .withIndex("by_gameId_and_normalizedName", (index) =>
+          index.eq("gameId", game._id).eq("normalizedName", args.normalizedName),
+        )
+        .unique();
+      const windowExpired =
+        !rateLimit || now - rateLimit.windowStartedAt >= JOIN_ATTEMPT_WINDOW_MS;
+      if (rateLimit && !windowExpired && rateLimit.attempts >= MAX_JOIN_ATTEMPTS_PER_WINDOW) {
+        return {
+          kind: "REJECTED" as const,
+          reason: "Too many join attempts for this player name. Wait a minute and try again",
+        };
+      }
+      if (!rateLimit) {
+        await ctx.db.insert("roomJoinRateLimits", {
+          gameId: game._id,
+          normalizedName: args.normalizedName,
+          windowStartedAt: now,
+          attempts: 1,
+        });
+      } else if (windowExpired) {
+        await ctx.db.patch("roomJoinRateLimits", rateLimit._id, {
+          windowStartedAt: now,
+          attempts: 1,
+        });
+      } else {
+        await ctx.db.patch("roomJoinRateLimits", rateLimit._id, {
+          attempts: rateLimit.attempts + 1,
+        });
+      }
+      return { kind: "REJECTED" as const, reason: "That name is already taken" };
     }
-    if (!rateLimit) {
-      await ctx.db.insert("roomJoinRateLimits", {
-        gameId: game._id,
-        windowStartedAt: now,
-        attempts: 1,
-      });
-    } else if (windowExpired) {
-      await ctx.db.patch("roomJoinRateLimits", rateLimit._id, {
-        windowStartedAt: now,
-        attempts: 1,
-      });
-    } else {
-      await ctx.db.patch("roomJoinRateLimits", rateLimit._id, {
-        attempts: rateLimit.attempts + 1,
-      });
-    }
-    if (game.playerCount >= game.maxPlayers) {
+
+    const players = await ctx.db
+      .query("players")
+      .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
+      .take(game.maxPlayers + 1);
+    const activePlayerCount = players.filter(isActiveCompetitor).length;
+    if (activePlayerCount >= game.maxPlayers) {
       return {
         kind: "REJECTED" as const,
         reason: `Game is full (max ${game.maxPlayers} players)`,
       };
-    }
-
-    const existingPlayer = await ctx.db
-      .query("players")
-      .withIndex("by_gameId_and_normalizedName", (query) =>
-        query.eq("gameId", game._id).eq("normalizedName", args.normalizedName),
-      )
-      .unique();
-    if (existingPlayer) {
-      return { kind: "REJECTED" as const, reason: "That name is already taken" };
     }
 
     const playerId = await ctx.db.insert("players", {
@@ -241,7 +254,7 @@ export const joinRoom = internalMutation({
       lastSeenAt: now,
     });
     await ctx.db.patch("games", game._id, {
-      playerCount: game.playerCount + 1,
+      playerCount: activePlayerCount + 1,
       updatedAt: now,
     });
 

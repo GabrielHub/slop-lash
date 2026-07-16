@@ -8,11 +8,11 @@ import {
   aiVoteNWay,
   escapeXml,
   extractUsage,
-  getLowReasoningProviderOptions,
   simpleHash,
   type AiUsage,
 } from "../src/games/ai-chat-showdown/ai";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
+import { getGameplayReasoningSettings } from "../src/lib/ai-reasoning";
 import type { MatchSlopPersonaSeed } from "../src/games/matchslop/config/persona-examples";
 import type { MatchSlopIdentity, MatchSlopProfile } from "../src/games/matchslop/types";
 import { getGatewayModel } from "../src/lib/ai-gateway";
@@ -154,7 +154,7 @@ export const generateProfile = internalAction({
         name: "matchslop_profile_generation",
         description: "A realistic dating-app profile for MatchSlop",
       }),
-      providerOptions: getLowReasoningProviderOptions(context.modelId),
+      ...getGameplayReasoningSettings(context.modelId),
     });
     return {
       profile: result.output.profile,
@@ -216,7 +216,7 @@ export const generateImage = internalAction({
         name: "matchslop_portrait_prompt",
         description: "A candid dating-app portrait prompt",
       }),
-      providerOptions: getLowReasoningProviderOptions(context.modelId),
+      ...getGameplayReasoningSettings(context.modelId),
     });
     return {
       imageUrl: await requestPersonaImage(promptResult.output.prompt.trim()),
@@ -262,7 +262,7 @@ export const generateResponse = internalAction({
         : `<tone-examples>${context.examples.map(escapeXml).join(" | ")}</tone-examples><conversation>${escapeXml(context.conversationContext)}</conversation>`,
       output: Output.object({ schema: responseSchema, name: "matchslop_competitor_response" }),
       ...(context.timeoutMs ? { timeout: context.timeoutMs } : {}),
-      providerOptions: getLowReasoningProviderOptions(context.modelId),
+      ...getGameplayReasoningSettings(context.modelId),
     });
     const text = result.output.line.trim();
     const selectedPromptId =
@@ -373,7 +373,7 @@ export const generateReply = internalAction({
       prompt: `${buildProfileXml(context.profile)}<current-mood>${context.currentMood}</current-mood><transcript>${transcript}</transcript>`,
       output: Output.object({ schema: personaReplySchema, name: "matchslop_persona_reply" }),
       timeout: 12_000,
-      providerOptions: getLowReasoningProviderOptions(context.modelId),
+      ...getGameplayReasoningSettings(context.modelId),
     });
     return {
       reply: result.output.reply.trim(),
@@ -422,7 +422,7 @@ export const generatePostMortem = internalAction({
       instructions: `You are ${context.profile.displayName}, the ${identityLabel(context.personaIdentity)} who just finished this MatchSlop dating chat. Deliver a concise in-character postmortem: an opening reaction, an honest callout for each player using actual lines, the favorite moment, and a final parting shot. Match the profile's texting style and avoid generic commentary.`,
       prompt: `<outcome>${escapeXml(context.outcome)}</outcome><players>${context.playerNames.map((name) => `<player>${escapeXml(name)}</player>`).join("")}</players>${buildProfileXml(context.profile)}<transcript>${transcript}</transcript>`,
       output: Output.object({ schema: postMortemSchema, name: "matchslop_post_mortem" }),
-      providerOptions: getLowReasoningProviderOptions(context.modelId),
+      ...getGameplayReasoningSettings(context.modelId),
     });
     return {
       postMortem: result.output.postMortem,

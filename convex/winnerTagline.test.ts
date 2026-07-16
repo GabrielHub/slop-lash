@@ -46,7 +46,7 @@ const createRoom = makeFunctionReference<
 const startGame = makeFunctionReference<"mutation", { capability: string }, unknown>("lobby:start");
 const advanceGame = makeFunctionReference<
   "mutation",
-  { capability: string },
+  { capability: string; expectedPhaseGeneration: number },
   { phase: string | null }
 >("sloplash:advance");
 const endGame = makeFunctionReference<"mutation", { capability: string }, { success: true }>(
@@ -77,7 +77,7 @@ type TestBackend = ReturnType<typeof createTestBackend>;
 async function createAiGame(backend: TestBackend, totalRounds = 1) {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const host = await backend.action(createRoom, {
-    aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini", "anthropic/claude-haiku-4.5"],
+    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
     gameType: "SLOPLASH",
     hostParticipation: "DISPLAY_ONLY",
     hostSecret: "host-secret",
@@ -180,7 +180,10 @@ async function driveToRoundResults(
     });
   });
   await expect(
-    backend.mutation(advanceGame, { capability: created.host.capability }),
+    backend.mutation(advanceGame, {
+      capability: created.host.capability,
+      expectedPhaseGeneration: created.game.phaseGeneration + 1,
+    }),
   ).resolves.toEqual({ phase: "ROUND_RESULTS" });
   const game = await backend.run(async (ctx) => ctx.db.get("games", created.host.gameId));
   if (!game) throw new Error("Expected round-results game");
@@ -301,7 +304,10 @@ describe("Slop-Lash winner tagline Workpool", () => {
     await expect(pending(backend, created.host.gameId)).resolves.toBe(true);
 
     await expect(
-      backend.mutation(advanceGame, { capability: created.host.capability }),
+      backend.mutation(advanceGame, {
+        capability: created.host.capability,
+        expectedPhaseGeneration: roundResults.phaseGeneration,
+      }),
     ).resolves.toEqual({ phase: "FINAL_RESULTS" });
     const finalGame = await backend.run(async (ctx) => ctx.db.get("games", created.host.gameId));
     const finalJobs = await loadTaglineJobs(backend, created.host.gameId);

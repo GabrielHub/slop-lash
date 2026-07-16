@@ -69,7 +69,7 @@ type TestBackend = ReturnType<typeof createTestBackend>;
 async function createStartedGame(backend: TestBackend) {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const host = await backend.action(createRoom, {
-    aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
     gameType: "AI_CHAT_SHOWDOWN",
     hostName: "Host",
     hostSecret: "host-secret",

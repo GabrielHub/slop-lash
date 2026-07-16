@@ -11,11 +11,14 @@ import { gameTypeValidator } from "./validators";
 import { getRandomPrompts } from "../src/games/core/prompts";
 import { MATCHSLOP_PERSONA_EXAMPLES } from "../src/games/matchslop/config/persona-examples";
 import { MATCHSLOP_PLAYER_EXAMPLES } from "../src/games/matchslop/config/player-examples";
+import { MATCHSLOP_WRITING_SECONDS } from "../src/games/matchslop/config/game-config";
+import { WRITING_DURATION_SECONDS } from "../src/games/sloplash/game-constants";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
+import { minPlayersByGameType } from "./gameLimits";
+import { requireContinuingPlayers } from "./gamePhase";
 
 const MAX_LOBBY_PLAYERS = 16;
 const MAX_PLAYER_SESSIONS = 8;
-const SLOPLASH_WRITING_MS = 90_000;
-const MATCHSLOP_WRITING_MS = 120_000;
 
 const enqueueQueuedResponseJobsReference = makeFunctionReference<
   "mutation",
@@ -28,18 +31,6 @@ const startMatchSlopPipelinesReference = makeFunctionReference<
   { gameId: Id<"games"> },
   { profileStarted: boolean; responseJobs: number }
 >("matchslopWorkflow:startGamePipelines");
-
-const minimumPlayersByGameType = {
-  AI_CHAT_SHOWDOWN: 3,
-  MATCHSLOP: 2,
-  SLOPLASH: 3,
-} as const;
-
-function getActivePlayers(players: Doc<"players">[]): Doc<"players">[] {
-  return players.filter(
-    (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
-  );
-}
 
 async function listPlayers(ctx: MutationCtx, gameId: Id<"games">): Promise<Doc<"players">[]> {
   return ctx.db
@@ -171,13 +162,25 @@ export const addAiPlayer = mutation({
     if (!model) throw new ConvexError("Unknown model");
 
     const players = await listPlayers(ctx, authorized.game._id);
-    const activePlayers = players.filter((player) => player.type !== "SPECTATOR");
+    const activePlayers = players.filter(isActiveCompetitor);
     const existingProviderPlayer = activePlayers.find((player) => {
       if (player.type !== "AI" || !player.modelId) return false;
       return getAiModel(player.modelId)?.provider === model.provider;
     });
     if (activePlayers.length >= authorized.game.maxPlayers && !existingProviderPlayer) {
       throw new ConvexError("Game is full");
+    }
+
+    const normalizedName = model.shortName.toLocaleLowerCase("en-US");
+    const conflictingPlayer = players.find(
+      (player) =>
+        player.normalizedName === normalizedName && player._id !== existingProviderPlayer?._id,
+    );
+    if (conflictingPlayer) {
+      throw new ConvexError("That AI player's name is already taken");
+    }
+    if (existingProviderPlayer?.modelId === model.id) {
+      return { playerId: existingProviderPlayer._id, replacedPlayerId: null };
     }
 
     if (existingProviderPlayer) {
@@ -187,7 +190,7 @@ export const addAiPlayer = mutation({
     const playerId = await ctx.db.insert("players", {
       gameId: authorized.game._id,
       name: model.shortName,
-      normalizedName: model.shortName.toLocaleLowerCase("en-US"),
+      normalizedName,
       type: "AI",
       modelId: model.id,
       idleRounds: 0,
@@ -198,7 +201,7 @@ export const addAiPlayer = mutation({
       joinedAt: now,
     });
     await ctx.db.patch("games", authorized.game._id, {
-      playerCount: authorized.game.playerCount + (existingProviderPlayer ? 0 : 1),
+      playerCount: activePlayers.length + (existingProviderPlayer ? 0 : 1),
       updatedAt: now,
     });
     return {
@@ -224,9 +227,12 @@ export const removeAiPlayer = mutation({
       throw new ConvexError("Can only remove AI players with this mutation");
     }
 
+    const players = await listPlayers(ctx, authorized.game._id);
     await ctx.db.delete("players", target._id);
     await ctx.db.patch("games", authorized.game._id, {
-      playerCount: Math.max(0, authorized.game.playerCount - 1),
+      playerCount: players.filter(
+        (player) => player._id !== target._id && isActiveCompetitor(player),
+      ).length,
       updatedAt: Date.now(),
     });
     return { success: true as const };
@@ -250,6 +256,24 @@ export const kickHuman = mutation({
     }
     if (target.type === "AI") throw new ConvexError("Cannot kick AI players");
 
+    // A player is only ever DISCONNECTED because an earlier kick set it below,
+    // which already deleted their sessions, so re-kicking is a no-op. Any future
+    // path that disconnects a player without dropping sessions must not land here.
+    if (
+      authorized.game.status === "ROUND_RESULTS" &&
+      target.participationStatus === "DISCONNECTED"
+    ) {
+      return { success: true as const };
+    }
+
+    const players = await listPlayers(ctx, authorized.game._id);
+    const remainingPlayers = players.filter(
+      (player) => player._id !== target._id && isActiveCompetitor(player),
+    );
+    if (authorized.game.status === "ROUND_RESULTS") {
+      requireContinuingPlayers(remainingPlayers.length);
+    }
+
     await deletePlayerSessions(ctx, authorized.game._id, target._id);
     if (authorized.game.status === "LOBBY") {
       await ctx.db.delete("players", target._id);
@@ -261,7 +285,7 @@ export const kickHuman = mutation({
       });
     }
     await ctx.db.patch("games", authorized.game._id, {
-      playerCount: Math.max(0, authorized.game.playerCount - 1),
+      playerCount: remainingPlayers.length,
       updatedAt: Date.now(),
     });
     return { success: true as const };
@@ -298,8 +322,8 @@ export const start = mutation({
       throw new ConvexError("Game already started");
     }
 
-    const players = getActivePlayers(await listPlayers(ctx, authorized.game._id));
-    const minimumPlayers = minimumPlayersByGameType[authorized.game.gameType];
+    const players = (await listPlayers(ctx, authorized.game._id)).filter(isActiveCompetitor);
+    const minimumPlayers = minPlayersByGameType[authorized.game.gameType];
     if (players.length < minimumPlayers) {
       throw new ConvexError(`Need at least ${minimumPlayers} players`);
     }
@@ -329,7 +353,9 @@ export const start = mutation({
           [first, second],
         );
       }
-      phaseDeadline = authorized.game.timersDisabled ? undefined : now + SLOPLASH_WRITING_MS;
+      phaseDeadline = authorized.game.timersDisabled
+        ? undefined
+        : now + WRITING_DURATION_SECONDS * 1_000;
     } else if (authorized.game.gameType === "AI_CHAT_SHOWDOWN") {
       const [promptText] = getRandomPrompts(1);
       await createPrompt(
@@ -409,7 +435,9 @@ export const start = mutation({
       });
       await createPrompt(ctx, authorized.game._id, roundId, 0, promptText, playerIds);
       phaseDeadline =
-        profileReady && !authorized.game.timersDisabled ? now + MATCHSLOP_WRITING_MS : undefined;
+        profileReady && !authorized.game.timersDisabled
+          ? now + MATCHSLOP_WRITING_SECONDS * 1_000
+          : undefined;
       if (
         !profileReady &&
         (await queueGenerationJob(ctx, {

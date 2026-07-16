@@ -2,9 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import { requireHostCapability } from "./capabilities";
 
-export const authorizeToken = internalQuery({
+export const authorizeSpeech = internalQuery({
   args: { capability: v.string() },
-  returns: v.object({ voice: v.string() }),
+  returns: v.object({ gameId: v.id("games"), voice: v.string() }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
     if (authorized.game.gameType !== "SLOPLASH") {
@@ -16,6 +16,6 @@ export const authorizeToken = internalQuery({
     if (authorized.game.status === "LOBBY" || authorized.game.status === "FINAL_RESULTS") {
       throw new ConvexError("Narrator is not available in the current phase");
     }
-    return { voice: authorized.game.ttsVoice };
+    return { gameId: authorized.game._id, voice: authorized.game.ttsVoice };
   },
 });

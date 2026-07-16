@@ -53,7 +53,7 @@ async function createStartedSloplash() {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
     gameType: "SLOPLASH",
     hostName: "Host",
     hostSecret: "host-secret",
@@ -68,7 +68,7 @@ async function createStartedChatslop() {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
     gameType: "AI_CHAT_SHOWDOWN",
     hostName: "Host",
     hostSecret: "host-secret",
@@ -84,7 +84,7 @@ async function createTimersDisabledAiOnlySloplash() {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini", "anthropic/claude-haiku-4.5"],
+    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
     gameType: "SLOPLASH",
     hostParticipation: "DISPLAY_ONLY",
     hostSecret: "host-secret",
@@ -135,7 +135,7 @@ describe("AI response generation jobs", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "SLOPLASH",
       hostName: "Host",
       hostSecret: "host-secret",

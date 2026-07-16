@@ -11,9 +11,16 @@ interface TimerProps {
   serverNow?: string | null;
 }
 
-function computeRemaining(deadline: string | null, nowMs: number): number {
+export function computeRemainingSeconds(deadline: string | null, nowMs: number): number {
   if (!deadline) return 0;
-  return Math.max(0, Math.ceil((new Date(deadline).getTime() - nowMs) / 1000));
+  const deadlineMs = new Date(deadline).getTime();
+  if (!Number.isFinite(deadlineMs) || !Number.isFinite(nowMs)) return 0;
+  return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
+}
+
+export function computeTimerPercentage(remaining: number, total: number): number {
+  if (!Number.isFinite(remaining) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.min(100, Math.max(0, (remaining / total) * 100));
 }
 
 function getUrgency(pct: number): "urgent" | "warning" | "normal" {
@@ -27,29 +34,33 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [derivedTotal, setDerivedTotal] = useState(() => {
     if (totalOverride != null) return totalOverride;
-    const remaining = computeRemaining(deadline, Date.now());
-    return remaining > 45 ? 90 : 45;
+    return Math.max(1, computeRemainingSeconds(deadline, Date.now()));
   });
 
-  const syncClock = useCallback(() => {
+  const readSyncedNowMs = useCallback(() => {
     const clientNowMs = Date.now();
-    const nextNowMs =
-      syncRef.current.serverNowMs > 0
-        ? syncRef.current.serverNowMs + (clientNowMs - syncRef.current.receivedAtMs)
-        : clientNowMs;
+    return syncRef.current.serverNowMs > 0
+      ? syncRef.current.serverNowMs + (clientNowMs - syncRef.current.receivedAtMs)
+      : clientNowMs;
+  }, []);
 
+  const syncClock = useCallback(() => {
+    setNowMs(readSyncedNowMs());
+  }, [readSyncedNowMs]);
+
+  const syncPhase = useCallback(() => {
+    const nextNowMs = readSyncedNowMs();
     setNowMs(nextNowMs);
     if (totalOverride == null) {
-      const remaining = computeRemaining(deadline, nextNowMs);
-      setDerivedTotal(remaining > 45 ? 90 : 45);
+      setDerivedTotal(Math.max(1, computeRemainingSeconds(deadline, nextNowMs)));
     }
-  }, [deadline, totalOverride]);
+  }, [deadline, readSyncedNowMs, totalOverride]);
 
   const total = totalOverride ?? derivedTotal;
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      syncClock();
+      syncPhase();
     }, 0);
     if (!deadline || disabled) {
       return () => clearTimeout(timer);
@@ -61,7 +72,7 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
       clearTimeout(timer);
       clearInterval(interval);
     };
-  }, [deadline, disabled, syncClock]);
+  }, [deadline, disabled, syncClock, syncPhase]);
 
   useEffect(() => {
     if (!serverNow) return;
@@ -87,8 +98,8 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
     );
   }
 
-  const remaining = computeRemaining(deadline, nowMs);
-  const pct = total > 0 ? (remaining / total) * 100 : 0;
+  const remaining = computeRemainingSeconds(deadline, nowMs);
+  const pct = computeTimerPercentage(remaining, total);
   const isAdvancing = remaining === 0 && deadline != null;
   const urgency = getUrgency(pct);
 

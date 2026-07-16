@@ -132,6 +132,7 @@ export function Writing({
     try {
       await advanceConvexGame({
         capability: hostCapability,
+        expectedPhaseGeneration: game.version,
       });
       keepPending = true;
     } catch (cause) {

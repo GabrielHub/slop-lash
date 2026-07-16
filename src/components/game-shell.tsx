@@ -26,13 +26,13 @@ import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useSloplashEndMutation } from "@/hooks/use-game-runtime";
 import { NarratorIndicator } from "@/components/narrator-indicator";
 import {
-  buildGameStartEvent,
-  buildNextRoundEvent,
-  buildVotingStartEvent,
-  buildMatchupEvent,
-  buildVoteResultEvent,
-  buildRoundOverEvent,
-  buildHurryUpEvent,
+  buildGameStartNarration,
+  buildHurryUpNarration,
+  buildMatchupNarration,
+  buildNextRoundNarration,
+  buildRoundOverNarration,
+  buildVoteResultNarration,
+  buildVotingStartNarration,
   getVotablePrompts,
 } from "@/games/sloplash/narrator-events";
 
@@ -85,15 +85,13 @@ export function GameShell({
   const isHost = !!roomSession?.hostCapability || playerId === gameState?.hostPlayerId;
   const {
     narrate,
-    isConnected: narratorConnected,
+    isReady: narratorReady,
     isSpeaking: narratorSpeaking,
   } = useNarrator({
     roomCapability: roomSession?.hostCapability,
     isHost,
     ttsMode: gameState?.ttsMode ?? "OFF",
     gameStatus: gameState?.status,
-    players: gameState?.players ?? [],
-    totalRounds: gameState?.totalRounds ?? 3,
   });
 
   const gameStateRef = useRef<GameState | null>(gameState);
@@ -102,20 +100,24 @@ export function GameShell({
   }, [gameState]);
 
   const narratorPrevStatus = useRef(gameState?.status);
-  const prevNarratorConnected = useRef(false);
+  const prevNarratorReady = useRef(false);
   useEffect(() => {
-    if (!narratorConnected || prevNarratorConnected.current) return;
-    prevNarratorConnected.current = true;
+    if (!narratorReady) {
+      prevNarratorReady.current = false;
+      return;
+    }
+    if (prevNarratorReady.current) return;
+    prevNarratorReady.current = true;
     const gs = gameStateRef.current;
     if (gs?.status === "WRITING") {
       narratorPrevStatus.current = gs.status;
-      narrate(buildGameStartEvent(gs));
+      narrate(buildGameStartNarration(gs));
     }
-  }, [narratorConnected, narrate]);
+  }, [narratorReady, narrate]);
   useEffect(() => {
     const gs = gameStateRef.current;
     const status = gs?.status;
-    if (!status || !narratorConnected) return;
+    if (!status || !narratorReady) return;
     if (status === narratorPrevStatus.current) return;
     const prev = narratorPrevStatus.current;
     narratorPrevStatus.current = status;
@@ -124,22 +126,26 @@ export function GameShell({
 
     switch (status) {
       case "WRITING":
-        narrate(prev === "LOBBY" ? buildGameStartEvent(gs) : buildNextRoundEvent(gs));
+        narrate(prev === "LOBBY" ? buildGameStartNarration(gs) : buildNextRoundNarration(gs));
         break;
       case "VOTING":
-        narrate(buildVotingStartEvent(gs));
+        narrate(buildVotingStartNarration(gs));
         break;
       case "ROUND_RESULTS":
-        narrate(buildRoundOverEvent(gs));
+        narrate(buildRoundOverNarration(gs));
         break;
     }
-  }, [gameState?.status, narratorConnected, narrate]);
+  }, [gameState?.status, narratorReady, narrate]);
 
   const narratorPrevIndex = useRef<number | undefined>(undefined);
   const narratorPrevRevealing = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     const gs = gameStateRef.current;
-    if (!narratorConnected || !gs || gs.status !== "VOTING") return;
+    if (!narratorReady || !gs || gs.status !== "VOTING") {
+      narratorPrevIndex.current = undefined;
+      narratorPrevRevealing.current = undefined;
+      return;
+    }
     const idx = gs.votingPromptIndex;
     const revealing = gs.votingRevealing;
 
@@ -148,24 +154,24 @@ export function GameShell({
     narratorPrevRevealing.current = revealing;
 
     const votablePrompts = getVotablePrompts(gs);
-    const xml = revealing
-      ? buildVoteResultEvent(gs, votablePrompts)
-      : buildMatchupEvent(gs, votablePrompts);
-    if (xml) narrate(xml);
-  }, [gameState?.votingPromptIndex, gameState?.votingRevealing, narratorConnected, narrate]);
+    const cue = revealing
+      ? buildVoteResultNarration(gs, votablePrompts)
+      : buildMatchupNarration(gs, votablePrompts);
+    if (cue) narrate(cue);
+  }, [gameState?.votingPromptIndex, gameState?.votingRevealing, narratorReady, narrate]);
 
   useEffect(() => {
-    if (!narratorConnected || gameState?.status !== "WRITING" || !gameState.phaseDeadline) return;
+    if (!narratorReady || gameState?.status !== "WRITING" || !gameState.phaseDeadline) return;
     const deadline = new Date(gameState.phaseDeadline).getTime();
     const remaining = deadline - Date.now();
     const fireAt = remaining - 15_000;
     if (fireAt < 0) return;
 
     const timer = setTimeout(() => {
-      narrate(buildHurryUpEvent(15));
+      narrate(buildHurryUpNarration(15));
     }, fireAt);
     return () => clearTimeout(timer);
-  }, [gameState?.status, gameState?.phaseDeadline, narratorConnected, narrate]);
+  }, [gameState?.status, gameState?.phaseDeadline, narratorReady, narrate]);
 
   if (error) {
     return (
@@ -302,10 +308,10 @@ export function GameShell({
         <span className="font-mono font-bold text-xs tracking-widest text-ink-dim">
           {gameState.roomCode}
         </span>
-        {narratorConnected && (
+        {narratorReady && (
           <>
             <span className="text-edge-strong">|</span>
-            <NarratorIndicator state={narratorSpeaking ? "speaking" : "connected"} />
+            <NarratorIndicator state={narratorSpeaking ? "speaking" : "ready"} />
           </>
         )}
       </div>
@@ -388,12 +394,7 @@ export function GameShell({
           exit="exit"
         >
           {gameState.status === "LOBBY" && (
-            <Lobby
-              game={gameState}
-              isHost={isHost}
-              code={code}
-              compactStage={forceStageView}
-            />
+            <Lobby game={gameState} isHost={isHost} code={code} compactStage={forceStageView} />
           )}
           {gameState.status === "WRITING" && (
             <Writing

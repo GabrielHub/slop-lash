@@ -69,7 +69,7 @@ const castVoteRef = makeFunctionReference<
 
 const advanceRef = makeFunctionReference<
   "mutation",
-  { capability: string },
+  { capability: string; expectedPhaseGeneration: number },
   { phase: AdvancePhase }
 >("sloplash:advance");
 
@@ -190,6 +190,12 @@ async function loadCurrentState(backend: Backend, gameId: Id<"games">) {
   });
 }
 
+async function getPhaseGeneration(backend: Backend, gameId: Id<"games">): Promise<number> {
+  const game = await backend.run(async (ctx) => ctx.db.get("games", gameId));
+  if (!game) throw new Error("Expected game");
+  return game.phaseGeneration;
+}
+
 async function submitRemainingHumanResponses(
   backend: Backend,
   gameId: Id<"games">,
@@ -224,11 +230,53 @@ function votablePrompts(state: Awaited<ReturnType<typeof loadCurrentState>>) {
 }
 
 describe("Convex Slop-Lash state machine", () => {
+  test("guards manual advance retries by phase generation and makes early end idempotent", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const { host } = await createHumanGame(backend, {
+      timersDisabled: true,
+      totalRounds: 3,
+    });
+    const before = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    if (!before) throw new Error("Missing game");
+
+    await expect(
+      backend.mutation(api.sloplash.advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: before.phaseGeneration,
+      }),
+    ).resolves.toEqual({ phase: "VOTING" });
+    await expect(
+      backend.mutation(api.sloplash.advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: before.phaseGeneration,
+      }),
+    ).rejects.toThrow("Game phase already advanced");
+
+    const voting = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    expect(voting).toMatchObject({
+      phaseGeneration: before.phaseGeneration + 1,
+      status: "VOTING",
+      votingRevealing: false,
+    });
+
+    await expect(backend.mutation(endRef, { capability: host.capability })).resolves.toEqual({
+      success: true,
+    });
+    const ended = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    await expect(backend.mutation(endRef, { capability: host.capability })).resolves.toEqual({
+      success: true,
+    });
+    const retried = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    expect(retried?.phaseGeneration).toBe(ended?.phaseGeneration);
+    expect(retried?.status).toBe("FINAL_RESULTS");
+  });
+
   test("authenticates human responses, settles writing quorum, and queues per-prompt AI votes", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash"],
+      aiModelIds: ["google/gemini-3.1-flash-lite"],
       gameType: "SLOPLASH",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -599,7 +647,10 @@ describe("Convex Slop-Lash state machine", () => {
     ).toEqual([expect.objectContaining({ emoji: "fire", playerId: eligible[0]!._id })]);
 
     await expect(
-      backend.mutation(advanceRef, { capability: fixture.host.capability }),
+      backend.mutation(advanceRef, {
+        capability: fixture.host.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, fixture.host.gameId),
+      }),
     ).resolves.toEqual({ phase: "VOTING_SUBPHASE" });
     state = await loadCurrentState(backend, fixture.host.gameId);
     const secondPrompt = votablePrompts(state)[state.game.votingPromptIndex];
@@ -619,7 +670,10 @@ describe("Convex Slop-Lash state machine", () => {
       responseId: secondTarget._id,
     });
     await expect(
-      backend.mutation(advanceRef, { capability: fixture.host.capability }),
+      backend.mutation(advanceRef, {
+        capability: fixture.host.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, fixture.host.gameId),
+      }),
     ).resolves.toEqual({ phase: "VOTING_SUBPHASE" });
     state = await loadCurrentState(backend, fixture.host.gameId);
     const secondVotes = state.votes.filter((vote) => vote.promptId === secondPrompt._id);
@@ -630,7 +684,10 @@ describe("Convex Slop-Lash state machine", () => {
       state = await loadCurrentState(backend, fixture.host.gameId);
       if (state.game.status === "ROUND_RESULTS") break;
       if (state.game.votingRevealing) {
-        await backend.mutation(advanceRef, { capability: fixture.host.capability });
+        await backend.mutation(advanceRef, {
+          capability: fixture.host.capability,
+          expectedPhaseGeneration: state.game.phaseGeneration,
+        });
         continue;
       }
       const prompt = votablePrompts(state)[state.game.votingPromptIndex];
@@ -663,10 +720,16 @@ describe("Convex Slop-Lash state machine", () => {
       state.responses.reduce((sum, response) => sum + response.pointsEarned, 0),
     );
     await expect(
-      backend.mutation(advanceRef, { capability: fixture.sessions[1]!.capability }),
+      backend.mutation(advanceRef, {
+        capability: fixture.sessions[1]!.capability,
+        expectedPhaseGeneration: state.game.phaseGeneration,
+      }),
     ).rejects.toThrow("Host capability required");
     await expect(
-      backend.mutation(advanceRef, { capability: fixture.host.capability }),
+      backend.mutation(advanceRef, {
+        capability: fixture.host.capability,
+        expectedPhaseGeneration: state.game.phaseGeneration,
+      }),
     ).resolves.toEqual({ phase: "WRITING" });
     const roundTwoStage = await backend.query(stageRef, {
       capability: fixture.sessions[1]!.capability,
@@ -689,9 +752,9 @@ describe("Convex Slop-Lash state machine", () => {
         .flatMap((prompt) => prompt.responses)
         .flatMap((response) => response.reactions),
     ).toContainEqual(expect.objectContaining({ emoji: "fire", playerId: eligible[0]!._id }));
-    await expect(backend.mutation(endRef, { capability: fixture.host.capability })).rejects.toThrow(
-      "Cannot end game",
-    );
+    await expect(
+      backend.mutation(endRef, { capability: fixture.host.capability }),
+    ).resolves.toEqual({ success: true });
   });
 
   test("guards stale schedules and runs writing, vote, reveal, and display-host result deadlines", async () => {
@@ -707,7 +770,10 @@ describe("Convex Slop-Lash state machine", () => {
     const started = await loadCurrentState(staleBackend, stale.host.gameId);
     const oldDeadline = started.game.phaseDeadline;
     if (oldDeadline === undefined) throw new Error("Missing writing deadline");
-    await staleBackend.mutation(advanceRef, { capability: stale.host.capability });
+    await staleBackend.mutation(advanceRef, {
+      capability: stale.host.capability,
+      expectedPhaseGeneration: started.game.phaseGeneration,
+    });
     vi.setSystemTime(oldDeadline + 1);
     await expect(
       staleBackend.mutation(enforceDeadlineRef, {

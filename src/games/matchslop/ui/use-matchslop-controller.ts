@@ -132,9 +132,14 @@ export function useMatchSlopController(
       if (fixture) {
         await (path === "start" ? fixture.start() : fixture.advance());
       } else if (hostCapability) {
-        await (path === "start"
-          ? startGameMutation({ capability: hostCapability })
-          : advanceGameMutation({ capability: hostCapability }));
+        if (path === "start") {
+          await startGameMutation({ capability: hostCapability });
+        } else if (gameState) {
+          await advanceGameMutation({
+            capability: hostCapability,
+            expectedPhaseGeneration: gameState.version,
+          });
+        }
       }
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Action failed"));

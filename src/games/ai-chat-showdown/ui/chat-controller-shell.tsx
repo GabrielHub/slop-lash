@@ -22,6 +22,7 @@ import { useControllerStream } from "@/hooks/use-controller-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { isActiveCompetitor } from "@/games/core/game-rules";
 
 function phaseAccent(status: string) {
   switch (status) {
@@ -144,10 +145,7 @@ export function ChatControllerShell({ code }: { code: string }) {
   }, [gameState]);
 
   const isHost = hostCapability !== null;
-  const activePlayerCount =
-    gameState?.players.filter(
-      (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
-    ).length ?? 0;
+  const activePlayerCount = gameState?.players.filter(isActiveCompetitor).length ?? 0;
 
   // --- Actions ---
 
@@ -159,7 +157,11 @@ export function ChatControllerShell({ code }: { code: string }) {
       if (path === "start") {
         await startMutation({ capability: hostCapability });
       } else {
-        await advanceMutation({ capability: hostCapability });
+        if (!gameState) return;
+        await advanceMutation({
+          capability: hostCapability,
+          expectedPhaseGeneration: gameState.version,
+        });
       }
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Action failed"));

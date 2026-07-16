@@ -19,10 +19,6 @@ export type MatchSlopRoundBundle = {
   votes: Doc<"votes">[];
 };
 
-export function isActiveMatchSlopCompetitor(player: Doc<"players">): boolean {
-  return player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE";
-}
-
 export async function listMatchSlopPlayers(
   ctx: MatchSlopDatabaseCtx,
   gameId: Id<"games">,

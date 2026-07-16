@@ -1,5 +1,6 @@
 import { vOnCompleteArgs } from "@convex-dev/workpool";
 import { v } from "convex/values";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { sanitize } from "../src/lib/sanitize";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { DatabaseReader, MutationCtx } from "./_generated/server";
@@ -396,10 +397,7 @@ export const claimChatReplyJob = internalMutation({
       currentRound: game.currentRound,
       totalRounds: game.totalRounds,
       scoreboard: players
-        .filter(
-          (player): player is Doc<"players"> & { type: "HUMAN" | "AI" } =>
-            player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
-        )
+        .filter(isActiveCompetitor)
         .toSorted(
           (left, right) =>
             right.score - left.score ||

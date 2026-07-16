@@ -45,25 +45,33 @@ so scoring and recaps can distinguish them.
 
 ### Voice Readout
 
-Hosts can optionally enable Gemini text-to-speech. Voice readout does not
-participate in authoritative game state.
+Hosts can optionally enable low-latency speech through `openai/tts-1` on the
+Vercel AI Gateway. Matchups and countdowns use deterministic verbatim scripts.
+For transitions and results, `google/gemini-3.1-flash-lite` writes a short host
+line with narrator-specific minimal reasoning before TTS. A bounded FIFO keeps
+complete audio clips in event order. Narration does not participate in
+authoritative game state.
 
 ## AI Models
 
 AI players run through the Vercel AI Gateway, with at most one selected model
-per provider. The current catalog includes:
+per provider. Gameplay uses the following reasoning budget policy:
 
-- Google Gemini 3 Flash
-- Zhipu AI GLM-5.1
-- MiniMax M2.7
-- DeepSeek V3.2
-- OpenAI GPT-5.4 Mini
-- Moonshot AI Kimi K2.5
-- Xiaomi MiMo M2.5
-- xAI Grok 4.20
-- Perplexity Sonar
-- Alibaba Qwen 3.5 Flash
-- Anthropic Claude Haiku 4.5
+| Gateway model                  | Reasoning |
+| ------------------------------ | --------- |
+| `google/gemini-3.1-flash-lite` | High      |
+| `zai/glm-5.2`                  | Minimal   |
+| `deepseek/deepseek-v4-flash`   | Max       |
+| `openai/gpt-5.6-luna`          | Minimal   |
+| `moonshotai/kimi-k2.5`         | Medium    |
+| `xiaomi/mimo-v2.5-pro`         | High      |
+| `xai/grok-4.5`                 | Low       |
+| `alibaba/qwen3.5-flash`        | High      |
+| `anthropic/claude-haiku-4.5`   | Low       |
+
+The table describes AI-player reasoning. Narrator script generation overrides
+Gemini to minimal reasoning because latency matters more than depth for a
+24-word spoken transition.
 
 ## Architecture
 
@@ -95,11 +103,11 @@ restarts. See [Architecture](docs/architecture.md) for the full boundary map.
 
 - Vite Plus (`vp`)
 - Access to the linked Convex project
-- A Vercel AI Gateway key for AI players
-- Optional Gemini and Fal keys for TTS and MatchSlop image generation
+- A Vercel AI Gateway key for AI generation and narration
+- An optional Fal key for MatchSlop image generation
 
-The repository pins Node 24 and pnpm 11 through `devEngines`; use Vite Plus to
-select the runtime and install packages.
+The repository pins Node 24 through `devEngines` and pnpm 11 through
+`packageManager`; use Vite Plus to select the runtime and install packages.
 
 ### 1. Install dependencies
 
@@ -125,7 +133,6 @@ Omitting the value prompts securely and avoids saving secrets in shell history:
 ```bash
 vp exec convex env set AI_GATEWAY_API_KEY
 vp exec convex env set HOST_SECRET
-vp exec convex env set GEMINI_API_KEY
 vp exec convex env set FAL_KEY
 ```
 
@@ -156,7 +163,6 @@ These server-side values are configured with `convex env set`:
 | -------------------- | ----------------------------------------- |
 | `AI_GATEWAY_API_KEY` | AI SDK 7 access through Vercel AI Gateway |
 | `HOST_SECRET`        | Host room-creation authorization          |
-| `GEMINI_API_KEY`     | Optional Gemini TTS access                |
 | `FAL_KEY`            | Optional MatchSlop image generation       |
 
 Do not prefix secrets with `NEXT_PUBLIC_` or put them in client code.

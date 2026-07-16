@@ -125,7 +125,7 @@ export function DevChatslopPlayground() {
                   playerId: "gpt",
                 })}
                 playerName="GPT-5.4 Mini"
-                modelId="openai/gpt-5.4-mini"
+                modelId="openai/gpt-5.6-luna"
                 isMe={false}
                 allMessages={[]}
                 players={[]}
@@ -251,7 +251,7 @@ export function DevChatslopPlayground() {
               <ResultRow
                 text="Calorie-shaming every time you open the door."
                 playerName="GPT-5.4 Mini"
-                modelId="openai/gpt-5.4-mini"
+                modelId="openai/gpt-5.6-luna"
                 voteCount={0}
                 totalVotes={4}
                 points={0}

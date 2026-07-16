@@ -104,7 +104,7 @@ describe("room capabilities", () => {
     );
   });
 
-  test("rate-limits repeated join attempts against a valid room", async () => {
+  test("rate-limits repeated join attempts without blocking other player names", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
@@ -119,28 +119,74 @@ describe("room capabilities", () => {
       ).rejects.toThrow("That name is already taken");
     }
     await expect(
+      backend.action(api.rooms.join, { name: "Host", roomCode: host.roomCode }),
+    ).rejects.toThrow("Too many join attempts for this player name");
+    await expect(
       backend.action(api.rooms.join, { name: "Guest", roomCode: host.roomCode }),
-    ).rejects.toThrow("Too many join attempts for this room");
+    ).resolves.toMatchObject({ playerName: "Guest" });
     const saturated = await backend.run(async (ctx) =>
       ctx.db
         .query("roomJoinRateLimits")
-        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .withIndex("by_gameId_and_normalizedName", (index) =>
+          index.eq("gameId", host.gameId).eq("normalizedName", "host"),
+        )
         .unique(),
     );
     expect(saturated?.attempts).toBe(12);
+    const roomBuckets = await backend.run(async (ctx) =>
+      ctx.db
+        .query("roomJoinRateLimits")
+        .withIndex("by_gameId_and_normalizedName", (index) => index.eq("gameId", host.gameId))
+        .take(16),
+    );
+    expect(roomBuckets.map((bucket) => bucket.normalizedName)).toEqual(["host"]);
     await backend.run(async (ctx) => {
       await ctx.db.patch("games", host.gameId, { status: "WRITING" });
     });
     await expect(
-      backend.action(api.rooms.join, { name: "Guest", roomCode: host.roomCode }),
+      backend.action(api.rooms.join, { name: "Late Guest", roomCode: host.roomCode }),
     ).rejects.toThrow("Game already in progress");
     const unchanged = await backend.run(async (ctx) =>
       ctx.db
         .query("roomJoinRateLimits")
-        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .withIndex("by_gameId_and_normalizedName", (index) =>
+          index.eq("gameId", host.gameId).eq("normalizedName", "host"),
+        )
         .unique(),
     );
     expect(unchanged?.attempts).toBe(12);
+  });
+
+  test("uses the bounded roster instead of a stale playerCount when joining", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const host = await backend.action(api.rooms.create, {
+      gameType: "SLOPLASH",
+      hostName: "Host",
+      hostSecret: "host-secret",
+    });
+    await backend.run(async (ctx) => {
+      await ctx.db.patch("games", host.gameId, { playerCount: 8 });
+    });
+
+    await expect(
+      backend.action(api.rooms.join, { name: "Guest", roomCode: host.roomCode }),
+    ).resolves.toMatchObject({ playerName: "Guest" });
+    const game = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
+    expect(game?.playerCount).toBe(2);
+  });
+
+  test("rejects a host name that conflicts with a selected AI player", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    await expect(
+      backend.action(api.rooms.create, {
+        aiModelIds: ["google/gemini-3.1-flash-lite"],
+        gameType: "SLOPLASH",
+        hostName: "gemini",
+        hostSecret: "host-secret",
+      }),
+    ).rejects.toThrow("Host name conflicts with a selected AI player");
   });
 
   test("rejects malformed room codes before indexed room lookup", async () => {
@@ -165,7 +211,7 @@ describe("room capabilities", () => {
       hostName: "Should not become a player",
       hostParticipation: "PLAYER",
       hostSecret: "host-secret",
-      personaModelId: "openai/gpt-5.4-mini",
+      personaModelId: "openai/gpt-5.6-luna",
       seekerIdentity: "OTHER",
       personaIdentity: "WOMAN",
     });
@@ -193,7 +239,7 @@ describe("room capabilities", () => {
       backend.action(api.rooms.create, {
         gameType: "MATCHSLOP",
         hostSecret: "host-secret",
-        personaModelId: "openai/gpt-5.4-mini",
+        personaModelId: "openai/gpt-5.6-luna",
       }),
     ).rejects.toThrow("MatchSlop requires seekerIdentity and personaIdentity");
   });

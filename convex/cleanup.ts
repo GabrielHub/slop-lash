@@ -183,7 +183,7 @@ async function deleteGameData(
       .take(limit),
     ctx.db
       .query("roomJoinRateLimits")
-      .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
+      .withIndex("by_gameId_and_normalizedName", (index) => index.eq("gameId", game._id))
       .take(limit),
     ctx.db
       .query("playerSessions")

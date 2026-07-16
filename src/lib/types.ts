@@ -1,9 +1,4 @@
-export type GameStatus =
-  | "LOBBY"
-  | "WRITING"
-  | "VOTING"
-  | "ROUND_RESULTS"
-  | "FINAL_RESULTS";
+export type GameStatus = "LOBBY" | "WRITING" | "VOTING" | "ROUND_RESULTS" | "FINAL_RESULTS";
 
 export type PlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
@@ -14,7 +9,7 @@ export type ParticipationStatus = "ACTIVE" | "DISCONNECTED";
 
 export type TtsMode = "OFF" | "ON";
 
-/** A Gemini voice name (e.g. "Puck", "Zephyr") or "RANDOM". */
+/** A Gateway TTS voice ID (e.g. "nova", "onyx") or "RANDOM". */
 export type TtsVoice = string;
 
 export interface GamePlayer {

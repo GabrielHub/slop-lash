@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { z } from "zod";
 import { getGatewayModel } from "@/lib/ai-gateway";
+import { getGameplayReasoningSettings } from "@/lib/ai-reasoning";
 import { calculateCostUsd } from "@/lib/models";
 import { FORFEIT_MARKER } from "@/games/core/constants";
 
@@ -27,8 +28,6 @@ export function extractUsage(
   };
 }
 
-export type JSONish = Record<string, string | Record<string, string>>;
-
 type SerializedLogValue =
   | string
   | number
@@ -36,16 +35,6 @@ type SerializedLogValue =
   | null
   | SerializedLogValue[]
   | { [key: string]: SerializedLogValue };
-
-export function getLowReasoningProviderOptions(
-  modelId: string,
-): Record<string, JSONish> | undefined {
-  const provider = modelId.split("/")[0];
-  if (provider === "anthropic") return { anthropic: { effort: "low" } };
-  if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
-  if (provider === "openai") return { openai: { reasoningEffort: "low" } };
-  return undefined;
-}
 
 export function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
@@ -234,7 +223,7 @@ export async function generateJoke(
       model: getGatewayModel(modelId, apiKey),
       instructions: JOKE_SYSTEM_PROMPT,
       prompt: `<prompt>${escapeXml(promptText)}</prompt>`,
-      providerOptions: getLowReasoningProviderOptions(modelId),
+      ...getGameplayReasoningSettings(modelId),
     });
     const elapsed = Date.now() - t0;
     const text = result.text.trim().replace(/^["']|["']$/g, "");
@@ -334,7 +323,7 @@ export async function aiVoteNWay(
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
       abortSignal: options.abortSignal,
       timeout: options.timeout,
-      providerOptions: getLowReasoningProviderOptions(modelId),
+      ...getGameplayReasoningSettings(modelId),
     });
 
     const elapsed = Date.now() - t0;

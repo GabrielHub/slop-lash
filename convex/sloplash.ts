@@ -11,6 +11,7 @@ import {
 } from "./sloplashEngine";
 import { sanitize } from "../src/lib/sanitize";
 import { isForfeitMarker } from "../src/games/core/constants";
+import { requireExpectedPhaseGeneration } from "./gamePhase";
 
 const advanceResultValidator = v.union(
   v.literal("FINAL_RESULTS"),
@@ -169,13 +170,17 @@ export const castVote = mutation({
 });
 
 export const advance = mutation({
-  args: { capability: v.string() },
+  args: { capability: v.string(), expectedPhaseGeneration: v.number() },
   returns: v.object({ phase: advanceResultValidator }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
     if (authorized.game.gameType !== "SLOPLASH") {
       throw new ConvexError("This action is only available for Slop-Lash");
     }
+    requireExpectedPhaseGeneration(
+      authorized.game.phaseGeneration,
+      args.expectedPhaseGeneration,
+    );
     const phase = await forceAdvanceSloplash(ctx, authorized.game, Date.now());
     if (!phase) throw new ConvexError("Cannot advance from current phase");
     return { phase };
@@ -187,7 +192,8 @@ export const end = mutation({
   returns: v.object({ success: v.literal(true) }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
-    if (!(await endSloplashEarly(ctx, authorized.game, Date.now()))) {
+    const result = await endSloplashEarly(ctx, authorized.game, Date.now());
+    if (result === "INVALID") {
       throw new ConvexError("Cannot end game in current state");
     }
     return { success: true as const };

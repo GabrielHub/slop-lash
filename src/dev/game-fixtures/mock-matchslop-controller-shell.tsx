@@ -23,6 +23,7 @@ import {
 import type { ControllerGameState } from "@/lib/controller-types";
 import type { GameState } from "@/lib/types";
 import { useTheme } from "@/components/theme-provider";
+import { isActiveCompetitor } from "@/games/core/game-rules";
 import type { MockScenario } from "./scenarios";
 
 interface MockMatchSlopControllerShellProps {
@@ -96,9 +97,7 @@ function deriveControllerState(
   const currentRound = game.rounds[0] ?? null;
   const modeState = asMatchSlopModeState(game);
   const activePlayerIds = new Set(
-    game.players
-      .filter((player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE")
-      .map((player) => player.id),
+    game.players.filter(isActiveCompetitor).map((player) => player.id),
   );
   const activeTotal = activePlayerIds.size;
   const profile = modeState.profile ?? null;

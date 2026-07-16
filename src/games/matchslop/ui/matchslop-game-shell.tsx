@@ -20,6 +20,7 @@ import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { playSound, preloadSounds } from "@/lib/sounds";
 import type { GameState } from "@/lib/types";
+import { isActiveCompetitor } from "@/games/core/game-rules";
 import { MATCHSLOP_INITIAL_MOOD, clampMatchSlopMood } from "../types";
 
 /* ─── Local Types ─── */
@@ -234,10 +235,7 @@ export function MatchSlopGameShell({
   const isComebackRound = comebackRound != null && gameState?.currentRound === comebackRound;
   const isActiveComebackRound = isComebackRound && gameState?.status !== "FINAL_RESULTS";
   const activePlayers = useMemo(
-    () =>
-      gameState?.players.filter(
-        (player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
-      ) ?? [],
+    () => gameState?.players.filter(isActiveCompetitor) ?? [],
     [gameState?.players],
   );
   const activePlayerIdSet = useMemo(
@@ -482,8 +480,11 @@ export function MatchSlopGameShell({
         if (fixture) {
           await fixture.advance();
         } else {
-          if (!hostCapability) return;
-          await advanceGameMutation({ capability: hostCapability });
+          if (!hostCapability || !gameState) return;
+          await advanceGameMutation({
+            capability: hostCapability,
+            expectedPhaseGeneration: gameState.version,
+          });
         }
         if (gameState?.status === "ROUND_RESULTS") {
           playSound("round-transition");

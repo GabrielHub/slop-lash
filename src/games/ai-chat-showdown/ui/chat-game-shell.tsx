@@ -284,13 +284,16 @@ export function ChatGameShell({
   }
 
   async function handleNextRound() {
-    if (advancePendingRef.current || !hostCapability) return;
+    if (advancePendingRef.current || !hostCapability || !gameState) return;
     advancePendingRef.current = true;
     setAdvancing(true);
     setActionError("");
     playSound("round-transition");
     try {
-      await advanceMutation({ capability: hostCapability });
+      await advanceMutation({
+        capability: hostCapability,
+        expectedPhaseGeneration: gameState.version,
+      });
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Failed to advance"));
       advancePendingRef.current = false;
@@ -314,12 +317,15 @@ export function ChatGameShell({
   }
 
   async function handleForceAdvance() {
-    if (!hostCapability || advancePendingRef.current) return;
+    if (!hostCapability || advancePendingRef.current || !gameState) return;
     advancePendingRef.current = true;
     setAdvancing(true);
     setActionError("");
     try {
-      await advanceMutation({ capability: hostCapability });
+      await advanceMutation({
+        capability: hostCapability,
+        expectedPhaseGeneration: gameState.version,
+      });
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Action failed"));
       advancePendingRef.current = false;

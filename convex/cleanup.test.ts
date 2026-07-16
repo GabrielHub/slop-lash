@@ -137,7 +137,7 @@ async function seedGameWithDependents(
     });
     await ctx.db.insert("gameModelUsage", {
       gameId,
-      modelId: "google/gemini-3-flash",
+      modelId: "google/gemini-3.1-flash-lite",
       inputTokens: 1,
       outputTokens: 1,
       costUsd: 0.001,

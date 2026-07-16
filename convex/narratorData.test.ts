@@ -10,9 +10,11 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
-const authorizeToken = makeFunctionReference<"query", { capability: string }, { voice: string }>(
-  "narratorData:authorizeToken",
-);
+const authorizeSpeech = makeFunctionReference<
+  "query",
+  { capability: string },
+  { gameId: string; voice: string }
+>("narratorData:authorizeSpeech");
 
 function createTestBackend() {
   const backend = convexTest(schema, modules);
@@ -24,7 +26,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("narrator token authorization", () => {
+describe("narrator speech authorization", () => {
   test("requires an active Slop-Lash game with narrator enabled and a host capability", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
@@ -34,7 +36,7 @@ describe("narrator token authorization", () => {
       hostSecret: "host-secret",
       timersDisabled: true,
       ttsMode: "ON",
-      ttsVoice: "Puck",
+      ttsVoice: "nova",
     });
     const guestOne = await backend.action(api.rooms.join, {
       name: "Guest One",
@@ -45,22 +47,23 @@ describe("narrator token authorization", () => {
       roomCode: host.roomCode,
     });
 
-    await expect(backend.query(authorizeToken, { capability: host.capability })).rejects.toThrow(
+    await expect(backend.query(authorizeSpeech, { capability: host.capability })).rejects.toThrow(
       "Narrator is not available in the current phase",
     );
 
     await backend.mutation(api.lobby.start, { capability: host.capability });
     await expect(
-      backend.query(authorizeToken, { capability: guestOne.capability }),
+      backend.query(authorizeSpeech, { capability: guestOne.capability }),
     ).rejects.toThrow("Host capability required");
-    await expect(backend.query(authorizeToken, { capability: host.capability })).resolves.toEqual({
-      voice: "Puck",
+    await expect(backend.query(authorizeSpeech, { capability: host.capability })).resolves.toEqual({
+      gameId: host.gameId,
+      voice: "nova",
     });
 
     await backend.run(async (ctx) => {
       await ctx.db.patch("games", host.gameId, { status: "FINAL_RESULTS" });
     });
-    await expect(backend.query(authorizeToken, { capability: host.capability })).rejects.toThrow(
+    await expect(backend.query(authorizeSpeech, { capability: host.capability })).rejects.toThrow(
       "Narrator is not available in the current phase",
     );
   });
@@ -77,7 +80,7 @@ describe("narrator token authorization", () => {
       await ctx.db.patch("games", host.gameId, { status: "WRITING" });
     });
 
-    await expect(backend.query(authorizeToken, { capability: host.capability })).rejects.toThrow(
+    await expect(backend.query(authorizeSpeech, { capability: host.capability })).rejects.toThrow(
       "This game mode does not support narrator",
     );
   });

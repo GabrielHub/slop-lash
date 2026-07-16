@@ -1,6 +1,7 @@
 import { generateText, streamText } from "ai";
 import { z } from "zod";
 import { getGatewayModel } from "@/lib/ai-gateway";
+import { getGameplayReasoningSettings } from "@/lib/ai-reasoning";
 import { calculateCostUsd } from "@/lib/models";
 import { REACTION_EMOJIS, REACTION_EMOJI_KEYS, type ReactionEmoji } from "@/lib/reactions";
 import { FORFEIT_MARKER } from "./scoring";
@@ -72,23 +73,6 @@ function extractUsage(
   };
 }
 
-/**
- * Returns provider-specific options to minimize reasoning token usage.
- * Only applies to models that support configurable reasoning effort/budget.
- */
-type JSONish = Record<string, string | Record<string, string>>;
-
-function getLowReasoningProviderOptions(modelId: string): Record<string, JSONish> | undefined {
-  const provider = modelId.split("/")[0];
-  if (provider === "anthropic") return { anthropic: { effort: "low" } };
-  if (provider === "google") return { google: { thinkingConfig: { thinkingLevel: "minimal" } } };
-  if (provider === "openai") return { openai: { reasoningEffort: "low" } };
-  // xai: no documented low-effort reasoning options
-  // deepseek: only enable/disable, no effort levels — leave default
-  // moonshotai, minimax, zai, xiaomi, alibaba: no documented reasoning options
-  return undefined;
-}
-
 /** Format an error for logging, including HTTP status if available. */
 function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
@@ -133,12 +117,12 @@ export async function generateJoke(
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const t0 = Date.now();
   try {
-    const providerOptions = getLowReasoningProviderOptions(modelId);
+    const reasoningSettings = getGameplayReasoningSettings(modelId);
     const result = await generateText({
       model: getGatewayModel(modelId, apiKey),
       instructions: JOKE_SYSTEM_PROMPT,
       prompt: buildJokePrompt(promptText, history),
-      providerOptions,
+      ...reasoningSettings,
     });
     const elapsed = Date.now() - t0;
     const text = result.text.trim().replace(/^["']|["']$/g, "");
@@ -237,7 +221,7 @@ export async function aiVote(
     const first = showAFirst ? responseA : responseB;
     const second = showAFirst ? responseB : responseA;
 
-    const providerOptions = getLowReasoningProviderOptions(modelId);
+    const reasoningSettings = getGameplayReasoningSettings(modelId);
 
     // Plain text generation — no Output.object() or structured output mode.
     // Every model that can write jokes can output simple JSON in plain text.
@@ -245,7 +229,7 @@ export async function aiVote(
       model: getGatewayModel(modelId, apiKey),
       instructions: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
-      providerOptions,
+      ...reasoningSettings,
     });
 
     const elapsed = Date.now() - t0;
@@ -296,12 +280,12 @@ export function generateWinnerTagline(
   onUsage: (usage: AiUsage) => void | Promise<void>,
   apiKey: string,
 ) {
-  const providerOptions = getLowReasoningProviderOptions(modelId);
+  const reasoningSettings = getGameplayReasoningSettings(modelId);
   return streamText({
     model: getGatewayModel(modelId, apiKey),
     instructions: TAGLINE_SYSTEM_PROMPT,
     prompt: `<winner>${escapeXml(playerName)}</winner>\n<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>\n<context>\n${escapeXml(context)}\n</context>`,
-    providerOptions,
+    ...reasoningSettings,
     onEnd: async ({ usage }) => {
       await onUsage(extractUsage(modelId, usage));
     },

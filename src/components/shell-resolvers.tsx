@@ -15,9 +15,19 @@ import { RoomShellErrorBoundary } from "@/components/room-shell-error-boundary";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { persistRoomSessionResult } from "@/lib/convex-room-client";
+import {
+  clearRoomCapabilityFromUrl,
+  readRoomCapabilityFragment,
+} from "@/lib/room-capability-link";
 import { api } from "../../convex/_generated/api";
 
 const subscribeToNothing = () => () => {};
+const subscribeToHashChanges = (listener: () => void) => {
+  window.addEventListener("hashchange", listener);
+  return () => window.removeEventListener("hashchange", listener);
+};
+const getHashCapabilitySnapshot = () => readRoomCapabilityFragment(window.location.hash);
+const getServerHashCapabilitySnapshot = () => null;
 
 // The stored room session reads as null until hydration, which is indistinguishable
 // from "no session" on the server. Without this, every normal room load paints the
@@ -34,7 +44,12 @@ function useResolvedRoomGameType(code: string, requestedGameType?: GameType) {
   const roomSession = useConvexRoomSession(code);
   const hydrated = useHydrated();
   const searchParams = useSearchParams();
-  const capability = searchParams.get("capability");
+  const fragmentCapability = useSyncExternalStore(
+    subscribeToHashChanges,
+    getHashCapabilitySnapshot,
+    getServerHashCapabilitySnapshot,
+  );
+  const capability = searchParams.get("capability") ?? fragmentCapability;
   const rejoinRoom = useMutation(api.rooms.rejoin);
   const attemptedKeyRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +69,7 @@ function useResolvedRoomGameType(code: string, requestedGameType?: GameType) {
     void rejoinRoom({ capability, roomCode: code })
       .then((result) => {
         persistRoomSessionResult(result);
-        const url = new URL(window.location.href);
-        url.searchParams.delete("capability");
+        const url = clearRoomCapabilityFromUrl(new URL(window.location.href));
         window.history.replaceState(window.history.state, "", url);
       })
       .catch((cause: unknown) => {
@@ -65,8 +79,7 @@ function useResolvedRoomGameType(code: string, requestedGameType?: GameType) {
 
   useEffect(() => {
     if (!capability || !capabilityMatches) return;
-    const url = new URL(window.location.href);
-    url.searchParams.delete("capability");
+    const url = clearRoomCapabilityFromUrl(new URL(window.location.href));
     window.history.replaceState(window.history.state, "", url);
   }, [capability, capabilityMatches]);
 

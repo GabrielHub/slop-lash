@@ -9,58 +9,59 @@ export interface AIModel {
   inputPer1M: number;
   /** Cost per 1M output tokens in USD */
   outputPer1M: number;
+  /** Gameplay reasoning policy. Enforced when the provider exposes a control. */
+  reasoningLevel: ReasoningLevel;
+  /** Exact native budget when this gateway provider lacks portable AI SDK reasoning. */
+  nativeReasoningBudgetTokens?: number;
 }
+
+export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "max";
 
 export const LEGACY_MODEL_NAME = "Legacy Model";
 export const LEGACY_MODEL_SHORT_NAME = "Legacy";
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: "google/gemini-3-flash",
-    name: "Gemini 3 Flash",
+    id: "google/gemini-3.1-flash-lite",
+    name: "Gemini 3.1 Flash Lite",
     shortName: "Gemini",
     provider: "Google",
     icon: "/icons/gemini-color.svg",
-    inputPer1M: 0.5,
-    outputPer1M: 3.0,
+    inputPer1M: 0.25,
+    outputPer1M: 1.5,
+    reasoningLevel: "high",
   },
   {
-    id: "zai/glm-5.1",
-    name: "GLM-5.1",
+    id: "zai/glm-5.2",
+    name: "GLM-5.2",
     shortName: "GLM",
     provider: "Zhipu AI",
     icon: "/icons/zai-light.svg",
     iconDark: "/icons/zai-dark.svg",
-    inputPer1M: 1.3,
-    outputPer1M: 4.3,
+    inputPer1M: 1.4,
+    outputPer1M: 4.4,
+    reasoningLevel: "minimal",
   },
   {
-    id: "minimax/minimax-m2.7",
-    name: "MiniMax M2.7",
-    shortName: "MiniMax",
-    provider: "MiniMax",
-    icon: "/icons/minimax-color.svg",
-    inputPer1M: 0.3,
-    outputPer1M: 1.2,
-  },
-  {
-    id: "deepseek/deepseek-v3.2-thinking",
-    name: "DeepSeek V3.2",
+    id: "deepseek/deepseek-v4-flash",
+    name: "DeepSeek V4 Flash",
     shortName: "DeepSeek",
     provider: "DeepSeek",
     icon: "/icons/deepseek-color.svg",
-    inputPer1M: 0.62,
-    outputPer1M: 1.85,
+    inputPer1M: 0.14,
+    outputPer1M: 0.28,
+    reasoningLevel: "max",
   },
   {
-    id: "openai/gpt-5.4-mini",
-    name: "GPT-5.4 Mini",
+    id: "openai/gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
     shortName: "GPT",
     provider: "OpenAI",
     icon: "/icons/openai-light.svg",
     iconDark: "/icons/openai-dark.svg",
-    inputPer1M: 0.75,
-    outputPer1M: 4.5,
+    inputPer1M: 1.0,
+    outputPer1M: 6.0,
+    reasoningLevel: "minimal",
   },
   {
     id: "moonshotai/kimi-k2.5",
@@ -71,35 +72,30 @@ export const AI_MODELS: AIModel[] = [
     iconDark: "/icons/moonshot-dark.svg",
     inputPer1M: 0.6,
     outputPer1M: 3.0,
+    reasoningLevel: "medium",
+    nativeReasoningBudgetTokens: 2_048,
   },
   {
-    id: "xiaomi/mimo-v2.5",
-    name: "MiMo M2.5",
+    id: "xiaomi/mimo-v2.5-pro",
+    name: "MiMo V2.5 Pro",
     shortName: "MiMo",
     provider: "Xiaomi",
     icon: "/icons/xiaomimimo-light.svg",
     iconDark: "/icons/xiaomimimo-dark.svg",
-    inputPer1M: 0.14,
-    outputPer1M: 0.28,
+    inputPer1M: 0.435,
+    outputPer1M: 0.87,
+    reasoningLevel: "high",
   },
   {
-    id: "xai/grok-4.20-non-reasoning",
-    name: "Grok 4.20",
+    id: "xai/grok-4.5",
+    name: "Grok 4.5",
     shortName: "Grok",
     provider: "xAI",
     icon: "/icons/grok-light.svg",
     iconDark: "/icons/grok-dark.svg",
-    inputPer1M: 1.25,
-    outputPer1M: 2.5,
-  },
-  {
-    id: "perplexity/sonar",
-    name: "Perplexity Sonar",
-    shortName: "Sonar",
-    provider: "Perplexity",
-    icon: "/icons/perplexity-color.svg",
-    inputPer1M: 1.0,
-    outputPer1M: 1.0,
+    inputPer1M: 2.0,
+    outputPer1M: 6.0,
+    reasoningLevel: "low",
   },
   {
     id: "alibaba/qwen3.5-flash",
@@ -109,6 +105,8 @@ export const AI_MODELS: AIModel[] = [
     icon: "/icons/qwen-color.svg",
     inputPer1M: 0.1,
     outputPer1M: 0.4,
+    reasoningLevel: "high",
+    nativeReasoningBudgetTokens: 4_096,
   },
   {
     id: "anthropic/claude-haiku-4.5",
@@ -118,6 +116,7 @@ export const AI_MODELS: AIModel[] = [
     icon: "/icons/claude-color.svg",
     inputPer1M: 1.0,
     outputPer1M: 5.0,
+    reasoningLevel: "low",
   },
 ];
 

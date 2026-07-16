@@ -2,12 +2,9 @@
 
 import { generateText } from "ai";
 import { v } from "convex/values";
-import {
-  escapeXml,
-  extractUsage,
-  getLowReasoningProviderOptions,
-} from "../src/games/ai-chat-showdown/ai";
+import { escapeXml, extractUsage } from "../src/games/ai-chat-showdown/ai";
 import { getGatewayModel } from "../src/lib/ai-gateway";
+import { getGameplayReasoningSettings } from "../src/lib/ai-reasoning";
 import { internalAction } from "./_generated/server";
 import { requireAiGatewayApiKey } from "./aiGateway";
 import {
@@ -68,7 +65,7 @@ export async function generateChatReply(
     instructions: REPLY_INSTRUCTIONS,
     prompt: buildChatReplyPrompt(context),
     maxOutputTokens: 60,
-    providerOptions: getLowReasoningProviderOptions(context.modelId),
+    ...getGameplayReasoningSettings(context.modelId),
   });
 
   return {

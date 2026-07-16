@@ -11,6 +11,7 @@ import {
   requireHostCapability,
 } from "./capabilities";
 import { createRoomCode, normalizePlayerName, normalizeRoomCode } from "./roomInput";
+import { maxPlayersByGameType } from "./gameLimits";
 import { getAiModel, selectUniqueModelsByProvider } from "./modelCatalog";
 import {
   gameStatusValidator,
@@ -119,12 +120,15 @@ export const create = action({
     const ttsMode = args.gameType === "SLOPLASH" ? (args.ttsMode ?? "OFF") : "OFF";
     const aiPlayers = selectUniqueModelsByProvider(args.aiModelIds ?? [])
       .filter((model) => args.gameType !== "MATCHSLOP" || model.id !== personaModelId)
-      .slice(0, 8 - (hostParticipation === "PLAYER" ? 1 : 0))
+      .slice(0, maxPlayersByGameType[args.gameType] - (hostParticipation === "PLAYER" ? 1 : 0))
       .map((model) => ({
         modelId: model.id,
         name: model.shortName,
         normalizedName: model.shortName.toLocaleLowerCase("en-US"),
       }));
+    if (host && aiPlayers.some((player) => player.normalizedName === host.normalizedName)) {
+      throw new ConvexError("Host name conflicts with a selected AI player");
+    }
 
     for (let attempt = 0; attempt < MAX_ROOM_CODE_ATTEMPTS; attempt += 1) {
       const roomCode = createRoomCode();

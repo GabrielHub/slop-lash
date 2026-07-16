@@ -9,6 +9,7 @@ import {
   settleMatchSlopQuorum,
   submitHumanResponse,
 } from "./matchslopRoundEngine";
+import { requireExpectedPhaseGeneration } from "./gamePhase";
 
 const phaseValidator = v.union(
   v.literal("FINAL_RESULTS"),
@@ -65,11 +66,15 @@ export const castVote = mutation({
 });
 
 export const advance = mutation({
-  args: { capability: v.string() },
+  args: { capability: v.string(), expectedPhaseGeneration: v.number() },
   returns: v.object({ phase: phaseValidator }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
     requireMatchSlop(authorized.game.gameType);
+    requireExpectedPhaseGeneration(
+      authorized.game.phaseGeneration,
+      args.expectedPhaseGeneration,
+    );
     const phase = await forceAdvanceMatchSlop(ctx, authorized.game, Date.now());
     if (!phase) throw new ConvexError("Cannot advance from current phase");
     return { phase };

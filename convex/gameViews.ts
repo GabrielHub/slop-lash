@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import { query } from "./_generated/server";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { isPromptVotable } from "../src/games/core/votability";
 import { requireCapability } from "./capabilities";
 import {
@@ -240,9 +241,7 @@ export const controller = query({
     const firstPrompt = currentRound?.prompts[0] ?? null;
     const profileOptions = profile?.prompts ?? [];
     const activePlayerIds = new Set(
-      players
-        .filter((player) => player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE")
-        .map((player) => player._id),
+      players.filter(isActiveCompetitor).map((player) => player._id),
     );
     const matchslop =
       authorized.game.gameType === "MATCHSLOP" && matchState
@@ -291,10 +290,7 @@ export const controller = query({
                         .filter((response) => response.promptId === firstPrompt._id)
                         .map((response) => response.playerId),
                     ).size,
-                    total: players.filter(
-                      (player) =>
-                        player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE",
-                    ).length,
+                    total: players.filter(isActiveCompetitor).length,
                   }
                 : null,
             seekerIdentity: matchState.seekerIdentity,

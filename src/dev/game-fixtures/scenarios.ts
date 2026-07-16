@@ -42,7 +42,7 @@ function player(
     id,
     name,
     type,
-    modelId: type === "AI" ? "openai/gpt-5.4-mini" : null,
+    modelId: type === "AI" ? "openai/gpt-5.6-luna" : null,
     idleRounds: 0,
     score: 0,
     humorRating: 1.0,
@@ -61,7 +61,7 @@ function basePlayers(): GamePlayer[] {
     player(AI_ID, "GPT Slopbot", "AI", {
       score: 77,
       humorRating: 1.02,
-      modelId: "openai/gpt-5.4-mini",
+      modelId: "openai/gpt-5.6-luna",
     }),
   ];
 }
@@ -69,7 +69,7 @@ function basePlayers(): GamePlayer[] {
 function modelUsages(): GameModelUsage[] {
   return [
     {
-      modelId: "openai/gpt-5.4-mini",
+      modelId: "openai/gpt-5.6-luna",
       inputTokens: 8421,
       outputTokens: 3912,
       costUsd: 0.0724,
@@ -502,7 +502,7 @@ function buildFinalResults(): MockScenario {
       aiCostUsd: 0.1448,
       modelUsages: [
         {
-          modelId: "openai/gpt-5.4-mini",
+          modelId: "openai/gpt-5.6-luna",
           inputTokens: 16842,
           outputTokens: 7824,
           costUsd: 0.1448,
@@ -544,7 +544,7 @@ function chatPlayer(
     id,
     name,
     type,
-    modelId: type === "AI" ? "openai/gpt-5.4-mini" : null,
+    modelId: type === "AI" ? "openai/gpt-5.6-luna" : null,
     idleRounds: 0,
     score: 0,
     humorRating: 1.0,
@@ -563,7 +563,7 @@ function chatBasePlayers(): GamePlayer[] {
     chatPlayer(CHAT_AI_ID, "Claude Bot", "AI", {
       score: 55,
       humorRating: 1.0,
-      modelId: "openai/gpt-5.4-mini",
+      modelId: "openai/gpt-5.6-luna",
     }),
   ];
 }
@@ -593,7 +593,7 @@ function makeChatGame(overrides: Partial<GameState>): GameState {
     aiCostUsd: 0.035,
     modelUsages: [
       {
-        modelId: "openai/gpt-5.4-mini",
+        modelId: "openai/gpt-5.6-luna",
         inputTokens: 4200,
         outputTokens: 1900,
         costUsd: 0.035,
@@ -863,7 +863,7 @@ function buildChatFinalResults(): MockScenario {
       aiCostUsd: 0.105,
       modelUsages: [
         {
-          modelId: "openai/gpt-5.4-mini",
+          modelId: "openai/gpt-5.6-luna",
           inputTokens: 12600,
           outputTokens: 5700,
           costUsd: 0.105,
@@ -992,7 +992,7 @@ function makeMatchSlopGame(overrides: Partial<GameState>): GameState {
     id: "game-match-mock",
     roomCode: "DATE",
     gameType: "MATCHSLOP",
-    personaModelId: "openai/gpt-5.4-mini",
+    personaModelId: "openai/gpt-5.6-luna",
     modeState: { ...BASE_MATCHSLOP_MODE_STATE },
     status: "LOBBY",
     currentRound: 1,
@@ -1011,7 +1011,7 @@ function makeMatchSlopGame(overrides: Partial<GameState>): GameState {
     aiCostUsd: 0.011,
     modelUsages: [
       {
-        modelId: "openai/gpt-5.4-mini",
+        modelId: "openai/gpt-5.6-luna",
         inputTokens: 900,
         outputTokens: 420,
         costUsd: 0.011,

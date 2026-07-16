@@ -5,6 +5,8 @@ import { internalMutation, mutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireHostCapability, requirePlayerCapability } from "./capabilities";
 import { getRandomPrompts } from "../src/games/core/prompts";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
+import { requireContinuingPlayers, requireExpectedPhaseGeneration } from "./gamePhase";
 import { sanitize } from "../src/lib/sanitize";
 import { isForfeitMarker } from "../src/games/core/constants";
 import {
@@ -66,10 +68,6 @@ function requireActiveHuman(player: Doc<"players">): void {
   if (player.participationStatus !== "ACTIVE") {
     throw new ConvexError("Disconnected players cannot perform this action");
   }
-}
-
-function isActiveCompetitor(player: Doc<"players">): boolean {
-  return player.type !== "SPECTATOR" && player.participationStatus === "ACTIVE";
 }
 
 async function queueGenerationJob(
@@ -467,6 +465,7 @@ async function createNextRound(ctx: MutationCtx, game: Doc<"games">, now: number
       .take(MAX_ROUNDS),
   ]);
   const participants = players.filter(isActiveCompetitor);
+  requireContinuingPlayers(participants.length);
   const [promptText] = getRandomPrompts(1, new Set(usedPrompts.map((prompt) => prompt.text)));
   const roundId = await ctx.db.insert("rounds", {
     gameId: game._id,
@@ -668,11 +667,15 @@ export const vote = mutation({
 });
 
 export const advance = mutation({
-  args: { capability: v.string() },
+  args: { capability: v.string(), expectedPhaseGeneration: v.number() },
   returns: v.object({ phase: phaseValidator }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
     requireChatSlopGame(authorized.game);
+    requireExpectedPhaseGeneration(
+      authorized.game.phaseGeneration,
+      args.expectedPhaseGeneration,
+    );
     const now = Date.now();
 
     if (authorized.game.status === "ROUND_RESULTS") {

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
 import type { TtsMode } from "@/lib/types";
 import type { GameType } from "@/games/core";
-import { GEMINI_VOICES } from "@/games/sloplash/voices";
+import { getNarratorVoice, NARRATOR_VOICES } from "@/games/sloplash/voices";
 import {
   MAX_PLAYERS as SLOPLASH_MAX_PLAYERS,
   MIN_PLAYERS as SLOPLASH_MIN_PLAYERS,
@@ -44,7 +44,7 @@ const GAME_TYPE_OPTIONS: {
   {
     id: "SLOPLASH",
     displayName: "Slop-Lash",
-    description: "Quiplash-style comedy game with AI opponents and a live narrator",
+    description: "Quiplash-style comedy game with AI opponents and a game narrator",
     supportsNarrator: true,
     minPlayers: SLOPLASH_MIN_PLAYERS,
     maxPlayers: SLOPLASH_MAX_PLAYERS,
@@ -658,7 +658,7 @@ export default function HostPage() {
                 <Toggle
                   checked={ttsMode === "ON"}
                   onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
-                  label="Live Narrator"
+                  label="Game Narrator"
                   description="AI game-show host narrates the entire game aloud"
                 >
                   <AnimatePresence>
@@ -716,7 +716,9 @@ export default function HostPage() {
                               {...buttonTap}
                             >
                               <span className="inline-flex items-center gap-1.5">
-                                {ttsVoice !== "RANDOM" ? ttsVoice : "Pick Voice"}
+                                {ttsVoice !== "RANDOM"
+                                  ? (getNarratorVoice(ttsVoice)?.name ?? "Pick Voice")
+                                  : "Pick Voice"}
                                 <svg
                                   width="12"
                                   height="12"
@@ -747,70 +749,61 @@ export default function HostPage() {
                                 className="overflow-hidden"
                               >
                                 <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
-                                  {(["female", "male"] as const).map((gender) => (
-                                    <div key={gender}>
-                                      <div className="sticky top-0 z-10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-ink-dim bg-raised border-b border-edge">
-                                        {gender}
-                                      </div>
-                                      {GEMINI_VOICES.filter((v) => v.gender === gender).map(
-                                        (voice) => {
-                                          const selected = ttsVoice === voice.name;
-                                          return (
-                                            <button
-                                              key={voice.name}
-                                              type="button"
-                                              onClick={() => {
-                                                setTtsVoice(voice.name);
-                                                setVoicePickerOpen(false);
-                                              }}
-                                              className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors cursor-pointer border-b border-edge/40 last:border-b-0 ${
-                                                selected ? "bg-punch/10" : "hover:bg-raised/60"
+                                  {NARRATOR_VOICES.map((voice) => {
+                                    const selected = ttsVoice === voice.id;
+                                    return (
+                                      <button
+                                        key={voice.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setTtsVoice(voice.id);
+                                          setVoicePickerOpen(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors cursor-pointer border-b border-edge/40 last:border-b-0 ${
+                                          selected ? "bg-punch/10" : "hover:bg-raised/60"
+                                        }`}
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <span
+                                              className={`font-semibold text-sm ${selected ? "text-punch" : "text-ink"}`}
+                                            >
+                                              {voice.name}
+                                            </span>
+                                            <span
+                                              className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
+                                                selected
+                                                  ? "bg-punch/15 text-punch"
+                                                  : "bg-raised text-ink-dim"
                                               }`}
                                             >
-                                              <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                  <span
-                                                    className={`font-semibold text-sm ${selected ? "text-punch" : "text-ink"}`}
-                                                  >
-                                                    {voice.name}
-                                                  </span>
-                                                  <span
-                                                    className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
-                                                      selected
-                                                        ? "bg-punch/15 text-punch"
-                                                        : "bg-raised text-ink-dim"
-                                                    }`}
-                                                  >
-                                                    {voice.trait}
-                                                  </span>
-                                                </div>
-                                                <p
-                                                  className={`text-xs mt-0.5 leading-snug ${selected ? "text-punch/70" : "text-ink-dim"}`}
-                                                >
-                                                  {voice.description}
-                                                </p>
-                                              </div>
-                                              {selected && (
-                                                <svg
-                                                  className="shrink-0 text-punch"
-                                                  width="16"
-                                                  height="16"
-                                                  viewBox="0 0 24 24"
-                                                  fill="none"
-                                                  stroke="currentColor"
-                                                  strokeWidth="3"
-                                                  strokeLinecap="round"
-                                                  strokeLinejoin="round"
-                                                >
-                                                  <polyline points="20 6 9 17 4 12" />
-                                                </svg>
-                                              )}
-                                            </button>
-                                          );
-                                        },
-                                      )}
-                                    </div>
-                                  ))}
+                                              {voice.trait}
+                                            </span>
+                                          </div>
+                                          <p
+                                            className={`text-xs mt-0.5 leading-snug ${selected ? "text-punch/70" : "text-ink-dim"}`}
+                                          >
+                                            {voice.description}
+                                          </p>
+                                        </div>
+                                        {selected && (
+                                          <svg
+                                            className="shrink-0 text-punch"
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="3"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                          >
+                                            <polyline points="20 6 9 17 4 12" />
+                                          </svg>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </motion.div>
                             )}

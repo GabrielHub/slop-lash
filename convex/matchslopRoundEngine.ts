@@ -2,9 +2,10 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { postMortemPipelineRef, replyPipelineRef } from "./matchslopContracts";
+import { requireContinuingPlayers } from "./gamePhase";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
 import {
   getMatchSlopState,
-  isActiveMatchSlopCompetitor,
   isMatchSlopGame,
   listMatchSlopPlayers,
   loadMatchSlopRound,
@@ -47,7 +48,7 @@ const MAX_RESPONSE_LENGTH = 200;
 type MatchSlopStatePatch = Partial<Omit<Doc<"matchSlopState">, "_creationTime" | "_id" | "gameId">>;
 
 function responseQuorum(bundle: MatchSlopRoundBundle, players: Doc<"players">[]): boolean {
-  const active = players.filter(isActiveMatchSlopCompetitor);
+  const active = players.filter(isActiveCompetitor);
   if (active.length === 0) return false;
   const assigned = new Set(bundle.assignments.map((assignment) => assignment.playerId));
   const responded = new Set(bundle.responses.map((response) => response.playerId));
@@ -55,7 +56,7 @@ function responseQuorum(bundle: MatchSlopRoundBundle, players: Doc<"players">[])
 }
 
 function voteQuorum(bundle: MatchSlopRoundBundle, players: Doc<"players">[]): boolean {
-  const active = players.filter(isActiveMatchSlopCompetitor);
+  const active = players.filter(isActiveCompetitor);
   if (active.length === 0) return false;
   const assigned = new Set(bundle.assignments.map((assignment) => assignment.playerId));
   const voted = new Set(bundle.votes.map((vote) => vote.voterId));
@@ -347,7 +348,7 @@ async function fillForfeitResponses(
   players: Doc<"players">[],
   now: number,
 ): Promise<void> {
-  const active = new Set(players.filter(isActiveMatchSlopCompetitor).map((player) => player._id));
+  const active = new Set(players.filter(isActiveCompetitor).map((player) => player._id));
   const responded = new Set(bundle.responses.map((response) => response.playerId));
   for (const assignment of bundle.assignments) {
     if (!active.has(assignment.playerId) || responded.has(assignment.playerId)) continue;
@@ -372,7 +373,7 @@ async function fillAbstainVotes(
   players: Doc<"players">[],
   now: number,
 ): Promise<void> {
-  const active = new Set(players.filter(isActiveMatchSlopCompetitor).map((player) => player._id));
+  const active = new Set(players.filter(isActiveCompetitor).map((player) => player._id));
   const voted = new Set(bundle.votes.map((vote) => vote.voterId));
   for (const assignment of bundle.assignments) {
     if (!active.has(assignment.playerId) || voted.has(assignment.playerId)) continue;
@@ -413,7 +414,8 @@ async function createNextRound(
   statePatch: MatchSlopStatePatch,
   now: number,
 ): Promise<void> {
-  const players = (await listMatchSlopPlayers(ctx, game._id)).filter(isActiveMatchSlopCompetitor);
+  const players = (await listMatchSlopPlayers(ctx, game._id)).filter(isActiveCompetitor);
+  requireContinuingPlayers(players.length);
   const roundId = await ctx.db.insert("rounds", {
     gameId: game._id,
     roundNumber: nextRound,

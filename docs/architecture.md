@@ -63,8 +63,14 @@ earlier durable output.
 
 AI SDK 7 provides generation and streaming primitives. Models are selected
 through the Vercel AI Gateway rather than hand-written provider transports.
-Gateway, Gemini, Fal, and host secrets live in the Convex deployment environment
-and are available only to backend functions.
+Gateway, Fal, and host secrets live in the Convex deployment environment and
+are available only to backend functions. Text and speech generation both use
+the Gateway boundary.
+
+Slop-Lash narration is a hybrid pipeline: deterministic cues preserve prompts
+and jokes verbatim, while selected transitions use a short bounded text-model
+pass before speech synthesis. The host client queues complete speech clips in
+event order and drops stale waiting work only when its bounded queue is full.
 
 The browser receives no provider secrets. Its only required backend setting is
 `NEXT_PUBLIC_CONVEX_URL`, which identifies the public Convex deployment.

@@ -31,7 +31,7 @@ describe("aiVoteNWay", () => {
     generateTextMock.mockRejectedValue(gatewayError);
 
     const result = await aiVoteNWay(
-      "minimax/minimax-m2.7",
+      "deepseek/deepseek-v4-flash",
       "prompt",
       [
         { id: "resp-a", label: "A", text: "A joke" },
@@ -44,7 +44,7 @@ describe("aiVoteNWay", () => {
     expect(result).toEqual({
       chosenResponseId: "resp-b",
       usage: {
-        modelId: "minimax/minimax-m2.7",
+        modelId: "deepseek/deepseek-v4-flash",
         inputTokens: 0,
         outputTokens: 0,
         costUsd: 0,
@@ -53,7 +53,7 @@ describe("aiVoteNWay", () => {
     });
 
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining("[chatslop:aiVoteNWay] minimax/minimax-m2.7 FAILED"),
+      expect.stringContaining("[chatslop:aiVoteNWay] deepseek/deepseek-v4-flash FAILED"),
       expect.objectContaining({
         failReason: "timeout",
         abortSignal: expect.objectContaining({

@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "motion/react";
 
-type NarratorState = "speaking" | "connected" | "off";
+type NarratorState = "speaking" | "ready" | "off";
 
 interface NarratorIndicatorProps {
   state: NarratorState;
@@ -28,7 +28,7 @@ export function NarratorIndicator({ state }: NarratorIndicatorProps) {
         <output
           className="flex items-end gap-[2px]"
           style={{ height: 14, width: 16 }}
-          aria-label={state === "speaking" ? "Narrator is speaking" : "Narrator connected"}
+          aria-label={state === "speaking" ? "Narrator is speaking" : "Narrator is ready"}
         >
           {state === "speaking" ? (
             Array.from({ length: BAR_COUNT }, (_, i) => (
@@ -65,7 +65,7 @@ export function NarratorIndicator({ state }: NarratorIndicatorProps) {
         </output>
 
         <span className="text-[10px] font-bold uppercase tracking-wider text-teal select-none hidden sm:inline">
-          {state === "speaking" ? "Live" : "On Air"}
+          {state === "speaking" ? "Speaking" : "Ready"}
         </span>
       </motion.div>
     </AnimatePresence>

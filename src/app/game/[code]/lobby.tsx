@@ -15,6 +15,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useLobbyKickHumanMutation, useLobbyStartMutation } from "@/hooks/use-game-runtime";
+import { buildRoomCapabilityLink } from "@/lib/room-capability-link";
 
 function CheckIcon() {
   return (
@@ -119,7 +120,7 @@ export function Lobby({
   const copyTvLink = useCallback(() => {
     if (!hostCapability) return;
     const base = `${window.location.origin}/stage/${game.roomCode}`;
-    copyTvToClipboard(`${base}?capability=${encodeURIComponent(hostCapability)}`);
+    copyTvToClipboard(buildRoomCapabilityLink(base, hostCapability));
   }, [game.roomCode, copyTvToClipboard, hostCapability]);
 
   async function startGame() {

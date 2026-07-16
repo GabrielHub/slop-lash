@@ -44,37 +44,41 @@ function SfxMixerPanel(): React.ReactNode {
   const [selectedSound, setSelectedSound] = useState<SoundName>(SOUND_NAMES[0]);
 
   return (
-    <section className="mb-10 rounded-2xl border-2 border-gold/30 bg-gradient-to-br from-gold/5 via-surface/85 to-teal/5 p-5" style={{ boxShadow: "var(--shadow-card)" }}>
+    <section
+      className="mb-10 rounded-2xl border-2 border-gold/30 bg-gradient-to-br from-gold/5 via-surface/85 to-teal/5 p-5"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-mono tracking-[0.22em] text-ink-dim">AUDIO LAB</p>
           <h2 className="font-display text-xl font-bold text-ink">SFX Mixer</h2>
           <p className="mt-1 max-w-2xl text-sm text-ink-dim">
-            Tune AI-generated SFX loudness and fade envelopes in real time. Settings persist in local storage.
+            Tune AI-generated SFX loudness and fade envelopes in real time. Settings persist in
+            local storage.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => preloadSounds()}
-              className="cursor-pointer rounded-lg border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
-            >
-              Preload
-            </button>
-            <button
-              type="button"
-              onClick={() => playSound(selectedSound)}
-              className="cursor-pointer rounded-lg border border-teal/40 bg-teal/10 px-3 py-2 text-sm font-medium text-teal hover:bg-teal/15"
-            >
-              Play Selected
-            </button>
-            <button
-              type="button"
-              onClick={() => resetSoundTuning()}
-              className="cursor-pointer rounded-lg border border-punch/30 bg-punch/5 px-3 py-2 text-sm text-punch hover:bg-punch/10"
-            >
-              Reset Tuning
-            </button>
+          <button
+            type="button"
+            onClick={() => preloadSounds()}
+            className="cursor-pointer rounded-lg border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
+          >
+            Preload
+          </button>
+          <button
+            type="button"
+            onClick={() => playSound(selectedSound)}
+            className="cursor-pointer rounded-lg border border-teal/40 bg-teal/10 px-3 py-2 text-sm font-medium text-teal hover:bg-teal/15"
+          >
+            Play Selected
+          </button>
+          <button
+            type="button"
+            onClick={() => resetSoundTuning()}
+            className="cursor-pointer rounded-lg border border-punch/30 bg-punch/5 px-3 py-2 text-sm text-punch hover:bg-punch/10"
+          >
+            Reset Tuning
+          </button>
         </div>
       </div>
 
@@ -175,7 +179,8 @@ function SfxMixerPanel(): React.ReactNode {
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-ink">{name}</div>
                   <div className="text-xs text-ink-dim">
-                    Default {defaultGain.toFixed(2)}{changed ? ` -> ${gain.toFixed(2)}` : ""}
+                    Default {defaultGain.toFixed(2)}
+                    {changed ? ` -> ${gain.toFixed(2)}` : ""}
                   </div>
                   <input
                     type="range"
@@ -229,11 +234,11 @@ function SfxMixerPanel(): React.ReactNode {
 }
 
 function NarratorIndicatorDemo(): React.ReactNode {
-  const [state, setState] = useState<"off" | "connected" | "speaking">("connected");
+  const [state, setState] = useState<"off" | "ready" | "speaking">("ready");
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        {(["off", "connected", "speaking"] as const).map((s) => (
+        {(["off", "ready", "speaking"] as const).map((s) => (
           <button
             key={s}
             type="button"
@@ -250,7 +255,9 @@ function NarratorIndicatorDemo(): React.ReactNode {
       </div>
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 rounded-lg border border-edge bg-base/80 px-3 py-2 backdrop-blur-sm">
-          <span className="font-display text-xs font-bold text-punch tracking-tight">SLOP-LASH</span>
+          <span className="font-display text-xs font-bold text-punch tracking-tight">
+            SLOP-LASH
+          </span>
           <span className="text-edge-strong">|</span>
           <span className="font-mono text-xs font-bold tracking-widest text-ink-dim">ABCD</span>
           {state !== "off" && (
@@ -276,7 +283,8 @@ export function DevComponentsPlayground() {
             <p className="mb-2 text-xs font-mono tracking-widest text-ink-dim">DEV COMPONENTS</p>
             <h1 className="font-display text-3xl font-bold text-ink">Component Playground</h1>
             <p className="mt-2 max-w-2xl text-sm text-ink-dim">
-              Real components rendered with fixture data for isolated styling and animation iteration.
+              Real components rendered with fixture data for isolated styling and animation
+              iteration.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -300,10 +308,16 @@ export function DevComponentsPlayground() {
         <SfxMixerPanel />
 
         <section className="mb-10 grid gap-5 lg:grid-cols-2">
-          <div className="rounded-xl border-2 border-edge bg-surface/80 p-4" style={{ boxShadow: "var(--shadow-card)" }}>
+          <div
+            className="rounded-xl border-2 border-edge bg-surface/80 p-4"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
             <h2 className="mb-3 font-display text-lg font-bold text-ink">Feedback States</h2>
             <ErrorBanner error="Mock error banner for spacing/animation review." />
-            <CompletionCard title="All submitted!" subtitle="Waiting for the rest of the lobby..." />
+            <CompletionCard
+              title="All submitted!"
+              subtitle="Waiting for the rest of the lobby..."
+            />
             <div className="mt-4">
               <PulsingDot>Waiting for host action...</PulsingDot>
             </div>
@@ -313,7 +327,10 @@ export function DevComponentsPlayground() {
             </div>
           </div>
 
-          <div className="rounded-xl border-2 border-edge bg-surface/80 p-4" style={{ boxShadow: "var(--shadow-card)" }}>
+          <div
+            className="rounded-xl border-2 border-edge bg-surface/80 p-4"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
             <h2 className="mb-3 font-display text-lg font-bold text-ink">Timer Variants</h2>
             <div className="space-y-5">
               <Timer deadline={TIMER_DEMO_LONG_DEADLINE} total={45} />
@@ -353,7 +370,8 @@ export function DevComponentsPlayground() {
           >
             <h2 className="font-display text-lg font-bold text-ink">MatchSlop Components</h2>
             <p className="mt-1 text-sm text-ink-dim">
-              Mood meter, profile card, transcript bubbles, outcome badges, outcome verdicts, scoreboard.
+              Mood meter, profile card, transcript bubbles, outcome badges, outcome verdicts,
+              scoreboard.
             </p>
           </Link>
         </section>

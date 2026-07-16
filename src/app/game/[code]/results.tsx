@@ -271,6 +271,7 @@ export function Results({ game, isHost, code, isFinal, compactStage = false }: R
     try {
       await advanceConvexGame({
         capability: hostCapability,
+        expectedPhaseGeneration: game.version,
       });
       keepPending = true;
     } catch (cause) {

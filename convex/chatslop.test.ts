@@ -55,9 +55,11 @@ const vote = makeFunctionReference<
   { phase: Phase; voteId: Id<"votes"> }
 >("chatslop:vote");
 
-const advance = makeFunctionReference<"mutation", { capability: string }, { phase: Phase }>(
-  "chatslop:advance",
-);
+const advance = makeFunctionReference<
+  "mutation",
+  { capability: string; expectedPhaseGeneration: number },
+  { phase: Phase }
+>("chatslop:advance");
 
 const end = makeFunctionReference<"mutation", { capability: string }, { success: true }>(
   "chatslop:end",
@@ -72,6 +74,15 @@ function createTestBackend() {
   presenceTest.register(backend);
   workpoolTest.register(backend, "aiGenerationWorkpool");
   return backend;
+}
+
+async function getPhaseGeneration(
+  backend: ReturnType<typeof createTestBackend>,
+  gameId: Id<"games">,
+): Promise<number> {
+  const game = await backend.run(async (ctx) => ctx.db.get("games", gameId));
+  if (!game) throw new Error("Expected game");
+  return game.phaseGeneration;
 }
 
 afterEach(() => {
@@ -331,9 +342,12 @@ describe("ChatSlop Convex state machine", () => {
       persisted.responses.find((item) => item._id === hostResponse.responseId)?.pointsEarned,
     ).toBeGreaterThan(0);
 
-    await expect(backend.mutation(advance, { capability: host.capability })).resolves.toEqual({
-      phase: "FINAL_RESULTS",
-    });
+    await expect(
+      backend.mutation(advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, host.gameId),
+      }),
+    ).resolves.toEqual({ phase: "FINAL_RESULTS" });
     const finished = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
     expect(finished?.status).toBe("FINAL_RESULTS");
     expect(finished?.phaseDeadline).toBeUndefined();
@@ -360,7 +374,7 @@ describe("ChatSlop Convex state machine", () => {
     });
 
     const second = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Second Host",
       hostSecret: "host-secret",
@@ -394,7 +408,10 @@ describe("ChatSlop Convex state machine", () => {
       }),
     ).rejects.toThrow("Prompt is not from the current round");
     await expect(
-      backend.mutation(advance, { capability: firstGuestOne.capability }),
+      backend.mutation(advance, {
+        capability: firstGuestOne.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, first.gameId),
+      }),
     ).rejects.toThrow("Host capability required");
 
     const firstHostResponse = await backend.mutation(respond, {
@@ -474,7 +491,7 @@ describe("ChatSlop Convex state machine", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -498,9 +515,12 @@ describe("ChatSlop Convex state machine", () => {
       promptId: prompt._id,
       text: "The one completed response",
     });
-    await expect(backend.mutation(advance, { capability: host.capability })).resolves.toEqual({
-      phase: "VOTING",
-    });
+    await expect(
+      backend.mutation(advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, host.gameId),
+      }),
+    ).resolves.toEqual({ phase: "VOTING" });
     const votingState = await backend.run(async (ctx) => {
       const [game, responses, jobs] = await Promise.all([
         ctx.db.get("games", host.gameId),
@@ -535,9 +555,12 @@ describe("ChatSlop Convex state machine", () => {
 
     const staleSettle = await backend.mutation(settleQuorum, { gameId: host.gameId });
     expect(staleSettle.phase).toBeNull();
-    await expect(backend.mutation(advance, { capability: host.capability })).resolves.toEqual({
-      phase: "ROUND_RESULTS",
-    });
+    await expect(
+      backend.mutation(advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, host.gameId),
+      }),
+    ).resolves.toEqual({ phase: "ROUND_RESULTS" });
     const results = await backend.run(async (ctx) => {
       const [votes, hostPlayer] = await Promise.all([
         ctx.db
@@ -554,9 +577,12 @@ describe("ChatSlop Convex state machine", () => {
     expect(results.votes.every((item) => item.responseId === undefined)).toBe(true);
     expect(results.hostPlayer?.score).toBeGreaterThan(0);
 
-    await expect(backend.mutation(advance, { capability: host.capability })).resolves.toEqual({
-      phase: "WRITING",
-    });
+    await expect(
+      backend.mutation(advance, {
+        capability: host.capability,
+        expectedPhaseGeneration: await getPhaseGeneration(backend, host.gameId),
+      }),
+    ).resolves.toEqual({ phase: "WRITING" });
     const nextRound = await backend.run(async (ctx) => {
       const game = await ctx.db.get("games", host.gameId);
       const round = await ctx.db
@@ -604,7 +630,7 @@ describe("ChatSlop Convex state machine", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3-flash", "openai/gpt-5.4-mini"],
+      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",

@@ -8,7 +8,6 @@ const app = defineApp({
   env: {
     AI_GATEWAY_API_KEY: v.optional(v.string()),
     FAL_KEY: v.optional(v.string()),
-    GEMINI_API_KEY: v.optional(v.string()),
     HOST_SECRET: v.optional(v.string()),
   },
 });

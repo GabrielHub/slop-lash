@@ -27,7 +27,6 @@ import type { DataModel } from "./dataModel.js";
 type Env = {
   readonly AI_GATEWAY_API_KEY: string | undefined;
   readonly FAL_KEY: string | undefined;
-  readonly GEMINI_API_KEY: string | undefined;
   readonly HOST_SECRET: string | undefined;
 };
 

@@ -104,9 +104,10 @@ export default defineSchema({
 
   roomJoinRateLimits: defineTable({
     gameId: v.id("games"),
+    normalizedName: v.string(),
     windowStartedAt: v.number(),
     attempts: v.number(),
-  }).index("by_gameId", ["gameId"]),
+  }).index("by_gameId_and_normalizedName", ["gameId", "normalizedName"]),
 
   players: defineTable({
     gameId: v.id("games"),

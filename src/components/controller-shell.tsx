@@ -97,13 +97,20 @@ export function ControllerShell({ code }: { code: string }) {
       setActionError("Host room access is required for this action.");
       return;
     }
+    if (path === "next" && !gameState) {
+      setActionError("Still loading the game. Try again in a moment.");
+      return;
+    }
     setHostActionBusy(true);
     setActionError("");
     try {
       if (path === "start") {
         await startGameMutation({ capability: hostCapability });
-      } else {
-        await advanceGameMutation({ capability: hostCapability });
+      } else if (gameState) {
+        await advanceGameMutation({
+          capability: hostCapability,
+          expectedPhaseGeneration: gameState.version,
+        });
       }
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Something went wrong"));

@@ -14,13 +14,13 @@ import {
 } from "./matchslopContracts";
 import {
   canGenerateMatchSlopProfile,
-  isActiveMatchSlopCompetitor,
   isMatchSlopGame,
   listMatchSlopPlayers,
   loadMatchSlopRound,
   loadMatchSlopState,
   loadMatchSlopTranscript,
 } from "./matchslopData";
+import { isActiveCompetitor } from "../src/games/core/game-rules";
 import {
   addMatchSlopUsage,
   cancelMatchSlopJob,
@@ -697,7 +697,7 @@ export const claimPostMortem = internalMutation({
     ]);
     const runtime = state ? readMatchSlopRuntimeState(state) : null;
     const playerNames = players
-      .filter(isActiveMatchSlopCompetitor)
+      .filter(isActiveCompetitor)
       .map((player) => player.name)
       .sort();
     if (
