@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import { query } from "./_generated/server";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
@@ -23,8 +23,15 @@ import { isWinnerTaglinePending } from "./winnerTaglineData";
 
 const MAX_MODEL_USAGES = 32;
 
+function requireGenericGameView(gameType: string): void {
+  if (gameType === "QUIZSLOP") {
+    throw new ConvexError("QuizSlop uses its mode-specific stage and controller views");
+  }
+}
+
 async function loadStageViewData(ctx: QueryCtx, capability: string) {
   const authorized = await requireCapability(ctx, capability);
+  requireGenericGameView(authorized.game.gameType);
   const [players, modeState, modelUsages, nextGame] = await Promise.all([
     loadPlayers(ctx, authorized.game._id),
     loadModeState(ctx, authorized.game),
@@ -126,6 +133,7 @@ export const controller = query({
   returns: controllerViewValidator,
   handler: async (ctx, args) => {
     const authorized = await requireCapability(ctx, args.capability);
+    requireGenericGameView(authorized.game.gameType);
     const [players, currentRound, matchState, nextGame] = await Promise.all([
       loadPlayers(ctx, authorized.game._id),
       loadCurrentRound(ctx, authorized.game),
@@ -240,9 +248,7 @@ export const controller = query({
     const generation = matchState?.profileGeneration ?? null;
     const firstPrompt = currentRound?.prompts[0] ?? null;
     const profileOptions = profile?.prompts ?? [];
-    const activePlayerIds = new Set(
-      players.filter(isActiveCompetitor).map((player) => player._id),
-    );
+    const activePlayerIds = new Set(players.filter(isActiveCompetitor).map((player) => player._id));
     const matchslop =
       authorized.game.gameType === "MATCHSLOP" && matchState
         ? {

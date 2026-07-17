@@ -4,6 +4,7 @@ export const gameTypeValidator = v.union(
   v.literal("SLOPLASH"),
   v.literal("AI_CHAT_SHOWDOWN"),
   v.literal("MATCHSLOP"),
+  v.literal("QUIZSLOP"),
 );
 
 export const gameStatusValidator = v.union(

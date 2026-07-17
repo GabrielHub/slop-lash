@@ -13,6 +13,9 @@
     "test:ui:matchslop-sync": "playwright test -c playwright.dev-ui.config.ts src/dev/game-fixtures/matchslop-sync.spec.ts",
     "check": "vp check",
     "check:theme-colors": "node scripts/check-theme-colors.mjs",
+    "quizslop:catalog:validate": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/quizslop/validate-catalog.ts",
+    "quizslop:catalog:validate-approved": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/quizslop/validate-catalog.ts --require-approved",
+    "quizslop:catalog:review": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/quizslop/render-catalog-review.ts",
     "convex:codegen": "convex codegen",
     "convex:dev": "convex dev",
     "prepare": "husky"
@@ -47,7 +50,6 @@
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },
-  "packageManager": "pnpm@11.13.0",
   "devEngines": {
     "runtime": {
       "name": "node",
@@ -57,5 +59,6 @@
   },
   "engines": {
     "node": "24.x"
-  }
+  },
+  "packageManager": "pnpm@11.13.0"
 }

@@ -140,6 +140,19 @@ export const createRoom = internalMutation({
       hostSessionId: sessionId,
     });
 
+    if (args.gameType === "QUIZSLOP") {
+      await ctx.db.insert("quizSlopState", {
+        gameId,
+        phase: "LOBBY_SETUP",
+        deckPosition: 0,
+        revealOrdinal: 0,
+        customRevisionsReserved: 0,
+        customTopicsEnabled: false,
+        outcome: "IN_PROGRESS",
+        updatedAt: now,
+      });
+    }
+
     if (args.gameType === "MATCHSLOP") {
       await ctx.db.insert("matchSlopState", {
         gameId,
@@ -193,8 +206,7 @@ export const joinRoom = internalMutation({
           index.eq("gameId", game._id).eq("normalizedName", args.normalizedName),
         )
         .unique();
-      const windowExpired =
-        !rateLimit || now - rateLimit.windowStartedAt >= JOIN_ATTEMPT_WINDOW_MS;
+      const windowExpired = !rateLimit || now - rateLimit.windowStartedAt >= JOIN_ATTEMPT_WINDOW_MS;
       if (rateLimit && !windowExpired && rateLimit.attempts >= MAX_JOIN_ATTEMPTS_PER_WINDOW) {
         return {
           kind: "REJECTED" as const,

@@ -21,9 +21,11 @@ export function RecapShell({ code }: { code: string }) {
   const error =
     recap?.kind === "NOT_FOUND"
       ? "Game not found"
-      : recap?.kind === "IN_PROGRESS"
-        ? "Game is still in progress"
-        : null;
+      : recap?.kind === "UNSUPPORTED_MODE"
+        ? "This game mode has its own results screen and no shareable recap"
+        : recap?.kind === "IN_PROGRESS"
+          ? "Game is still in progress"
+          : null;
   const errorStatus = recap?.kind === "IN_PROGRESS" ? recap.status : null;
   const confettiFired = useRef(false);
 

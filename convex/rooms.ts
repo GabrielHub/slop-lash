@@ -12,6 +12,7 @@ import {
 } from "./capabilities";
 import { createRoomCode, normalizePlayerName, normalizeRoomCode } from "./roomInput";
 import { maxPlayersByGameType } from "./gameLimits";
+import type { GameType } from "../src/games/core/types";
 import { getAiModel, selectUniqueModelsByProvider } from "./modelCatalog";
 import {
   gameStatusValidator,
@@ -36,7 +37,7 @@ type CreateRoomResult = CreatedRoom | { kind: "ROOM_CODE_TAKEN" };
 
 type SessionResult = {
   gameId: Id<"games">;
-  gameType: "SLOPLASH" | "AI_CHAT_SHOWDOWN" | "MATCHSLOP";
+  gameType: GameType;
   playerId: Id<"players"> | null;
   playerName: string | null;
   playerType: "HUMAN" | "AI" | "SPECTATOR" | null;
@@ -104,6 +105,19 @@ export const create = action({
     if (args.gameType === "MATCHSLOP" && (!args.seekerIdentity || !args.personaIdentity)) {
       throw new ConvexError("MatchSlop requires seekerIdentity and personaIdentity");
     }
+    if (args.gameType === "QUIZSLOP") {
+      // QuizSlop is human-only, narrator-free, and derives its round count at
+      // roster freeze. Client hiding is not an authority boundary.
+      if ((args.aiModelIds ?? []).length > 0) {
+        throw new ConvexError("QuizSlop does not support AI players");
+      }
+      if (args.ttsMode === "ON" || (args.ttsVoice ?? "").trim().length > 0) {
+        throw new ConvexError("QuizSlop does not support a narrator");
+      }
+      if (args.totalRounds !== undefined) {
+        throw new ConvexError("QuizSlop derives its round count from the frozen roster");
+      }
+    }
     const hostParticipation =
       args.gameType === "MATCHSLOP" ? "DISPLAY_ONLY" : (args.hostParticipation ?? "PLAYER");
     const host = hostParticipation === "PLAYER" ? normalizePlayerName(args.hostName ?? "") : null;
@@ -114,18 +128,27 @@ export const create = action({
 
     const capabilitySecret = createCapabilitySecret();
     const capabilityHash = await hashCapabilitySecret(capabilitySecret);
-    const totalRounds = validateTotalRounds(
-      args.totalRounds ?? (args.gameType === "MATCHSLOP" ? 5 : 3),
-    );
+    // `totalRounds === 0` is the QuizSlop unset sentinel; roster freeze
+    // atomically replaces it before the game leaves the lobby.
+    const totalRounds =
+      args.gameType === "QUIZSLOP"
+        ? 0
+        : validateTotalRounds(args.totalRounds ?? (args.gameType === "MATCHSLOP" ? 5 : 3));
     const ttsMode = args.gameType === "SLOPLASH" ? (args.ttsMode ?? "OFF") : "OFF";
-    const aiPlayers = selectUniqueModelsByProvider(args.aiModelIds ?? [])
-      .filter((model) => args.gameType !== "MATCHSLOP" || model.id !== personaModelId)
-      .slice(0, maxPlayersByGameType[args.gameType] - (hostParticipation === "PLAYER" ? 1 : 0))
-      .map((model) => ({
-        modelId: model.id,
-        name: model.shortName,
-        normalizedName: model.shortName.toLocaleLowerCase("en-US"),
-      }));
+    const aiPlayers =
+      args.gameType === "QUIZSLOP"
+        ? []
+        : selectUniqueModelsByProvider(args.aiModelIds ?? [])
+            .filter((model) => args.gameType !== "MATCHSLOP" || model.id !== personaModelId)
+            .slice(
+              0,
+              maxPlayersByGameType[args.gameType] - (hostParticipation === "PLAYER" ? 1 : 0),
+            )
+            .map((model) => ({
+              modelId: model.id,
+              name: model.shortName,
+              normalizedName: model.shortName.toLocaleLowerCase("en-US"),
+            }));
     if (host && aiPlayers.some((player) => player.normalizedName === host.normalizedName)) {
       throw new ConvexError("Host name conflicts with a selected AI player");
     }

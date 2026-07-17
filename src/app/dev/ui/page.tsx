@@ -40,9 +40,7 @@ function ScenarioCard({
           </span>
         </div>
       </div>
-      <h2 className="font-display text-lg font-bold text-ink">
-        {scenario.title}
-      </h2>
+      <h2 className="font-display text-lg font-bold text-ink">{scenario.title}</h2>
       <p className="mt-1 text-sm text-ink-dim">{scenario.description}</p>
       <p className="mt-2 text-xs font-mono text-ink-dim/80">
         viewer: {scenario.playerId ?? "none"}
@@ -74,9 +72,7 @@ function MatchSlopScenarioCard({
           </span>
         </div>
       </div>
-      <h2 className="font-display text-lg font-bold text-ink">
-        {scenario.title}
-      </h2>
+      <h2 className="font-display text-lg font-bold text-ink">{scenario.title}</h2>
       <p className="mt-1 text-sm text-ink-dim">{scenario.description}</p>
       <p className="mt-2 text-xs font-mono text-ink-dim/80">
         default controller viewer: {scenario.playerId ?? "none"}
@@ -106,16 +102,11 @@ export default function DevUiIndexPage() {
         <header className="mb-8">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="mb-2 text-xs font-mono tracking-widest text-ink-dim">
-                MOCK GAME FLOW
-              </p>
-              <h1 className="font-display text-3xl font-bold text-ink">
-                UI Iteration Routes
-              </h1>
+              <p className="mb-2 text-xs font-mono tracking-widest text-ink-dim">MOCK GAME FLOW</p>
+              <h1 className="font-display text-3xl font-bold text-ink">UI Iteration Routes</h1>
               <p className="mt-2 max-w-2xl text-sm text-ink-dim">
-                These routes render the real game screens with fixture state so
-                you can iterate on layout and styling without playing through a
-                live session.
+                These routes render the real game screens with fixture state so you can iterate on
+                layout and styling without playing through a live session.
               </p>
             </div>
             <DevThemeToggle />
@@ -132,9 +123,7 @@ export default function DevUiIndexPage() {
 
         <section className="mb-10">
           <div className="flex items-center justify-between gap-4 mb-4">
-            <h2 className="font-display text-xl font-bold text-ink">
-              Slop-Lash
-            </h2>
+            <h2 className="font-display text-xl font-bold text-ink">Slop-Lash</h2>
             <Link
               href="/dev/components/sloplash"
               className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
@@ -144,20 +133,14 @@ export default function DevUiIndexPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {SLOPLASH_SCENARIOS.map((scenario, index) => (
-              <ScenarioCard
-                key={scenario.slug}
-                scenario={scenario}
-                index={index}
-              />
+              <ScenarioCard key={scenario.slug} scenario={scenario} index={index} />
             ))}
           </div>
         </section>
 
         <section>
           <div className="flex items-center justify-between gap-4 mb-2">
-            <h2 className="font-display text-xl font-bold text-ink">
-              ChatSlop
-            </h2>
+            <h2 className="font-display text-xl font-bold text-ink">ChatSlop</h2>
             <Link
               href="/dev/components/chatslop"
               className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
@@ -166,8 +149,7 @@ export default function DevUiIndexPage() {
             </Link>
           </div>
           <p className="text-sm text-ink-dim mb-4">
-            ChatSlop fixtures with optimistic chat, disconnect/quorum, and
-            rejoin flows.
+            ChatSlop fixtures with optimistic chat, disconnect/quorum, and rejoin flows.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {CHATSLOP_SCENARIOS.map((scenario, index) => (
@@ -183,9 +165,51 @@ export default function DevUiIndexPage() {
 
         <section className="mt-10">
           <div className="flex items-center justify-between gap-4 mb-2">
-            <h2 className="font-display text-xl font-bold text-ink">
-              MatchSlop
-            </h2>
+            <h2 className="font-display text-xl font-bold text-ink">QuizSlop</h2>
+          </div>
+          <p className="text-sm text-ink-dim mb-4">
+            Milestone 0 fixture prototype: a scripted four-player game stepped beat-by-beat, with
+            the stage and four controllers synced across tabs.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div
+              className="rounded-xl border-2 border-edge bg-surface/80 p-4 backdrop-blur-sm"
+              style={{ boxShadow: "var(--shadow-card)" }}
+            >
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-xs font-mono text-ink-dim">#1</span>
+                <span className="rounded-full border border-gold/40 bg-gold-soft px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-gold">
+                  QuizSlop
+                </span>
+              </div>
+              <h2 className="font-display text-lg font-bold text-ink">
+                Scripted four-player prototype
+              </h2>
+              <p className="mt-1 text-sm text-ink-dim">
+                Warm-up, Home Turf rounds, Call Slop, batched disputes, and the 200-point finale as
+                navigable beats.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  href="/dev/ui/quizslop-prototype"
+                  className="rounded-md border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
+                >
+                  Stage
+                </Link>
+                <Link
+                  href="/dev/ui/quizslop-prototype/controller?player=P1"
+                  className="rounded-md border border-punch/40 bg-punch/10 px-3 py-2 text-sm text-punch hover:border-punch hover:bg-punch/15"
+                >
+                  Controller (P1)
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <h2 className="font-display text-xl font-bold text-ink">MatchSlop</h2>
             <Link
               href="/dev/components/matchslop"
               className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
@@ -198,11 +222,7 @@ export default function DevUiIndexPage() {
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {MATCHSLOP_SCENARIOS.map((scenario, index) => (
-              <MatchSlopScenarioCard
-                key={scenario.slug}
-                scenario={scenario}
-                index={index}
-              />
+              <MatchSlopScenarioCard key={scenario.slug} scenario={scenario} index={index} />
             ))}
           </div>
         </section>

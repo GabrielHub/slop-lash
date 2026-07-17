@@ -51,8 +51,11 @@ export default function JoinPage() {
         roomCode: code,
       });
       persistRoomSessionResult(room);
+      // Shared-stage modes always send joiners to their private controller.
       const targetRoute =
-        controllerMode || room.gameType === "MATCHSLOP" ? `/controller/${code}` : `/game/${code}`;
+        controllerMode || room.gameType === "MATCHSLOP" || room.gameType === "QUIZSLOP"
+          ? `/controller/${code}`
+          : `/game/${code}`;
       router.push(targetRoute);
     } catch (error) {
       setError(getConvexErrorMessage(error, "Failed to join"));

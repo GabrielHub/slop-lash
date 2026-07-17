@@ -6,6 +6,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
 import { aiGenerationWorkpool, gameWorkflow, roomPresence } from "./components";
+import {
+  deleteQuizslopCleanupRows,
+  hasMoreQuizslopCleanupRows,
+  loadQuizslopCleanupRows,
+} from "./quizslopCleanup";
 
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -160,6 +165,8 @@ async function deleteGameData(
   if (await cancelActiveGenerationJobs(ctx, game._id)) return "CONTINUING";
 
   const limit = DELETE_BATCH_SIZE + 1;
+  const quizslopRows =
+    game.gameType === "QUIZSLOP" ? await loadQuizslopCleanupRows(ctx, game._id, limit) : null;
   const [
     presenceSessions,
     joinRateLimits,
@@ -256,7 +263,9 @@ async function deleteGameData(
     states,
     transcript,
   ];
-  const hasMore = groups.some((rows) => rows.length > DELETE_BATCH_SIZE);
+  const hasMore =
+    groups.some((rows) => rows.length > DELETE_BATCH_SIZE) ||
+    (quizslopRows !== null && hasMoreQuizslopCleanupRows(quizslopRows, DELETE_BATCH_SIZE));
   await roomPresence.removeRoom(ctx, game._id);
   await cleanupGenerationJobComponents(ctx, jobs.slice(0, DELETE_BATCH_SIZE));
   for (const row of presenceSessions.slice(0, DELETE_BATCH_SIZE))
@@ -281,6 +290,9 @@ async function deleteGameData(
     await ctx.db.delete("matchSlopTranscriptEntries", row._id);
   for (const row of states.slice(0, DELETE_BATCH_SIZE))
     await ctx.db.delete("matchSlopState", row._id);
+  if (quizslopRows) {
+    await deleteQuizslopCleanupRows(ctx, quizslopRows, DELETE_BATCH_SIZE);
+  }
   for (const row of rounds.slice(0, DELETE_BATCH_SIZE)) await ctx.db.delete("rounds", row._id);
   for (const row of sessions.slice(0, DELETE_BATCH_SIZE))
     await ctx.db.delete("playerSessions", row._id);
@@ -354,50 +366,60 @@ export const scheduleStaleRoomCleanup = internalMutation({
     const lobbyCutoff = now - STALE_LOBBY_IDLE_MS;
     const abandonedCutoff = now - ABANDONED_GAME_IDLE_MS;
     const transientFinalCutoff = now - TRANSIENT_FINAL_RETENTION_MS;
-    const [lobbies, writing, voting, roundResults, chatFinals, matchFinals] = await Promise.all([
-      ctx.db
-        .query("games")
-        .withIndex("by_status_and_updatedAt", (index) =>
-          index.eq("status", "LOBBY").lte("updatedAt", lobbyCutoff),
-        )
-        .take(MAX_CANDIDATES_PER_POLICY),
-      ctx.db
-        .query("games")
-        .withIndex("by_status_and_updatedAt", (index) =>
-          index.eq("status", "WRITING").lte("updatedAt", abandonedCutoff),
-        )
-        .take(MAX_CANDIDATES_PER_POLICY),
-      ctx.db
-        .query("games")
-        .withIndex("by_status_and_updatedAt", (index) =>
-          index.eq("status", "VOTING").lte("updatedAt", abandonedCutoff),
-        )
-        .take(MAX_CANDIDATES_PER_POLICY),
-      ctx.db
-        .query("games")
-        .withIndex("by_status_and_updatedAt", (index) =>
-          index.eq("status", "ROUND_RESULTS").lte("updatedAt", abandonedCutoff),
-        )
-        .take(MAX_CANDIDATES_PER_POLICY),
-      ctx.db
-        .query("games")
-        .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
-          index
-            .eq("gameType", "AI_CHAT_SHOWDOWN")
-            .eq("status", "FINAL_RESULTS")
-            .lte("finalizedAt", transientFinalCutoff),
-        )
-        .take(MAX_CANDIDATES_PER_POLICY),
-      ctx.db
-        .query("games")
-        .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
-          index
-            .eq("gameType", "MATCHSLOP")
-            .eq("status", "FINAL_RESULTS")
-            .lte("finalizedAt", transientFinalCutoff),
-        )
-        .take(MAX_CANDIDATES_PER_POLICY),
-    ]);
+    const [lobbies, writing, voting, roundResults, chatFinals, matchFinals, quizFinals] =
+      await Promise.all([
+        ctx.db
+          .query("games")
+          .withIndex("by_status_and_updatedAt", (index) =>
+            index.eq("status", "LOBBY").lte("updatedAt", lobbyCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+        ctx.db
+          .query("games")
+          .withIndex("by_status_and_updatedAt", (index) =>
+            index.eq("status", "WRITING").lte("updatedAt", abandonedCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+        ctx.db
+          .query("games")
+          .withIndex("by_status_and_updatedAt", (index) =>
+            index.eq("status", "VOTING").lte("updatedAt", abandonedCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+        ctx.db
+          .query("games")
+          .withIndex("by_status_and_updatedAt", (index) =>
+            index.eq("status", "ROUND_RESULTS").lte("updatedAt", abandonedCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+        ctx.db
+          .query("games")
+          .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
+            index
+              .eq("gameType", "AI_CHAT_SHOWDOWN")
+              .eq("status", "FINAL_RESULTS")
+              .lte("finalizedAt", transientFinalCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+        ctx.db
+          .query("games")
+          .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
+            index
+              .eq("gameType", "MATCHSLOP")
+              .eq("status", "FINAL_RESULTS")
+              .lte("finalizedAt", transientFinalCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+        ctx.db
+          .query("games")
+          .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
+            index
+              .eq("gameType", "QUIZSLOP")
+              .eq("status", "FINAL_RESULTS")
+              .lte("finalizedAt", transientFinalCutoff),
+          )
+          .take(MAX_CANDIDATES_PER_POLICY),
+      ]);
     const candidates = [
       ...lobbies.map((game) => ({ game, cutoff: lobbyCutoff, policy: "STALE_LOBBY" as const })),
       ...[...writing, ...voting, ...roundResults].map((game) => ({
@@ -405,7 +427,7 @@ export const scheduleStaleRoomCleanup = internalMutation({
         cutoff: abandonedCutoff,
         policy: "ABANDONED_GAME" as const,
       })),
-      ...[...chatFinals, ...matchFinals].map((game) => ({
+      ...[...chatFinals, ...matchFinals, ...quizFinals].map((game) => ({
         game,
         cutoff: transientFinalCutoff,
         policy: "TRANSIENT_FINAL" as const,

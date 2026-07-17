@@ -16,6 +16,8 @@ import { WRITING_DURATION_SECONDS } from "../src/games/sloplash/game-constants";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { minPlayersByGameType } from "./gameLimits";
 import { requireContinuingPlayers } from "./gamePhase";
+import { deleteMaterializedTopic } from "./quizslopMaterialization";
+import { loadQuizslopTopicForOwner } from "./quizslopData";
 
 const MAX_LOBBY_PLAYERS = 16;
 const MAX_PLAYER_SESSIONS = 8;
@@ -158,6 +160,9 @@ export const addAiPlayer = mutation({
     if (authorized.game.status !== "LOBBY") {
       throw new ConvexError("Can only manage AI players during lobby");
     }
+    if (authorized.game.gameType === "QUIZSLOP") {
+      throw new ConvexError("QuizSlop does not support AI players");
+    }
     const model = getAiModel(args.modelId);
     if (!model) throw new ConvexError("Unknown model");
 
@@ -276,6 +281,10 @@ export const kickHuman = mutation({
 
     await deletePlayerSessions(ctx, authorized.game._id, target._id);
     if (authorized.game.status === "LOBBY") {
+      if (authorized.game.gameType === "QUIZSLOP") {
+        const topic = await loadQuizslopTopicForOwner(ctx, authorized.game._id, target._id);
+        if (topic) await deleteMaterializedTopic(ctx, topic);
+      }
       await ctx.db.delete("players", target._id);
     } else {
       // Preserve historical response/vote authors for results and recaps while
@@ -302,6 +311,11 @@ export const start = mutation({
   }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
+    if (authorized.game.gameType === "QUIZSLOP") {
+      // QuizSlop's atomic roster/deck freeze lives in its own start mutation;
+      // letting it fall through here would treat it like a prompt-based mode.
+      throw new ConvexError("QuizSlop games start from the QuizSlop lobby");
+    }
     if (authorized.game.status !== "LOBBY") {
       if (authorized.game.currentRound === 1 && authorized.game.status === "WRITING") {
         const existingRound = await ctx.db

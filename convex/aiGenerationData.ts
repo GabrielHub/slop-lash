@@ -462,7 +462,7 @@ export const loadResponseContext = internalQuery({
     if (current.kind === "stale") return current;
 
     const { game, player } = current.value;
-    if (game.gameType === "MATCHSLOP") {
+    if (game.gameType === "MATCHSLOP" || game.gameType === "QUIZSLOP") {
       return { kind: "stale" as const, reason: "Game type does not generate comedy responses" };
     }
     const assignments = await listPlayerAssignments(ctx.db, player._id, args.roundId);

@@ -85,6 +85,15 @@ describe("Convex room sessions", () => {
     });
   });
 
+  it("round-trips the QuizSlop game type through the canonical game-type list", () => {
+    const storage = new MemoryStorage();
+
+    expect(
+      setConvexRoomSession({ ...playerSession("ABC234"), gameType: "QUIZSLOP" }, storage),
+    ).toBe(true);
+    expect(getConvexRoomSession("ABC234", storage)?.gameType).toBe("QUIZSLOP");
+  });
+
   it("isolates sessions by room and clears only the requested room", () => {
     const storage = new MemoryStorage();
     setConvexRoomSession(playerSession("ABCD"), storage);

@@ -304,6 +304,7 @@ export const getByRoomCode = query({
   args: { roomCode: v.string() },
   returns: v.union(
     v.object({ kind: v.literal("NOT_FOUND") }),
+    v.object({ kind: v.literal("UNSUPPORTED_MODE"), gameType: gameTypeValidator }),
     v.object({ kind: v.literal("IN_PROGRESS"), status: gameStatusValidator }),
     v.object({ kind: v.literal("READY"), game: recapGameValidator }),
   ),
@@ -313,6 +314,11 @@ export const getByRoomCode = query({
       .withIndex("by_roomCode", (index) => index.eq("roomCode", args.roomCode.trim().toUpperCase()))
       .unique();
     if (!game) return { kind: "NOT_FOUND" as const };
+    // QuizSlop's mode-local final screen is its complete results surface; the
+    // generic prompt/response recap would render an empty, misleading page.
+    if (game.gameType === "QUIZSLOP") {
+      return { kind: "UNSUPPORTED_MODE" as const, gameType: game.gameType };
+    }
     if (game.status !== "FINAL_RESULTS") {
       return { kind: "IN_PROGRESS" as const, status: game.status };
     }

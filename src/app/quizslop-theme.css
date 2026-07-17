@@ -1,0 +1,114 @@
+/* ============================================
+   QUIZSLOP THEME: "ON-AIR STUDIO"
+   An energetic, slightly unreliable AI game show.
+   Marquee amber + signal cyan + stamp red on deep indigo.
+   ============================================ */
+
+[data-game="quizslop"] {
+  background: #0d0b1a;
+  --qs-bg: #0d0b1a;
+  --qs-surface: #171430;
+  --qs-raised: #221e42;
+  --qs-ink: #f2eee3;
+  --qs-ink-dim: #a49cc0;
+  --qs-accent-ink: #17122c;
+  --qs-marquee: #ffc233;
+  --qs-marquee-soft: #ffc23320;
+  --qs-signal: #3be8d2;
+  --qs-signal-soft: #3be8d21c;
+  --qs-punch: #ff4f66;
+  --qs-punch-soft: #ff4f6620;
+  --qs-win: #43e08a;
+  --qs-win-soft: #43e08a1f;
+  --qs-fail: #ff6b74;
+  --qs-fail-soft: #ff6b7422;
+  --qs-token: #ffc233;
+  --qs-token-ink: #17122c;
+  --qs-edge: #2e2954;
+  --qs-edge-strong: #4b4380;
+  --qs-shadow: 0 3px 18px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="light"][data-game="quizslop"],
+[data-theme="light"] [data-game="quizslop"],
+:root:not([data-theme="dark"])[data-game="quizslop"],
+:root:not([data-theme="dark"]) [data-game="quizslop"] {
+  background: #f7f4ec;
+  --qs-bg: #f7f4ec;
+  --qs-surface: #ffffff;
+  --qs-raised: #eeeadf;
+  --qs-ink: #221d3a;
+  --qs-ink-dim: #6f6890;
+  --qs-accent-ink: #ffffff;
+  --qs-marquee: #b87e00;
+  --qs-marquee-soft: #b87e001f;
+  --qs-signal: #0b9e8c;
+  --qs-signal-soft: #0b9e8c1a;
+  --qs-punch: #e03e57;
+  --qs-punch-soft: #e03e571f;
+  --qs-win: #148a4d;
+  --qs-win-soft: #148a4d1a;
+  --qs-fail: #cf2f42;
+  --qs-fail-soft: #cf2f421c;
+  --qs-token: #b87e00;
+  --qs-token-ink: #ffffff;
+  --qs-edge: #ded8c9;
+  --qs-edge-strong: #bdb5a0;
+  --qs-shadow: 0 2px 10px rgba(34, 29, 58, 0.1);
+}
+
+/* --- QuizSlop marquee glow (static; readable at any motion setting) --- */
+.qs-marquee-text {
+  text-shadow:
+    0 0 60px color-mix(in srgb, var(--qs-marquee) 30%, transparent),
+    0 3px 18px color-mix(in srgb, var(--qs-marquee) 18%, transparent);
+}
+
+/* --- QuizSlop Call Slop stamp slam --- */
+@keyframes qs-stamp {
+  0% {
+    transform: scale(2.1) rotate(6deg);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(0.94) rotate(-1deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.qs-stamp {
+  animation: qs-stamp 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* --- QuizSlop restrained glitch: only for building/voided moments --- */
+@keyframes qs-glitch {
+  0%,
+  86%,
+  100% {
+    transform: translate(0, 0);
+  }
+  88% {
+    transform: translate(-2px, 1px) skewX(-1.5deg);
+  }
+  90% {
+    transform: translate(2px, -1px) skewX(1deg);
+  }
+  92% {
+    transform: translate(-1px, 0) skewX(0deg);
+  }
+}
+
+.qs-glitch-edge {
+  animation: qs-glitch 3.2s steps(2, jump-none) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qs-stamp,
+  .qs-glitch-edge {
+    animation: none !important;
+  }
+}

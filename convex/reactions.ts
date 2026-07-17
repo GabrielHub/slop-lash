@@ -57,6 +57,9 @@ export const toggle = mutation({
   returns: v.object({ added: v.boolean() }),
   handler: async (ctx, args) => {
     const authorized = await requirePlayerCapability(ctx, args.capability);
+    if (authorized.game.gameType === "QUIZSLOP") {
+      throw new ConvexError("Reactions are not available in QuizSlop");
+    }
     if (authorized.player.participationStatus !== "ACTIVE") {
       throw new ConvexError("Disconnected players cannot react");
     }

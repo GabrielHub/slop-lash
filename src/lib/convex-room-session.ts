@@ -1,3 +1,5 @@
+import { GAME_TYPES, type GameType } from "@/games/core";
+
 export const CONVEX_ROOM_SESSION_VERSION = 1 as const;
 
 const ROOM_SESSION_KEY_PREFIX = "sloplash:convex-room-session:v1:";
@@ -11,7 +13,7 @@ const LEGACY_SESSION_KEYS = [
   "hostControlToken",
 ] as const;
 
-export type ConvexRoomGameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN" | "MATCHSLOP";
+export type ConvexRoomGameType = GameType;
 
 export type ConvexRoomPlayerType = "HUMAN" | "AI" | "SPECTATOR";
 
@@ -70,7 +72,7 @@ function isNullableNonEmptyString(value: unknown): value is string | null {
 }
 
 function isGameType(value: unknown): value is ConvexRoomGameType {
-  return value === "SLOPLASH" || value === "AI_CHAT_SHOWDOWN" || value === "MATCHSLOP";
+  return typeof value === "string" && GAME_TYPES.some((gameType) => gameType === value);
 }
 
 function isPlayerType(value: unknown): value is ConvexRoomPlayerType {

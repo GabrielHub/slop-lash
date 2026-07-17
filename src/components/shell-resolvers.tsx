@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation } from "convex/react";
 import type { GameType } from "@/games/core/types";
 import { GameShell } from "@/components/game-shell";
@@ -11,14 +11,13 @@ import { ChatGameShell } from "@/games/ai-chat-showdown/ui/chat-game-shell";
 import { ChatControllerShell } from "@/games/ai-chat-showdown/ui/chat-controller-shell";
 import { MatchSlopGameShell } from "@/games/matchslop/ui/matchslop-game-shell";
 import { MatchSlopControllerShell } from "@/games/matchslop/ui/matchslop-controller-shell";
+import { QuizslopGameShell } from "@/games/quizslop/ui/quizslop-game-shell";
+import { QuizslopControllerShell } from "@/games/quizslop/ui/quizslop-controller-shell";
 import { RoomShellErrorBoundary } from "@/components/room-shell-error-boundary";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { persistRoomSessionResult } from "@/lib/convex-room-client";
-import {
-  clearRoomCapabilityFromUrl,
-  readRoomCapabilityFragment,
-} from "@/lib/room-capability-link";
+import { clearRoomCapabilityFromUrl, readRoomCapabilityFragment } from "@/lib/room-capability-link";
 import { api } from "../../convex/_generated/api";
 
 const subscribeToNothing = () => () => {};
@@ -114,6 +113,74 @@ function RoomShellFallback({ error, loading }: { error: string | null; loading: 
   );
 }
 
+/**
+ * QuizSlop never renders a combined game shell. An accidental /game/{code}
+ * visit sends a player capability to its controller and a display-only host
+ * session to the shared stage.
+ */
+function QuizSlopGameRedirect({
+  code,
+  hasPlayerCapability,
+}: {
+  code: string;
+  hasPlayerCapability: boolean;
+}) {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace(hasPlayerCapability ? `/controller/${code}` : `/stage/${code}`);
+  }, [code, hasPlayerCapability, router]);
+
+  return (
+    <main className="min-h-svh flex items-center justify-center px-6">
+      <div className="w-8 h-8 rounded-full border-2 border-edge border-t-teal animate-spin" />
+    </main>
+  );
+}
+
+function unexpectedGameType(gameType: never): never {
+  throw new Error(`Unsupported game type: ${String(gameType)}`);
+}
+
+function resolveGameShell(
+  gameType: GameType,
+  code: string,
+  viewMode: "game" | "stage",
+  hasPlayerCapability: boolean,
+) {
+  switch (gameType) {
+    case "SLOPLASH":
+      return <GameShell code={code} viewMode={viewMode} />;
+    case "AI_CHAT_SHOWDOWN":
+      return <ChatGameShell code={code} viewMode={viewMode} />;
+    case "MATCHSLOP":
+      return <MatchSlopGameShell code={code} viewMode={viewMode} />;
+    case "QUIZSLOP":
+      return viewMode === "stage" ? (
+        <QuizslopGameShell code={code} viewMode={viewMode} />
+      ) : (
+        <QuizSlopGameRedirect code={code} hasPlayerCapability={hasPlayerCapability} />
+      );
+    default:
+      return unexpectedGameType(gameType);
+  }
+}
+
+function resolveControllerShell(gameType: GameType, code: string) {
+  switch (gameType) {
+    case "SLOPLASH":
+      return <ControllerShell code={code} />;
+    case "AI_CHAT_SHOWDOWN":
+      return <ChatControllerShell code={code} />;
+    case "MATCHSLOP":
+      return <MatchSlopControllerShell code={code} />;
+    case "QUIZSLOP":
+      return <QuizslopControllerShell code={code} />;
+    default:
+      return unexpectedGameType(gameType);
+  }
+}
+
 export function GameShellResolver({
   code,
   gameType: requestedGameType,
@@ -134,14 +201,12 @@ export function GameShellResolver({
       : (resolved.roomSession.playerCapability ?? resolved.roomSession.hostCapability)
     : null;
 
-  const shell =
-    gameType === "AI_CHAT_SHOWDOWN" ? (
-      <ChatGameShell code={code} viewMode={viewMode} />
-    ) : gameType === "MATCHSLOP" ? (
-      <MatchSlopGameShell code={code} viewMode={viewMode} />
-    ) : (
-      <GameShell code={code} viewMode={viewMode} />
-    );
+  const shell = resolveGameShell(
+    gameType,
+    code,
+    viewMode,
+    resolved.roomSession?.playerCapability != null,
+  );
 
   return (
     <RoomShellErrorBoundary
@@ -170,14 +235,7 @@ export function ControllerShellResolver({
     ? (resolved.roomSession.playerCapability ?? resolved.roomSession.hostCapability)
     : null;
 
-  const shell =
-    gameType === "AI_CHAT_SHOWDOWN" ? (
-      <ChatControllerShell code={code} />
-    ) : gameType === "MATCHSLOP" ? (
-      <MatchSlopControllerShell code={code} />
-    ) : (
-      <ControllerShell code={code} />
-    );
+  const shell = resolveControllerShell(gameType, code);
 
   return (
     <RoomShellErrorBoundary

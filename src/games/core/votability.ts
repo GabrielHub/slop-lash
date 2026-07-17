@@ -17,6 +17,9 @@ export function isPromptVotable(
   responses: ReadonlyArray<{ text: string }>,
 ): boolean {
   switch (gameType) {
+    // QuizSlop never uses the generic prompt/response/vote tables.
+    case "QUIZSLOP":
+      return false;
     case "MATCHSLOP":
       return responses.some((response) => response.text !== FORFEIT_MARKER);
     case "AI_CHAT_SHOWDOWN":

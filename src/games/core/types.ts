@@ -1,2 +1,3 @@
 /** Game modes supported by the shared Convex room platform. */
-export type GameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN" | "MATCHSLOP";
+export const GAME_TYPES = ["SLOPLASH", "AI_CHAT_SHOWDOWN", "MATCHSLOP", "QUIZSLOP"] as const;
+export type GameType = (typeof GAME_TYPES)[number];

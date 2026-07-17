@@ -206,8 +206,9 @@ export default function HostPage() {
     setError("");
 
     try {
+      const isQuizSlop = gameType === "QUIZSLOP";
       const room = await createRoom({
-        aiModelIds: selectedModels,
+        aiModelIds: isQuizSlop ? [] : selectedModels,
         gameType,
         hostName: hostName.trim() || undefined,
         hostParticipation,
@@ -216,11 +217,19 @@ export default function HostPage() {
         personaModelId: isMatchSlop ? (personaModelId ?? undefined) : undefined,
         seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
         timersDisabled,
-        ttsMode,
-        ttsVoice: ttsMode === "ON" ? ttsVoice : undefined,
+        ttsMode: isQuizSlop ? undefined : ttsMode,
+        ttsVoice: !isQuizSlop && ttsMode === "ON" ? ttsVoice : undefined,
       });
       persistRoomSessionResult(room);
-      router.push(room.playerId === null ? `/stage/${room.roomCode}` : `/game/${room.roomCode}`);
+      // A QuizSlop playing host answers on a private controller and opens the
+      // shared stage separately; a display-only host goes straight to stage.
+      router.push(
+        room.playerId === null
+          ? `/stage/${room.roomCode}`
+          : isQuizSlop
+            ? `/controller/${room.roomCode}`
+            : `/game/${room.roomCode}`,
+      );
     } catch (error) {
       setError(getConvexErrorMessage(error, "Failed to create game"));
     } finally {
