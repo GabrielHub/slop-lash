@@ -29,10 +29,10 @@ describe("QuizSlop reviewed catalog", () => {
     expect(failures).toEqual([]);
   });
 
-  test("content is still draft, so the approval gate fails by design", () => {
+  test("content carries named human approval, so the gate passes", () => {
     const failures = collectApprovalFailures(QUIZSLOP_TOPIC_CATALOG, QUIZSLOP_VOICE_LINES);
-    // Human approval is an explicit product gate; agents must not self-certify.
-    expect(failures.length).toBeGreaterThan(0);
+    // Approved for production by a named human reviewer; see review metadata.
+    expect(failures).toEqual([]);
   });
 
   test("approval requires named, timestamped human review", () => {

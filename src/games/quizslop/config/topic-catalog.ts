@@ -8,6 +8,7 @@
  * product gate; implementation agents must never mark draft content approved.
  */
 import type { QuizslopCatalogTopic } from "../types";
+import { QUIZSLOP_ADDITIONS_TOPICS } from "./topic-catalog-additions";
 import { QUIZSLOP_CULTURE_HISTORY_TOPICS } from "./topic-catalog-culture-history";
 import { QUIZSLOP_FLAGS_FILM_TOPICS } from "./topic-catalog-flags-film";
 import { QUIZSLOP_HISTORY_LIFESTYLE_TOPICS } from "./topic-catalog-history-lifestyle";
@@ -19,4 +20,5 @@ export const QUIZSLOP_TOPIC_CATALOG: readonly QuizslopCatalogTopic[] = [
   ...QUIZSLOP_FLAGS_FILM_TOPICS,
   ...QUIZSLOP_CULTURE_HISTORY_TOPICS,
   ...QUIZSLOP_HISTORY_LIFESTYLE_TOPICS,
+  ...QUIZSLOP_ADDITIONS_TOPICS,
 ];

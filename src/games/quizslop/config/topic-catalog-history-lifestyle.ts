@@ -2,136 +2,6 @@ import type { QuizslopCatalogTopic } from "../types";
 
 export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] = [
   {
-    id: "cat-ancient-egypt",
-    label: "Ancient Egypt",
-    category: "HISTORY",
-    scope: "Ancient Egyptian civilisation: its pharaohs, monuments, and daily life.",
-    exclusions: ["Greco-Roman Egypt after 30 BC", "Modern Egypt"],
-    canonicalKey: "f549d19c5e8fff17d173b7feebfe1490b8f9a101910d84de32d1cb94a99ff316",
-    packVersion: 1,
-    retired: false,
-    questions: [
-      {
-        id: "cat-ancient-egypt-q1",
-        tier: "EASY",
-        neutralQuestion:
-          "What massive stone tombs did the ancient Egyptians build on the Giza plateau?",
-        displayPrompt:
-          "Which massive stone tombs did the ancient Egyptians pile up on the Giza plateau, giving tourists neck cramps ever since?",
-        choices: ["Pyramids", "Ziggurats", "Pagodas", "Colosseums"],
-        correctIndex: 0,
-        canonicalFact:
-          "The ancient Egyptians built pyramids as royal tombs, most famously at Giza.",
-        explanation:
-          "The Egyptians built pyramids as royal tombs, the Giza pyramids being the most famous. The Great Pyramid stood as the tallest human structure for millennia.",
-        comedyDevices: ["AFFECTIONATE_ROAST"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Egyptian_pyramids",
-            title: "Egyptian pyramids - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "0b6c77253ee8bda783220c8af35b81fac7ef135ebe8e315c412938a7f8a2c177",
-            supportExcerpt:
-              "The Egyptian pyramids are ancient masonry structures built as royal tombs; the most famous are the pyramids of the Giza plateau, including the Great Pyramid.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-ancient-egypt-q2",
-        tier: "MEDIUM",
-        neutralQuestion: "Which artifact was key to deciphering ancient Egyptian hieroglyphs?",
-        displayPrompt:
-          "Which slab of stone, carrying the same decree in three scripts, finally cracked the code of Egyptian hieroglyphs?",
-        choices: [
-          "The Rosetta Stone",
-          "The Dead Sea Scrolls",
-          "The Code of Hammurabi",
-          "The Behistun Inscription",
-        ],
-        correctIndex: 0,
-        canonicalFact:
-          "The Rosetta Stone, inscribed in three scripts, was key to deciphering Egyptian hieroglyphs.",
-        explanation:
-          "The Rosetta Stone repeats one decree in hieroglyphic, Demotic, and Greek, letting scholars finally read hieroglyphs. A cheat sheet carved in stone.",
-        comedyDevices: ["UNEXPECTED_SPECIFICITY"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Rosetta_Stone",
-            title: "Rosetta Stone - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "14c906a2327a61cda304cfc09981c580d99580c379aadd4d2201028caa82054a",
-            supportExcerpt:
-              "The Rosetta Stone is inscribed with the same decree in three scripts, and its Greek text allowed scholars to decipher Egyptian hieroglyphs.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-ancient-egypt-q3",
-        tier: "HARD",
-        neutralQuestion: "Which pharaoh's nearly intact tomb did Howard Carter discover in 1922?",
-        displayPrompt:
-          "Which young pharaoh's nearly intact tomb did Howard Carter uncover in 1922, treasure and all?",
-        choices: ["Tutankhamun", "Ramesses II", "Khufu", "Akhenaten"],
-        correctIndex: 0,
-        canonicalFact: "Howard Carter discovered the nearly intact tomb of Tutankhamun in 1922.",
-        explanation:
-          "Howard Carter found Tutankhamun's largely intact tomb in 1922, packed with gold. The boy king became far more famous dead than he ever was alive.",
-        comedyDevices: ["DRY_ASIDE"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Tutankhamun",
-            title: "Tutankhamun - Wikipedia",
-            locator: "Tomb",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "ca520feb5955e819255bf90c16a164a78121d050d38e2b9f2037e74342e15716",
-            supportExcerpt:
-              "The nearly intact tomb of the pharaoh Tutankhamun was discovered by the archaeologist Howard Carter in 1922 in the Valley of the Kings.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-ancient-egypt-q4",
-        tier: "INSANE",
-        neutralQuestion:
-          "Which long-reigning female pharaoh of the Eighteenth Dynasty was often depicted wearing a false ceremonial beard?",
-        displayPrompt:
-          "Which powerful female pharaoh of the Eighteenth Dynasty had herself depicted wearing the traditional royal false beard?",
-        choices: ["Hatshepsut", "Nefertiti", "Cleopatra VII", "Nefertari"],
-        correctIndex: 0,
-        canonicalFact:
-          "Hatshepsut, a female pharaoh of Egypt's Eighteenth Dynasty, was often depicted wearing the royal false beard.",
-        explanation:
-          "Hatshepsut ruled as pharaoh in the Eighteenth Dynasty and was shown with the ceremonial false beard of kingship. She adopted the dress code and kept the throne for two decades.",
-        comedyDevices: ["UNDERSTATEMENT", "UNEXPECTED_SPECIFICITY"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Hatshepsut",
-            title: "Hatshepsut - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "6f2062ce0535f868e22e7fd4163ef9ec5fe57747568ab44c47b6f9a540baf17a",
-            supportExcerpt:
-              "Hatshepsut was the fifth pharaoh of the Eighteenth Dynasty of Egypt and one of its most successful rulers; she was frequently depicted with the traditional false beard of a pharaoh.",
-            primary: true,
-          },
-        ],
-      },
-    ],
-    review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
-    },
-  },
-  {
     id: "cat-cheese-dairy",
     label: "Cheese & Dairy",
     category: "FOOD_DRINK",
@@ -146,13 +16,13 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "EASY",
         neutralQuestion: "Which firm cheese takes its name from a village in Somerset, England?",
         displayPrompt:
-          "Which firm, crumbly cheese borrowed its name from a Somerset village and then conquered sandwiches worldwide?",
+          "Which firm, crumbly cheese borrowed its name from a Somerset village and then took over sandwiches worldwide?",
         choices: ["Cheddar", "Brie", "Mozzarella", "Feta"],
         correctIndex: 0,
         canonicalFact:
           "Cheddar cheese originated in and is named after the village of Cheddar in Somerset, England.",
         explanation:
-          "Cheddar is named after the Somerset village where it originated and is now made worldwide. The village gave up naming rights and got nothing in return.",
+          "Cheddar is named after the Somerset village where it began, and is now made everywhere. The village handed over naming rights and got not a single wheel in return.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -172,12 +42,12 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "MEDIUM",
         neutralQuestion: "Which Italian cheese is the traditional base for the dessert tiramisu?",
         displayPrompt:
-          "Which rich Italian cheese quietly holds tiramisu together while the coffee and cocoa get all the attention?",
+          "Which rich Italian cheese quietly holds tiramisu together while the coffee and cocoa collect all the applause?",
         choices: ["Mascarpone", "Ricotta", "Parmesan", "Provolone"],
         correctIndex: 0,
         canonicalFact: "Mascarpone is the traditional cheese used to make tiramisu.",
         explanation:
-          "Mascarpone gives tiramisu its rich, creamy layers. The unsung structural support behind a very photogenic dessert.",
+          "Mascarpone gives tiramisu its creamy layers. The load-bearing ingredient in a very photogenic dessert, and it is credited by absolutely nobody.",
         comedyDevices: ["DRY_ASIDE"],
         sources: [
           {
@@ -198,7 +68,7 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         neutralQuestion:
           "In Swiss cheeses like Emmental, what traditionally creates the characteristic holes?",
         displayPrompt:
-          "In Emmental and similar Swiss cheeses, what actually forms those famous holes during ripening?",
+          "In Emmental and similar Swiss cheeses, what actually forms those famous holes as the cheese ripens?",
         choices: [
           "Gas released by bacteria",
           "Air injection machines",
@@ -209,7 +79,7 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         canonicalFact:
           "The holes, or eyes, in Swiss cheeses like Emmental form from carbon dioxide released by bacteria during ripening.",
         explanation:
-          "The holes in Emmental come from carbon dioxide that bacteria release as the cheese ripens. Tiny microbes, quietly burping art into your sandwich.",
+          "The holes in Emmental come from carbon dioxide that bacteria release as the cheese ripens. Tiny microbes, quietly exhaling art into your sandwich.",
         comedyDevices: ["INCONGRUITY"],
         sources: [
           {
@@ -230,13 +100,13 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         neutralQuestion:
           "Which French blue cheese is traditionally ripened in the natural caves of Roquefort-sur-Soulzon using Penicillium roqueforti?",
         displayPrompt:
-          "Which French blue cheese is legally ripened in specific natural caves and veined by one very particular mould?",
+          "Which French blue cheese is legally ripened only in specific natural caves and veined by one very particular mould?",
         choices: ["Roquefort", "Gorgonzola", "Stilton", "Camembert"],
         correctIndex: 0,
         canonicalFact:
           "Roquefort is a French blue cheese made from sheep's milk and aged in the caves of Roquefort-sur-Soulzon with Penicillium roqueforti.",
         explanation:
-          "Roquefort is ripened in the natural caves of Roquefort-sur-Soulzon and veined with Penicillium roqueforti mould. Protected by law, because the French take their mould seriously.",
+          "Roquefort ripens in the natural caves of Roquefort-sur-Soulzon and is veined with Penicillium roqueforti. Protected by French law, because the mould has paperwork.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -253,12 +123,12 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
   {
@@ -276,13 +146,13 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "EASY",
         neutralQuestion: "How many interlocking rings appear on the Olympic flag?",
         displayPrompt:
-          "How many interlocking rings make up the famous Olympic flag, one for roughly each inhabited continent?",
+          "How many interlocking rings make up the Olympic flag, roughly one for each inhabited continent?",
         choices: ["Five", "Four", "Six", "Three"],
         correctIndex: 0,
         canonicalFact:
           "The Olympic flag features five interlocking rings, representing the inhabited continents.",
         explanation:
-          "The Olympic flag has five interlocking rings for the inhabited continents of the world. Antarctica, predictably, was left off the guest list.",
+          "The Olympic flag carries five interlocking rings for the inhabited continents. Antarctica, as ever, did not make the guest list.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -302,12 +172,12 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "MEDIUM",
         neutralQuestion: "In which city were the first modern Olympic Games held in 1896?",
         displayPrompt:
-          "Which city hosted the very first modern Olympic Games in 1896, keeping things fittingly Greek?",
+          "Which city hosted the first modern Olympic Games in 1896, keeping the whole revival fittingly Greek?",
         choices: ["Athens", "Paris", "London", "Olympia"],
         correctIndex: 0,
         canonicalFact: "The first modern Olympic Games were held in Athens, Greece, in 1896.",
         explanation:
-          "Athens hosted the first modern Olympics in 1896, a nod to the games' Greek roots. The ancient site of Olympia had to sit this revival out.",
+          "Athens hosted the first modern Olympics in 1896, a nod to the games' Greek roots. The ancient site of Olympia had to sit its own revival out.",
         comedyDevices: ["UNDERSTATEMENT"],
         sources: [
           {
@@ -333,7 +203,7 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         canonicalFact:
           "The standardised Olympic marathon distance is 42.195 kilometres, about 26.2 miles.",
         explanation:
-          "The marathon was fixed at 42.195 kilometres, a length shaped by the 1908 London course. An oddly specific number blamed largely on royal viewing preferences.",
+          "The marathon was fixed at 42.195 kilometres, a length shaped by the 1908 London course. Those final 195 metres reportedly exist so runners finished in front of the royal box.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
         sources: [
           {
@@ -352,15 +222,15 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
         id: "cat-olympic-games-q4",
         tier: "INSANE",
         neutralQuestion:
-          "The traditional Olympic motto is 'Citius, Altius, ___' - what is the third Latin word, meaning 'Stronger'?",
+          "In the traditional Olympic motto 'Citius, Altius, ___', what is the third Latin word, meaning 'Stronger'?",
         displayPrompt:
-          "The classic Olympic motto runs 'Citius, Altius, ___' - faster, higher, and which third Latin word meaning stronger?",
+          "The classic Olympic motto runs 'Citius, Altius, ___': faster, higher, and which third Latin word for stronger?",
         choices: ["Fortius", "Fortis", "Maximus", "Potentius"],
         correctIndex: 0,
         canonicalFact:
           "The traditional Olympic motto is 'Citius, Altius, Fortius', meaning Faster, Higher, Stronger; the third word is Fortius.",
         explanation:
-          "The traditional Olympic motto is 'Citius, Altius, Fortius' - Faster, Higher, Stronger. In 2021 they bolted on a fourth word, 'Communiter', because three apparently felt lonely.",
+          "The traditional Olympic motto is 'Citius, Altius, Fortius', or Faster, Higher, Stronger. In 2021 they bolted on a fourth word, 'Communiter', because three apparently felt lonely.",
         comedyDevices: ["INCONGRUITY", "DRY_ASIDE"],
         sources: [
           {
@@ -377,12 +247,12 @@ export const QUIZSLOP_HISTORY_LIFESTYLE_TOPICS: readonly QuizslopCatalogTopic[] 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
 ];

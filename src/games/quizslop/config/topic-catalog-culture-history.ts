@@ -2,130 +2,6 @@ import type { QuizslopCatalogTopic } from "../types";
 
 export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = [
   {
-    id: "cat-the-beatles",
-    label: "The Beatles",
-    category: "MUSIC",
-    scope: "The English rock band The Beatles: their members, albums, and songs.",
-    exclusions: ["Solo careers after the 1970 breakup", "Releases after 2024"],
-    canonicalKey: "1b6d59dec8941e7f9ed091d7494c681a4724bc2832ac31b41192d9b9f835b69c",
-    packVersion: 1,
-    retired: false,
-    questions: [
-      {
-        id: "cat-the-beatles-q1",
-        tier: "EASY",
-        neutralQuestion: "How many members made up the classic lineup of The Beatles?",
-        displayPrompt:
-          "How many mop-topped members made up the classic, chart-dominating lineup of The Beatles?",
-        choices: ["Four", "Three", "Five", "Two"],
-        correctIndex: 0,
-        canonicalFact:
-          "The classic lineup of The Beatles had four members: John Lennon, Paul McCartney, George Harrison, and Ringo Starr.",
-        explanation:
-          "The Beatles' classic lineup was four: Lennon, McCartney, Harrison, and Starr. Earlier lineups cycled through members like a revolving door before the fame hit.",
-        comedyDevices: ["AFFECTIONATE_ROAST"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/The_Beatles",
-            title: "The Beatles - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "829c19b7d16902e20d0ba6642b1017b377f552634f75705076e0f542a694574a",
-            supportExcerpt:
-              "The Beatles were an English rock band whose classic and final lineup comprised John Lennon, Paul McCartney, George Harrison and Ringo Starr.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-the-beatles-q2",
-        tier: "MEDIUM",
-        neutralQuestion: "Which drummer joined The Beatles in 1962, replacing Pete Best?",
-        displayPrompt:
-          "Which drummer stepped in for Pete Best in 1962 and rode along for the entire Beatlemania wave?",
-        choices: ["Ringo Starr", "Pete Best", "George Martin", "Stuart Sutcliffe"],
-        correctIndex: 0,
-        canonicalFact: "Ringo Starr joined The Beatles as drummer in 1962, replacing Pete Best.",
-        explanation:
-          "Ringo Starr replaced Pete Best on drums in 1962, just before the band exploded. Timing, as they say, is everything.",
-        comedyDevices: ["UNDERSTATEMENT"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Ringo_Starr",
-            title: "Ringo Starr - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "2bcbc41efa96e1e2e212c492626c95623fe11eebd031e1d2c347f508c3cbb762",
-            supportExcerpt:
-              "Ringo Starr joined the Beatles in 1962, replacing Pete Best as the band's drummer shortly before their rise to international fame.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-the-beatles-q3",
-        tier: "HARD",
-        neutralQuestion: "Which 1969 album was the last one The Beatles recorded together?",
-        displayPrompt:
-          "Which 1969 album was the final record The Beatles actually recorded together, even though another was released later?",
-        choices: ["Abbey Road", "Let It Be", "The White Album", "Revolver"],
-        correctIndex: 0,
-        canonicalFact:
-          "Abbey Road (1969) was the last album The Beatles recorded together, though Let It Be was released later in 1970.",
-        explanation:
-          "Abbey Road (1969) was the last album the band recorded together; Let It Be came out later but was mostly taped earlier. The paperwork outlived the band.",
-        comedyDevices: ["DRY_ASIDE"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Abbey_Road",
-            title: "Abbey Road - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "f410488651e4eef6eef45be1fc30fa71b25ccac260a1663eb2b2d38a9d7c6088",
-            supportExcerpt:
-              "Abbey Road is the eleventh studio album by the Beatles, released in 1969; it was the last album the group recorded together, although Let It Be was the last released.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-the-beatles-q4",
-        tier: "INSANE",
-        neutralQuestion:
-          "Which 1964 Beatles album was the first to consist entirely of original compositions?",
-        displayPrompt:
-          "Which 1964 Beatles album was the first with zero cover versions, written entirely in-house by the band?",
-        choices: ["A Hard Day's Night", "Please Please Me", "With the Beatles", "Beatles for Sale"],
-        correctIndex: 0,
-        canonicalFact:
-          "A Hard Day's Night (1964) was the first Beatles album composed entirely of original Lennon-McCartney songs.",
-        explanation:
-          "A Hard Day's Night (1964) was the first Beatles album with no cover versions, all Lennon-McCartney originals. They finally stopped borrowing the setlist.",
-        comedyDevices: ["UNEXPECTED_SPECIFICITY", "DRY_ASIDE"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/A_Hard_Day%27s_Night_(album)",
-            title: "A Hard Day's Night (album) - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "528173818aed01603f0b7afd834f461e4e44056ebe36a57fd86e037a4db587a5",
-            supportExcerpt:
-              "A Hard Day's Night is the first Beatles album to feature entirely original compositions, and the only one on which every song was written by Lennon-McCartney.",
-            primary: true,
-          },
-        ],
-      },
-    ],
-    review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
-    },
-  },
-  {
     id: "cat-classic-nintendo",
     label: "Classic Nintendo Games",
     category: "GAMES",
@@ -140,13 +16,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         tier: "EASY",
         neutralQuestion: "What is the name of Nintendo's mustachioed plumber mascot?",
         displayPrompt:
-          "Which mustachioed plumber became Nintendo's mascot, despite doing almost no visible plumbing?",
+          "Which mustachioed plumber became Nintendo's mascot despite doing almost no on-screen plumbing?",
         choices: ["Mario", "Luigi", "Wario", "Toad"],
         correctIndex: 0,
         canonicalFact:
           "Mario is Nintendo's mascot, a mustachioed plumber who debuted in the early 1980s.",
         explanation:
-          "Mario is Nintendo's plumber mascot, first named around 1981. His actual pipe-repair record remains suspiciously thin.",
+          "Mario is Nintendo's plumber mascot, named around 1981. His logged pipe repairs stay suspiciously low; mostly he jumps on things and rescues royalty.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -166,13 +42,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         tier: "MEDIUM",
         neutralQuestion: "In The Legend of Zelda games, what is the name of the playable hero?",
         displayPrompt:
-          "In The Legend of Zelda, what is the actual name of the green-clad hero, who is famously not named Zelda?",
+          "In The Legend of Zelda, what is the actual name of the green-clad hero, who is famously not the one called Zelda?",
         choices: ["Link", "Zelda", "Ganon", "Navi"],
         correctIndex: 0,
         canonicalFact:
           "Link is the playable hero of The Legend of Zelda series; Zelda is the princess.",
         explanation:
-          "The hero of The Legend of Zelda is Link; Zelda is the princess he rescues. The title refers to her, which has fuelled a lasting name mix-up.",
+          "The hero of The Legend of Zelda is Link; Zelda is the princess he rescues. The title names her, which has fuelled decades of people calling the hero Zelda anyway.",
         comedyDevices: ["DRY_ASIDE"],
         sources: [
           {
@@ -193,13 +69,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         neutralQuestion:
           "Which 1996 Nintendo 64 launch game is widely credited with defining 3D platforming?",
         displayPrompt:
-          "Which 1996 Nintendo 64 launch title basically wrote the rulebook for moving a character around in 3D?",
+          "Which 1996 Nintendo 64 launch title basically wrote the rulebook for steering a character around in 3D?",
         choices: ["Super Mario 64", "GoldenEye 007", "Banjo-Kazooie", "Star Fox 64"],
         correctIndex: 0,
         canonicalFact:
           "Super Mario 64 (1996) was a Nintendo 64 launch title credited with establishing 3D platforming conventions.",
         explanation:
-          "Super Mario 64 launched with the N64 in 1996 and set the template for 3D platformers, camera struggles included. Everyone else spent years catching up.",
+          "Super Mario 64 launched with the N64 in 1996 and set the template for 3D platformers, wandering camera and all. Everyone else spent years catching up.",
         comedyDevices: ["UNDERSTATEMENT"],
         sources: [
           {
@@ -220,13 +96,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         neutralQuestion:
           "What was the Japanese name of the 1983 Nintendo console released internationally as the NES?",
         displayPrompt:
-          "What was the Japanese name of the 1983 Nintendo console that reached the West as the NES?",
+          "What was the Japanese name of the 1983 Nintendo console that reached the West two years later as the NES?",
         choices: ["Family Computer (Famicom)", "Super Famicom", "PC Engine", "Color TV-Game"],
         correctIndex: 0,
         canonicalFact:
           "The Nintendo Entertainment System was released in Japan in 1983 as the Family Computer, or Famicom.",
         explanation:
-          "Nintendo launched the console in Japan in 1983 as the Family Computer (Famicom); the West received it as the NES in 1985. Same box, different accent.",
+          "Nintendo launched the console in Japan in 1983 as the Family Computer, or Famicom; the West got it as the NES in 1985. Same box, new accent.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "WORDPLAY"],
         sources: [
           {
@@ -243,12 +119,12 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
   {
@@ -267,13 +143,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         neutralQuestion:
           "According to legend, which twin founded Rome after his brother Remus died?",
         displayPrompt:
-          "Roman legend says the city was founded by which twin, right after a fatal disagreement with his brother Remus?",
+          "Roman legend credits which twin with founding the city, right after a fatal falling-out with his brother Remus?",
         choices: ["Romulus", "Remus", "Julius Caesar", "Augustus"],
         correctIndex: 0,
         canonicalFact:
           "According to Roman legend, Romulus founded Rome and killed his twin brother Remus.",
         explanation:
-          "Legend credits Romulus with founding Rome in 753 BC after killing his twin Remus. A sibling squabble that escalated into an empire.",
+          "Legend credits Romulus with founding Rome in 753 BC after killing his twin Remus. A brotherly boundary dispute that eventually turned into an empire.",
         comedyDevices: ["UNDERSTATEMENT"],
         sources: [
           {
@@ -293,12 +169,12 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         tier: "MEDIUM",
         neutralQuestion: "In what year was Julius Caesar assassinated?",
         displayPrompt:
-          "In which year did a group of senators turn the Ides of March into a very bad day for Julius Caesar?",
+          "In which year did a crowd of senators turn the Ides of March into a very bad afternoon for Julius Caesar?",
         choices: ["44 BC", "27 BC", "14 AD", "63 BC"],
         correctIndex: 0,
         canonicalFact: "Julius Caesar was assassinated on the Ides of March, 15 March, in 44 BC.",
         explanation:
-          "Julius Caesar was assassinated on 15 March, 44 BC, the Ides of March. Roughly sixty conspirators turned up, which is not subtle.",
+          "Julius Caesar was assassinated on 15 March, 44 BC, the Ides of March. Roughly sixty senators took part, which rather rules out a quiet misunderstanding.",
         comedyDevices: ["DRY_ASIDE"],
         sources: [
           {
@@ -319,13 +195,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         neutralQuestion:
           "Which Roman emperor ordered the construction of a defensive wall across northern Britain around 122 AD?",
         displayPrompt:
-          "Which emperor drew a hard line across northern Britain around 122 AD, building a wall that still bears his name?",
+          "Which emperor drew a hard line across northern Britain around 122 AD, building a wall that still carries his name?",
         choices: ["Hadrian", "Trajan", "Nero", "Augustus"],
         correctIndex: 0,
         canonicalFact:
           "Emperor Hadrian ordered the building of Hadrian's Wall across northern Britain, begun around 122 AD.",
         explanation:
-          "Hadrian ordered his namesake wall across northern Britain around 122 AD. Nothing says imperial confidence like naming a wall after yourself.",
+          "Hadrian ordered his namesake wall across northern Britain around 122 AD. Few statements of imperial confidence beat naming a 117-kilometre wall after yourself.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -345,13 +221,13 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
         tier: "INSANE",
         neutralQuestion: "Which emperor was the last of the so-called Five Good Emperors of Rome?",
         displayPrompt:
-          "Which philosopher-emperor was the last of the 'Five Good Emperors,' right before the streak ended with his son?",
+          "Which philosopher-emperor was the last of the 'Five Good Emperors,' just before the run ended with his own son?",
         choices: ["Marcus Aurelius", "Commodus", "Trajan", "Nerva"],
         correctIndex: 0,
         canonicalFact:
           "Marcus Aurelius, who reigned from 161 to 180 AD, was the last of the Five Good Emperors.",
         explanation:
-          "Marcus Aurelius, the philosopher-emperor who wrote Meditations, was the last of the Five Good Emperors. His son Commodus promptly ended the good run.",
+          "Marcus Aurelius, who wrote Meditations, was the last of the Five Good Emperors. He then handed the throne to his son Commodus, and the good run promptly ended.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "DRY_ASIDE"],
         sources: [
           {
@@ -368,12 +244,12 @@ export const QUIZSLOP_CULTURE_HISTORY_TOPICS: readonly QuizslopCatalogTopic[] = 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
 ];

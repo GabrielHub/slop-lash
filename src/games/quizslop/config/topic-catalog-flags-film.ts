@@ -2,132 +2,6 @@ import type { QuizslopCatalogTopic } from "../types";
 
 export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
   {
-    id: "cat-world-flags",
-    label: "World Flags",
-    category: "GEOGRAPHY",
-    scope: "National flags of the world: their colours, symbols, and designs.",
-    exclusions: ["Historical flags no longer in use", "Subnational or regional flags"],
-    canonicalKey: "d42bc9986e0fb6978024c300cb82f2a2cf6f249c5d71a81bc2c0e1a22288c48d",
-    packVersion: 1,
-    retired: false,
-    questions: [
-      {
-        id: "cat-world-flags-q1",
-        tier: "EASY",
-        neutralQuestion:
-          "Which country's flag features a single red maple leaf on a white centre panel?",
-        displayPrompt:
-          "Which country put a single red maple leaf front and centre on its flag and called it a day?",
-        choices: ["Canada", "Lebanon", "Denmark", "Norway"],
-        correctIndex: 0,
-        canonicalFact:
-          "Canada's flag features a red maple leaf on a white square between two red vertical bands.",
-        explanation:
-          "Canada's flag centres an eleven-point red maple leaf on white, flanked by red bands. Adopted in 1965 after decades of debate over one leaf.",
-        comedyDevices: ["DRY_ASIDE"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Flag_of_Canada",
-            title: "Flag of Canada - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "c4416bc946f2f45a23e752e6324df93f2702152d1848e4174519db322cce33bd",
-            supportExcerpt:
-              "The national flag of Canada consists of a red field with a white square at its centre in which is featured a stylised, eleven-pointed red maple leaf, adopted in 1965.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-world-flags-q2",
-        tier: "MEDIUM",
-        neutralQuestion: "The single red disc on the flag of Japan represents what?",
-        displayPrompt:
-          "Japan's flag is a lone red disc on white, a minimalist salute to which celestial object?",
-        choices: ["The Sun", "A full moon", "A red pearl", "A distant planet"],
-        correctIndex: 0,
-        canonicalFact:
-          "The red disc on Japan's flag represents the Sun; Japan is called the Land of the Rising Sun.",
-        explanation:
-          "Japan's flag shows a red sun disc, fitting for the Land of the Rising Sun. Rarely has a nation branded itself so efficiently.",
-        comedyDevices: ["UNDERSTATEMENT"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Flag_of_Japan",
-            title: "Flag of Japan - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "4cda81eb9502cdd3dee03309a1e1daa83411f54fef47857c74d2f2be448b234d",
-            supportExcerpt:
-              "The national flag of Japan is a white banner with a crimson-red circle at its centre; the disc represents the Sun, and Japan is known as the Land of the Rising Sun.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-world-flags-q3",
-        tier: "HARD",
-        neutralQuestion: "How many horizontal stripes does the flag of the United States have?",
-        displayPrompt:
-          "The US flag carries 50 stars for the states and how many stripes for the original colonies?",
-        choices: ["13", "50", "12", "15"],
-        correctIndex: 0,
-        canonicalFact:
-          "The flag of the United States has 13 stripes, one for each of the original thirteen colonies.",
-        explanation:
-          "The US flag keeps 13 stripes for the original colonies while the stars grew to 50. The stripes quietly held the line at thirteen.",
-        comedyDevices: ["ANTHROPOMORPHISM"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Flag_of_the_United_States",
-            title: "Flag of the United States - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "a95f3d08268d586c0a95b92e327d5e3a6480d9b27ef2c4d3f20691d09e76621d",
-            supportExcerpt:
-              "The flag of the United States has thirteen horizontal stripes, alternating red and white, representing the thirteen original colonies, and fifty white stars for the states.",
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: "cat-world-flags-q4",
-        tier: "INSANE",
-        neutralQuestion:
-          "Which country has the world's only non-quadrilateral national flag, made of two stacked triangular pennants?",
-        displayPrompt:
-          "Which nation refuses the standard rectangle, flying a flag built from two stacked triangular pennants?",
-        choices: ["Nepal", "Bhutan", "Switzerland", "Vatican City"],
-        correctIndex: 0,
-        canonicalFact:
-          "Nepal has the only non-rectangular national flag, formed by two stacked pennant shapes.",
-        explanation:
-          "Nepal's flag is the world's only non-rectangular national flag, two stacked pennants representing the Himalayas. Geometry class, but patriotic.",
-        comedyDevices: ["INCONGRUITY", "UNEXPECTED_SPECIFICITY"],
-        sources: [
-          {
-            url: "https://en.wikipedia.org/wiki/Flag_of_Nepal",
-            title: "Flag of Nepal - Wikipedia",
-            locator: "lead section",
-            retrievedAt: "2026-07-16T00:00:00.000Z",
-            contentHash: "34bfdab665a0dba9586beca97461bc9cd1f7215de61d11c755cc378a9c428f4d",
-            supportExcerpt:
-              "The national flag of Nepal is the world's only non-rectangular national flag, consisting of two stacked triangular pennants.",
-            primary: true,
-          },
-        ],
-      },
-    ],
-    review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
-    },
-  },
-  {
     id: "cat-studio-ghibli",
     label: "Studio Ghibli Films",
     category: "FILM_TV",
@@ -143,13 +17,13 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         neutralQuestion:
           "What is the name of the large forest spirit in the film My Neighbor Totoro?",
         displayPrompt:
-          "In one of Ghibli's most beloved films, what is the name of the giant, mostly silent forest spirit who befriends two sisters?",
+          "In one of Ghibli's most beloved films, what is the name of the giant, mostly silent forest spirit who adopts two young sisters?",
         choices: ["Totoro", "Ponyo", "Jiji", "Calcifer"],
         correctIndex: 0,
         canonicalFact:
           "Totoro is the large forest spirit in Studio Ghibli's 1988 film My Neighbor Totoro.",
         explanation:
-          "Totoro is the giant forest spirit of the 1988 classic and Studio Ghibli's mascot. A creature whose core skills are napping and waiting at bus stops.",
+          "Totoro is the giant forest spirit of the 1988 classic and Ghibli's mascot. His documented skills are napping, growing trees overnight, and waiting at bus stops.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -176,7 +50,7 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         canonicalFact:
           "Spirited Away (2001) was the first Studio Ghibli film to win the Academy Award for Best Animated Feature, at the 2003 ceremony.",
         explanation:
-          "Spirited Away won Best Animated Feature at the 2003 Oscars, the first Ghibli film to do so. It beat a field of louder, flashier competitors.",
+          "Spirited Away won Best Animated Feature at the 2003 Oscars, the first Ghibli film to do so. A hand-drawn, subtitled bathhouse story beat the flashier field.",
         comedyDevices: ["DRY_ASIDE"],
         sources: [
           {
@@ -197,7 +71,7 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         neutralQuestion:
           "Which Studio Ghibli film directed by Isao Takahata retells the folktale of a girl found inside a bamboo stalk?",
         displayPrompt:
-          "Which hand-drawn Ghibli film from Isao Takahata retells the old folktale of a princess discovered inside a glowing bamboo stalk?",
+          "Which hand-drawn Ghibli film from Isao Takahata retells the old folktale of a princess found glowing inside a bamboo stalk?",
         choices: [
           "The Tale of the Princess Kaguya",
           "Grave of the Fireflies",
@@ -208,7 +82,7 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         canonicalFact:
           "The Tale of the Princess Kaguya (2013) is Isao Takahata's Ghibli film based on The Tale of the Bamboo Cutter.",
         explanation:
-          "The Tale of the Princess Kaguya (2013), directed by Isao Takahata, adapts the classic Bamboo Cutter folktale in a watercolour style. Years of painstaking sketching for a story about a girl in a plant.",
+          "The Tale of the Princess Kaguya (2013), by Isao Takahata, adapts the classic Bamboo Cutter folktale in a watercolour style. Years of painstaking sketching, all for a baby in a plant.",
         comedyDevices: ["UNDERSTATEMENT"],
         sources: [
           {
@@ -234,7 +108,7 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         canonicalFact:
           "Studio Ghibli was founded in 1985 by Hayao Miyazaki, Isao Takahata, and Toshio Suzuki.",
         explanation:
-          "Studio Ghibli was founded in June 1985 after the success of Nausicaä of the Valley of the Wind. Its name comes from an Italian word for a hot desert wind.",
+          "Studio Ghibli was founded in June 1985 after the success of Nausicaä. Its name comes from an Italian word for a hot Saharan wind, chosen to promise a fresh gust through anime.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "DRY_ASIDE"],
         sources: [
           {
@@ -251,12 +125,12 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
   {
@@ -274,12 +148,12 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         tier: "EASY",
         neutralQuestion: "In the film Toy Story, what type of character is the toy Woody?",
         displayPrompt:
-          "In Pixar's first feature, Woody the pull-string toy is styled as what kind of character?",
+          "In Pixar's first feature, Woody the pull-string toy is styled as which kind of character?",
         choices: ["A cowboy", "An astronaut", "A dinosaur", "A race car"],
         correctIndex: 0,
         canonicalFact: "Woody, from Toy Story (1995), is a pull-string cowboy doll.",
         explanation:
-          "Woody is a pull-string cowboy doll and the reluctant leader of Andy's toys. His main rival soon arrives claiming to be an actual space ranger.",
+          "Woody is a pull-string cowboy doll and the reluctant leader of Andy's toys. His authority holds right up until a self-described space ranger moves in.",
         comedyDevices: ["DRY_ASIDE"],
         sources: [
           {
@@ -300,13 +174,13 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         neutralQuestion:
           "Which Pixar film centres on a rat named Remy who wants to become a chef in Paris?",
         displayPrompt:
-          "Which Pixar film asks audiences to root for a Parisian rat who dreams of running a gourmet kitchen?",
+          "Which Pixar film asks the audience to root for a Parisian rat who dreams of running a fine-dining kitchen?",
         choices: ["Ratatouille", "Finding Nemo", "Up", "Cars"],
         correctIndex: 0,
         canonicalFact:
           "Ratatouille (2007) follows Remy, a rat who aspires to be a gourmet chef in Paris.",
         explanation:
-          "Ratatouille (2007) follows Remy, a rat with refined taste, cooking in a Parisian restaurant. Health inspectors were, notably, never consulted.",
+          "Ratatouille (2007) follows Remy, a rat with a refined palate, cooking in a top Paris restaurant. Every health inspector in France declined to comment.",
         comedyDevices: ["INCONGRUITY"],
         sources: [
           {
@@ -333,7 +207,7 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         canonicalFact:
           "Finding Nemo (2003) was the first Pixar film to win the Academy Award for Best Animated Feature.",
         explanation:
-          "Finding Nemo (2003) was Pixar's first Best Animated Feature winner. Not bad for a film about a fish crossing an ocean to find one other fish.",
+          "Finding Nemo (2003) was Pixar's first Best Animated Feature winner. Solid work for a film about a fish crossing an ocean to locate one specific other fish.",
         comedyDevices: ["UNDERSTATEMENT"],
         sources: [
           {
@@ -354,13 +228,13 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
         neutralQuestion:
           "Which composer wrote the scores for the Pixar films The Incredibles and Ratatouille?",
         displayPrompt:
-          "Which composer provided the brassy, jazzy scores for both The Incredibles and Ratatouille?",
+          "Which composer wrote the brassy, jazz-tinged scores for both The Incredibles and Ratatouille?",
         choices: ["Michael Giacchino", "Randy Newman", "Thomas Newman", "Hans Zimmer"],
         correctIndex: 0,
         canonicalFact:
           "Michael Giacchino composed the scores for The Incredibles (2004) and Ratatouille (2007).",
         explanation:
-          "Michael Giacchino scored The Incredibles and Ratatouille, and later won an Oscar for Up. Two Newmans on the answer list were nearly framed.",
+          "Michael Giacchino scored The Incredibles and Ratatouille, then won an Oscar for Up. Two Newmans sit on the answer list purely to be suspected.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "DRY_ASIDE"],
         sources: [
           {
@@ -377,12 +251,12 @@ export const QUIZSLOP_FLAGS_FILM_TOPICS: readonly QuizslopCatalogTopic[] = [
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
 ];

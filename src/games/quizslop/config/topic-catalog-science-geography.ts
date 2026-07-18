@@ -16,12 +16,12 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "EASY",
         neutralQuestion: "Which planet orbits closest to the Sun?",
         displayPrompt:
-          "Which planet drew the short straw and orbits closest to the Sun, sunburn and all?",
+          "Which planet drew the closest orbit to the Sun and has been quietly regretting the seating chart ever since?",
         choices: ["Mercury", "Venus", "Mars", "Earth"],
         correctIndex: 0,
         canonicalFact: "Mercury is the planet closest to the Sun.",
         explanation:
-          "Mercury is the closest planet to the Sun, orbiting at about 58 million kilometres. Somebody has to take the front-row seat.",
+          "Mercury is the closest planet to the Sun, orbiting about 58 million kilometres out. First row, no shade, barely any atmosphere. Rough posting.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -42,13 +42,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         neutralQuestion:
           "Which planet has an axial tilt of about 98 degrees, effectively rotating on its side?",
         displayPrompt:
-          "Which planet gave up sitting upright and rolls around the Sun tilted almost fully on its side?",
+          "Which planet gave up on sitting upright and rolls around its orbit tipped almost fully onto its side?",
         choices: ["Uranus", "Neptune", "Saturn", "Mars"],
         correctIndex: 0,
         canonicalFact:
           "Uranus has an axial tilt near 98 degrees, so it rotates almost on its side.",
         explanation:
-          "Uranus is tilted about 98 degrees, so it essentially rotates on its side. It commits to the bit for its entire 84-year orbit.",
+          "Uranus tilts about 98 degrees, so it essentially spins on its side. It has held that pose for the whole 84-year orbit with no sign of straightening up.",
         comedyDevices: ["ANTHROPOMORPHISM"],
         sources: [
           {
@@ -68,13 +68,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "HARD",
         neutralQuestion: "Which moon is the largest in the Solar System?",
         displayPrompt:
-          "Which moon is so oversized it outbulks the planet Mercury, quietly embarrassing an entire planet?",
+          "Which moon is so oversized it outmeasures the planet Mercury, a fact Mercury would rather you dropped?",
         choices: ["Ganymede", "Titan", "Callisto", "Europa"],
         correctIndex: 0,
         canonicalFact:
           "Ganymede, a moon of Jupiter, is the largest moon in the Solar System and is larger than the planet Mercury.",
         explanation:
-          "Ganymede, one of Jupiter's moons, is the Solar System's largest moon and bigger than Mercury. A moon outgrew a planet and nobody brings it up.",
+          "Ganymede, a moon of Jupiter, is the Solar System's largest moon and wider than the planet Mercury. A satellite outgrew a planet, and the planet has said nothing.",
         comedyDevices: ["INCONGRUITY"],
         sources: [
           {
@@ -95,7 +95,7 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         neutralQuestion:
           "About how many Earth days does one full rotation, a sidereal day, on Venus take?",
         displayPrompt:
-          "A day on Venus outlasts its own year. Roughly how many Earth days does a single Venus rotation drag on for?",
+          "A single day on Venus outlasts its own year. Roughly how many Earth days does one Venus rotation drag on for?",
         choices: [
           "About 243 Earth days",
           "About 88 Earth days",
@@ -106,7 +106,7 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         canonicalFact:
           "Venus takes about 243 Earth days to complete one sidereal rotation, longer than its roughly 225-day orbit.",
         explanation:
-          "Venus takes roughly 243 Earth days to spin once, longer than its 225-day orbit around the Sun. Its day is genuinely older than its year.",
+          "Venus takes about 243 Earth days to spin once, longer than its 225-day trip around the Sun. Its day is, technically, older than its year.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "DRY_ASIDE"],
         sources: [
           {
@@ -123,12 +123,12 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
   {
@@ -146,13 +146,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "EASY",
         neutralQuestion: "What is the largest living species of fish?",
         displayPrompt:
-          "Which spotted heavyweight holds the title of largest fish in the sea while posing basically zero threat to swimmers?",
+          "Which polka-dotted giant is the largest fish in the sea while posing roughly zero threat to a swimmer?",
         choices: ["Whale shark", "Great white shark", "Basking shark", "Blue marlin"],
         correctIndex: 0,
         canonicalFact:
           "The whale shark is the largest living fish species, reaching lengths over 12 metres.",
         explanation:
-          "The whale shark is the largest living fish, reaching over 12 metres. It filter-feeds on plankton, a diet remarkably humble for its size.",
+          "The whale shark is the largest living fish, over 12 metres long, and it eats plankton. The biggest fish in the ocean orders the smallest thing on the menu.",
         comedyDevices: ["INCONGRUITY"],
         sources: [
           {
@@ -172,12 +172,12 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "MEDIUM",
         neutralQuestion: "How many hearts does an octopus have?",
         displayPrompt:
-          "An octopus runs its circulatory system on how many hearts, because apparently eight arms needed backup?",
+          "An octopus runs its whole body on how many hearts, having apparently decided eight arms needed serious backup?",
         choices: ["Three", "One", "Two", "Eight"],
         correctIndex: 0,
         canonicalFact: "An octopus has three hearts: two branchial hearts and one systemic heart.",
         explanation:
-          "An octopus has three hearts, two pumping blood through the gills and one for the rest of the body. The main heart even stops beating when it swims.",
+          "An octopus has three hearts: two feed the gills and one feeds everything else. The main one stops beating whenever it swims, so it mostly prefers to saunter.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
         sources: [
           {
@@ -198,13 +198,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         neutralQuestion:
           "Shark skeletons are made primarily of what flexible material rather than bone?",
         displayPrompt:
-          "Sharks skip bone entirely and build their whole skeleton out of which lighter, bendier material?",
+          "Sharks skip bone entirely and frame their whole skeleton from which lighter, springier material?",
         choices: ["Cartilage", "Keratin", "Chitin", "Enamel"],
         correctIndex: 0,
         canonicalFact:
           "Sharks are cartilaginous fish; their skeletons are made of cartilage instead of bone.",
         explanation:
-          "Sharks are cartilaginous fish, so their skeletons are built from cartilage instead of bone. It keeps them light enough to avoid simply sinking.",
+          "Sharks are cartilaginous fish, so their skeletons are cartilage, not bone. It keeps them light and flexible enough to avoid the indignity of simply sinking.",
         comedyDevices: ["UNDERSTATEMENT"],
         sources: [
           {
@@ -225,13 +225,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         neutralQuestion:
           "The Greenland shark is estimated to reach sexual maturity at roughly what age?",
         displayPrompt:
-          "The unhurried Greenland shark only reaches maturity at roughly what age, making human adolescence look brisk?",
+          "The unhurried Greenland shark only reaches adulthood at roughly what age, making the slowest human look positively prompt?",
         choices: ["About 150 years", "About 15 years", "About 50 years", "About 400 years"],
         correctIndex: 0,
         canonicalFact:
           "Greenland sharks are estimated to reach sexual maturity at around 150 years of age.",
         explanation:
-          "Greenland sharks are thought to reach sexual maturity near 150 years old. They treat middle age as a distant rumour.",
+          "Greenland sharks are thought to reach maturity near age 150, with lifespans possibly running several centuries. They treat their first century as an extended warm-up.",
         comedyDevices: ["AFFECTIONATE_ROAST", "DRY_ASIDE"],
         sources: [
           {
@@ -248,12 +248,12 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
   {
@@ -271,12 +271,12 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "EASY",
         neutralQuestion: "What is the capital city of Japan?",
         displayPrompt:
-          "Which sprawling metropolis serves as Japan's capital and busiest transit puzzle?",
+          "Which sprawling metropolis is Japan's capital and quietly runs the busiest train timetable on Earth?",
         choices: ["Tokyo", "Kyoto", "Osaka", "Seoul"],
         correctIndex: 0,
         canonicalFact: "Tokyo is the capital of Japan.",
         explanation:
-          "Tokyo is Japan's capital and largest city. Kyoto held the title for over a thousand years before Tokyo took over in 1868.",
+          "Tokyo is Japan's capital and largest city. Kyoto held the job for over a thousand years before Tokyo took over in 1868, a fairly generous notice period.",
         comedyDevices: ["DRY_ASIDE"],
         sources: [
           {
@@ -296,13 +296,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "MEDIUM",
         neutralQuestion: "What is the capital city of Australia?",
         displayPrompt:
-          "Which planned city is Australia's capital, chosen mainly so Sydney and Melbourne would stop bickering?",
+          "Which planned city became Australia's capital, chosen mainly so Sydney and Melbourne would stop elbowing each other over it?",
         choices: ["Canberra", "Sydney", "Melbourne", "Perth"],
         correctIndex: 0,
         canonicalFact:
           "Canberra is the capital of Australia, a planned city sited between Sydney and Melbourne.",
         explanation:
-          "Canberra is Australia's capital, purpose-built as a compromise between rivals Sydney and Melbourne. A whole city as a peace treaty.",
+          "Canberra was purpose-built as Australia's capital, a compromise between rivals Sydney and Melbourne. A whole city erected so two others would behave.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
         sources: [
           {
@@ -322,13 +322,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "HARD",
         neutralQuestion: "What is the capital city of Brazil?",
         displayPrompt:
-          "Which purpose-built inland city became Brazil's capital in 1960, laid out from above in the shape of an aeroplane?",
+          "Which purpose-built inland city became Brazil's capital in 1960, laid out from above to resemble an aeroplane?",
         choices: ["Brasília", "Rio de Janeiro", "São Paulo", "Salvador"],
         correctIndex: 0,
         canonicalFact:
           "Brasília has been the capital of Brazil since 1960; its pilot plan resembles an aeroplane.",
         explanation:
-          "Brazil moved its capital to the newly built Brasília in 1960. Its master plan famously resembles an aeroplane, ambition included.",
+          "Brazil moved its capital to the newly built Brasília in 1960. Its master plan is shaped like an aeroplane, a design flourish you can only fully appreciate from the sky.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
         sources: [
           {
@@ -348,13 +348,13 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
         tier: "INSANE",
         neutralQuestion: "What is the capital city of Myanmar?",
         displayPrompt:
-          "Which purpose-built city quietly replaced Yangon as Myanmar's capital around 2006, famous for eerily empty 20-lane roads?",
+          "Which purpose-built city quietly replaced Yangon as Myanmar's capital around 2006, complete with near-empty 20-lane roads?",
         choices: ["Naypyidaw", "Yangon", "Mandalay", "Bagan"],
         correctIndex: 0,
         canonicalFact:
           "Naypyidaw became the capital of Myanmar around 2005-2006, replacing Yangon.",
         explanation:
-          "Myanmar shifted its capital to the newly constructed Naypyidaw around 2005-2006. Its enormous, near-empty highways are the stuff of travel legend.",
+          "Myanmar shifted its capital to the newly built Naypyidaw around 2006. Its enormous highways sit famously empty, ready for traffic that has yet to be invited.",
         comedyDevices: ["INCONGRUITY", "DRY_ASIDE"],
         sources: [
           {
@@ -371,12 +371,12 @@ export const QUIZSLOP_SCIENCE_GEOGRAPHY_TOPICS: readonly QuizslopCatalogTopic[] 
       },
     ],
     review: {
-      approved: false,
-      reviewer: null,
-      reviewedAt: null,
-      factualState: "DRAFT",
-      comedyState: "DRAFT",
-      comedyRating: null,
+      approved: true,
+      reviewer: "Gabriel Ong",
+      reviewedAt: "2026-07-18T20:00:00.000Z",
+      factualState: "APPROVED",
+      comedyState: "APPROVED",
+      comedyRating: "WITTY",
     },
   },
 ];

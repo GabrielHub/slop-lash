@@ -6,6 +6,10 @@ const real = { text: "a real opener" };
 const forfeit = { text: FORFEIT_MARKER };
 
 describe("isPromptVotable", () => {
+  it("keeps QuizSlop out of the generic prompt voting path", () => {
+    expect(isPromptVotable("QUIZSLOP", [real, real])).toBe(false);
+  });
+
   it("keeps a MatchSlop prompt votable while any real response remains", () => {
     expect(isPromptVotable("MATCHSLOP", [real, forfeit])).toBe(true);
     expect(isPromptVotable("MATCHSLOP", [real, forfeit, forfeit])).toBe(true);

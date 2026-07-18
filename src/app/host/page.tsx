@@ -6,7 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
 import type { TtsMode } from "@/lib/types";
-import type { GameType } from "@/games/core";
+import { GAME_TYPES, type GameType } from "@/games/core";
 import { getNarratorVoice, NARRATOR_VOICES } from "@/games/sloplash/voices";
 import {
   MAX_PLAYERS as SLOPLASH_MAX_PLAYERS,
@@ -20,6 +20,10 @@ import {
   MAX_PLAYERS as MATCHSLOP_MAX_PLAYERS,
   MIN_PLAYERS as MATCHSLOP_MIN_PLAYERS,
 } from "@/games/matchslop/game-constants";
+import {
+  MAX_PLAYERS as QUIZSLOP_MAX_PLAYERS,
+  MIN_PLAYERS as QUIZSLOP_MIN_PLAYERS,
+} from "@/games/quizslop/game-constants";
 import { ModelIcon } from "@/components/model-icon";
 import { ErrorBanner } from "@/components/error-banner";
 import { Toggle } from "@/components/toggle";
@@ -33,39 +37,70 @@ import { persistRoomSessionResult } from "@/lib/convex-room-client";
 
 type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
 
-const GAME_TYPE_OPTIONS: {
-  id: GameType;
+type GameTypeOption = {
   displayName: string;
   description: string;
   supportsNarrator: boolean;
+  supportsAiPlayers: boolean;
+  /** Copy for the Disable Timers toggle, or null for modes without one. */
+  timerToggleDescription: string | null;
+  hostPlaysDescription: Record<HostParticipation, string>;
   minPlayers: number;
   maxPlayers: number;
-}[] = [
-  {
-    id: "SLOPLASH",
+};
+
+const DEFAULT_HOST_PLAYS_DESCRIPTION: Record<HostParticipation, string> = {
+  PLAYER: "Host joins as a player (great for remote games)",
+  DISPLAY_ONLY: "Host runs the game as a display/controller only (TV mode)",
+};
+
+const GAME_TYPE_OPTIONS_BY_ID = {
+  SLOPLASH: {
     displayName: "Slop-Lash",
     description: "Quiplash-style comedy game with AI opponents and a game narrator",
     supportsNarrator: true,
+    supportsAiPlayers: true,
+    timerToggleDescription: "Phases only advance when all players submit or host skips",
+    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
     minPlayers: SLOPLASH_MIN_PLAYERS,
     maxPlayers: SLOPLASH_MAX_PLAYERS,
   },
-  {
-    id: "AI_CHAT_SHOWDOWN",
+  AI_CHAT_SHOWDOWN: {
     displayName: "ChatSlop",
     description: "AI group chat game — one prompt, everyone competes, no spectators",
     supportsNarrator: false,
+    supportsAiPlayers: true,
+    timerToggleDescription: null,
+    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
     minPlayers: CHATSLOP_MIN_PLAYERS,
     maxPlayers: CHATSLOP_MAX_PLAYERS,
   },
-  {
-    id: "MATCHSLOP",
+  MATCHSLOP: {
     displayName: "MatchSlop",
     description: "A shared AI dating profile sprint — funniest line wins the persona over",
     supportsNarrator: false,
+    supportsAiPlayers: true,
+    timerToggleDescription: null,
+    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
     minPlayers: MATCHSLOP_MIN_PLAYERS,
     maxPlayers: MATCHSLOP_MAX_PLAYERS,
   },
-];
+  QUIZSLOP: {
+    displayName: "QuizSlop",
+    description: "Party trivia where everyone picks topics, answers, and calls who will nail it",
+    supportsNarrator: false,
+    supportsAiPlayers: false,
+    timerToggleDescription: "Phases wait for every eligible player or the host to advance",
+    hostPlaysDescription: {
+      PLAYER: "Host answers here and opens the shared stage in a separate tab",
+      DISPLAY_ONLY: "Host opens the shared stage and does not answer (TV mode)",
+    },
+    minPlayers: QUIZSLOP_MIN_PLAYERS,
+    maxPlayers: QUIZSLOP_MAX_PLAYERS,
+  },
+} satisfies Record<GameType, GameTypeOption>;
+
+const GAME_TYPE_OPTIONS = GAME_TYPES.map((id) => ({ id, ...GAME_TYPE_OPTIONS_BY_ID[id] }));
 
 const MATCHSLOP_IDENTITY_OPTIONS: { id: MatchSlopIdentity; label: string }[] =
   MATCHSLOP_IDENTITIES.map((id) => ({
@@ -74,34 +109,43 @@ const MATCHSLOP_IDENTITY_OPTIONS: { id: MatchSlopIdentity; label: string }[] =
   }));
 
 function PlayerCountHint({
-  selectedCount,
-  hostParticipation,
+  total,
   minPlayers,
   maxPlayers,
+  humanOnly = false,
 }: {
-  selectedCount: number;
-  hostParticipation: HostParticipation;
+  total: number;
   minPlayers: number;
   maxPlayers: number;
+  humanOnly?: boolean;
 }) {
-  const total = (hostParticipation === "PLAYER" ? 1 : 0) + selectedCount;
   const remaining = maxPlayers - total;
 
   if (remaining <= 0) return null;
 
-  if (total > 0 && total % 2 !== 0) {
-    return <p className="text-xs text-gold/85 mb-3">1 more player needs to join for even teams</p>;
+  if (humanOnly) {
+    const needed = minPlayers - total;
+    if (needed > 0) {
+      return (
+        <p className="text-xs text-gold/85 mb-3">
+          {needed} more human {needed === 1 ? "needs" : "players need"} to join before starting
+        </p>
+      );
+    }
+  } else {
+    if (total > 0 && total % 2 !== 0) {
+      return (
+        <p className="text-xs text-gold/85 mb-3">1 more player needs to join for even teams</p>
+      );
+    }
+    if (total < minPlayers) return null;
   }
 
-  if (total >= minPlayers) {
-    return (
-      <p className="text-xs text-ink-dim/50 mb-3">
-        {remaining} open {remaining === 1 ? "slot" : "slots"} for more players
-      </p>
-    );
-  }
-
-  return null;
+  return (
+    <p className="text-xs text-ink-dim/50 mb-3">
+      {remaining} open {remaining === 1 ? "slot" : "slots"} for more players
+    </p>
+  );
 }
 
 const NAME_MAX_LENGTH = 20;
@@ -135,12 +179,20 @@ export default function HostPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const selectedGameType = GAME_TYPE_OPTIONS_BY_ID[gameType];
+  const isMatchSlop = gameType === "MATCHSLOP";
+  const isQuizSlop = gameType === "QUIZSLOP";
+  const selectedPersonaModel = personaModelId ? getModelByModelId(personaModelId) : undefined;
+  const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
+  // Modes without AI players keep any prior selection in state (so switching
+  // back restores it) but must never count or submit it.
+  const activeAiModels = selectedGameType.supportsAiPlayers ? selectedModels : [];
+  const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + activeAiModels.length;
+
   function toggleModel(modelId: string) {
     const targetModel = getModelByModelId(modelId);
     if (!targetModel) return;
     if (gameType === "MATCHSLOP" && modelId === personaModelId) return;
-    const maxSelectableAiPlayers =
-      selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
 
     setSelectedModels((prev) => {
       if (prev.includes(modelId)) {
@@ -152,18 +204,12 @@ export default function HostPage() {
         return model?.provider !== targetModel.provider;
       });
 
-      if (withoutSameProvider.length >= maxSelectableAiPlayers) {
+      if (withoutSameProvider.length >= maxAiPlayers) {
         return prev;
       }
       return [...withoutSameProvider, modelId];
     });
   }
-
-  const selectedGameType = GAME_TYPE_OPTIONS.find((g) => g.id === gameType) ?? GAME_TYPE_OPTIONS[0];
-  const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
-  const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + selectedModels.length;
-  const isMatchSlop = gameType === "MATCHSLOP";
-  const selectedPersonaModel = personaModelId ? getModelByModelId(personaModelId) : undefined;
 
   useEffect(() => {
     setSelectedModels((prev) => (prev.length <= maxAiPlayers ? prev : prev.slice(0, maxAiPlayers)));
@@ -187,6 +233,14 @@ export default function HostPage() {
     }
   }, [selectedGameType.supportsNarrator]);
 
+  // MatchSlop honours timersDisabled but never shows the toggle, so a value set
+  // on another mode would otherwise follow the host across the picker unseen.
+  useEffect(() => {
+    if (selectedGameType.timerToggleDescription === null) {
+      setTimersDisabled(false);
+    }
+  }, [selectedGameType.timerToggleDescription]);
+
   useEffect(() => {
     if (!isMatchSlop) {
       setPersonaModelPickerOpen(false);
@@ -206,9 +260,8 @@ export default function HostPage() {
     setError("");
 
     try {
-      const isQuizSlop = gameType === "QUIZSLOP";
       const room = await createRoom({
-        aiModelIds: isQuizSlop ? [] : selectedModels,
+        aiModelIds: activeAiModels,
         gameType,
         hostName: hostName.trim() || undefined,
         hostParticipation,
@@ -636,13 +689,13 @@ export default function HostPage() {
               </div>
             )}
 
-            {gameType === "SLOPLASH" && (
+            {selectedGameType.timerToggleDescription && (
               <div className="mb-6">
                 <Toggle
                   checked={timersDisabled}
                   onChange={setTimersDisabled}
                   label="Disable Timers"
-                  description="Phases only advance when all players submit or host skips"
+                  description={selectedGameType.timerToggleDescription}
                 />
               </div>
             )}
@@ -653,11 +706,7 @@ export default function HostPage() {
                   checked={hostParticipation === "PLAYER"}
                   onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
                   label="Host Plays Too"
-                  description={
-                    hostParticipation === "PLAYER"
-                      ? "Host joins as a player (great for remote games)"
-                      : "Host runs the game as a display/controller only (TV mode)"
-                  }
+                  description={selectedGameType.hostPlaysDescription[hostParticipation]}
                 />
               </div>
             )}
@@ -861,80 +910,98 @@ export default function HostPage() {
 
           <div className="mb-8 lg:mb-0 lg:w-[340px] xl:w-[380px] shrink-0">
             <div className="flex items-baseline justify-between mb-3">
-              <span className="text-sm font-medium text-ink-dim">Add AI Players</span>
+              <span className="text-sm font-medium text-ink-dim">
+                {selectedGameType.supportsAiPlayers ? "Add AI Players" : "Human Players"}
+              </span>
               <span className="text-sm font-semibold tabular-nums text-ink-dim">
                 {activePlayerCount}
                 <span className="text-ink-dim/50">/{selectedGameType.maxPlayers}</span>
-                <span className="text-xs font-normal text-ink-dim/50 ml-1">active players</span>
+                <span className="text-xs font-normal text-ink-dim/50 ml-1">
+                  {selectedGameType.supportsAiPlayers ? "active players" : "initial players"}
+                </span>
               </span>
             </div>
             <PlayerCountHint
-              selectedCount={selectedModels.length}
-              hostParticipation={hostParticipation}
+              total={activePlayerCount}
               minPlayers={selectedGameType.minPlayers}
               maxPlayers={selectedGameType.maxPlayers}
+              humanOnly={!selectedGameType.supportsAiPlayers}
             />
-            <div className="grid grid-cols-1 gap-2">
-              {AI_MODELS.map((model) => {
-                const selected = selectedModels.includes(model.id);
-                const replacesSameProvider =
-                  !selected &&
-                  selectedModels.some((id) => {
-                    const selectedModel = getModelByModelId(id);
-                    return selectedModel?.provider === model.provider;
-                  });
-                const atLimit =
-                  selectedModels.length >= maxAiPlayers && !selected && !replacesSameProvider;
+            {!selectedGameType.supportsAiPlayers ? (
+              <div className="rounded-xl border-2 border-edge bg-surface/80 p-5 text-sm text-ink-dim">
+                <p className="font-semibold text-ink">
+                  {selectedGameType.displayName} is for {selectedGameType.minPlayers}–
+                  {selectedGameType.maxPlayers} humans.
+                </p>
+                <p className="mt-2 leading-relaxed">
+                  Create the room, put the stage on the shared screen, then have everyone join on
+                  their own device. Each player privately picks a topic and answers from their
+                  controller.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2">
+                {AI_MODELS.map((model) => {
+                  const selected = selectedModels.includes(model.id);
+                  const replacesSameProvider =
+                    !selected &&
+                    selectedModels.some((id) => {
+                      const selectedModel = getModelByModelId(id);
+                      return selectedModel?.provider === model.provider;
+                    });
+                  const atLimit =
+                    selectedModels.length >= maxAiPlayers && !selected && !replacesSameProvider;
 
-                let stateClass: string;
-                if (selected) {
-                  stateClass = "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
-                } else if (atLimit) {
-                  stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
-                } else {
-                  stateClass =
-                    "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
-                }
+                  let stateClass: string;
+                  if (selected) {
+                    stateClass = "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
+                  } else if (atLimit) {
+                    stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
+                  } else {
+                    stateClass =
+                      "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
+                  }
 
-                return (
-                  <motion.button
-                    type="button"
-                    key={model.id}
-                    onClick={() => toggleModel(model.id)}
-                    disabled={atLimit}
-                    className={`p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed ${stateClass}`}
-                    layout
-                    {...buttonTap}
-                  >
-                    <ModelIcon model={model} size={24} className="shrink-0" />
-                    <div className="min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-semibold text-sm truncate">{model.name}</span>
-                        <span className="text-xs text-ink-dim/60 shrink-0">{model.provider}</span>
+                  return (
+                    <motion.button
+                      type="button"
+                      key={model.id}
+                      onClick={() => toggleModel(model.id)}
+                      disabled={atLimit}
+                      className={`p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed ${stateClass}`}
+                      layout
+                      {...buttonTap}
+                    >
+                      <ModelIcon model={model} size={24} className="shrink-0" />
+                      <div className="min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-semibold text-sm truncate">{model.name}</span>
+                          <span className="text-xs text-ink-dim/60 shrink-0">{model.provider}</span>
+                        </div>
+                        <span className="text-[11px] text-ink-dim/50 font-mono">
+                          {getCostTier(model)}
+                        </span>
                       </div>
-                      <span className="text-[11px] text-ink-dim/50 font-mono">
-                        {getCostTier(model)}
-                      </span>
-                    </div>
-                    {selected && (
-                      <svg
-                        className="ml-auto shrink-0 text-ai"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </motion.button>
-                );
-              })}
-            </div>
+                      {selected && (
+                        <svg
+                          className="ml-auto shrink-0 text-ai"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </form>
       </motion.div>
