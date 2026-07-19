@@ -1,7 +1,9 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { maxPlayersByGameType } from "./gameLimits";
+import { QUIZSLOP_PACK_RECOVERY_DELAY_MS } from "./quizslopPackContracts";
 import {
   gameTypeValidator,
   matchSlopIdentityValidator,
@@ -54,6 +56,11 @@ export const createRoom = internalMutation({
     hostParticipation: v.union(v.literal("PLAYER"), v.literal("DISPLAY_ONLY")),
     personaIdentity: matchSlopIdentityValidator,
     personaModelId: v.union(v.string(), v.null()),
+    quizSlopContentSource: v.union(v.literal("CATALOG"), v.literal("AI")),
+    quizSlopGeneratorModelId: v.union(v.string(), v.null()),
+    quizSlopPromptVersion: v.union(v.string(), v.null()),
+    quizSlopSchemaVersion: v.union(v.string(), v.null()),
+    quizSlopVerifierModelId: v.union(v.string(), v.null()),
     roomCode: v.string(),
     seekerIdentity: matchSlopIdentityValidator,
     timersDisabled: v.boolean(),
@@ -145,12 +152,35 @@ export const createRoom = internalMutation({
         gameId,
         phase: "LOBBY_SETUP",
         deckPosition: 0,
-        revealOrdinal: 0,
-        customRevisionsReserved: 0,
-        customTopicsEnabled: false,
-        outcome: "IN_PROGRESS",
-        updatedAt: now,
+        contentSource: args.quizSlopContentSource,
+        ...(args.quizSlopGeneratorModelId
+          ? { generatorModelId: args.quizSlopGeneratorModelId }
+          : {}),
+        ...(args.quizSlopVerifierModelId ? { verifierModelId: args.quizSlopVerifierModelId } : {}),
+        ...(args.quizSlopPromptVersion ? { promptVersion: args.quizSlopPromptVersion } : {}),
+        ...(args.quizSlopSchemaVersion ? { schemaVersion: args.quizSlopSchemaVersion } : {}),
+        packStatus: args.quizSlopContentSource === "AI" ? "PENDING" : "CATALOG_READY",
+        rawCorrect: 0,
+        attempted: 0,
+        sabotagePoints: 0,
       });
+      if (args.quizSlopContentSource === "AI" && args.quizSlopGeneratorModelId) {
+        // Schedule inside the room-creation transaction. If the calling action
+        // is canceled after this mutation commits, the room still cannot be
+        // orphaned indefinitely in PENDING before its pack job is created.
+        await ctx.scheduler.runAfter(0, internal.quizslopPackJobs.queueFreshPack, {
+          gameId,
+          generatorModelId: args.quizSlopGeneratorModelId,
+        });
+        await ctx.scheduler.runAfter(
+          QUIZSLOP_PACK_RECOVERY_DELAY_MS,
+          internal.quizslopPackJobs.recoverFreshPack,
+          {
+            gameId,
+            generatorModelId: args.quizSlopGeneratorModelId,
+          },
+        );
+      }
     }
 
     if (args.gameType === "MATCHSLOP") {

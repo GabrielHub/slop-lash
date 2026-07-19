@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
+import { AudioControls } from "@/components/audio-controls";
 import { buttonTap, buttonTapPrimary, springDefault } from "@/lib/animations";
 import type {
   MatchSlopProfilePromptOption,
@@ -36,7 +37,10 @@ export function MatchHeader({
           {roomCode ?? "...."}
         </span>
       </div>
-      <span className="text-xs text-ink-dim">{roundLabel ?? "Controller"}</span>
+      <div className="flex items-center gap-2">
+        <AudioControls color="var(--ms-ink-dim)" />
+        <span className="hidden text-xs text-ink-dim sm:inline">{roundLabel ?? "Controller"}</span>
+      </div>
     </div>
   );
 }

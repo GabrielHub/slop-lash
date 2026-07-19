@@ -63,6 +63,7 @@ export const generationKindValidator = v.union(
   v.literal("MATCHSLOP_IMAGE"),
   v.literal("MATCHSLOP_PERSONA_REPLY"),
   v.literal("MATCHSLOP_POST_MORTEM"),
+  v.literal("QUIZSLOP_PACK"),
 );
 
 export const generationStatusValidator = v.union(

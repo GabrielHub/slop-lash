@@ -1,6 +1,6 @@
 /**
- * Shared structural + approval-gate checks for the reviewed QuizSlop catalog and
- * voice bank. Imported by both CLI tasks (scripts/quizslop/*) and the vitest
+ * Shared structural + approval-gate checks for the reviewed QuizSlop catalog.
+ * Imported by both CLI tasks (scripts/quizslop/*) and the vitest
  * guard (src/games/quizslop/config/topic-catalog.test.ts) so every surface
  * enforces the same contract. Every function returns human-readable failure
  * strings and never throws on bad content.
@@ -20,7 +20,7 @@ import {
   sha256Hex,
 } from "../../src/games/quizslop/canonical-key";
 import {
-  MAX_FROZEN_TOPICS,
+  MAX_TOTAL_EXAM_QUESTIONS,
   MAX_TOPIC_EXCLUSION_LENGTH,
   MAX_TOPIC_EXCLUSIONS,
   MAX_TOPIC_LABEL_LENGTH,
@@ -28,16 +28,8 @@ import {
   MIN_CATALOG_CATEGORIES,
   MIN_CATALOG_TOPICS,
 } from "../../src/games/quizslop/game-constants";
-import type {
-  QuizslopCatalogTopic,
-  QuizslopVoiceEventTag,
-  QuizslopVoiceLine,
-} from "../../src/games/quizslop/types";
+import type { QuizslopCatalogTopic } from "../../src/games/quizslop/types";
 import { SHIPPABLE_COMEDY_RATINGS } from "../../src/games/quizslop/types";
-import { QUIZSLOP_VOICE_EVENT_TAGS } from "../../src/games/quizslop/config/voice-lines";
-
-/** Every event tag must carry at least this many deterministic lines. */
-export const MIN_VOICE_LINES_PER_TAG = 2;
 
 function checkBoundedTopicText(
   failures: string[],
@@ -75,9 +67,9 @@ export async function collectStructuralFailures(
   }
 
   const nonRetired = catalog.filter((topic) => !topic.retired);
-  if (nonRetired.length < MAX_FROZEN_TOPICS) {
+  if (nonRetired.length < MAX_TOTAL_EXAM_QUESTIONS) {
     failures.push(
-      `capacity invariant: ${nonRetired.length} non-retired topics; an eight-player game needs at least ${MAX_FROZEN_TOPICS} (8 Home + 1 warm-up + 3 finalists)`,
+      `capacity invariant: ${nonRetired.length} non-retired topics; a maximum-size exam needs ${MAX_TOTAL_EXAM_QUESTIONS} unique topic slots`,
     );
   }
 
@@ -167,50 +159,6 @@ export async function collectStructuralFailures(
   return failures;
 }
 
-/** Structural validation of the deterministic voice bank. */
-export function collectVoiceBankFailures(voiceLines: readonly QuizslopVoiceLine[]): string[] {
-  const failures: string[] = [];
-
-  const ids = new Set<string>();
-  const countByTag = new Map<QuizslopVoiceEventTag, number>();
-
-  for (const line of voiceLines) {
-    if (ids.has(line.id)) {
-      failures.push(`duplicate voice line id ${line.id}`);
-    }
-    ids.add(line.id);
-
-    if (!QUIZSLOP_VOICE_EVENT_TAGS.includes(line.tag)) {
-      failures.push(`voice line ${line.id}: unknown tag ${line.tag}`);
-    }
-    countByTag.set(line.tag, (countByTag.get(line.tag) ?? 0) + 1);
-
-    if (line.text.trim().length === 0) {
-      failures.push(`voice line ${line.id}: text must not be empty`);
-    }
-    if (!isWellFormedText(line.text)) {
-      failures.push(`voice line ${line.id}: text contains control characters or invalid Unicode`);
-    }
-    if (line.accessibleLabel.trim().length === 0) {
-      failures.push(`voice line ${line.id}: accessibleLabel must not be empty`);
-    }
-    if (!isWellFormedText(line.accessibleLabel)) {
-      failures.push(`voice line ${line.id}: accessibleLabel contains invalid characters`);
-    }
-  }
-
-  for (const tag of QUIZSLOP_VOICE_EVENT_TAGS) {
-    const count = countByTag.get(tag) ?? 0;
-    if (count < MIN_VOICE_LINES_PER_TAG) {
-      failures.push(
-        `voice tag ${tag} has ${count} lines; at least ${MIN_VOICE_LINES_PER_TAG} required`,
-      );
-    }
-  }
-
-  return failures;
-}
-
 function collectReviewAttributionFailures(
   label: string,
   review: { reviewer: string | null; reviewedAt: string | null },
@@ -231,14 +179,11 @@ function collectReviewAttributionFailures(
 }
 
 /**
- * Production approval gate. Fails while any selectable pack or voice line is
- * still draft. This is the human product gate and is EXPECTED to fail until a
- * named reviewer approves the content.
+ * Production approval gate. Fails while any selectable pack is still draft.
+ * This is the human product gate and is EXPECTED to fail until a named reviewer
+ * approves the content.
  */
-export function collectApprovalFailures(
-  catalog: readonly QuizslopCatalogTopic[],
-  voiceLines: readonly QuizslopVoiceLine[],
-): string[] {
+export function collectApprovalFailures(catalog: readonly QuizslopCatalogTopic[]): string[] {
   const failures: string[] = [];
 
   for (const topic of catalog) {
@@ -263,13 +208,6 @@ export function collectApprovalFailures(
     failures.push(...collectReviewAttributionFailures(`topic ${topic.id}`, review));
   }
 
-  for (const line of voiceLines) {
-    if (line.review.approved !== true) {
-      failures.push(`voice line ${line.id}: review.approved is not true (still draft)`);
-    }
-    failures.push(...collectReviewAttributionFailures(`voice line ${line.id}`, line.review));
-  }
-
   return failures;
 }
 
@@ -283,15 +221,11 @@ export interface CatalogCheckOptions {
  */
 export async function collectAllFailures(
   catalog: readonly QuizslopCatalogTopic[],
-  voiceLines: readonly QuizslopVoiceLine[],
   options: CatalogCheckOptions,
 ): Promise<string[]> {
-  const failures = [
-    ...(await collectStructuralFailures(catalog)),
-    ...collectVoiceBankFailures(voiceLines),
-  ];
+  const failures = await collectStructuralFailures(catalog);
   if (options.requireApproved) {
-    failures.push(...collectApprovalFailures(catalog, voiceLines));
+    failures.push(...collectApprovalFailures(catalog));
   }
   return failures;
 }

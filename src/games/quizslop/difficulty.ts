@@ -8,7 +8,8 @@ import { QUIZSLOP_TIERS } from "./types";
  * persists into a new game.
  */
 
-export const INITIAL_TIER: QuizslopTier = "EASY";
+/** Start in the middle so the first sealed scratch answer can branch either way. */
+export const INITIAL_TIER: QuizslopTier = "MEDIUM";
 
 export function tierIndex(tier: QuizslopTier): number {
   return QUIZSLOP_TIERS.indexOf(tier);
@@ -16,9 +17,9 @@ export function tierIndex(tier: QuizslopTier): number {
 
 /**
  * Applies one settled result: a valid correct answer moves up one step, a
- * valid incorrect answer (including an accountable timeout) moves down one
- * step, and a voided question, pre-answer exemption, or system fault leaves
- * the ladder unchanged. Bounds clamp at EASY and INSANE.
+ * submitted incorrect answer moves down one step, and a missing scratch,
+ * pre-answer exemption, or system fault leaves the ladder unchanged. Bounds
+ * clamp at EASY and INSANE.
  */
 export function applyLadderResult(tier: QuizslopTier, result: QuizslopLadderResult): QuizslopTier {
   if (result === "NEUTRAL") return tier;

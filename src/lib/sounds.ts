@@ -2,10 +2,10 @@ const SOUND_MAP = {
   // Shared sounds (used by both sloplash and chatslop)
   "game-start": "/sfx/shared/game-start.mp3",
   "phase-transition": "/sfx/shared/phase-transition.mp3",
-  "submitted": "/sfx/shared/submitted.mp3",
+  submitted: "/sfx/shared/submitted.mp3",
   "vote-cast": "/sfx/shared/vote-cast.mp3",
   "winner-reveal": "/sfx/shared/winner-reveal.mp3",
-  "celebration": "/sfx/shared/celebration.mp3",
+  celebration: "/sfx/shared/celebration.mp3",
   "round-transition": "/sfx/shared/round-transition.mp3",
   "game-over": "/sfx/shared/game-over.mp3",
   "player-join": "/sfx/shared/player-join.mp3",
@@ -26,6 +26,19 @@ const SOUND_MAP = {
 export type SoundName = keyof typeof SOUND_MAP;
 export const SOUND_NAMES = Object.keys(SOUND_MAP) as SoundName[];
 
+export type AudioStatus = "idle" | "ready" | "blocked" | "error" | "unsupported";
+
+interface AudioPreferencesV1 {
+  version: 1;
+  muted: boolean;
+  volume: number;
+}
+
+const AUDIO_PREFERENCES_STORAGE_KEY = "audioPreferences:v1";
+const LEGACY_MUTED_STORAGE_KEY = "soundsMuted";
+const LEGACY_VOLUME_STORAGE_KEY = "soundsVolume";
+const DEFAULT_VOLUME = 0.5;
+
 /** Fade-in duration in seconds to soften aggressive starts. */
 const DEFAULT_FADE_IN_S = 0.02;
 /** Fade-out duration in seconds to reduce abrupt tails. */
@@ -41,6 +54,8 @@ const bufferCache = new Map<SoundName, AudioBuffer>();
 const inflightBufferLoads = new Map<SoundName, Promise<AudioBuffer>>();
 const lastPlayAtMs = new Map<SoundName, number>();
 let resumePromise: Promise<void> | null = null;
+let audioStatus: AudioStatus = "idle";
+let audioIssue: string | null = null;
 
 // --- Narrator ducking ---
 let narratorDucking = false;
@@ -53,7 +68,7 @@ const SOUND_COOLDOWN_MS: Partial<Record<SoundName, number>> = {
   "prompt-advance": 120,
   "player-join": 200,
   "player-leave": 200,
-  "submitted": 80,
+  submitted: 80,
   "chat-send": 100,
   "chat-receive": 150,
 };
@@ -61,7 +76,7 @@ const SOUND_COOLDOWN_MS: Partial<Record<SoundName, number>> = {
 // Per-sound trim multipliers (linear gain) to normalize AI-generated SFX.
 // 1.0 = unchanged, <1.0 quieter, >1.0 louder.
 const DEFAULT_SOUND_GAIN_MULTIPLIER: Partial<Record<SoundName, number>> = {
-  "celebration": 0.75,
+  celebration: 0.75,
   "game-over": 0.8,
   "winner-reveal": 0.85,
   "phase-transition": 0.9,
@@ -83,6 +98,10 @@ type SoundTuningStorage = {
   gains?: Partial<Record<SoundName, number>>;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 const SOUND_TUNING_STORAGE_KEY = "soundsTuningV1";
 let fadeInS = DEFAULT_FADE_IN_S;
 let fadeOutS = DEFAULT_FADE_OUT_S;
@@ -91,7 +110,20 @@ let soundGainMultiplier: Partial<Record<SoundName, number>> = { ...DEFAULT_SOUND
 /** Returns the shared AudioContext + master GainNode (creates lazily). */
 export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
   if (!audioContext) {
-    audioContext = new AudioContext();
+    if (typeof window === "undefined" || typeof AudioContext === "undefined") {
+      setAudioIssue("This browser does not support Web Audio.");
+      setAudioStatus("unsupported");
+      throw new Error("Web Audio is not supported");
+    }
+
+    try {
+      audioContext = new AudioContext();
+    } catch (cause) {
+      const message = getErrorMessage(cause, "Could not create the audio engine.");
+      setAudioIssue(message);
+      setAudioStatus("error");
+      throw cause;
+    }
 
     // Compressor for volume normalization across all sounds
     compressor = audioContext.createDynamicsCompressor();
@@ -116,35 +148,108 @@ export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
     // Narrator bus → master → destination (bypasses compressor)
     narratorBusGain.connect(masterGain);
     masterGain.connect(audioContext.destination);
+    audioContext.addEventListener("statechange", syncAudioContextStatus);
+    syncAudioContextStatus();
   }
-  if (audioContext.state === "suspended") {
-    void audioContext.resume();
-  }
-  return { ctx: audioContext, gain: masterGain! };
+  if (!masterGain) throw new Error("Audio master gain was not initialized");
+  return { ctx: audioContext, gain: masterGain };
 }
 
 // --- Volume & mute state ---
-let volume = (() => {
-  if (typeof window === "undefined") return 0.5;
-  const parsed = parseFloat(localStorage.getItem("soundsVolume") ?? "");
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : 0.5;
-})();
+function clampVolume(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
 
-let muted =
-  typeof window !== "undefined"
-    ? localStorage.getItem("soundsMuted") === "true"
-    : false;
+function readAudioPreferences(): AudioPreferencesV1 {
+  if (typeof window === "undefined") {
+    return { version: 1, muted: false, volume: DEFAULT_VOLUME };
+  }
+
+  try {
+    const raw = localStorage.getItem(AUDIO_PREFERENCES_STORAGE_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        isRecord(parsed) &&
+        parsed.version === 1 &&
+        typeof parsed.muted === "boolean" &&
+        typeof parsed.volume === "number" &&
+        Number.isFinite(parsed.volume)
+      ) {
+        return { version: 1, muted: parsed.muted, volume: clampVolume(parsed.volume) };
+      }
+    }
+
+    const legacyVolume = Number.parseFloat(localStorage.getItem(LEGACY_VOLUME_STORAGE_KEY) ?? "");
+    return {
+      version: 1,
+      muted: localStorage.getItem(LEGACY_MUTED_STORAGE_KEY) === "true",
+      volume: Number.isFinite(legacyVolume) ? clampVolume(legacyVolume) : DEFAULT_VOLUME,
+    };
+  } catch {
+    return { version: 1, muted: false, volume: DEFAULT_VOLUME };
+  }
+}
+
+const initialAudioPreferences = readAudioPreferences();
+let volume = initialAudioPreferences.volume;
+let muted = initialAudioPreferences.muted;
 
 const audioListeners = new Set<() => void>();
 let audioStateVersion = 0;
 
+function notifyAudioListeners(): void {
+  audioStateVersion += 1;
+  audioListeners.forEach((listener) => listener());
+}
+
+function setAudioStatus(nextStatus: AudioStatus): void {
+  if (audioStatus === nextStatus) return;
+  audioStatus = nextStatus;
+  notifyAudioListeners();
+}
+
+function setAudioIssue(message: string | null): void {
+  if (audioIssue === message) return;
+  audioIssue = message;
+  notifyAudioListeners();
+}
+
+function getErrorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof Error && cause.message.trim() ? cause.message : fallback;
+}
+
+function syncAudioContextStatus(): void {
+  if (!audioContext) {
+    setAudioStatus("idle");
+    return;
+  }
+  if (audioContext.state === "running") {
+    setAudioStatus("ready");
+  } else if (audioContext.state === "closed") {
+    setAudioIssue("The audio engine closed unexpectedly. Reload to restore sound.");
+    setAudioStatus("error");
+  } else {
+    setAudioStatus("blocked");
+  }
+}
+
+function persistAudioPreferences(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const preferences: AudioPreferencesV1 = { version: 1, muted, volume };
+    localStorage.setItem(AUDIO_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+  } catch {
+    // Audio still works when storage is unavailable; preferences just will not persist.
+  }
+}
+
 /** Sync the master gain node and notify subscribers. */
 function syncGainAndNotify(): void {
-  audioStateVersion += 1;
   if (masterGain) {
     masterGain.gain.value = muted ? 0 : volume;
   }
-  audioListeners.forEach((cb) => cb());
+  notifyAudioListeners();
 }
 
 function persistSoundTuning(): void {
@@ -154,7 +259,11 @@ function persistSoundTuning(): void {
     fadeOutS,
     gains: soundGainMultiplier,
   };
-  localStorage.setItem(SOUND_TUNING_STORAGE_KEY, JSON.stringify(payload));
+  try {
+    localStorage.setItem(SOUND_TUNING_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Tuning remains active for this tab when storage is unavailable.
+  }
 }
 
 function loadSoundTuningFromStorage(): void {
@@ -162,14 +271,15 @@ function loadSoundTuningFromStorage(): void {
   try {
     const raw = localStorage.getItem(SOUND_TUNING_STORAGE_KEY);
     if (!raw) return;
-    const parsed = JSON.parse(raw) as SoundTuningStorage;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return;
     if (typeof parsed.fadeInS === "number" && Number.isFinite(parsed.fadeInS)) {
       fadeInS = Math.max(0, Math.min(0.5, parsed.fadeInS));
     }
     if (typeof parsed.fadeOutS === "number" && Number.isFinite(parsed.fadeOutS)) {
       fadeOutS = Math.max(0, Math.min(0.5, parsed.fadeOutS));
     }
-    if (parsed.gains && typeof parsed.gains === "object") {
+    if (isRecord(parsed.gains)) {
       for (const name of SOUND_NAMES) {
         const value = parsed.gains[name];
         if (typeof value === "number" && Number.isFinite(value)) {
@@ -191,17 +301,12 @@ export function getVolume(): number {
 }
 
 export function setVolume(v: number): void {
-  volume = Math.max(0, Math.min(1, v));
-  if (typeof window !== "undefined") {
-    localStorage.setItem("soundsVolume", String(volume));
-  }
+  volume = clampVolume(v);
   // Dragging up from 0 while muted → auto-unmute
   if (volume > 0 && muted) {
     muted = false;
-    if (typeof window !== "undefined") {
-      localStorage.setItem("soundsMuted", "false");
-    }
   }
+  persistAudioPreferences();
   syncGainAndNotify();
 }
 
@@ -213,14 +318,9 @@ export function toggleMute(): boolean {
   muted = !muted;
   // Unmuting while volume is 0 → restore to a sane default
   if (!muted && volume === 0) {
-    volume = 0.5;
-    if (typeof window !== "undefined") {
-      localStorage.setItem("soundsVolume", "0.5");
-    }
+    volume = DEFAULT_VOLUME;
   }
-  if (typeof window !== "undefined") {
-    localStorage.setItem("soundsMuted", String(muted));
-  }
+  persistAudioPreferences();
   syncGainAndNotify();
   return muted;
 }
@@ -234,6 +334,14 @@ export function subscribeAudio(cb: () => void): () => void {
 
 export function getAudioStateVersion(): number {
   return audioStateVersion;
+}
+
+export function getAudioStatus(): AudioStatus {
+  return audioStatus;
+}
+
+export function getAudioIssue(): string | null {
+  return audioIssue;
 }
 
 export function getFadeInSeconds(): number {
@@ -276,27 +384,33 @@ export function resetSoundTuning(): void {
   fadeOutS = DEFAULT_FADE_OUT_S;
   soundGainMultiplier = { ...DEFAULT_SOUND_GAIN_MULTIPLIER };
   if (typeof window !== "undefined") {
-    localStorage.removeItem(SOUND_TUNING_STORAGE_KEY);
+    try {
+      localStorage.removeItem(SOUND_TUNING_STORAGE_KEY);
+    } catch {
+      // The in-memory reset still succeeds when storage is unavailable.
+    }
   }
   syncGainAndNotify();
 }
 
-function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 let preloaded = false;
 
-export function preloadSounds(): void {
-  if (preloaded || typeof window === "undefined") return;
-  preloaded = true;
-
-  getAudioContext();
-
-  for (const name of Object.keys(SOUND_MAP) as SoundName[]) {
-    void loadSoundBuffer(name).catch(() => {});
+function activateAndPreloadSounds(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  const ready = activateAudio();
+  if (!preloaded) {
+    preloaded = true;
+    for (const name of SOUND_NAMES) {
+      void loadSoundBuffer(name).catch((cause: unknown) => {
+        setAudioIssue(getErrorMessage(cause, `Could not load the ${name} sound.`));
+      });
+    }
   }
+  return ready;
+}
+
+export function preloadSounds(): void {
+  void activateAndPreloadSounds();
 }
 
 function shouldThrottleSound(name: SoundName): boolean {
@@ -310,18 +424,45 @@ function shouldThrottleSound(name: SoundName): boolean {
   return false;
 }
 
-function ensureAudioContextRunning(ctx: AudioContext): Promise<void> {
-  if (ctx.state === "running") return Promise.resolve();
-  if (resumePromise) return resumePromise;
+function isAudioContextRunning(ctx: AudioContext): boolean {
+  return String(ctx.state) === "running";
+}
+
+async function ensureAudioContextRunning(ctx: AudioContext): Promise<boolean> {
+  if (isAudioContextRunning(ctx)) {
+    setAudioStatus("ready");
+    return true;
+  }
+  if (resumePromise) {
+    await resumePromise;
+    syncAudioContextStatus();
+    return isAudioContextRunning(ctx);
+  }
 
   resumePromise = ctx
     .resume()
-    .catch(() => {})
+    .catch(() => {
+      // Browsers commonly reject resume() until a direct user gesture occurs.
+    })
     .finally(() => {
       resumePromise = null;
     });
 
-  return resumePromise;
+  await resumePromise;
+  syncAudioContextStatus();
+  return isAudioContextRunning(ctx);
+}
+
+export async function activateAudio(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    const { ctx } = getAudioContext();
+    return await ensureAudioContextRunning(ctx);
+  } catch (cause) {
+    setAudioIssue(getErrorMessage(cause, "Could not start audio."));
+    if (audioStatus !== "unsupported") setAudioStatus("error");
+    return false;
+  }
 }
 
 function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
@@ -331,7 +472,12 @@ function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
   const inflight = inflightBufferLoads.get(name);
   if (inflight) return inflight;
 
-  const { ctx } = getAudioContext();
+  let ctx: AudioContext;
+  try {
+    ({ ctx } = getAudioContext());
+  } catch (cause) {
+    return Promise.reject(cause);
+  }
   const request = fetch(SOUND_MAP[name])
     .then((res) => {
       if (!res.ok) throw new Error(`Failed to load sound: ${name}`);
@@ -350,11 +496,20 @@ function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
   return request;
 }
 
-export function playSound(name: SoundName): void {
-  if (typeof window === "undefined" || muted || prefersReducedMotion()) return;
-  if (shouldThrottleSound(name)) return;
+export async function playSoundAndWait(name: SoundName): Promise<boolean> {
+  if (typeof window === "undefined" || muted) return false;
+  if (shouldThrottleSound(name)) return false;
 
-  const { ctx } = getAudioContext();
+  let ctx: AudioContext;
+  try {
+    ({ ctx } = getAudioContext());
+  } catch (cause) {
+    setAudioIssue(getErrorMessage(cause, "Could not start audio."));
+    return false;
+  }
+  // Start resume() synchronously. When playSound() was called from a click,
+  // deferring this until after fetch/decode would lose the browser user gesture.
+  const readyPromise = ensureAudioContextRunning(ctx);
 
   function play(buffer: AudioBuffer): void {
     const target = sfxBusGain ?? compressor ?? masterGain;
@@ -398,24 +553,86 @@ export function playSound(name: SoundName): void {
     source.start();
   }
 
-  function playWhenRunning(buffer: AudioBuffer): void {
-    if (ctx.state === "running") {
-      play(buffer);
+  try {
+    const [ready, audioBuffer] = await Promise.all([readyPromise, loadSoundBuffer(name)]);
+    if (!muted && ready && isAudioContextRunning(ctx)) {
+      play(audioBuffer);
+      setAudioIssue(null);
+      return true;
+    }
+    return false;
+  } catch (cause) {
+    setAudioIssue(getErrorMessage(cause, `Could not play the ${name} sound.`));
+    return false;
+  }
+}
+
+/** Fire-and-forget playback for UI event handlers and effects. */
+export function playSound(name: SoundName): void {
+  void playSoundAndWait(name);
+}
+
+let audioUnlockConsumerCount = 0;
+let audioUnlockListenersInstalled = false;
+
+function removeAudioUnlockListeners(): void {
+  if (!audioUnlockListenersInstalled || typeof window === "undefined") return;
+  window.removeEventListener("pointerdown", handleAudioUnlock);
+  window.removeEventListener("keydown", handleAudioUnlock);
+  audioUnlockListenersInstalled = false;
+}
+
+function handleAudioUnlock(): void {
+  removeAudioUnlockListeners();
+  void activateAndPreloadSounds().then((ready) => {
+    // A gesture can still be rejected while a tab is backgrounded. Keep the
+    // one-shot unlock path armed so the next interaction gets another chance.
+    if (!ready && audioUnlockConsumerCount > 0) installAudioUnlockListeners();
+  });
+}
+
+function installAudioUnlockListeners(): void {
+  if (
+    audioUnlockListenersInstalled ||
+    typeof window === "undefined" ||
+    audioStatus === "ready" ||
+    audioStatus === "unsupported"
+  ) {
+    return;
+  }
+  window.addEventListener("pointerdown", handleAudioUnlock);
+  window.addEventListener("keydown", handleAudioUnlock);
+  audioUnlockListenersInstalled = true;
+}
+
+/** Shares one first-interaction unlock listener across every mounted audio control. */
+export function listenForAudioUnlock(): () => void {
+  audioUnlockConsumerCount += 1;
+  installAudioUnlockListeners();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    audioUnlockConsumerCount = Math.max(0, audioUnlockConsumerCount - 1);
+    if (audioUnlockConsumerCount === 0) removeAudioUnlockListeners();
+  };
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (
+      event.key !== AUDIO_PREFERENCES_STORAGE_KEY &&
+      event.key !== LEGACY_MUTED_STORAGE_KEY &&
+      event.key !== LEGACY_VOLUME_STORAGE_KEY
+    ) {
       return;
     }
-
-    void ensureAudioContextRunning(ctx).then(() => {
-      if (!muted && ctx.state === "running") {
-        play(buffer);
-      }
-    });
-  }
-
-  void loadSoundBuffer(name)
-    .then((audioBuffer) => {
-      if (!muted) playWhenRunning(audioBuffer);
-    })
-    .catch(() => {});
+    const preferences = readAudioPreferences();
+    if (preferences.muted === muted && preferences.volume === volume) return;
+    muted = preferences.muted;
+    volume = preferences.volume;
+    syncGainAndNotify();
+  });
 }
 
 /** Returns the narrator submix bus for connecting narrator AudioBufferSourceNodes. */

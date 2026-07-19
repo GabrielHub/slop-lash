@@ -1,53 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
-import { collapseExpand, phaseTransition } from "@/lib/animations";
 import { useConvexRoomPresence } from "@/hooks/use-convex-room-presence";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
+import { collapseExpand } from "@/lib/animations";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
-import type { QuizslopPhase } from "../types";
-import { canHostAdvanceQuizslopPhase, isQuizslopSubmissionPhase } from "../quizslop-phase-policy";
-import { ScoreboardStrip, VoiceLineBanner } from "./quizslop-shared-ui";
-import { QuizslopStagePhaseContent } from "./quizslop-phase-content";
-import type { QuizslopStageViewPayload } from "./quizslop-view-contracts";
+import { canHostAdvanceQuizslopPhase, getQuizslopHostAdvanceLabel } from "../quizslop-phase-policy";
+import { adaptQuizslopStageView } from "./quizslop-exam-adapters";
+import type { QuizslopExamPhase } from "./quizslop-exam-contracts";
+import { QuizslopExamStageContent } from "./quizslop-exam-stage";
+import { QuizslopSoundToggle } from "./quizslop-sound-toggle";
+import { QuizslopTutorialGuide } from "./quizslop-tutorial-guide";
+import { useQuizslopExamSounds } from "./use-quizslop-exam-sounds";
 
-export interface QuizslopGameShellFixture {
-  view: QuizslopStageViewPayload;
-  start(): Promise<void> | void;
-  advance(): Promise<void> | void;
-}
-
-const PHASE_LABELS: Record<QuizslopPhase, string> = {
-  LOBBY_SETUP: "Lobby",
-  HOUSE_VOTE: "Final vote",
-  HOUSE_VOTE_REVEAL: "Vote reveal",
-  TOPIC_REVEAL: "Topic",
-  SLOP_CALL: "Call Slop",
-  SLOP_CALL_REVEAL: "Call reveal",
-  ANSWER: "Answering",
-  QUESTION_REVEAL: "Reveal",
-  DISPUTE_WINDOW: "Disputes",
-  DISPUTE_VOTE: "Dispute vote",
-  ROUND_RESULTS: "Results",
-  CONTINUITY_GRACE: "Reconnecting",
-  FINAL_RESULTS: "Final",
-  ABANDONED: "Abandoned",
+const PHASE_LABELS: Record<QuizslopExamPhase, string> = {
+  LOBBY_SETUP: "Admissions",
+  SECTION_INTRO: "Section briefing",
+  SCRATCH: "Scratch work",
+  PROXY_ANSWER: "Proxy filing",
+  ORAL_DEFENSE: "Oral defense",
+  SECTION_RESULTS: "Raw grade",
+  PROCTOR_REVIEW_VOTE: "Proctor Review",
+  PROCTOR_REVIEW_RESULT: "Suspension notice",
+  FINAL_ACCUSATION: "Integrity hearing",
+  FINAL_RESULTS: "Final transcript",
 };
 
 export function QuizslopGameShell({
   code,
-  fixture,
   viewMode = "stage",
 }: {
   code: string;
-  fixture?: QuizslopGameShellFixture;
   viewMode?: "game" | "stage";
 }) {
   const roomSession = useConvexRoomSession(code);
@@ -57,65 +48,65 @@ export function QuizslopGameShell({
       : (roomSession.playerCapability ?? roomSession.hostCapability)
     : null;
   const hostCapability = roomSession?.hostCapability ?? null;
-  useConvexRoomPresence({ capability: fixture ? null : capability });
-  const queried = useQuery(
-    api.quizslopViews.stageView,
-    fixture ? "skip" : capability ? { capability } : "skip",
-  );
-  const liveView: QuizslopStageViewPayload | undefined = queried;
-  const view = fixture?.view ?? liveView;
-  useScreenWakeLock(view != null);
+  useConvexRoomPresence({ capability });
+  const queried = useQuery(api.quizslopViews.stageView, capability ? { capability } : "skip");
+  const view = useMemo(() => (queried ? adaptQuizslopStageView(queried) : undefined), [queried]);
+  useScreenWakeLock(view !== undefined);
+  useQuizslopExamSounds(view);
+
   const startMutation = useMutation(api.quizslop.start);
   const advanceMutation = useMutation(api.quizslop.advance);
-  const [hostActionBusy, setHostActionBusy] = useState(false);
+  const removePlayerMutation = useMutation(api.lobby.kickHuman);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-game", "quizslop");
-    return () => {
-      document.documentElement.removeAttribute("data-game");
-    };
+    return () => document.documentElement.removeAttribute("data-game");
   }, []);
 
-  async function handleStart() {
-    if (!fixture && !hostCapability) return;
-    setHostActionBusy(true);
+  async function runHostAction(kind: "start" | "advance") {
+    if (!view || !hostCapability) return;
+    setBusyAction(kind);
     setActionError("");
     try {
-      if (fixture) {
-        await fixture.start();
-      } else if (hostCapability) {
+      if (kind === "start") {
         await startMutation({ capability: hostCapability });
-      }
-    } catch (cause) {
-      setActionError(getConvexErrorMessage(cause, "Could not start the game"));
-    } finally {
-      setHostActionBusy(false);
-    }
-  }
-
-  async function handleAdvance() {
-    if (!fixture && !hostCapability) return;
-    if (!view) return;
-    setHostActionBusy(true);
-    setActionError("");
-    try {
-      if (fixture) {
-        await fixture.advance();
-      } else if (hostCapability) {
+      } else {
         await advanceMutation({
           capability: hostCapability,
           expectedPhaseGeneration: view.version,
         });
       }
     } catch (cause) {
-      setActionError(getConvexErrorMessage(cause, "Could not advance the phase"));
+      setActionError(getConvexErrorMessage(cause, "The proctor could not move the exam"));
     } finally {
-      setHostActionBusy(false);
+      setBusyAction(null);
     }
   }
 
-  if (!fixture && !capability) {
+  async function removePlayer(targetPlayerId: string) {
+    if (!view || view.phase !== "LOBBY_SETUP" || !view.me.isHost) return;
+    const target = view.roster.find((player) => player.playerId === targetPlayerId);
+    if (!target || target.playerId === view.me.playerId) return;
+    if (!window.confirm(`Remove ${target.name} from this room?`)) return;
+    setBusyAction(`remove:${targetPlayerId}`);
+    setActionError("");
+    try {
+      if (hostCapability) {
+        await removePlayerMutation({
+          capability: hostCapability,
+          targetPlayerId: targetPlayerId as Id<"players">,
+        });
+      }
+    } catch (cause) {
+      setActionError(getConvexErrorMessage(cause, "The proctor could not remove that player"));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  if (!capability) {
     return (
       <main className="flex min-h-svh items-center justify-center px-6">
         <p className="font-display text-xl font-bold text-fail">
@@ -130,103 +121,98 @@ export function QuizslopGameShell({
       <main className="flex min-h-svh items-center justify-center px-6">
         <div
           className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-          style={{ borderColor: "var(--qs-marquee)", borderTopColor: "transparent" }}
+          style={{ borderColor: "var(--qs-punch)", borderTopColor: "transparent" }}
         />
       </main>
     );
   }
 
   const phase = view.phase;
-  const isHost = view.me.isHost;
-  const inRound = phase !== "LOBBY_SETUP" && phase !== "FINAL_RESULTS" && phase !== "ABANDONED";
-  const isSubmissionPhase = isQuizslopSubmissionPhase(phase);
-  const showHostAdvance = isHost && canHostAdvanceQuizslopPhase(phase, view.timersDisabled);
+  const showHostAdvance = view.me.isHost && canHostAdvanceQuizslopPhase(phase, view.timersDisabled);
 
   return (
     <div
       className="relative flex min-h-svh flex-col overflow-x-hidden"
-      style={{ color: "var(--qs-ink)" }}
+      style={{ color: "var(--qs-ink)", background: "var(--qs-bg)" }}
     >
-      {/* Studio glow backdrop */}
       <div
-        className="pointer-events-none fixed inset-0 z-0"
+        className="pointer-events-none fixed inset-0 z-0 opacity-70"
         aria-hidden="true"
         style={{
           background:
-            "radial-gradient(ellipse 60% 45% at 50% -5%, var(--qs-marquee-soft) 0%, transparent 70%), radial-gradient(ellipse 45% 40% at 85% 90%, var(--qs-signal-soft) 0%, transparent 70%)",
+            "linear-gradient(102deg, transparent 0 48%, color-mix(in srgb, var(--qs-punch) 5%, transparent) 48% 48.2%, transparent 48.2%), radial-gradient(circle at 92% 8%, var(--qs-marquee-soft), transparent 35%)",
         }}
       />
-
-      {/* Top bar */}
       <header
-        className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5 backdrop-blur-md sm:px-6"
+        className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5 backdrop-blur-md sm:px-6 lg:px-10"
         style={{
           borderColor: "var(--qs-edge)",
-          background: "color-mix(in srgb, var(--qs-bg) 85%, transparent)",
+          background: "color-mix(in srgb, var(--qs-bg) 90%, transparent)",
         }}
       >
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="font-display text-sm font-black tracking-tight transition-opacity hover:opacity-80"
-            style={{ color: "var(--qs-marquee)" }}
+            className="font-display text-sm font-black uppercase tracking-tight"
+            style={{ color: "var(--qs-punch)" }}
           >
-            QUIZSLOP
+            QuizSlop
           </Link>
-          <span style={{ color: "var(--qs-edge-strong)" }}>|</span>
           <span
-            className="font-mono text-xs font-bold tracking-widest"
+            className="font-mono text-[10px] font-black uppercase tracking-[0.2em]"
             style={{ color: "var(--qs-ink-dim)" }}
           >
-            {view.roomCode}
+            Form S-LOP 70 · {view.roomCode}
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <QuizslopSoundToggle />
           <span
-            className="rounded-full px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest"
-            style={{ color: "var(--qs-signal)", background: "var(--qs-signal-soft)" }}
+            className="border px-2.5 py-1 font-mono text-[9px] font-black uppercase tracking-[0.16em]"
+            style={{ borderColor: "var(--qs-edge-strong)", color: "var(--qs-ink)" }}
           >
             {PHASE_LABELS[phase]}
           </span>
-          {inRound && view.totalRounds > 0 && (
-            <span className="font-mono text-xs tabular-nums" style={{ color: "var(--qs-ink-dim)" }}>
-              Round {view.currentRound}/{view.totalRounds}
+          {view.totalSections > 0 && phase !== "LOBBY_SETUP" ? (
+            <span
+              className="font-mono text-[10px] font-black tabular-nums"
+              style={{ color: "var(--qs-ink-dim)" }}
+            >
+              §{view.sectionNumber}/{view.totalSections}
             </span>
-          )}
+          ) : null}
         </div>
       </header>
 
-      <main className="z-10 flex-1 px-4 py-6 sm:px-8 sm:py-10">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${phase}:${view.currentRound}:${view.revealOrdinal}`}
-            variants={phaseTransition}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <QuizslopStagePhaseContent
-              view={view}
-              isHost={isHost}
-              starting={hostActionBusy}
-              onStart={() => void handleStart()}
-            />
-          </motion.div>
-        </AnimatePresence>
+      <main className="relative z-10 flex-1">
+        {view.timersDisabled && phase !== "FINAL_RESULTS" ? (
+          <div className="mx-auto w-full max-w-[90rem] px-4 pt-5 sm:px-8 lg:px-10">
+            <QuizslopTutorialGuide phase={phase} />
+          </div>
+        ) : null}
+        <QuizslopExamStageContent
+          view={view}
+          busyAction={busyAction}
+          actions={{
+            start: () => void runHostAction("start"),
+            advance: () => void runHostAction("advance"),
+            removePlayer: (playerId) => void removePlayer(playerId),
+          }}
+        />
       </main>
 
-      {/* Persistent chrome: timer, host advance, voice line, scoreboard */}
       <footer
-        className="z-20 flex shrink-0 flex-col gap-3 border-t px-4 py-3 backdrop-blur-md sm:px-6"
+        className="sticky bottom-0 z-30 border-t px-4 py-3 backdrop-blur-md sm:px-6 lg:px-10"
         style={{
           borderColor: "var(--qs-edge)",
-          background: "color-mix(in srgb, var(--qs-bg) 88%, transparent)",
+          background: "color-mix(in srgb, var(--qs-bg) 92%, transparent)",
         }}
       >
         <AnimatePresence>
-          {actionError && (
+          {actionError ? (
             <motion.div
               key="error"
+              className="mb-3"
               variants={collapseExpand}
               initial="hidden"
               animate="visible"
@@ -234,39 +220,30 @@ export function QuizslopGameShell({
             >
               <ErrorBanner error={actionError} />
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
-
         <div className="flex flex-wrap items-center gap-4">
-          {(view.phaseDeadline !== null || view.timersDisabled) &&
-            phase !== "FINAL_RESULTS" &&
-            phase !== "ABANDONED" && (
-              <div className="min-w-48 flex-1">
-                <Timer
-                  deadline={view.phaseDeadline}
-                  serverNow={view.serverNow}
-                  disabled={view.timersDisabled && view.phaseDeadline === null}
-                />
-              </div>
-            )}
-          {showHostAdvance && (
+          {view.phaseDeadline !== null && phase !== "FINAL_RESULTS" ? (
+            <div className="min-w-48 flex-1">
+              <Timer deadline={view.phaseDeadline} serverNow={view.serverNow} />
+            </div>
+          ) : null}
+          {showHostAdvance ? (
             <button
               type="button"
-              disabled={hostActionBusy}
-              onClick={() => void handleAdvance()}
-              className="cursor-pointer rounded-xl px-5 py-2.5 font-display text-sm font-black uppercase tracking-widest disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ background: "var(--qs-signal)", color: "var(--qs-accent-ink)" }}
+              disabled={busyAction !== null}
+              onClick={() => void runHostAction("advance")}
+              className="cursor-pointer border-2 px-5 py-2.5 font-display text-sm font-black uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-40"
+              style={{
+                borderColor: "var(--qs-punch)",
+                background: "var(--qs-punch)",
+                color: "var(--qs-accent-ink)",
+              }}
             >
-              {hostActionBusy ? "Working..." : isSubmissionPhase ? "Close phase" : "Continue"}
+              {busyAction === "advance" ? "Processing..." : getQuizslopHostAdvanceLabel(phase)}
             </button>
-          )}
+          ) : null}
         </div>
-
-        <VoiceLineBanner voiceLine={view.voiceLine} />
-
-        {view.scoreboard.length > 0 && phase !== "FINAL_RESULTS" && phase !== "ABANDONED" && (
-          <ScoreboardStrip scoreboard={view.scoreboard} highlightPlayerId={view.me.playerId} />
-        )}
       </footer>
     </div>
   );

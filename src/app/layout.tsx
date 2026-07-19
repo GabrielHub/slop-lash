@@ -40,11 +40,20 @@ export const metadata: Metadata = {
     description: "Party games where AI plays too",
     siteName: "SlopBox Party Pack",
     type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "SlopBox Party Pack — Party games where AI plays too",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "SlopBox Party Pack",
     description: "Party games where AI plays too",
+    images: ["/opengraph-image"],
   },
   icons: {
     icon: "/icon.svg",

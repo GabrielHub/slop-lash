@@ -1,6 +1,6 @@
 /**
- * Renders the reviewed QuizSlop catalog and voice bank into a human-readable
- * markdown artifact for factual + comedy review. Read-only: it never mutates
+ * Renders the reviewed QuizSlop catalog into a human-readable markdown artifact
+ * for factual + comedy review. Read-only: it never mutates
  * any approval field. Writes output/quizslop-catalog-review.md and prints the
  * path.
  *
@@ -10,11 +10,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { QUIZSLOP_TOPIC_CATALOG } from "../../src/games/quizslop/config/topic-catalog";
 import { QUIZSLOP_REJECTED_EXAMPLES } from "../../src/games/quizslop/config/difficulty-examples";
-import {
-  QUIZSLOP_VOICE_EVENT_TAGS,
-  QUIZSLOP_VOICE_LINES,
-  getVoiceLinesForTag,
-} from "../../src/games/quizslop/config/voice-lines";
 import type { QuizslopCatalogTopic } from "../../src/games/quizslop/types";
 
 function renderTopic(topic: QuizslopCatalogTopic): string {
@@ -69,7 +64,7 @@ function renderDocument(): string {
   );
   sections.push("");
   sections.push(
-    `Topics: **${QUIZSLOP_TOPIC_CATALOG.length}** | Voice lines: **${QUIZSLOP_VOICE_LINES.length}** | Rejected examples: **${QUIZSLOP_REJECTED_EXAMPLES.length}**`,
+    `Topics: **${QUIZSLOP_TOPIC_CATALOG.length}** | Rejected examples: **${QUIZSLOP_REJECTED_EXAMPLES.length}**`,
   );
   sections.push("");
 
@@ -79,21 +74,6 @@ function renderDocument(): string {
   sections.push("");
   for (const topic of QUIZSLOP_TOPIC_CATALOG) {
     sections.push(renderTopic(topic));
-  }
-
-  sections.push("---");
-  sections.push("");
-  sections.push("# Voice bank");
-  sections.push("");
-  for (const tag of QUIZSLOP_VOICE_EVENT_TAGS) {
-    sections.push(`## ${tag}`);
-    sections.push("");
-    for (const line of getVoiceLinesForTag(tag)) {
-      sections.push(`- \`${line.id}\` approved=**${line.review.approved}**`);
-      sections.push(`  - Text: ${line.text}`);
-      sections.push(`  - Accessible: ${line.accessibleLabel}`);
-    }
-    sections.push("");
   }
 
   sections.push("---");

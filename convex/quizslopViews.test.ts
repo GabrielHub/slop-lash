@@ -5,285 +5,270 @@ import presenceTest from "@convex-dev/presence/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { api } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
 import {
   HIDDEN_TIER_TOKENS,
   QUIZSLOP_HOST_SECRET,
-  advanceToPhase,
-  chooseDistinctTopics,
   controllerViewOf,
   createPresenceController,
   createQuizslopRoom,
-  getCurrentRound,
+  getAssignments,
+  getParticipants,
   hostAdvance,
-  lockAnswerAs,
-  playStandardRound,
-  readAssignmentQuestion,
+  playerIdOf,
   stageViewOf,
   startQuizslop,
+  submitProxyAs,
+  submitScratchAs,
   viewContains,
 } from "./quizslopTestKit";
 
 const modules = import.meta.glob("./**/*.ts");
-
-function createTestBackend() {
-  const backend = convexTest(schema, modules);
-  presenceTest.register(backend);
-  return backend;
+function backend() {
+  const value = convexTest(schema, modules);
+  presenceTest.register(value);
+  return value;
 }
-
-type Backend = ReturnType<typeof createTestBackend>;
-
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-07-15T20:00:00.000Z"));
+  vi.setSystemTime(new Date("2026-07-18T20:00:00.000Z"));
   vi.stubEnv("HOST_SECRET", QUIZSLOP_HOST_SECRET);
 });
-
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
-type PackContents = {
-  questions: Doc<"quizSlopQuestions">[];
-  excerpts: string[];
-};
+async function readyGame() {
+  const testBackend = backend();
+  const room = await createQuizslopRoom(testBackend, { joinerNames: ["Bea", "Cody"] });
+  const presence = createPresenceController(testBackend);
+  await presence.heartbeatAll(room.players);
+  await startQuizslop(testBackend, room.host);
+  return { testBackend, room };
+}
 
-/** Every frozen question and retained excerpt for one round's topic. */
-async function readRoundPack(backend: Backend, gameId: Id<"games">): Promise<PackContents> {
-  const round = await getCurrentRound(backend, gameId);
-  if (!round.topicId) throw new Error("Round has no topic");
-  const topicId = round.topicId;
-  return backend.run(async (ctx) => {
-    const questions = await ctx.db
-      .query("quizSlopQuestions")
-      .withIndex("by_topicId_and_tier", (index) => index.eq("topicId", topicId))
-      .take(5);
-    const excerpts: string[] = [];
-    for (const question of questions) {
-      const sources = await ctx.db
-        .query("quizSlopQuestionSources")
-        .withIndex("by_questionId", (index) => index.eq("questionId", question._id))
-        .take(4);
-      for (const source of sources) excerpts.push(source.supportExcerpt);
+function expectNoHiddenTier(view: unknown): void {
+  for (const token of HIDDEN_TIER_TOKENS) expect(viewContains(view, token)).toBe(false);
+}
+
+describe("QuizSlop v2 view redaction", () => {
+  test("lobby exposes safe content readiness and blocks start below the minimum", async () => {
+    const testBackend = backend();
+    const room = await createQuizslopRoom(testBackend, { joinerNames: ["Bea"] });
+    const presence = createPresenceController(testBackend);
+    await presence.heartbeatAll(room.players);
+    const [stage, controller] = await Promise.all([
+      stageViewOf(testBackend, room.host),
+      controllerViewOf(testBackend, room.host),
+    ]);
+    expect(stage.content).toEqual({
+      source: "CATALOG",
+      packStatus: "CATALOG_READY",
+      generatorModelName: null,
+    });
+    expect(stage.lobby).toEqual({ canStart: false });
+    expect(controller.content).toEqual(stage.content);
+  });
+
+  test("role is self-only at first SECTION_INTRO and hidden tiers never ship", async () => {
+    const { testBackend, room } = await readyGame();
+    const participants = await getParticipants(testBackend, room.host.gameId);
+    const stage = await stageViewOf(testBackend, room.host);
+    expect(stage.roster.every((entry) => !("role" in entry))).toBe(true);
+    expect(viewContains(stage, "SABOTEUR")).toBe(false);
+    for (const session of room.players) {
+      const view = await controllerViewOf(testBackend, session);
+      const own = participants.find((entry) => entry.playerId === playerIdOf(session));
+      expect(view.me.role).toBe(own?.role);
+      expect(view.roster.every((entry) => !("role" in entry))).toBe(true);
+      expectNoHiddenTier(view);
     }
-    return { questions, excerpts };
-  });
-}
-
-function expectNoTierTokens(view: unknown): void {
-  for (const token of HIDDEN_TIER_TOKENS) {
-    expect(viewContains(view, token)).toBe(false);
-  }
-}
-
-function expectNoServerOnlyContent(view: unknown, pack: PackContents): void {
-  for (const question of pack.questions) {
-    expect(viewContains(view, question.canonicalFact)).toBe(false);
-    expect(viewContains(view, question.neutralQuestion)).toBe(false);
-  }
-  for (const excerpt of pack.excerpts) {
-    expect(viewContains(view, excerpt)).toBe(false);
-  }
-}
-
-describe("QuizSlop view redaction", () => {
-  test("rejects QuizSlop capabilities from every generic prompt-mode view", async () => {
-    const backend = createTestBackend();
-    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea"] });
-
-    await expect(
-      backend.query(api.gameViews.lobby, { capability: room.host.capability }),
-    ).rejects.toThrow("mode-specific stage and controller views");
-    await expect(
-      backend.query(api.gameViews.stage, { capability: room.host.capability }),
-    ).rejects.toThrow("mode-specific stage and controller views");
-    await expect(
-      backend.query(api.gameViews.controller, { capability: room.host.capability }),
-    ).rejects.toThrow("mode-specific stage and controller views");
+    expectNoHiddenTier(stage);
   });
 
-  test("derives connected status from live Presence instead of durable lease rows", async () => {
-    const backend = createTestBackend();
-    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea"] });
-    const guest = room.guests[0]!;
+  test("orders public assignments by frozen candidate seat", async () => {
+    const { testBackend, room } = await readyGame();
+    const [participants, stage] = await Promise.all([
+      getParticipants(testBackend, room.host.gameId),
+      stageViewOf(testBackend, room.host),
+    ]);
+    expect(stage.pairings.map((pairing) => pairing.candidate.playerId)).toEqual(
+      participants.map((participant) => participant.playerId),
+    );
+  });
 
-    await backend.run(async (ctx) => {
-      await ctx.db.insert("roomPresenceSessions", {
-        gameId: room.host.gameId,
-        roomSessionId: guest.sessionId,
-        tabSessionId: "00000000-0000-4000-8000-000000000099",
-        sessionToken: "stale-component-session",
-        lastHeartbeatAt: Date.now(),
+  test("reports the real aggregate ballot count after Proctor Review", async () => {
+    const { testBackend, room } = await readyGame();
+    const participants = await getParticipants(testBackend, room.host.gameId);
+    await testBackend.run(async (ctx) => {
+      const state = await ctx.db
+        .query("quizSlopState")
+        .withIndex("by_gameId", (index) => index.eq("gameId", room.host.gameId))
+        .unique();
+      if (!state || participants.length < 3) throw new Error("Missing review fixture state");
+      await ctx.db.patch("quizSlopState", state._id, {
+        phase: "PROCTOR_REVIEW_RESULT",
+        suspendedPlayerId: participants[1]!.playerId,
+      });
+      for (const participant of participants.slice(0, 2)) {
+        await ctx.db.insert("quizSlopSuspensionVotes", {
+          gameId: room.host.gameId,
+          playerId: participant.playerId,
+          targetPlayerId: participants[1]!.playerId,
+          castAt: Date.now(),
+        });
+      }
+    });
+
+    expect((await stageViewOf(testBackend, room.host)).reviewResult).toMatchObject({
+      votesCast: 2,
+      votersTotal: 3,
+      suspendedPlayer: { playerId: participants[1]!.playerId },
+    });
+  });
+
+  test("SCRATCH gives each candidate only their own unique question", async () => {
+    const { testBackend, room } = await readyGame();
+    await hostAdvance(testBackend, room.host);
+    const stage = await stageViewOf(testBackend, room.host);
+    expect(stage.phase).toBe("SCRATCH");
+    expect(stage.receipts).toEqual([]);
+    expect(viewContains(stage, "correctIndex")).toBe(false);
+    const prompts: string[] = [];
+    for (const player of room.players) {
+      const view = await controllerViewOf(testBackend, player);
+      expect(view.candidateAssignment).not.toBeNull();
+      expect(view.proxyAssignment).toBeNull();
+      prompts.push(view.candidateAssignment?.displayPrompt ?? "");
+    }
+    expect(new Set(prompts).size).toBe(3);
+  });
+
+  test("PROXY_ANSWER exposes the target question but never the Candidate scratch selection", async () => {
+    const { testBackend, room } = await readyGame();
+    await hostAdvance(testBackend, room.host);
+    for (const player of room.players) await submitScratchAs(testBackend, player, true);
+    await hostAdvance(testBackend, room.host);
+    const assignments = await getAssignments(testBackend, room.host.gameId);
+    for (const player of room.players) {
+      const view = await controllerViewOf(testBackend, player);
+      const proxy = assignments.find(
+        (assignment) => assignment.proxyPlayerId === playerIdOf(player),
+      );
+      expect(view.proxyAssignment?.assignmentId).toBe(proxy?._id);
+      expect(view.proxyAssignment?.selectedIndex).toBeNull();
+      expect(view.candidateAssignment?.locked).toBe(true);
+      expect(view.candidateAssignment?.selectedIndex).not.toBeNull();
+      expect(view.receipts).toEqual([]);
+      expect(viewContains(view, "scratchSelectedIndex")).toBe(false);
+    }
+    const stage = await stageViewOf(testBackend, room.host);
+    expect(stage.pairings).toHaveLength(3);
+    expect(stage.receipts).toEqual([]);
+    expect(viewContains(stage, "scratchSelectedIndex")).toBe(false);
+  });
+
+  test("a connected player outside the frozen roster receives no private group ballot", async () => {
+    const testBackend = backend();
+    const room = await createQuizslopRoom(testBackend, {
+      joinerNames: ["Bea", "Cody", "Dina"],
+    });
+    const frozen = room.players.slice(0, 3);
+    const latePlayer = room.players[3]!;
+    const presence = createPresenceController(testBackend);
+    await presence.heartbeatAll(frozen);
+    await startQuizslop(testBackend, room.host);
+    await presence.heartbeat(latePlayer);
+    await hostAdvance(testBackend, room.host);
+    for (const player of frozen) await submitScratchAs(testBackend, player, true);
+    await hostAdvance(testBackend, room.host);
+    const assignment = (await getAssignments(testBackend, room.host.gameId))[0];
+    if (!assignment) throw new Error("Missing assignment");
+    await testBackend.run(async (ctx) => {
+      const state = await ctx.db
+        .query("quizSlopState")
+        .withIndex("by_gameId", (index) => index.eq("gameId", room.host.gameId))
+        .unique();
+      if (!state) throw new Error("Missing state");
+      await ctx.db.patch("quizSlopAssignments", assignment._id, {
+        answerAuthority: "GROUP",
+      });
+      await ctx.db.patch("quizSlopState", state._id, {
+        suspendedPlayerId: assignment.proxyPlayerId,
+        suspensionAppliedSection: state.deckPosition,
       });
     });
 
-    const stage = await stageViewOf(backend, room.host);
-    expect(
-      stage.lobby?.statuses.find((status) => status.playerId === guest.playerId),
-    ).toMatchObject({
-      connected: false,
-    });
+    const view = await controllerViewOf(testBackend, latePlayer);
+    expect(view.me.role).toBeNull();
+    expect(view.candidateAssignment).toBeNull();
+    expect(view.proxyAssignment).toBeNull();
+    expect(view.groupVoteAssignment).toBeNull();
   });
 
-  test("redacts questions, keys, and tiers before reveal and shares sources safely after", async () => {
-    const backend = createTestBackend();
-    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea", "Cody"] });
-    const presence = createPresenceController(backend);
-    const [guestB, guestC] = [room.guests[0]!, room.guests[1]!];
-    await chooseDistinctTopics(backend, room.players);
-    await presence.heartbeatAll(room.players);
-    await startQuizslop(backend, room.host);
-    const gameId = room.host.gameId;
-
-    // Warm-up ANSWER: everyone holds by default and shares the EASY question.
-    await advanceToPhase(backend, room.host, "ANSWER");
-    const pack = await readRoundPack(backend, gameId);
-    const assigned = await readAssignmentQuestion(backend, room.host);
-    const unassignedPrompts = pack.questions
-      .filter((question) => question._id !== assigned.question._id)
-      .map((question) => question.displayPrompt);
-
-    const stage = await stageViewOf(backend, room.host);
-    expect(stage.phase).toBe("ANSWER");
-    // The stage shows progress only: no prompt, choices, key, or explanation.
-    for (const key of ["displayPrompt", "choices", "correctIndex", "explanation"]) {
-      expect(viewContains(stage, key)).toBe(false);
+  test("ORAL_DEFENSE publishes receipts but keeps sabotage accounting sealed", async () => {
+    const { testBackend, room } = await readyGame();
+    const participants = await getParticipants(testBackend, room.host.gameId);
+    const saboteur = participants.find((participant) => participant.role === "SABOTEUR");
+    if (!saboteur) throw new Error("Missing saboteur");
+    await hostAdvance(testBackend, room.host);
+    for (const player of room.players) await submitScratchAs(testBackend, player, true);
+    await hostAdvance(testBackend, room.host);
+    for (const player of room.players) {
+      await submitProxyAs(testBackend, player, playerIdOf(player) !== saboteur.playerId);
     }
-    for (const question of pack.questions) {
-      expect(viewContains(stage, question.displayPrompt)).toBe(false);
-      expect(viewContains(stage, question.explanation)).toBe(false);
-    }
-    expectNoServerOnlyContent(stage, pack);
-    expectNoTierTokens(stage);
-
-    // A controller sees only its own frozen prompt and choices, never the key.
-    const controller = await controllerViewOf(backend, room.host);
-    expect(controller.answer).toMatchObject({ assigned: true, locked: false });
-    expect(controller.answer?.displayPrompt).toBe(assigned.question.displayPrompt);
-    expect(controller.answer?.choices).toEqual([...assigned.question.choices]);
-    expect(viewContains(controller, "correctIndex")).toBe(false);
-    expect(viewContains(controller, "explanation")).toBe(false);
-    for (const prompt of unassignedPrompts) {
-      expect(viewContains(controller, prompt)).toBe(false);
-    }
-    expectNoServerOnlyContent(controller, pack);
-    expectNoTierTokens(controller);
-
-    // Reveal the group, then check the source-link asymmetry.
-    await lockAnswerAs(backend, room.host, true);
-    await lockAnswerAs(backend, guestB, false);
-    const lastLock = await lockAnswerAs(backend, guestC, false);
-    expect(lastLock.phase).toBe("QUESTION_REVEAL");
-
-    const revealStage = await stageViewOf(backend, room.host);
-    expect(revealStage.revealGroups).toHaveLength(1);
-    const stageGroup = revealStage.revealGroups[0]!;
-    expect(stageGroup.displayPrompt).toBe(assigned.question.displayPrompt);
-    expect(stageGroup.correctIndex).toBe(assigned.question.correctIndex);
-    expect(stageGroup.sources.length).toBeGreaterThan(0);
-    // Stage receives source labels only; controllers receive the real links.
-    expect(stageGroup.sources.every((source) => source.url === null)).toBe(true);
-    const revealController = await controllerViewOf(backend, guestB);
-    const controllerGroup = revealController.revealGroups[0]!;
-    expect(controllerGroup.sources.length).toBeGreaterThan(0);
-    expect(
-      controllerGroup.sources.every(
-        (source) => typeof source.url === "string" && source.url.startsWith("https://"),
+    await hostAdvance(testBackend, room.host);
+    const [stage, saboteurController] = await Promise.all([
+      stageViewOf(testBackend, room.host),
+      controllerViewOf(
+        testBackend,
+        room.players.find((player) => playerIdOf(player) === saboteur.playerId)!,
       ),
-    ).toBe(true);
-    // Retained support excerpts never reach any client, even after reveal.
-    expectNoServerOnlyContent(revealStage, pack);
-    expectNoServerOnlyContent(revealController, pack);
-    expectNoTierTokens(revealStage);
-    expectNoTierTokens(revealController);
-  });
-
-  test("keeps differently-tiered questions private to their own controllers", async () => {
-    const backend = createTestBackend();
-    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea", "Cody"] });
-    const presence = createPresenceController(backend);
-    const [guestB, guestC] = [room.guests[0]!, room.guests[1]!];
-    await chooseDistinctTopics(backend, room.players);
-    await presence.heartbeatAll(room.players);
-    await startQuizslop(backend, room.host);
-    const hostId = room.host.playerId;
-
-    // Round 1 splits the hidden ladder: host climbs to MEDIUM, B and C stay EASY.
-    await playStandardRound(backend, room.host, room.players, {
-      correct: (session) => session.playerId === hostId,
+    ]);
+    expect(stage.receipts).toHaveLength(3);
+    expect(stage.receipts.every((receipt) => Number.isInteger(receipt.correctIndex))).toBe(true);
+    expect(stage.teamScore).toMatchObject({
+      rawCorrect: 2,
+      attempted: 3,
+      integrityAdjustmentSealed: true,
     });
-    await hostAdvance(backend, room.host);
-    await advanceToPhase(backend, room.host, "ANSWER");
-
-    const hostAssigned = await readAssignmentQuestion(backend, room.host);
-    const guestAssigned = await readAssignmentQuestion(backend, guestB);
-    expect(hostAssigned.question.tier).toBe("MEDIUM");
-    expect(guestAssigned.question.tier).toBe("EASY");
-    expect(hostAssigned.question._id).not.toBe(guestAssigned.question._id);
-
-    const hostController = await controllerViewOf(backend, room.host);
-    const guestController = await controllerViewOf(backend, guestB);
-    expect(hostController.answer?.displayPrompt).toBe(hostAssigned.question.displayPrompt);
-    expect(guestController.answer?.displayPrompt).toBe(guestAssigned.question.displayPrompt);
-    // One controller can never read another player's assigned question.
-    expect(viewContains(hostController, guestAssigned.question.displayPrompt)).toBe(false);
-    expect(viewContains(guestController, hostAssigned.question.displayPrompt)).toBe(false);
-    const stage = await stageViewOf(backend, room.host);
-    expect(viewContains(stage, hostAssigned.question.displayPrompt)).toBe(false);
-    expect(viewContains(stage, guestAssigned.question.displayPrompt)).toBe(false);
-    // Different questions per hidden tier never leak the tier itself.
-    expectNoTierTokens(hostController);
-    expectNoTierTokens(guestController);
-    expectNoTierTokens(stage);
-    const thirdController = await controllerViewOf(backend, guestC);
-    expect(thirdController.answer?.displayPrompt).toBe(guestAssigned.question.displayPrompt);
+    expect(stage.final).toBeNull();
+    expect(viewContains(stage, "sabotagePoints")).toBe(false);
+    expect(viewContains(saboteurController, "sabotagePoints")).toBe(false);
+    expect(saboteurController.me.role).toBe("SABOTEUR");
   });
 
-  test("keeps the finalist slate server-only until the house vote opens", async () => {
-    const backend = createTestBackend();
-    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea"] });
-    const presence = createPresenceController(backend);
-    const guestB = room.guests[0]!;
-    await chooseDistinctTopics(backend, room.players);
-    await presence.heartbeatAll(room.players);
-    await startQuizslop(backend, room.host);
-    const gameId = room.host.gameId;
-
-    await playStandardRound(backend, room.host, room.players);
-    await playStandardRound(backend, room.host, room.players);
-    await playStandardRound(backend, room.host, room.players);
-
-    // Last home-turf ROUND_RESULTS: the finale slate must still be server-only.
-    const finalists = await backend.run(async (ctx) =>
-      ctx.db
-        .query("quizSlopTopics")
-        .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
-        .take(20)
-        .then((topics) => topics.filter((topic) => topic.deckRole === "FINALIST")),
-    );
-    expect(finalists).toHaveLength(3);
-    const stageBefore = await stageViewOf(backend, room.host);
-    expect(stageBefore.phase).toBe("ROUND_RESULTS");
-    const controllerBefore = await controllerViewOf(backend, guestB);
-    for (const finalist of finalists) {
-      expect(viewContains(stageBefore, finalist.label)).toBe(false);
-      expect(viewContains(stageBefore, finalist.scope)).toBe(false);
-      expect(viewContains(controllerBefore, finalist.label)).toBe(false);
-      expect(viewContains(controllerBefore, finalist.scope)).toBe(false);
+  test("never exposes retained source excerpts or neutral/key audit fields", async () => {
+    const { testBackend, room } = await readyGame();
+    const serverOnly = await testBackend.run(async (ctx) => {
+      const questions = await ctx.db
+        .query("quizSlopQuestions")
+        .withIndex("by_gameId", (index) => index.eq("gameId", room.host.gameId))
+        .take(64);
+      const sources = await ctx.db
+        .query("quizSlopQuestionSources")
+        .withIndex("by_gameId", (index) => index.eq("gameId", room.host.gameId))
+        .take(128);
+      return [
+        ...questions.flatMap((question) => [question.neutralQuestion, question.canonicalFact]),
+        ...sources.map((source) => source.supportExcerpt),
+      ];
+    });
+    const views = await Promise.all([
+      stageViewOf(testBackend, room.host),
+      ...room.players.map((player) => controllerViewOf(testBackend, player)),
+    ]);
+    for (const view of views) {
+      for (const secret of serverOnly) expect(viewContains(view, secret)).toBe(false);
     }
+  });
 
-    // Opening the vote reveals the pre-frozen slate of three topics.
-    expect(await hostAdvance(backend, room.host)).toBe("HOUSE_VOTE");
-    const stageAfter = await stageViewOf(backend, room.host);
-    expect(stageAfter.slate).toHaveLength(3);
-    for (const finalist of finalists) {
-      expect(viewContains(stageAfter, finalist.label)).toBe(true);
-    }
-    const controllerAfter = await controllerViewOf(backend, guestB);
-    expect(controllerAfter.houseVote).toMatchObject({ eligible: true, myVoteTopicId: null });
-    expect(controllerAfter.slate).toHaveLength(3);
+  test("generic prompt-mode views reject QuizSlop capabilities", async () => {
+    const testBackend = backend();
+    const room = await createQuizslopRoom(testBackend);
+    await expect(
+      testBackend.query(api.gameViews.stage, { capability: room.host.capability }),
+    ).rejects.toThrow("mode-specific stage and controller views");
   });
 });

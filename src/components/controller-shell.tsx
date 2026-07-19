@@ -7,6 +7,7 @@ import { ErrorBanner } from "@/components/error-banner";
 import { Timer } from "@/components/timer";
 import { CompletionCard } from "@/components/completion-card";
 import { PulsingDot } from "@/components/pulsing-dot";
+import { AudioControls } from "@/components/audio-controls";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import {
   MIN_PLAYERS,
@@ -20,6 +21,7 @@ import { useControllerStream } from "@/hooks/use-controller-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { playSound } from "@/lib/sounds";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -45,7 +47,10 @@ function ControllerHeader({
           {roomCode ?? "...."}
         </span>
       </div>
-      <span className="text-xs text-ink-dim">{roundLabel ?? "Controller"}</span>
+      <div className="flex items-center gap-2">
+        <AudioControls />
+        <span className="hidden text-xs text-ink-dim sm:inline">{roundLabel ?? "Controller"}</span>
+      </div>
     </div>
   );
 }
@@ -106,11 +111,13 @@ export function ControllerShell({ code }: { code: string }) {
     try {
       if (path === "start") {
         await startGameMutation({ capability: hostCapability });
+        playSound("game-start");
       } else if (gameState) {
         await advanceGameMutation({
           capability: hostCapability,
           expectedPhaseGeneration: gameState.version,
         });
+        playSound("round-transition");
       }
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Something went wrong"));
@@ -132,6 +139,7 @@ export function ControllerShell({ code }: { code: string }) {
         text,
       });
       setSubmittedPromptIds((prev) => new Set(prev).add(promptId));
+      playSound("submitted");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {
@@ -150,6 +158,7 @@ export function ControllerShell({ code }: { code: string }) {
         responseId: responseId as Id<"responses"> | null,
       });
       setVotingPromptIds((prev) => new Set(prev).add(promptId));
+      playSound("vote-cast");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Something went wrong"));
     } finally {

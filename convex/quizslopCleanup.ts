@@ -1,20 +1,17 @@
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
-/** Loads one bounded deletion batch from every QuizSlop-owned table. */
 export async function loadQuizslopCleanupRows(
   ctx: MutationCtx,
   gameId: Id<"games">,
   limit: number,
 ) {
   const [
-    scoreEvents,
-    disputeVotes,
-    disputes,
+    groupAnswers,
+    defenses,
+    suspensionVotes,
+    accusations,
     assignments,
-    calls,
-    houseVotes,
-    eligibility,
     questionSources,
     questions,
     rounds,
@@ -23,31 +20,23 @@ export async function loadQuizslopCleanupRows(
     states,
   ] = await Promise.all([
     ctx.db
-      .query("quizSlopScoreEvents")
-      .withIndex("by_gameId_and_key", (index) => index.eq("gameId", gameId))
-      .take(limit),
-    ctx.db
-      .query("quizSlopDisputeVotes")
+      .query("quizSlopGroupAnswers")
       .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
       .take(limit),
     ctx.db
-      .query("quizSlopDisputes")
+      .query("quizSlopDefenses")
+      .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
+      .take(limit),
+    ctx.db
+      .query("quizSlopSuspensionVotes")
+      .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
+      .take(limit),
+    ctx.db
+      .query("quizSlopAccusations")
       .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
       .take(limit),
     ctx.db
       .query("quizSlopAssignments")
-      .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
-      .take(limit),
-    ctx.db
-      .query("quizSlopCalls")
-      .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
-      .take(limit),
-    ctx.db
-      .query("quizSlopHouseVotes")
-      .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
-      .take(limit),
-    ctx.db
-      .query("quizSlopEligibility")
       .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
       .take(limit),
     ctx.db
@@ -60,7 +49,7 @@ export async function loadQuizslopCleanupRows(
       .take(limit),
     ctx.db
       .query("quizSlopRounds")
-      .withIndex("by_gameId_and_deckOrdinal", (index) => index.eq("gameId", gameId))
+      .withIndex("by_gameId_and_sectionIndex", (index) => index.eq("gameId", gameId))
       .take(limit),
     ctx.db
       .query("quizSlopTopics")
@@ -76,13 +65,11 @@ export async function loadQuizslopCleanupRows(
       .take(limit),
   ]);
   return {
-    scoreEvents,
-    disputeVotes,
-    disputes,
+    groupAnswers,
+    defenses,
+    suspensionVotes,
+    accusations,
     assignments,
-    calls,
-    houseVotes,
-    eligibility,
     questionSources,
     questions,
     rounds,
@@ -92,42 +79,39 @@ export async function loadQuizslopCleanupRows(
   };
 }
 
-export type QuizslopCleanupRows = Awaited<ReturnType<typeof loadQuizslopCleanupRows>>;
+type QuizslopCleanupRows = Awaited<ReturnType<typeof loadQuizslopCleanupRows>>;
 
 export function hasMoreQuizslopCleanupRows(rows: QuizslopCleanupRows, batchSize: number): boolean {
   return Object.values(rows).some((tableRows) => tableRows.length > batchSize);
 }
 
-/**
- * Deletes children before their parents so every batch remains referentially
- * coherent. Deletes within one table are independent, so each table's batch is
- * issued in parallel while the table ordering itself stays sequential.
- */
 export async function deleteQuizslopCleanupRows(
   ctx: MutationCtx,
   rows: QuizslopCleanupRows,
   batchSize: number,
 ): Promise<void> {
   await Promise.all(
-    rows.scoreEvents.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopScoreEvents", row._id)),
+    rows.groupAnswers
+      .slice(0, batchSize)
+      .map((row) => ctx.db.delete("quizSlopGroupAnswers", row._id)),
   );
   await Promise.all(
-    rows.disputeVotes.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopDisputeVotes", row._id)),
+    rows.defenses.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopDefenses", row._id)),
   );
   await Promise.all(
-    rows.disputes.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopDisputes", row._id)),
+    rows.suspensionVotes
+      .slice(0, batchSize)
+      .map((row) => ctx.db.delete("quizSlopSuspensionVotes", row._id)),
   );
   await Promise.all(
-    rows.assignments.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopAssignments", row._id)),
+    rows.accusations
+      .slice(0, batchSize)
+      .map((row) => ctx.db.delete("quizSlopAccusations", row._id)),
   );
   await Promise.all(
-    rows.calls.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopCalls", row._id)),
-  );
-  await Promise.all(
-    rows.houseVotes.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopHouseVotes", row._id)),
-  );
-  await Promise.all(
-    rows.eligibility.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopEligibility", row._id)),
+    rows.assignments
+      .slice(0, batchSize)
+      .map((row) => ctx.db.delete("quizSlopAssignments", row._id)),
   );
   await Promise.all(
     rows.questionSources
@@ -144,7 +128,9 @@ export async function deleteQuizslopCleanupRows(
     rows.topics.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopTopics", row._id)),
   );
   await Promise.all(
-    rows.participants.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopParticipants", row._id)),
+    rows.participants
+      .slice(0, batchSize)
+      .map((row) => ctx.db.delete("quizSlopParticipants", row._id)),
   );
   await Promise.all(
     rows.states.slice(0, batchSize).map((row) => ctx.db.delete("quizSlopState", row._id)),

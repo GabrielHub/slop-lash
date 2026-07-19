@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "motion/react";
 import { api } from "../../../../convex/_generated/api";
 import { ErrorBanner } from "@/components/error-banner";
+import { AudioControls } from "@/components/audio-controls";
 import {
   fadeInUp,
   collapseExpand,
@@ -18,7 +19,7 @@ import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
-import { playSound, preloadSounds } from "@/lib/sounds";
+import { playSound } from "@/lib/sounds";
 import type { GameState } from "@/lib/types";
 import { isActiveCompetitor } from "@/games/core/game-rules";
 import { MATCHSLOP_INITIAL_MOOD, clampMatchSlopMood } from "../types";
@@ -287,11 +288,6 @@ export function MatchSlopGameShell({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [transcript.length, gameState?.status, currentPrompt?.text, rawTranscriptSignature]);
-
-  useEffect(() => {
-    window.addEventListener("pointerdown", preloadSounds, { once: true });
-    return () => window.removeEventListener("pointerdown", preloadSounds);
-  }, []);
 
   useEffect(() => {
     const status = gameState?.status;
@@ -597,6 +593,7 @@ export function MatchSlopGameShell({
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <AudioControls color="var(--ms-ink-dim)" />
           <span
             className="font-bold uppercase tracking-wider px-3 py-1 rounded-full"
             style={{

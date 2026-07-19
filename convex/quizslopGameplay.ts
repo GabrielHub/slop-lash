@@ -2,711 +2,464 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import {
-  listBoundaryActivePlayerIds,
-  listDisputeVotes,
-  listEligibility,
-  listQuestionsForTopic,
+  listAccusations,
+  listAssignmentDefenses,
+  listGroupAnswers,
   listQuizslopParticipants,
   listRoundAssignments,
-  listRoundCalls,
-  listRoundDisputes,
-  listRoundHouseVotes,
-  loadQuizslopRoundByOrdinal,
+  listSuspensionVotes,
+  loadQuizslopRoundBySection,
 } from "./quizslopData";
-import { auditQuestionGroups } from "./quizslopIntegrity";
-import {
-  isTerminalQuizslopPhase,
-  transitionQuizslopPhase,
-  type QuizslopEngineBundle,
-} from "./quizslopLifecycle";
-import { MIN_CONTINUING_PLAYERS } from "../src/games/core/game-rules";
-import {
-  ANSWER_SECONDS,
-  CONTINUITY_GRACE_SECONDS,
-  DISPUTE_VOTE_SECONDS,
-  DISPUTE_WINDOW_SECONDS,
-  FINAL_QUIZ_CORRECT_POINTS,
-  HOUSE_VOTE_REVEAL_SECONDS,
-  HOUSE_VOTE_SECONDS,
-  QUESTION_REVEAL_SECONDS_PER_GROUP,
-  ROUND_RESULTS_SECONDS,
-  SLOP_CALL_REVEAL_SECONDS,
-  SLOP_CALL_SECONDS,
-  TOPIC_REVEAL_SECONDS,
-} from "../src/games/quizslop/game-constants";
+import { transitionQuizslopPhase, type QuizslopEngineBundle } from "./quizslopLifecycle";
+import { assertFrozenQuestionIntegrity } from "./quizslopIntegrity";
+import { materializeSectionAssignments } from "./quizslopSetup";
 import { applyLadderResult } from "../src/games/quizslop/difficulty";
-import { resolveHouseVote } from "../src/games/quizslop/deck";
-import { resolveDisputeBallot } from "../src/games/quizslop/disputes";
 import {
-  settleRound,
-  type RoundSettlementInput,
-  type SettlementAssignment,
-} from "../src/games/quizslop/scoring";
-import { stableHash } from "../src/games/quizslop/voice";
-import type { QuizslopPhase, QuizslopQuestionRuling } from "../src/games/quizslop/types";
+  finalExamScore,
+  resolveGroupAnswer,
+  sabotageForAnswer,
+  strictMajorityChoice,
+} from "../src/games/quizslop/cooperative";
+import {
+  FINAL_ACCUSATION_SECONDS,
+  ORAL_DEFENSE_SECONDS,
+  PROCTOR_REVIEW_RESULT_SECONDS,
+  PROCTOR_REVIEW_VOTE_SECONDS,
+  PROXY_ANSWER_SECONDS,
+  SCRATCH_SECONDS,
+  SECTION_INTRO_SECONDS,
+  SECTION_RESULTS_SECONDS,
+} from "../src/games/quizslop/game-constants";
+import type { QuizslopPhase } from "../src/games/quizslop/types";
 
-/**
- * Transactional QuizSlop gameplay. Setup/materialization and shared lifecycle
- * writes live in focused modules; this file owns only round progression,
- * settlement, continuity, and quorum advancement.
- */
 async function loadCurrentRound(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
 ): Promise<Doc<"quizSlopRounds">> {
-  const round = await loadQuizslopRoundByOrdinal(ctx, bundle.game._id, bundle.state.deckPosition);
-  if (!round) throw new ConvexError("QuizSlop round is missing for the current deck position");
+  const round = await loadQuizslopRoundBySection(ctx, bundle.game._id, bundle.state.deckPosition);
+  if (!round) throw new ConvexError("QuizSlop section is missing");
   return round;
 }
 
-async function snapshotEligibility(
+async function questionForAssignment(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
+  assignment: Doc<"quizSlopAssignments">,
+) {
+  if (assignment.gameId !== bundle.game._id) {
+    throw new ConvexError("The frozen QuizSlop question failed its integrity check");
+  }
+  const question = await ctx.db.get("quizSlopQuestions", assignment.questionId);
+  if (!question) {
+    throw new ConvexError("The frozen QuizSlop question failed its integrity check");
+  }
+  await assertFrozenQuestionIntegrity(ctx, {
+    gameId: bundle.game._id,
+    topicId: assignment.topicId,
+    expectedTier: assignment.tierAtAssignment,
+    question,
+  });
+  return question;
+}
+
+function requireCompleteSectionAssignments(
+  bundle: QuizslopEngineBundle,
   round: Doc<"quizSlopRounds">,
-  kind: Doc<"quizSlopEligibility">["kind"],
+  assignments: readonly Doc<"quizSlopAssignments">[],
+  participants: readonly Doc<"quizSlopParticipants">[],
+): void {
+  const participantIds = new Set(participants.map((participant) => participant.playerId));
+  const candidateIds = new Set(assignments.map((assignment) => assignment.candidatePlayerId));
+  const proxyIds = new Set(assignments.map((assignment) => assignment.proxyPlayerId));
+  const groupAssignments = assignments.filter(
+    (assignment) => assignment.answerAuthority === "GROUP",
+  );
+  const expectedGroupProxy =
+    bundle.state.suspensionAppliedSection === bundle.state.deckPosition
+      ? bundle.state.suspendedPlayerId
+      : undefined;
+  if (
+    assignments.length !== participants.length ||
+    candidateIds.size !== participants.length ||
+    proxyIds.size !== participants.length ||
+    [...candidateIds].some((playerId) => !participantIds.has(playerId)) ||
+    [...proxyIds].some((playerId) => !participantIds.has(playerId)) ||
+    assignments.some(
+      (assignment) =>
+        assignment.gameId !== bundle.game._id ||
+        assignment.roundId !== round._id ||
+        assignment.candidatePlayerId === assignment.proxyPlayerId,
+    ) ||
+    new Set(assignments.map((assignment) => assignment.topicId)).size !== assignments.length ||
+    new Set(assignments.map((assignment) => assignment.questionId)).size !== assignments.length ||
+    groupAssignments.length !== (expectedGroupProxy ? 1 : 0) ||
+    (expectedGroupProxy !== undefined && groupAssignments[0]?.proxyPlayerId !== expectedGroupProxy)
+  ) {
+    throw new ConvexError("The frozen QuizSlop section failed its assignment integrity check");
+  }
+}
+
+async function closeScratch(
+  ctx: MutationCtx,
+  bundle: QuizslopEngineBundle,
   now: number,
-): Promise<{ eligible: Set<Id<"players">>; participants: Doc<"quizSlopParticipants">[] }> {
-  const [boundaryActive, participants] = await Promise.all([
-    listBoundaryActivePlayerIds(ctx, bundle.game._id),
+): Promise<void> {
+  const round = await loadCurrentRound(ctx, bundle);
+  const [assignments, participants] = await Promise.all([
+    listRoundAssignments(ctx, round._id),
     listQuizslopParticipants(ctx, bundle.game._id),
   ]);
-  const eligiblePlayerIds = participants
-    .filter((participant) => boundaryActive.has(participant.playerId))
-    .map((participant) => participant.playerId);
-  await Promise.all(
-    eligiblePlayerIds.map((playerId) =>
-      ctx.db.insert("quizSlopEligibility", {
-        gameId: bundle.game._id,
-        roundId: round._id,
-        kind,
-        phaseGeneration: bundle.game.phaseGeneration + 1,
-        playerId,
-        snapshotAt: now,
-      }),
-    ),
+  const participantByPlayer = new Map(
+    participants.map((participant) => [participant.playerId, participant]),
   );
-  return { eligible: new Set(eligiblePlayerIds), participants };
-}
-
-async function openSlopCall(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  await snapshotEligibility(ctx, bundle, round, "CALL", now);
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "SLOP_CALL",
-    now,
-    deadlineSeconds: SLOP_CALL_SECONDS,
-    roundKind: round.kind,
-  });
-}
-
-async function closeSlopCall(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  // Missing choices default to hold; persist the hold so reveal is complete.
-  const [eligibility, calls] = await Promise.all([
-    listEligibility(ctx, round._id, "CALL"),
-    listRoundCalls(ctx, round._id),
-  ]);
-  const resolved = new Set(calls.map((call) => call.callerId));
+  requireCompleteSectionAssignments(bundle, round, assignments, participants);
+  const validatedAssignments = await Promise.all(
+    assignments.map(async (assignment) => ({
+      assignment,
+      question: await questionForAssignment(ctx, bundle, assignment),
+    })),
+  );
   await Promise.all(
-    eligibility
-      .filter((entry) => !resolved.has(entry.playerId))
-      .map((entry) =>
-        ctx.db.insert("quizSlopCalls", {
-          gameId: bundle.game._id,
-          roundId: round._id,
-          callerId: entry.playerId,
-          lockedAt: now,
+    validatedAssignments.map(async ({ assignment, question }) => {
+      const participant = participantByPlayer.get(assignment.candidatePlayerId);
+      if (!participant) throw new ConvexError("Candidate is missing from the frozen roster");
+      const scratchCorrect =
+        assignment.scratchSelectedIndex === undefined
+          ? null
+          : assignment.scratchSelectedIndex === question.correctIndex;
+      await Promise.all([
+        ctx.db.patch("quizSlopAssignments", assignment._id, {
+          ...(scratchCorrect === null ? {} : { scratchCorrect }),
+          ...(assignment.scratchLockedAt === undefined ? { scratchLockedAt: now } : {}),
         }),
-      ),
-  );
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "SLOP_CALL_REVEAL",
-    now,
-    deadlineSeconds: SLOP_CALL_REVEAL_SECONDS,
-    roundKind: round.kind,
-  });
-}
-
-async function openAnswer(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  if (!round.topicId) throw new ConvexError("QuizSlop round has no topic to answer");
-  const { eligible, participants } = await snapshotEligibility(ctx, bundle, round, "ANSWER", now);
-  const questions = await listQuestionsForTopic(ctx, round.topicId);
-  const questionByTier = new Map(questions.map((question) => [question.tier, question]));
-  const assignmentRows = participants
-    .filter((participant) => eligible.has(participant.playerId))
-    .map((participant) => {
-      const question = questionByTier.get(participant.hiddenTier);
-      if (!question) {
-        throw new ConvexError("QuizSlop pack is missing a tier question at assignment");
-      }
-      return { participant, question };
-    });
-  await Promise.all(
-    assignmentRows.map(({ participant, question }) =>
-      ctx.db.insert("quizSlopAssignments", {
-        gameId: bundle.game._id,
-        roundId: round._id,
-        playerId: participant.playerId,
-        questionId: question._id,
-        tierAtAssignment: participant.hiddenTier,
-        assignedAt: now,
-      }),
-    ),
-  );
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "ANSWER",
-    now,
-    deadlineSeconds: ANSWER_SECONDS,
-    roundKind: round.kind,
-  });
-}
-
-async function closeAnswer(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  const assignments = await listRoundAssignments(ctx, round._id);
-  await Promise.all(
-    assignments
-      .filter((assignment) => assignment.lockedAt === undefined && assignment.timedOut !== true)
-      .map((assignment) => ctx.db.patch("quizSlopAssignments", assignment._id, { timedOut: true })),
-  );
-  if (assignments.length === 0) {
-    await openDisputeWindow(ctx, bundle, round, now);
-    return;
-  }
-
-  // Freeze a reveal order unrelated to hidden tier, and detect integrity
-  // faults before any group becomes public.
-  const distinctQuestionIds = [...new Set(assignments.map((entry) => entry.questionId))];
-  const { systemVoidQuestionIds } = await auditQuestionGroups(
-    ctx,
-    bundle.game._id,
-    round,
-    assignments,
-  );
-  const revealQuestionIds = distinctQuestionIds.toSorted((left, right) => {
-    const leftHash = stableHash(`${bundle.game._id}:${round._id}:${left}`);
-    const rightHash = stableHash(`${bundle.game._id}:${round._id}:${right}`);
-    return leftHash - rightHash || left.localeCompare(right);
-  });
-  await ctx.db.patch("quizSlopRounds", round._id, {
-    revealQuestionIds,
-    ...(systemVoidQuestionIds.length > 0
-      ? { systemVoidQuestionIds: [...systemVoidQuestionIds] }
-      : {}),
-  });
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "QUESTION_REVEAL",
-    now,
-    deadlineSeconds: QUESTION_REVEAL_SECONDS_PER_GROUP,
-    revealOrdinal: 0,
-    roundKind: round.kind,
-  });
-}
-
-async function advanceQuestionReveal(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  const groups = round.revealQuestionIds ?? [];
-  const nextOrdinal = bundle.state.revealOrdinal + 1;
-  if (nextOrdinal < groups.length) {
-    await transitionQuizslopPhase(ctx, bundle, {
-      phase: "QUESTION_REVEAL",
-      now,
-      deadlineSeconds: QUESTION_REVEAL_SECONDS_PER_GROUP,
-      revealOrdinal: nextOrdinal,
-      roundKind: round.kind,
-    });
-    return;
-  }
-  await openDisputeWindow(ctx, bundle, round, now);
-}
-
-async function openDisputeWindow(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  await snapshotEligibility(ctx, bundle, round, "DISPUTE_WINDOW", now);
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "DISPUTE_WINDOW",
-    now,
-    deadlineSeconds: DISPUTE_WINDOW_SECONDS,
-    roundKind: round.kind,
-  });
-}
-
-async function closeDisputeWindow(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  const disputes = await listRoundDisputes(ctx, round._id);
-  const open = disputes.filter((dispute) => dispute.ruling === undefined);
-  if (open.length === 0) {
-    await settleRoundAndShowResults(ctx, bundle, round, now);
-    return;
-  }
-  const { eligible: voters } = await snapshotEligibility(ctx, bundle, round, "DISPUTE_VOTE", now);
-  await Promise.all(
-    open.map((dispute) =>
-      ctx.db.patch("quizSlopDisputes", dispute._id, { frozenVoterCount: voters.size }),
-    ),
-  );
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "DISPUTE_VOTE",
-    now,
-    deadlineSeconds: DISPUTE_VOTE_SECONDS,
-    roundKind: round.kind,
-  });
-}
-
-async function settleOpenDisputes(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  roundId: Id<"quizSlopRounds">,
-  systemVoid: ReadonlySet<Id<"quizSlopQuestions">>,
-  now: number,
-): Promise<void> {
-  const disputes = await listRoundDisputes(ctx, roundId);
-  const voteEntries = await Promise.all(
-    disputes
-      .filter((dispute) => dispute.ruling === undefined && !systemVoid.has(dispute.questionId))
-      .map(async (dispute) => [dispute._id, await listDisputeVotes(ctx, dispute._id)] as const),
-  );
-  const votesByDispute = new Map(voteEntries);
-  await Promise.all(
-    disputes.map(async (dispute) => {
-      if (dispute.ruling !== undefined) return;
-      if (systemVoid.has(dispute.questionId)) {
-        // A known-broken record is never put to a player vote. Restore the
-        // initiator's dispute token exactly once.
-        const [, participant] = await Promise.all([
-          ctx.db.patch("quizSlopDisputes", dispute._id, {
-            ruling: "SYSTEM_VOID",
-            settledAt: now,
-          }),
-          ctx.db
-            .query("quizSlopParticipants")
-            .withIndex("by_gameId_and_playerId", (index) =>
-              index.eq("gameId", bundle.game._id).eq("playerId", dispute.initiatorId),
-            )
-            .unique(),
-        ]);
-        if (participant && !participant.disputeAvailable) {
-          await ctx.db.patch("quizSlopParticipants", participant._id, { disputeAvailable: true });
-        }
-        return;
-      }
-      const votes = votesByDispute.get(dispute._id) ?? [];
-      const ruling = resolveDisputeBallot(
-        votes.map((vote) => vote.choice),
-        dispute.frozenVoterCount ?? 0,
-      );
-      await ctx.db.patch("quizSlopDisputes", dispute._id, { ruling, settledAt: now });
+        scratchCorrect === null
+          ? Promise.resolve()
+          : ctx.db.patch("quizSlopParticipants", participant._id, {
+              hiddenTier: applyLadderResult(
+                participant.hiddenTier,
+                scratchCorrect ? "CORRECT" : "INCORRECT",
+              ),
+            }),
+      ]);
     }),
   );
-}
-
-/**
- * Settlement: applies every valid answer, Call Slop delta, refund, and hidden
- * ladder update exactly once through the unique-key score-event ledger, then
- * shows round results. `round.settledAt` is the transaction-level guard.
- */
-async function settleRoundAndShowResults(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
-  now: number,
-): Promise<void> {
-  if (round.settledAt === undefined) {
-    const assignments = await listRoundAssignments(ctx, round._id);
-    const integrity = await auditQuestionGroups(
-      ctx,
-      bundle.game._id,
-      round,
-      assignments,
-      round.revealQuestionIds ?? [],
-    );
-    const systemVoid = new Set([
-      ...(round.systemVoidQuestionIds ?? []),
-      ...integrity.systemVoidQuestionIds,
-    ]);
-    if (systemVoid.size !== (round.systemVoidQuestionIds?.length ?? 0)) {
-      await ctx.db.patch("quizSlopRounds", round._id, {
-        systemVoidQuestionIds: [...systemVoid],
-      });
-    }
-    await settleOpenDisputes(ctx, bundle, round._id, systemVoid, now);
-
-    const [calls, disputes, participants] = await Promise.all([
-      listRoundCalls(ctx, round._id),
-      listRoundDisputes(ctx, round._id),
-      listQuizslopParticipants(ctx, bundle.game._id),
-    ]);
-    const rulingByQuestion: Record<string, QuizslopQuestionRuling> = {};
-    for (const questionId of new Set(assignments.map((entry) => entry.questionId))) {
-      if (systemVoid.has(questionId)) {
-        rulingByQuestion[questionId] = "SYSTEM_VOID";
-        continue;
-      }
-      const dispute = disputes.find((entry) => entry.questionId === questionId);
-      rulingByQuestion[questionId] =
-        dispute?.ruling === "PLAYER_VOIDED"
-          ? "PLAYER_VOIDED"
-          : dispute?.ruling === "UPHELD"
-            ? "UPHELD"
-            : "UNCHALLENGED_VALID";
-    }
-
-    const questionIds = [...new Set(assignments.map((entry) => entry.questionId))];
-    const settlementInput: RoundSettlementInput<Id<"players">, Id<"quizSlopQuestions">> = {
-      isFinalRound: round.pointValue === FINAL_QUIZ_CORRECT_POINTS,
-      assignments: assignments.map(
-        (assignment): SettlementAssignment<Id<"players">, Id<"quizSlopQuestions">> => ({
-          playerId: assignment.playerId,
-          questionId: assignment.questionId,
-          selectedIndex:
-            assignment.lockedAt !== undefined ? (assignment.selectedIndex ?? null) : null,
-          correctIndex: integrity.questionById.get(assignment.questionId)?.correctIndex ?? -1,
-        }),
-      ),
-      rulings: rulingByQuestion,
-      calls: calls.flatMap((call) =>
-        call.targetId === undefined ? [] : [{ callerId: call.callerId, targetId: call.targetId }],
-      ),
-    };
-    const settlement = settleRound(settlementInput);
-
-    const participantByPlayer = new Map(
-      participants.map((participant) => [participant.playerId, participant]),
-    );
-    const writeScoreEvent = async (
-      playerId: Id<"players">,
-      key: string,
-      kind: "QUIZ" | "CALL",
-      delta: number,
-    ): Promise<void> => {
-      const existing = await ctx.db
-        .query("quizSlopScoreEvents")
-        .withIndex("by_gameId_and_key", (index) =>
-          index.eq("gameId", bundle.game._id).eq("key", key),
-        )
-        .unique();
-      if (existing) return;
-      await ctx.db.insert("quizSlopScoreEvents", {
-        gameId: bundle.game._id,
-        playerId,
-        roundId: round._id,
-        key,
-        kind,
-        delta,
-        createdAt: now,
-      });
-    };
-
-    await Promise.all(
-      settlement.players.map(async (playerResult) => {
-        const participant = participantByPlayer.get(playerResult.playerId);
-        if (!participant) return;
-        const scoreEventWrites: Promise<void>[] = [];
-        if (playerResult.quizDelta !== 0) {
-          scoreEventWrites.push(
-            writeScoreEvent(
-              participant.playerId,
-              `quiz:${round._id}:${participant.playerId}`,
-              "QUIZ",
-              playerResult.quizDelta,
-            ),
-          );
-        }
-        if (playerResult.callDelta !== 0) {
-          scoreEventWrites.push(
-            writeScoreEvent(
-              participant.playerId,
-              `call:${round._id}:${participant.playerId}`,
-              "CALL",
-              playerResult.callDelta,
-            ),
-          );
-        }
-        await Promise.all(scoreEventWrites);
-        const quizSubtotal = participant.quizSubtotal + playerResult.quizDelta;
-        const callSubtotal = participant.callSubtotal + playerResult.callDelta;
-        await Promise.all([
-          ctx.db.patch("quizSlopParticipants", participant._id, {
-            hiddenTier: applyLadderResult(participant.hiddenTier, playerResult.ladderResult),
-            quizSubtotal,
-            callSubtotal,
-            total: quizSubtotal + callSubtotal,
-            callTokens: participant.callTokens + playerResult.tokensRefunded,
-            ...(playerResult.answeredCorrectly === true
-              ? { correctAnswers: participant.correctAnswers + 1 }
-              : {}),
-          }),
-          // Mirror the mode total to the shared score for platform compatibility;
-          // the ledger and subtotals remain the scoring authority.
-          ctx.db.patch("players", participant.playerId, {
-            score: quizSubtotal + callSubtotal,
-          }),
-        ]);
-      }),
-    );
-
-    await Promise.all(
-      settlement.calls.map(async (callResult) => {
-        const row = calls.find(
-          (call) => call.callerId === callResult.callerId && call.targetId === callResult.targetId,
-        );
-        if (!row || row.settledAt !== undefined) return;
-        const caller = participantByPlayer.get(callResult.callerId);
-        const callerUpdate =
-          caller && callResult.outcome !== "REFUNDED"
-            ? ctx.db.patch(
-                "quizSlopParticipants",
-                caller._id,
-                callResult.outcome === "WON"
-                  ? { successfulCalls: caller.successfulCalls + 1 }
-                  : { incorrectCalls: caller.incorrectCalls + 1 },
-              )
-            : Promise.resolve();
-        await Promise.all([
-          ctx.db.patch("quizSlopCalls", row._id, {
-            outcome: callResult.outcome,
-            callDelta: callResult.callDelta,
-            tokenRefunded: callResult.tokenRefunded,
-            settledAt: now,
-          }),
-          callerUpdate,
-        ]);
-      }),
-    );
-
-    const resultByPlayer = new Map(settlement.players.map((result) => [result.playerId, result]));
-    await Promise.all([
-      ...assignments.map((assignment) => {
-        const playerResult = resultByPlayer.get(assignment.playerId);
-        return ctx.db.patch("quizSlopAssignments", assignment._id, {
-          ...(playerResult !== undefined && playerResult.answeredCorrectly !== null
-            ? { correct: playerResult.answeredCorrectly }
-            : {}),
-          quizDelta: playerResult?.quizDelta ?? 0,
-        });
-      }),
-      ctx.db.patch("quizSlopRounds", round._id, {
-        rulings: questionIds.map((questionId) => ({
-          questionId,
-          ruling: rulingByQuestion[questionId] ?? "UNCHALLENGED_VALID",
-        })),
-        settledAt: now,
-      }),
-    ]);
-  }
-
   await transitionQuizslopPhase(ctx, bundle, {
-    phase: "ROUND_RESULTS",
+    phase: "PROXY_ANSWER",
     now,
-    deadlineSeconds: ROUND_RESULTS_SECONDS,
-    roundKind: round.kind,
+    deadlineSeconds: PROXY_ANSWER_SECONDS,
   });
 }
 
-async function openNextRound(
+async function officialSelectionFor(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
-  now: number,
-): Promise<void> {
-  const nextDeckPosition = bundle.state.deckPosition + 1;
-  const nextRound = await loadQuizslopRoundByOrdinal(ctx, bundle.game._id, nextDeckPosition);
-  if (!nextRound) throw new ConvexError("QuizSlop deck is missing the next round");
-  if (nextRound.kind === "HOUSE_CHOICE") {
-    // Snapshot the voter roster as the phase opens.
-    await snapshotEligibility(ctx, bundle, nextRound, "HOUSE_VOTE", now);
-    await transitionQuizslopPhase(ctx, bundle, {
-      phase: "HOUSE_VOTE",
-      now,
-      deadlineSeconds: HOUSE_VOTE_SECONDS,
-      deckPosition: nextDeckPosition,
-      currentRound: nextDeckPosition + 1,
-      roundKind: nextRound.kind,
-    });
-    return;
+  assignment: Doc<"quizSlopAssignments">,
+  participants: readonly Doc<"quizSlopParticipants">[],
+): Promise<number | null> {
+  if (assignment.answerAuthority === "PROXY") {
+    return assignment.officialSelectedIndex ?? null;
   }
-  await transitionQuizslopPhase(ctx, bundle, {
-    phase: "TOPIC_REVEAL",
-    now,
-    deadlineSeconds: TOPIC_REVEAL_SECONDS,
-    deckPosition: nextDeckPosition,
-    currentRound: nextDeckPosition + 1,
-    roundKind: nextRound.kind,
+  const ballots = await listGroupAnswers(ctx, assignment._id);
+  const eligibleVoterIds = new Set(
+    participants
+      .filter((participant) => participant.playerId !== assignment.proxyPlayerId)
+      .map((participant) => participant.playerId),
+  );
+  if (
+    new Set(ballots.map((ballot) => ballot.voterId)).size !== ballots.length ||
+    ballots.some(
+      (ballot) =>
+        ballot.gameId !== bundle.game._id ||
+        ballot.roundId !== assignment.roundId ||
+        ballot.assignmentId !== assignment._id ||
+        !eligibleVoterIds.has(ballot.voterId),
+    )
+  ) {
+    throw new ConvexError("The class ballot failed its eligibility check");
+  }
+  return resolveGroupAnswer({
+    ballots: ballots.map((ballot) => ballot.selectedIndex),
+    eligibleVoterCount: eligibleVoterIds.size,
+    candidateScratch: assignment.scratchSelectedIndex ?? null,
+    seed: `${bundle.game._id}:${assignment.roundId}:${assignment._id}`,
+    choiceCount: 4,
   });
 }
 
-async function closeRoundResults(
+async function closeProxyAnswers(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
   now: number,
 ): Promise<void> {
-  const isFinalRound = round.deckOrdinal + 1 >= bundle.game.totalRounds;
-  if (isFinalRound) {
-    await transitionQuizslopPhase(ctx, bundle, {
-      phase: "FINAL_RESULTS",
-      now,
-      deadlineSeconds: null,
-      roundKind: round.kind,
-    });
-    return;
-  }
-  const [boundaryActive, participants] = await Promise.all([
-    listBoundaryActivePlayerIds(ctx, bundle.game._id),
+  const round = await loadCurrentRound(ctx, bundle);
+  const [assignments, participants] = await Promise.all([
+    listRoundAssignments(ctx, round._id),
     listQuizslopParticipants(ctx, bundle.game._id),
   ]);
-  const activeCount = participants.filter((participant) =>
-    boundaryActive.has(participant.playerId),
+  const participantByPlayer = new Map(
+    participants.map((participant) => [participant.playerId, participant]),
+  );
+  requireCompleteSectionAssignments(bundle, round, assignments, participants);
+  const validatedAssignments = await Promise.all(
+    assignments.map(async (assignment) => {
+      const [question, officialSelectedIndex] = await Promise.all([
+        questionForAssignment(ctx, bundle, assignment),
+        officialSelectionFor(ctx, bundle, assignment, participants),
+      ]);
+      return { assignment, question, officialSelectedIndex };
+    }),
+  );
+  const settledAssignments = validatedAssignments.map(
+    ({ assignment, question, officialSelectedIndex }) => {
+      const proxy = participantByPlayer.get(assignment.proxyPlayerId);
+      if (!proxy) throw new ConvexError("Proxy is missing from the frozen roster");
+      const officialCorrect = officialSelectedIndex === question.correctIndex;
+      const answeredBySaboteur =
+        assignment.answerAuthority === "PROXY" && proxy.role === "SABOTEUR";
+      const sabotageDelta = sabotageForAnswer({
+        scratchCorrect: assignment.scratchCorrect === true,
+        officialCorrect,
+        answeredBySaboteur,
+      });
+      return { assignment, officialSelectedIndex, officialCorrect, sabotageDelta };
+    },
+  );
+  const sectionCorrect = settledAssignments.filter(
+    (assignment) => assignment.officialCorrect,
   ).length;
-  if (activeCount < MIN_CONTINUING_PLAYERS) {
-    await transitionQuizslopPhase(ctx, bundle, {
-      phase: "CONTINUITY_GRACE",
-      now,
-      deadlineSeconds: CONTINUITY_GRACE_SECONDS,
-      deadlineIgnoresTimersDisabled: true,
-      roundKind: round.kind,
-    });
-    return;
-  }
-  await openNextRound(ctx, bundle, now);
+  const sectionSabotage = settledAssignments.reduce(
+    (total, assignment) => total + assignment.sabotageDelta,
+    0,
+  );
+  await Promise.all(
+    settledAssignments.map(({ assignment, officialSelectedIndex, officialCorrect }) =>
+      ctx.db.patch("quizSlopAssignments", assignment._id, {
+        ...(officialSelectedIndex === null ? {} : { officialSelectedIndex }),
+        officialLockedAt: assignment.officialLockedAt ?? now,
+        officialCorrect,
+      }),
+    ),
+  );
+  const statePatch = {
+    rawCorrect: bundle.state.rawCorrect + sectionCorrect,
+    attempted: bundle.state.attempted + assignments.length,
+    sabotagePoints: bundle.state.sabotagePoints + sectionSabotage,
+  };
+  await ctx.db.patch("quizSlopState", bundle.state._id, statePatch);
+  bundle.state = { ...bundle.state, ...statePatch };
+  const hasWrongOfficialAnswer = sectionCorrect < assignments.length;
+  await transitionQuizslopPhase(ctx, bundle, {
+    phase: hasWrongOfficialAnswer ? "ORAL_DEFENSE" : "SECTION_RESULTS",
+    now,
+    deadlineSeconds: hasWrongOfficialAnswer ? ORAL_DEFENSE_SECONDS : SECTION_RESULTS_SECONDS,
+  });
 }
 
-async function recheckContinuity(
+function requiredDefensePlayers(
+  assignments: readonly Doc<"quizSlopAssignments">[],
+): { assignmentId: Id<"quizSlopAssignments">; playerId: Id<"players"> }[] {
+  return assignments.flatMap((assignment) => {
+    if (assignment.officialCorrect !== false) return [];
+    const candidate = { assignmentId: assignment._id, playerId: assignment.candidatePlayerId };
+    return assignment.answerAuthority === "PROXY"
+      ? [candidate, { assignmentId: assignment._id, playerId: assignment.proxyPlayerId }]
+      : [candidate];
+  });
+}
+
+async function openSectionResults(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
   now: number,
 ): Promise<void> {
-  const [boundaryActive, participants] = await Promise.all([
-    listBoundaryActivePlayerIds(ctx, bundle.game._id),
+  await transitionQuizslopPhase(ctx, bundle, {
+    phase: "SECTION_RESULTS",
+    now,
+    deadlineSeconds: SECTION_RESULTS_SECONDS,
+  });
+}
+
+async function settleSuspensionVote(
+  ctx: MutationCtx,
+  bundle: QuizslopEngineBundle,
+  now: number,
+): Promise<void> {
+  const [participants, votes] = await Promise.all([
     listQuizslopParticipants(ctx, bundle.game._id),
+    listSuspensionVotes(ctx, bundle.game._id),
   ]);
-  const activeCount = participants.filter((participant) =>
-    boundaryActive.has(participant.playerId),
-  ).length;
-  if (activeCount >= MIN_CONTINUING_PLAYERS) {
-    await openNextRound(ctx, bundle, now);
-    return;
+  const participantIds = new Set(participants.map((participant) => participant.playerId));
+  if (
+    new Set(votes.map((vote) => vote.playerId)).size !== votes.length ||
+    votes.some(
+      (vote) =>
+        vote.gameId !== bundle.game._id ||
+        !participantIds.has(vote.playerId) ||
+        (vote.targetPlayerId !== undefined && !participantIds.has(vote.targetPlayerId)),
+    )
+  ) {
+    throw new ConvexError("The Proctor Review ballot failed its eligibility check");
+  }
+  const majorityTarget = strictMajorityChoice(
+    votes.flatMap((vote) => (vote.targetPlayerId ? [vote.targetPlayerId] : [])),
+    participants.length,
+  );
+  if (majorityTarget) {
+    const validTarget = participants.some((participant) => participant.playerId === majorityTarget);
+    if (!validTarget) throw new ConvexError("Suspension vote targeted a non-participant");
+    const statePatch = {
+      suspendedPlayerId: majorityTarget,
+      suspensionAppliedSection: bundle.state.deckPosition + 1,
+    };
+    await ctx.db.patch("quizSlopState", bundle.state._id, statePatch);
+    bundle.state = { ...bundle.state, ...statePatch };
   }
   await transitionQuizslopPhase(ctx, bundle, {
-    phase: "ABANDONED",
+    phase: "PROCTOR_REVIEW_RESULT",
+    now,
+    deadlineSeconds: PROCTOR_REVIEW_RESULT_SECONDS,
+  });
+}
+
+async function settleFinalAccusation(
+  ctx: MutationCtx,
+  bundle: QuizslopEngineBundle,
+  now: number,
+): Promise<void> {
+  const [participants, accusations] = await Promise.all([
+    listQuizslopParticipants(ctx, bundle.game._id),
+    listAccusations(ctx, bundle.game._id),
+  ]);
+  const participantIds = new Set(participants.map((participant) => participant.playerId));
+  if (
+    new Set(accusations.map((accusation) => accusation.playerId)).size !== accusations.length ||
+    accusations.some(
+      (accusation) =>
+        accusation.gameId !== bundle.game._id ||
+        !participantIds.has(accusation.playerId) ||
+        !participantIds.has(accusation.targetPlayerId),
+    )
+  ) {
+    throw new ConvexError("The integrity hearing ballot failed its eligibility check");
+  }
+  const majorityTarget = strictMajorityChoice(
+    accusations.map((accusation) => accusation.targetPlayerId),
+    participants.length,
+  );
+  const saboteurs = participants.filter((participant) => participant.role === "SABOTEUR");
+  const expectedAttempts = participants.length * (bundle.state.sectionCount ?? Number.NaN);
+  if (
+    saboteurs.length !== 1 ||
+    !Number.isInteger(expectedAttempts) ||
+    bundle.state.attempted !== expectedAttempts ||
+    !Number.isInteger(bundle.state.rawCorrect) ||
+    bundle.state.rawCorrect < 0 ||
+    bundle.state.rawCorrect > bundle.state.attempted ||
+    !Number.isInteger(bundle.state.sabotagePoints) ||
+    bundle.state.sabotagePoints < 0
+  ) {
+    throw new ConvexError("The final QuizSlop transcript failed its integrity check");
+  }
+  const saboteur = saboteurs[0];
+  if (!saboteur) throw new ConvexError("QuizSlop saboteur is missing");
+  const saboteurIdentified = majorityTarget === saboteur.playerId;
+  const final = finalExamScore({
+    rawCorrect: bundle.state.rawCorrect,
+    attempted: bundle.state.attempted,
+    sabotagePoints: bundle.state.sabotagePoints,
+    saboteurIdentified,
+  });
+  const statePatch = {
+    ...(majorityTarget ? { accusedPlayerId: majorityTarget } : {}),
+    saboteurIdentified,
+    adjustedCorrect: final.adjustedCorrect,
+    gradePercent: final.gradePercent,
+    passed: final.passed,
+  };
+  await ctx.db.patch("quizSlopState", bundle.state._id, statePatch);
+  bundle.state = { ...bundle.state, ...statePatch };
+  await transitionQuizslopPhase(ctx, bundle, {
+    phase: "FINAL_RESULTS",
     now,
     deadlineSeconds: null,
-    roundKind: null,
   });
 }
 
-async function closeHouseVote(
+async function startNextSection(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
-  round: Doc<"quizSlopRounds">,
   now: number,
 ): Promise<void> {
-  const finalistIds = round.finalistTopicIds ?? [];
-  const topics = await Promise.all(
-    finalistIds.map((topicId) => ctx.db.get("quizSlopTopics", topicId)),
-  );
-  const slate: { topicId: Id<"quizSlopTopics">; tieBreakRank: number }[] = [];
-  for (const [index, topicId] of finalistIds.entries()) {
-    const topic = topics[index];
-    if (!topic) throw new ConvexError("Finalist topic is missing");
-    slate.push({ topicId, tieBreakRank: topic.tieBreakRank ?? 0 });
-  }
-  const votes = await listRoundHouseVotes(ctx, round._id);
-  const winner = resolveHouseVote(
-    slate,
-    votes.map((vote) => ({ topicId: vote.topicId })),
-  );
-  if (!winner) throw new ConvexError("House vote could not resolve a topic");
-  await ctx.db.patch("quizSlopRounds", round._id, {
-    topicId: winner.topicId,
-  });
+  const nextSection = bundle.state.deckPosition + 1;
+  await materializeSectionAssignments(ctx, bundle, nextSection, now);
   await transitionQuizslopPhase(ctx, bundle, {
-    phase: "HOUSE_VOTE_REVEAL",
+    phase: "SECTION_INTRO",
     now,
-    deadlineSeconds: HOUSE_VOTE_REVEAL_SECONDS,
-    roundKind: round.kind,
+    deadlineSeconds: SECTION_INTRO_SECONDS,
+    deckPosition: nextSection,
+    currentRound: nextSection + 1,
   });
 }
 
-/**
- * Advances from the current phase applying documented timeout defaults. Used
- * by deadline enforcement and by the host's advance/close-phase action.
- * Returns the new phase, or null when the current phase cannot be advanced.
- */
+async function advanceAfterSectionResults(
+  ctx: MutationCtx,
+  bundle: QuizslopEngineBundle,
+  now: number,
+): Promise<void> {
+  const sectionNumber = bundle.state.deckPosition + 1;
+  if (sectionNumber === bundle.state.reviewAfterSection) {
+    await transitionQuizslopPhase(ctx, bundle, {
+      phase: "PROCTOR_REVIEW_VOTE",
+      now,
+      deadlineSeconds: PROCTOR_REVIEW_VOTE_SECONDS,
+    });
+    return;
+  }
+  if (sectionNumber >= (bundle.state.sectionCount ?? bundle.game.totalRounds)) {
+    await transitionQuizslopPhase(ctx, bundle, {
+      phase: "FINAL_ACCUSATION",
+      now,
+      deadlineSeconds: FINAL_ACCUSATION_SECONDS,
+    });
+    return;
+  }
+  await startNextSection(ctx, bundle, now);
+}
+
+/** Advances one phase, applying timeout/default semantics for unresolved submissions. */
 export async function forceAdvanceQuizslop(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
   now: number,
 ): Promise<QuizslopPhase | null> {
-  const { state } = bundle;
-  if (isTerminalQuizslopPhase(state.phase) || state.phase === "LOBBY_SETUP") return null;
-  const round = await loadCurrentRound(ctx, bundle);
-  switch (state.phase) {
-    case "HOUSE_VOTE":
-      await closeHouseVote(ctx, bundle, round, now);
-      break;
-    case "HOUSE_VOTE_REVEAL":
+  switch (bundle.state.phase) {
+    case "SECTION_INTRO":
       await transitionQuizslopPhase(ctx, bundle, {
-        phase: "TOPIC_REVEAL",
+        phase: "SCRATCH",
         now,
-        deadlineSeconds: TOPIC_REVEAL_SECONDS,
-        roundKind: round.kind,
+        deadlineSeconds: SCRATCH_SECONDS,
       });
       break;
-    case "TOPIC_REVEAL":
-      await openSlopCall(ctx, bundle, round, now);
+    case "SCRATCH":
+      await closeScratch(ctx, bundle, now);
       break;
-    case "SLOP_CALL":
-      await closeSlopCall(ctx, bundle, round, now);
+    case "PROXY_ANSWER":
+      await closeProxyAnswers(ctx, bundle, now);
       break;
-    case "SLOP_CALL_REVEAL":
-      await openAnswer(ctx, bundle, round, now);
+    case "ORAL_DEFENSE":
+      await openSectionResults(ctx, bundle, now);
       break;
-    case "ANSWER":
-      await closeAnswer(ctx, bundle, round, now);
+    case "SECTION_RESULTS":
+      await advanceAfterSectionResults(ctx, bundle, now);
       break;
-    case "QUESTION_REVEAL":
-      await advanceQuestionReveal(ctx, bundle, round, now);
+    case "PROCTOR_REVIEW_VOTE":
+      await settleSuspensionVote(ctx, bundle, now);
       break;
-    case "DISPUTE_WINDOW":
-      await closeDisputeWindow(ctx, bundle, round, now);
+    case "PROCTOR_REVIEW_RESULT":
+      await startNextSection(ctx, bundle, now);
       break;
-    case "DISPUTE_VOTE":
-      await settleRoundAndShowResults(ctx, bundle, round, now);
-      break;
-    case "ROUND_RESULTS":
-      await closeRoundResults(ctx, bundle, round, now);
-      break;
-    case "CONTINUITY_GRACE":
-      await recheckContinuity(ctx, bundle, now);
+    case "FINAL_ACCUSATION":
+      await settleFinalAccusation(ctx, bundle, now);
       break;
     default:
       return null;
@@ -714,71 +467,57 @@ export async function forceAdvanceQuizslop(
   return bundle.state.phase;
 }
 
-/**
- * Early advancement for submission phases: closes the phase as soon as every
- * snapshotted eligible participant has explicitly resolved their action. Runs
- * after each accepted submission, including with gameplay timers disabled.
- */
+async function allRequiredDefensesSubmitted(
+  ctx: MutationCtx,
+  roundId: Id<"quizSlopRounds">,
+): Promise<boolean> {
+  const assignments = await listRoundAssignments(ctx, roundId);
+  const required = requiredDefensePlayers(assignments);
+  const defensesByAssignment = new Map<Id<"quizSlopAssignments">, Set<Id<"players">>>();
+  for (const { assignmentId } of required) {
+    if (defensesByAssignment.has(assignmentId)) continue;
+    const defenses = await listAssignmentDefenses(ctx, assignmentId);
+    defensesByAssignment.set(assignmentId, new Set(defenses.map((defense) => defense.playerId)));
+  }
+  return required.every(({ assignmentId, playerId }) =>
+    defensesByAssignment.get(assignmentId)?.has(playerId),
+  );
+}
+
+/** Quorum advancement is disabled in host-paced Tutorial Mode. */
 export async function settleQuizslopQuorum(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
   now: number,
 ): Promise<QuizslopPhase | null> {
-  const { state } = bundle;
+  if (bundle.game.timersDisabled) return null;
+  const participants = await listQuizslopParticipants(ctx, bundle.game._id);
   const round = await loadCurrentRound(ctx, bundle);
-  if (state.phase === "SLOP_CALL") {
-    const [eligibility, calls] = await Promise.all([
-      listEligibility(ctx, round._id, "CALL"),
-      listRoundCalls(ctx, round._id),
-    ]);
-    const resolved = new Set(calls.map((call) => call.callerId));
-    if (eligibility.length > 0 && eligibility.every((entry) => resolved.has(entry.playerId))) {
-      await closeSlopCall(ctx, bundle, round, now);
-      return bundle.state.phase;
-    }
-    return null;
-  }
-  if (state.phase === "ANSWER") {
-    const assignments = await listRoundAssignments(ctx, round._id);
-    if (
-      assignments.length > 0 &&
-      assignments.every((assignment) => assignment.lockedAt !== undefined)
-    ) {
-      await closeAnswer(ctx, bundle, round, now);
-      return bundle.state.phase;
-    }
-    return null;
-  }
-  if (state.phase === "HOUSE_VOTE") {
-    const [eligibility, votes] = await Promise.all([
-      listEligibility(ctx, round._id, "HOUSE_VOTE"),
-      listRoundHouseVotes(ctx, round._id),
-    ]);
-    const voted = new Set(votes.map((vote) => vote.playerId));
-    if (eligibility.length > 0 && eligibility.every((entry) => voted.has(entry.playerId))) {
-      await closeHouseVote(ctx, bundle, round, now);
-      return bundle.state.phase;
-    }
-    return null;
-  }
-  if (state.phase === "DISPUTE_VOTE") {
-    const [eligibility, disputes] = await Promise.all([
-      listEligibility(ctx, round._id, "DISPUTE_VOTE"),
-      listRoundDisputes(ctx, round._id),
-    ]);
-    const openBallots = disputes.filter((dispute) => dispute.ruling === undefined);
-    if (eligibility.length === 0 || openBallots.length === 0) return null;
-    const voteSets = await Promise.all(
-      openBallots.map(async (dispute) => {
-        const votes = await listDisputeVotes(ctx, dispute._id);
-        return new Set(votes.map((vote) => vote.voterId));
-      }),
+  let complete = false;
+  if (bundle.state.phase === "SCRATCH") {
+    complete = (await listRoundAssignments(ctx, round._id)).every(
+      (assignment) => assignment.scratchLockedAt !== undefined,
     );
-    for (const voters of voteSets) {
-      if (!eligibility.every((entry) => voters.has(entry.playerId))) return null;
+  } else if (bundle.state.phase === "PROXY_ANSWER") {
+    const assignments = await listRoundAssignments(ctx, round._id);
+    complete = true;
+    for (const assignment of assignments) {
+      if (assignment.answerAuthority === "PROXY") {
+        if (assignment.officialLockedAt === undefined) complete = false;
+      } else {
+        const ballots = await listGroupAnswers(ctx, assignment._id);
+        if (ballots.length < Math.max(0, participants.length - 1)) complete = false;
+      }
     }
-    await settleRoundAndShowResults(ctx, bundle, round, now);
-    return bundle.state.phase;
+  } else if (bundle.state.phase === "ORAL_DEFENSE") {
+    complete = await allRequiredDefensesSubmitted(ctx, round._id);
+  } else if (bundle.state.phase === "PROCTOR_REVIEW_VOTE") {
+    complete = (await listSuspensionVotes(ctx, bundle.game._id)).length === participants.length;
+  } else if (bundle.state.phase === "FINAL_ACCUSATION") {
+    complete = (await listAccusations(ctx, bundle.game._id)).length === participants.length;
   }
-  return null;
+  if (!complete) return null;
+  return forceAdvanceQuizslop(ctx, bundle, now);
 }
+
+export { requiredDefensePlayers };

@@ -3,28 +3,17 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { roomPresence } from "./components";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
-import {
-  MAX_ASSIGNMENTS_PER_ROUND,
-  MAX_BALLOTS_PER_ROUND,
-  MAX_CALLS_PER_ROUND,
-  MAX_DISPUTE_VOTES_PER_ROUND,
-  MAX_FROZEN_PLAYERS,
-  MAX_FROZEN_TOPICS,
-  MAX_ROUNDS_CAP,
-  MAX_SOURCES_PER_QUESTION,
-  QUESTIONS_PER_PACK,
-} from "../src/games/quizslop/game-constants";
-
-/**
- * Bounded QuizSlop loaders. Every read uses a structural cap from the mode
- * constants, reads `cap + 1`, and fails closed on the extra row instead of
- * silently truncating.
- */
+import { MAX_PLAYERS } from "../src/games/quizslop/game-constants";
 
 export type QuizslopDatabaseCtx = MutationCtx | QueryCtx;
 
 const MAX_LOBBY_PLAYERS = 16;
 const MAX_PLAYER_SESSIONS_PER_GAME = 32;
+const MAX_TOPICS_PER_PACK = 64;
+const MAX_QUESTIONS_PER_TOPIC = 32;
+const MAX_SOURCES_PER_QUESTION = 3;
+const MAX_ASSIGNMENTS_PER_SECTION = MAX_PLAYERS;
+const MAX_DEFENSES_PER_ASSIGNMENT = 2;
 
 function requireCap<T>(rows: T[], cap: number, what: string): T[] {
   if (rows.length > cap) {
@@ -38,39 +27,28 @@ export function isQuizslopGame(game: Doc<"games">): boolean {
 }
 
 export function requireQuizslopGame(game: Doc<"games">): void {
-  if (!isQuizslopGame(game)) {
-    throw new ConvexError("This action is only available for QuizSlop");
-  }
+  if (!isQuizslopGame(game)) throw new ConvexError("This action is only available for QuizSlop");
 }
 
-export async function loadQuizslopState(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"quizSlopState"> | null> {
+async function loadQuizslopState(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
   return ctx.db
     .query("quizSlopState")
     .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
     .unique();
 }
 
-export async function getQuizslopState(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"quizSlopState">> {
+export async function getQuizslopState(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
   const state = await loadQuizslopState(ctx, gameId);
   if (!state) throw new ConvexError("QuizSlop state is missing");
   return state;
 }
 
-export async function listQuizslopParticipants(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"quizSlopParticipants">[]> {
+export async function listQuizslopParticipants(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
   const rows = await ctx.db
     .query("quizSlopParticipants")
     .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
-    .take(MAX_FROZEN_PLAYERS + 1);
-  return requireCap(rows, MAX_FROZEN_PLAYERS, "frozen participants").toSorted(
+    .take(MAX_PLAYERS + 1);
+  return requireCap(rows, MAX_PLAYERS, "frozen participants").toSorted(
     (left, right) => left.seatOrder - right.seatOrder,
   );
 }
@@ -79,7 +57,7 @@ export async function getQuizslopParticipant(
   ctx: QuizslopDatabaseCtx,
   gameId: Id<"games">,
   playerId: Id<"players">,
-): Promise<Doc<"quizSlopParticipants"> | null> {
+) {
   return ctx.db
     .query("quizSlopParticipants")
     .withIndex("by_gameId_and_playerId", (index) =>
@@ -88,71 +66,29 @@ export async function getQuizslopParticipant(
     .unique();
 }
 
-export async function listQuizslopTopics(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"quizSlopTopics">[]> {
+export async function listQuizslopTopics(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
   const rows = await ctx.db
     .query("quizSlopTopics")
     .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
-    .take(MAX_FROZEN_TOPICS + MAX_FROZEN_PLAYERS + 1);
-  // Pre-freeze rooms may briefly hold replaced/fallback topic rows beyond the
-  // frozen cap; the frozen deck itself is validated at the start transition.
-  return requireCap(rows, MAX_FROZEN_TOPICS + MAX_FROZEN_PLAYERS, "topics");
-}
-
-export async function loadQuizslopTopicForOwner(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-  ownerPlayerId: Id<"players">,
-): Promise<Doc<"quizSlopTopics"> | null> {
-  return ctx.db
-    .query("quizSlopTopics")
-    .withIndex("by_gameId_and_ownerPlayerId", (index) =>
-      index.eq("gameId", gameId).eq("ownerPlayerId", ownerPlayerId),
-    )
-    .unique();
-}
-
-export async function loadQuizslopRoundByOrdinal(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-  deckOrdinal: number,
-): Promise<Doc<"quizSlopRounds"> | null> {
-  return ctx.db
-    .query("quizSlopRounds")
-    .withIndex("by_gameId_and_deckOrdinal", (index) =>
-      index.eq("gameId", gameId).eq("deckOrdinal", deckOrdinal),
-    )
-    .unique();
-}
-
-export async function listQuizslopRounds(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"quizSlopRounds">[]> {
-  const rows = await ctx.db
-    .query("quizSlopRounds")
-    .withIndex("by_gameId_and_deckOrdinal", (index) => index.eq("gameId", gameId))
-    .take(MAX_ROUNDS_CAP + 1);
-  return requireCap(rows, MAX_ROUNDS_CAP, "rounds");
+    .take(MAX_TOPICS_PER_PACK + 1);
+  return requireCap(rows, MAX_TOPICS_PER_PACK, "topics in a frozen pack");
 }
 
 export async function listQuestionsForTopic(
   ctx: QuizslopDatabaseCtx,
   topicId: Id<"quizSlopTopics">,
-): Promise<Doc<"quizSlopQuestions">[]> {
+) {
   const rows = await ctx.db
     .query("quizSlopQuestions")
     .withIndex("by_topicId_and_tier", (index) => index.eq("topicId", topicId))
-    .take(QUESTIONS_PER_PACK + 1);
-  return requireCap(rows, QUESTIONS_PER_PACK, "questions in a pack");
+    .take(MAX_QUESTIONS_PER_TOPIC + 1);
+  return requireCap(rows, MAX_QUESTIONS_PER_TOPIC, "questions in a topic bank");
 }
 
 export async function listSourcesForQuestion(
   ctx: QuizslopDatabaseCtx,
   questionId: Id<"quizSlopQuestions">,
-): Promise<Doc<"quizSlopQuestionSources">[]> {
+) {
   const rows = await ctx.db
     .query("quizSlopQuestionSources")
     .withIndex("by_questionId", (index) => index.eq("questionId", questionId))
@@ -160,107 +96,95 @@ export async function listSourcesForQuestion(
   return requireCap(rows, MAX_SOURCES_PER_QUESTION, "sources on a question");
 }
 
+export async function loadQuizslopRoundBySection(
+  ctx: QuizslopDatabaseCtx,
+  gameId: Id<"games">,
+  sectionIndex: number,
+) {
+  return ctx.db
+    .query("quizSlopRounds")
+    .withIndex("by_gameId_and_sectionIndex", (index) =>
+      index.eq("gameId", gameId).eq("sectionIndex", sectionIndex),
+    )
+    .unique();
+}
+
 export async function listRoundAssignments(
   ctx: QuizslopDatabaseCtx,
   roundId: Id<"quizSlopRounds">,
-): Promise<Doc<"quizSlopAssignments">[]> {
+) {
   const rows = await ctx.db
     .query("quizSlopAssignments")
-    .withIndex("by_roundId_and_playerId", (index) => index.eq("roundId", roundId))
-    .take(MAX_ASSIGNMENTS_PER_ROUND + 1);
-  return requireCap(rows, MAX_ASSIGNMENTS_PER_ROUND, "assignments in a round");
+    .withIndex("by_roundId_and_candidatePlayerId", (index) => index.eq("roundId", roundId))
+    .take(MAX_ASSIGNMENTS_PER_SECTION + 1);
+  return requireCap(rows, MAX_ASSIGNMENTS_PER_SECTION, "assignments in a section");
 }
 
-export async function loadAssignmentForPlayer(
+export async function loadCandidateAssignment(
   ctx: QuizslopDatabaseCtx,
   roundId: Id<"quizSlopRounds">,
   playerId: Id<"players">,
-): Promise<Doc<"quizSlopAssignments"> | null> {
+) {
   return ctx.db
     .query("quizSlopAssignments")
-    .withIndex("by_roundId_and_playerId", (index) =>
-      index.eq("roundId", roundId).eq("playerId", playerId),
+    .withIndex("by_roundId_and_candidatePlayerId", (index) =>
+      index.eq("roundId", roundId).eq("candidatePlayerId", playerId),
     )
     .unique();
 }
 
-export async function listRoundCalls(
+export async function loadProxyAssignment(
   ctx: QuizslopDatabaseCtx,
   roundId: Id<"quizSlopRounds">,
-): Promise<Doc<"quizSlopCalls">[]> {
-  const rows = await ctx.db
-    .query("quizSlopCalls")
-    .withIndex("by_roundId_and_callerId", (index) => index.eq("roundId", roundId))
-    .take(MAX_CALLS_PER_ROUND + 1);
-  return requireCap(rows, MAX_CALLS_PER_ROUND, "calls in a round");
-}
-
-export async function listRoundHouseVotes(
-  ctx: QuizslopDatabaseCtx,
-  roundId: Id<"quizSlopRounds">,
-): Promise<Doc<"quizSlopHouseVotes">[]> {
-  const rows = await ctx.db
-    .query("quizSlopHouseVotes")
-    .withIndex("by_roundId_and_playerId", (index) => index.eq("roundId", roundId))
-    .take(MAX_FROZEN_PLAYERS + 1);
-  return requireCap(rows, MAX_FROZEN_PLAYERS, "house votes in a round");
-}
-
-export async function listRoundDisputes(
-  ctx: QuizslopDatabaseCtx,
-  roundId: Id<"quizSlopRounds">,
-): Promise<Doc<"quizSlopDisputes">[]> {
-  const rows = await ctx.db
-    .query("quizSlopDisputes")
-    .withIndex("by_roundId_and_questionId", (index) => index.eq("roundId", roundId))
-    .take(MAX_BALLOTS_PER_ROUND + 1);
-  return requireCap(rows, MAX_BALLOTS_PER_ROUND, "dispute ballots in a round");
-}
-
-export async function listDisputeVotes(
-  ctx: QuizslopDatabaseCtx,
-  disputeId: Id<"quizSlopDisputes">,
-): Promise<Doc<"quizSlopDisputeVotes">[]> {
-  const rows = await ctx.db
-    .query("quizSlopDisputeVotes")
-    .withIndex("by_disputeId_and_voterId", (index) => index.eq("disputeId", disputeId))
-    .take(MAX_DISPUTE_VOTES_PER_ROUND + 1);
-  return requireCap(rows, MAX_DISPUTE_VOTES_PER_ROUND, "dispute votes on a ballot");
-}
-
-export async function listEligibility(
-  ctx: QuizslopDatabaseCtx,
-  roundId: Id<"quizSlopRounds">,
-  kind: Doc<"quizSlopEligibility">["kind"],
-): Promise<Doc<"quizSlopEligibility">[]> {
-  const rows = await ctx.db
-    .query("quizSlopEligibility")
-    .withIndex("by_roundId_and_kind_and_playerId", (index) =>
-      index.eq("roundId", roundId).eq("kind", kind),
-    )
-    .take(MAX_FROZEN_PLAYERS + 1);
-  return requireCap(rows, MAX_FROZEN_PLAYERS, "eligibility snapshots for a phase");
-}
-
-export async function isEligible(
-  ctx: QuizslopDatabaseCtx,
-  roundId: Id<"quizSlopRounds">,
-  kind: Doc<"quizSlopEligibility">["kind"],
   playerId: Id<"players">,
-): Promise<boolean> {
-  const row = await ctx.db
-    .query("quizSlopEligibility")
-    .withIndex("by_roundId_and_kind_and_playerId", (index) =>
-      index.eq("roundId", roundId).eq("kind", kind).eq("playerId", playerId),
+) {
+  return ctx.db
+    .query("quizSlopAssignments")
+    .withIndex("by_roundId_and_proxyPlayerId", (index) =>
+      index.eq("roundId", roundId).eq("proxyPlayerId", playerId),
     )
     .unique();
-  return row !== null;
 }
 
-export async function listGamePlayers(
+export async function listGroupAnswers(
   ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"players">[]> {
+  assignmentId: Id<"quizSlopAssignments">,
+) {
+  const rows = await ctx.db
+    .query("quizSlopGroupAnswers")
+    .withIndex("by_assignmentId_and_voterId", (index) => index.eq("assignmentId", assignmentId))
+    .take(MAX_PLAYERS + 1);
+  return requireCap(rows, MAX_PLAYERS, "group answer ballots");
+}
+
+export async function listAssignmentDefenses(
+  ctx: QuizslopDatabaseCtx,
+  assignmentId: Id<"quizSlopAssignments">,
+) {
+  const rows = await ctx.db
+    .query("quizSlopDefenses")
+    .withIndex("by_assignmentId_and_playerId", (index) => index.eq("assignmentId", assignmentId))
+    .take(MAX_DEFENSES_PER_ASSIGNMENT + 1);
+  return requireCap(rows, MAX_DEFENSES_PER_ASSIGNMENT, "oral defenses on an assignment");
+}
+
+export async function listSuspensionVotes(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
+  const rows = await ctx.db
+    .query("quizSlopSuspensionVotes")
+    .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
+    .take(MAX_PLAYERS + 1);
+  return requireCap(rows, MAX_PLAYERS, "suspension votes");
+}
+
+export async function listAccusations(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
+  const rows = await ctx.db
+    .query("quizSlopAccusations")
+    .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
+    .take(MAX_PLAYERS + 1);
+  return requireCap(rows, MAX_PLAYERS, "final accusations");
+}
+
+export async function listGamePlayers(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
   const rows = await ctx.db
     .query("players")
     .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
@@ -268,11 +192,7 @@ export async function listGamePlayers(
   return requireCap(rows, MAX_LOBBY_PLAYERS, "players in a room");
 }
 
-/** Player IDs with at least one valid session currently online in Presence. */
-export async function listOnlinePlayerIds(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Set<Id<"players">>> {
+export async function listOnlinePlayerIds(ctx: QuizslopDatabaseCtx, gameId: Id<"games">) {
   const [presenceRows, sessionRows] = await Promise.all([
     roomPresence.listRoom(ctx, gameId, true, MAX_PLAYER_SESSIONS_PER_GAME + 1),
     ctx.db
@@ -280,16 +200,8 @@ export async function listOnlinePlayerIds(
       .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
       .take(MAX_PLAYER_SESSIONS_PER_GAME + 1),
   ]);
-  const presence = requireCap(
-    presenceRows,
-    MAX_PLAYER_SESSIONS_PER_GAME,
-    "online presence sessions",
-  );
-  const sessions = requireCap(
-    sessionRows,
-    MAX_PLAYER_SESSIONS_PER_GAME,
-    "player sessions in a room",
-  );
+  const presence = requireCap(presenceRows, MAX_PLAYER_SESSIONS_PER_GAME, "presence sessions");
+  const sessions = requireCap(sessionRows, MAX_PLAYER_SESSIONS_PER_GAME, "player sessions");
   const onlineSessionIds = new Set(presence.map((entry) => entry.userId));
   const onlinePlayerIds = new Set<Id<"players">>();
   const now = Date.now();
@@ -302,24 +214,11 @@ export async function listOnlinePlayerIds(
   return onlinePlayerIds;
 }
 
-/**
- * Boundary-active roster: durable ACTIVE participation plus at least one
- * online, unexpired presence session at the exact server transition. A
- * Presence read failure propagates so the transition aborts and retries
- * rather than treating everyone as offline.
- */
-export async function listBoundaryActivePlayerIds(
-  ctx: MutationCtx,
-  gameId: Id<"games">,
-): Promise<Set<Id<"players">>> {
-  const [presence, players] = await Promise.all([
+export async function listBoundaryActivePlayerIds(ctx: MutationCtx, gameId: Id<"games">) {
+  const [online, players] = await Promise.all([
     listOnlinePlayerIds(ctx, gameId),
     listGamePlayers(ctx, gameId),
   ]);
-  const activePlayerIds = new Set(players.filter(isActiveCompetitor).map((player) => player._id));
-  const boundaryActive = new Set<Id<"players">>();
-  for (const playerId of presence) {
-    if (activePlayerIds.has(playerId)) boundaryActive.add(playerId);
-  }
-  return boundaryActive;
+  const activeIds = new Set(players.filter(isActiveCompetitor).map((player) => player._id));
+  return new Set([...online].filter((playerId) => activeIds.has(playerId)));
 }

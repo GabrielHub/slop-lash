@@ -2,6 +2,7 @@
 // @vitest-environment edge-runtime
 
 import presenceTest from "@convex-dev/presence/test";
+import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { api } from "./_generated/api";
@@ -12,6 +13,7 @@ const modules = import.meta.glob("./**/*.ts");
 function createTestBackend() {
   const backend = convexTest(schema, modules);
   presenceTest.register(backend);
+  workflowTest.register(backend);
   return backend;
 }
 
@@ -375,5 +377,97 @@ describe("room capabilities", () => {
         sessionId: "274eb4fe-9272-4bd1-9058-9946586554ee",
       }),
     ).rejects.toThrow("Too many active presence sessions");
+  });
+});
+
+describe("QuizSlop content configuration", () => {
+  test("defaults to the reviewed catalog", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const host = await backend.action(api.rooms.create, {
+      gameType: "QUIZSLOP",
+      hostName: "Registrar",
+      hostSecret: "host-secret",
+    });
+
+    const state = await backend.run(async (ctx) =>
+      ctx.db
+        .query("quizSlopState")
+        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .unique(),
+    );
+    expect(state).toMatchObject({
+      contentSource: "CATALOG",
+      packStatus: "CATALOG_READY",
+    });
+    expect(state?.generatorModelId).toBeUndefined();
+  });
+
+  test("stores the host-selected generator but keeps verification server-owned", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const host = await backend.action(api.rooms.create, {
+      gameType: "QUIZSLOP",
+      hostName: "Registrar",
+      hostSecret: "host-secret",
+      quizSlopContentSource: "AI",
+      quizSlopGeneratorModelId: "anthropic/claude-haiku-4.5",
+    });
+
+    const snapshot = await backend.run(async (ctx) => ({
+      state: await ctx.db
+        .query("quizSlopState")
+        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .unique(),
+      job: await ctx.db
+        .query("generationJobs")
+        .withIndex("by_gameId_and_generationKey", (index) =>
+          index.eq("gameId", host.gameId).eq("generationKey", "quizslop-pack-v1"),
+        )
+        .unique(),
+    }));
+    const { job, state } = snapshot;
+    expect(state).toMatchObject({
+      contentSource: "AI",
+      generatorModelId: "anthropic/claude-haiku-4.5",
+      verifierModelId: "openai/gpt-5.6-luna",
+      packStatus: "GENERATING",
+    });
+    expect(job).toMatchObject({
+      kind: "QUIZSLOP_PACK",
+      status: "RUNNING",
+      workflowId: expect.any(String),
+    });
+  });
+
+  test("rejects missing, unsupported, and cross-mode generator settings", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+
+    await expect(
+      backend.action(api.rooms.create, {
+        gameType: "QUIZSLOP",
+        hostName: "Registrar",
+        hostSecret: "host-secret",
+        quizSlopContentSource: "AI",
+      }),
+    ).rejects.toThrow("Choose a question generator");
+    await expect(
+      backend.action(api.rooms.create, {
+        gameType: "QUIZSLOP",
+        hostName: "Registrar",
+        hostSecret: "host-secret",
+        quizSlopContentSource: "AI",
+        quizSlopGeneratorModelId: "totally/real-model",
+      }),
+    ).rejects.toThrow("Unsupported QuizSlop generator model");
+    await expect(
+      backend.action(api.rooms.create, {
+        gameType: "SLOPLASH",
+        hostName: "Registrar",
+        hostSecret: "host-secret",
+        quizSlopContentSource: "CATALOG",
+      }),
+    ).rejects.toThrow("only available for QuizSlop");
   });
 });

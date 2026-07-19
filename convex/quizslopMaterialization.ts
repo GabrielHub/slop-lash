@@ -1,43 +1,24 @@
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { listQuestionsForTopic, listSourcesForQuestion } from "./quizslopData";
 import type { QuizslopCatalogTopic } from "../src/games/quizslop/types";
 
-/** Materializes one reviewed catalog topic into game-owned frozen records. */
+type QuizslopWriteCtx = Pick<MutationCtx, "db">;
+
+/** Materializes one reviewed catalog topic into immutable game-owned records. */
 export async function materializeCatalogTopic(
-  ctx: MutationCtx,
+  ctx: QuizslopWriteCtx,
   gameId: Id<"games">,
   catalogTopic: QuizslopCatalogTopic,
-  options: {
-    ownerPlayerId?: Id<"players">;
-    deckRole?: Doc<"quizSlopTopics">["deckRole"];
-    setupState: Doc<"quizSlopTopics">["setupState"];
-    selectionRank?: number;
-    tieBreakRank?: number;
-    slateDisplayOrder?: number;
-    now: number;
-  },
 ): Promise<Id<"quizSlopTopics">> {
   const topicId = await ctx.db.insert("quizSlopTopics", {
     gameId,
-    ...(options.ownerPlayerId ? { ownerPlayerId: options.ownerPlayerId } : {}),
-    sourceType: "CATALOG",
     catalogTopicId: catalogTopic.id,
     packVersion: catalogTopic.packVersion,
-    revision: 0,
     label: catalogTopic.label,
     scope: catalogTopic.scope,
     category: catalogTopic.category,
     exclusions: [...catalogTopic.exclusions],
     canonicalKey: catalogTopic.canonicalKey,
-    setupState: options.setupState,
-    ...(options.deckRole ? { deckRole: options.deckRole } : {}),
-    ...(options.selectionRank !== undefined ? { selectionRank: options.selectionRank } : {}),
-    ...(options.tieBreakRank !== undefined ? { tieBreakRank: options.tieBreakRank } : {}),
-    ...(options.slateDisplayOrder !== undefined
-      ? { slateDisplayOrder: options.slateDisplayOrder }
-      : {}),
-    updatedAt: options.now,
   });
   await Promise.all(
     catalogTopic.questions.map(async (question) => {
@@ -79,22 +60,4 @@ export async function materializeCatalogTopic(
     }),
   );
   return topicId;
-}
-
-/** Removes a game-owned topic and its bounded question/source tree. */
-export async function deleteMaterializedTopic(
-  ctx: MutationCtx,
-  topic: Doc<"quizSlopTopics">,
-): Promise<void> {
-  const questions = await listQuestionsForTopic(ctx, topic._id);
-  const sourcesByQuestion = await Promise.all(
-    questions.map((question) => listSourcesForQuestion(ctx, question._id)),
-  );
-  await Promise.all(
-    sourcesByQuestion.flatMap((sources) =>
-      sources.map((source) => ctx.db.delete("quizSlopQuestionSources", source._id)),
-    ),
-  );
-  await Promise.all(questions.map((question) => ctx.db.delete("quizSlopQuestions", question._id)));
-  await ctx.db.delete("quizSlopTopics", topic._id);
 }

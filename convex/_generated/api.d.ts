@@ -52,6 +52,14 @@ import type * as quizslopGameplay from "../quizslopGameplay.js";
 import type * as quizslopIntegrity from "../quizslopIntegrity.js";
 import type * as quizslopLifecycle from "../quizslopLifecycle.js";
 import type * as quizslopMaterialization from "../quizslopMaterialization.js";
+import type * as quizslopPackAi from "../quizslopPackAi.js";
+import type * as quizslopPackAiBoundary from "../quizslopPackAiBoundary.js";
+import type * as quizslopPackContracts from "../quizslopPackContracts.js";
+import type * as quizslopPackJobs from "../quizslopPackJobs.js";
+import type * as quizslopPackPersistence from "../quizslopPackPersistence.js";
+import type * as quizslopPackValidation from "../quizslopPackValidation.js";
+import type * as quizslopPackValidators from "../quizslopPackValidators.js";
+import type * as quizslopPackWorkflow from "../quizslopPackWorkflow.js";
 import type * as quizslopSetup from "../quizslopSetup.js";
 import type * as quizslopTestKit from "../quizslopTestKit.js";
 import type * as quizslopValidators from "../quizslopValidators.js";
@@ -68,6 +76,7 @@ import type * as validators from "../validators.js";
 import type * as winnerTaglineActions from "../winnerTaglineActions.js";
 import type * as winnerTaglineContracts from "../winnerTaglineContracts.js";
 import type * as winnerTaglineData from "../winnerTaglineData.js";
+import type * as workflowReference from "../workflowReference.js";
 
 import type {
   ApiFromModules,
@@ -120,6 +129,14 @@ declare const fullApi: ApiFromModules<{
   quizslopIntegrity: typeof quizslopIntegrity;
   quizslopLifecycle: typeof quizslopLifecycle;
   quizslopMaterialization: typeof quizslopMaterialization;
+  quizslopPackAi: typeof quizslopPackAi;
+  quizslopPackAiBoundary: typeof quizslopPackAiBoundary;
+  quizslopPackContracts: typeof quizslopPackContracts;
+  quizslopPackJobs: typeof quizslopPackJobs;
+  quizslopPackPersistence: typeof quizslopPackPersistence;
+  quizslopPackValidation: typeof quizslopPackValidation;
+  quizslopPackValidators: typeof quizslopPackValidators;
+  quizslopPackWorkflow: typeof quizslopPackWorkflow;
   quizslopSetup: typeof quizslopSetup;
   quizslopTestKit: typeof quizslopTestKit;
   quizslopValidators: typeof quizslopValidators;
@@ -136,6 +153,7 @@ declare const fullApi: ApiFromModules<{
   winnerTaglineActions: typeof winnerTaglineActions;
   winnerTaglineContracts: typeof winnerTaglineContracts;
   winnerTaglineData: typeof winnerTaglineData;
+  workflowReference: typeof workflowReference;
 }>;
 
 /**

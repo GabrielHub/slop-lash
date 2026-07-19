@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Timer } from "@/components/timer";
 import { getMatchSlopTimerTotal } from "@/games/matchslop/config/game-config";
 import { PulsingDot } from "@/components/pulsing-dot";
+import { RoomInviteButton } from "@/components/room-invite-button";
 import {
   phaseTransition,
   collapseExpand,
@@ -379,6 +380,14 @@ export function PhaseStatusCard({
                 >
                   Join at <strong style={{ color: "var(--ms-ink)" }}>{browserHost}</strong>
                 </p>
+                {isHost && (
+                  <RoomInviteButton
+                    roomCode={gameState.roomCode}
+                    tone="match"
+                    compact
+                    className="mt-3"
+                  />
+                )}
               </div>
               <div className="text-center">
                 <p

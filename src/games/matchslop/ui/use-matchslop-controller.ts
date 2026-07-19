@@ -9,6 +9,7 @@ import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import type { ControllerGameState } from "@/lib/controller-types";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
+import { playSound } from "@/lib/sounds";
 import { createOpenerPromptMap, findSelectedPromptOption } from "./matchslop-controller-components";
 import type { MatchSlopControllerShellFixture } from "./matchslop-controller-fixture";
 
@@ -126,6 +127,7 @@ export function useMatchSlopController(
 
   async function postHostAction(path: "start" | "next") {
     if (!fixture && !hostCapability) return;
+    if (!fixture && path === "next" && !gameState) return;
     setHostActionBusy(true);
     setActionError("");
     try {
@@ -141,6 +143,7 @@ export function useMatchSlopController(
           });
         }
       }
+      playSound(path === "start" ? "game-start" : "round-transition");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Action failed"));
     } finally {
@@ -196,6 +199,7 @@ export function useMatchSlopController(
       }
       setSubmittedPromptIds((previous) => new Set(previous).add(promptId));
       setResponseText("");
+      playSound("submitted");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Failed to submit"));
     } finally {
@@ -218,6 +222,7 @@ export function useMatchSlopController(
         });
       }
       setVotingPromptIds((previous) => new Set(previous).add(promptId));
+      playSound("vote-cast");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Failed to vote"));
     } finally {

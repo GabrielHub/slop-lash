@@ -1,162 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
+import { AI_MODELS, getModelByModelId } from "@/lib/models";
 import type { TtsMode } from "@/lib/types";
-import { GAME_TYPES, type GameType } from "@/games/core";
-import { getNarratorVoice, NARRATOR_VOICES } from "@/games/sloplash/voices";
-import {
-  MAX_PLAYERS as SLOPLASH_MAX_PLAYERS,
-  MIN_PLAYERS as SLOPLASH_MIN_PLAYERS,
-} from "@/games/sloplash/game-constants";
-import {
-  MAX_PLAYERS as CHATSLOP_MAX_PLAYERS,
-  MIN_PLAYERS as CHATSLOP_MIN_PLAYERS,
-} from "@/games/ai-chat-showdown/game-constants";
-import {
-  MAX_PLAYERS as MATCHSLOP_MAX_PLAYERS,
-  MIN_PLAYERS as MATCHSLOP_MIN_PLAYERS,
-} from "@/games/matchslop/game-constants";
-import {
-  MAX_PLAYERS as QUIZSLOP_MAX_PLAYERS,
-  MIN_PLAYERS as QUIZSLOP_MIN_PLAYERS,
-} from "@/games/quizslop/game-constants";
+import type { GameType } from "@/games/core";
 import { ModelIcon } from "@/components/model-icon";
 import { ErrorBanner } from "@/components/error-banner";
 import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { MATCHSLOP_IDENTITIES, type MatchSlopIdentity } from "@/games/matchslop/identities";
+import type { MatchSlopIdentity } from "@/games/matchslop/identities";
+import { QUIZSLOP_FIXED_VERIFIER_MODEL_ID } from "@/games/quizslop/content-source/content-config";
 import { useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { persistRoomSessionResult } from "@/lib/convex-room-client";
-
-type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
-
-type GameTypeOption = {
-  displayName: string;
-  description: string;
-  supportsNarrator: boolean;
-  supportsAiPlayers: boolean;
-  /** Copy for the Disable Timers toggle, or null for modes without one. */
-  timerToggleDescription: string | null;
-  hostPlaysDescription: Record<HostParticipation, string>;
-  minPlayers: number;
-  maxPlayers: number;
-};
-
-const DEFAULT_HOST_PLAYS_DESCRIPTION: Record<HostParticipation, string> = {
-  PLAYER: "Host joins as a player (great for remote games)",
-  DISPLAY_ONLY: "Host runs the game as a display/controller only (TV mode)",
-};
-
-const GAME_TYPE_OPTIONS_BY_ID = {
-  SLOPLASH: {
-    displayName: "Slop-Lash",
-    description: "Quiplash-style comedy game with AI opponents and a game narrator",
-    supportsNarrator: true,
-    supportsAiPlayers: true,
-    timerToggleDescription: "Phases only advance when all players submit or host skips",
-    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
-    minPlayers: SLOPLASH_MIN_PLAYERS,
-    maxPlayers: SLOPLASH_MAX_PLAYERS,
-  },
-  AI_CHAT_SHOWDOWN: {
-    displayName: "ChatSlop",
-    description: "AI group chat game — one prompt, everyone competes, no spectators",
-    supportsNarrator: false,
-    supportsAiPlayers: true,
-    timerToggleDescription: null,
-    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
-    minPlayers: CHATSLOP_MIN_PLAYERS,
-    maxPlayers: CHATSLOP_MAX_PLAYERS,
-  },
-  MATCHSLOP: {
-    displayName: "MatchSlop",
-    description: "A shared AI dating profile sprint — funniest line wins the persona over",
-    supportsNarrator: false,
-    supportsAiPlayers: true,
-    timerToggleDescription: null,
-    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
-    minPlayers: MATCHSLOP_MIN_PLAYERS,
-    maxPlayers: MATCHSLOP_MAX_PLAYERS,
-  },
-  QUIZSLOP: {
-    displayName: "QuizSlop",
-    description: "Party trivia where everyone picks topics, answers, and calls who will nail it",
-    supportsNarrator: false,
-    supportsAiPlayers: false,
-    timerToggleDescription: "Phases wait for every eligible player or the host to advance",
-    hostPlaysDescription: {
-      PLAYER: "Host answers here and opens the shared stage in a separate tab",
-      DISPLAY_ONLY: "Host opens the shared stage and does not answer (TV mode)",
-    },
-    minPlayers: QUIZSLOP_MIN_PLAYERS,
-    maxPlayers: QUIZSLOP_MAX_PLAYERS,
-  },
-} satisfies Record<GameType, GameTypeOption>;
-
-const GAME_TYPE_OPTIONS = GAME_TYPES.map((id) => ({ id, ...GAME_TYPE_OPTIONS_BY_ID[id] }));
-
-const MATCHSLOP_IDENTITY_OPTIONS: { id: MatchSlopIdentity; label: string }[] =
-  MATCHSLOP_IDENTITIES.map((id) => ({
-    id,
-    label: id === "NON_BINARY" ? "Non-binary" : id.charAt(0) + id.slice(1).toLowerCase(),
-  }));
-
-function PlayerCountHint({
-  total,
-  minPlayers,
-  maxPlayers,
-  humanOnly = false,
-}: {
-  total: number;
-  minPlayers: number;
-  maxPlayers: number;
-  humanOnly?: boolean;
-}) {
-  const remaining = maxPlayers - total;
-
-  if (remaining <= 0) return null;
-
-  if (humanOnly) {
-    const needed = minPlayers - total;
-    if (needed > 0) {
-      return (
-        <p className="text-xs text-gold/85 mb-3">
-          {needed} more human {needed === 1 ? "needs" : "players need"} to join before starting
-        </p>
-      );
-    }
-  } else {
-    if (total > 0 && total % 2 !== 0) {
-      return (
-        <p className="text-xs text-gold/85 mb-3">1 more player needs to join for even teams</p>
-      );
-    }
-    if (total < minPlayers) return null;
-  }
-
-  return (
-    <p className="text-xs text-ink-dim/50 mb-3">
-      {remaining} open {remaining === 1 ? "slot" : "slots"} for more players
-    </p>
-  );
-}
+import {
+  QuizSlopContentSourceField,
+  QuizSlopGeneratorPicker,
+  type QuizSlopContentSource,
+} from "./quizslop-content-settings";
+import { HumanPlayerGuidance, PlayerCountHint } from "./host-player-guidance";
+import { getCostTier, MATCHSLOP_IDENTITY_OPTIONS } from "./host-model-options";
+import {
+  GAME_TYPE_OPTIONS_BY_ID,
+  HostGameModePicker,
+  type HostParticipation,
+} from "./host-game-mode-picker";
+import { HostNarratorSettings } from "./host-narrator-settings";
 
 const NAME_MAX_LENGTH = 20;
-
-function getCostTier(model: AIModel): string {
-  const perGame =
-    ((3 * 8 * 100) / 1_000_000) * model.inputPer1M + ((3 * 8 * 50) / 1_000_000) * model.outputPer1M;
-  if (perGame < 0.001) return "$";
-  if (perGame < 0.005) return "$$";
-  return "$$$";
-}
 
 export default function HostPage() {
   const router = useRouter();
@@ -170,6 +46,9 @@ export default function HostPage() {
   const [personaIdentity, setPersonaIdentity] = useState<MatchSlopIdentity>("WOMAN");
   const [personaModelId, setPersonaModelId] = useState<string | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [quizSlopContentSource, setQuizSlopContentSource] =
+    useState<QuizSlopContentSource>("CATALOG");
+  const [quizSlopGeneratorModelId, setQuizSlopGeneratorModelId] = useState(AI_MODELS[0]?.id ?? "");
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
   const [ttsVoice, setTtsVoice] = useState("RANDOM");
@@ -178,11 +57,13 @@ export default function HostPage() {
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const creatingRef = useRef(false);
 
   const selectedGameType = GAME_TYPE_OPTIONS_BY_ID[gameType];
   const isMatchSlop = gameType === "MATCHSLOP";
   const isQuizSlop = gameType === "QUIZSLOP";
   const selectedPersonaModel = personaModelId ? getModelByModelId(personaModelId) : undefined;
+  const quizSlopVerifier = getModelByModelId(QUIZSLOP_FIXED_VERIFIER_MODEL_ID);
   const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
   // Modes without AI players keep any prior selection in state (so switching
   // back restores it) but must never count or submit it.
@@ -236,10 +117,10 @@ export default function HostPage() {
   // MatchSlop honours timersDisabled but never shows the toggle, so a value set
   // on another mode would otherwise follow the host across the picker unseen.
   useEffect(() => {
-    if (selectedGameType.timerToggleDescription === null) {
+    if (selectedGameType.timerToggle === null) {
       setTimersDisabled(false);
     }
-  }, [selectedGameType.timerToggleDescription]);
+  }, [selectedGameType.timerToggle]);
 
   useEffect(() => {
     if (!isMatchSlop) {
@@ -248,6 +129,7 @@ export default function HostPage() {
   }, [isMatchSlop]);
 
   async function createGame() {
+    if (creatingRef.current) return;
     if (!hostSecret.trim()) {
       setError("Enter the host password");
       return;
@@ -256,6 +138,7 @@ export default function HostPage() {
       setError("Enter your name");
       return;
     }
+    creatingRef.current = true;
     setLoading(true);
     setError("");
 
@@ -268,6 +151,11 @@ export default function HostPage() {
         hostSecret: hostSecret.trim(),
         personaIdentity: isMatchSlop ? personaIdentity : undefined,
         personaModelId: isMatchSlop ? (personaModelId ?? undefined) : undefined,
+        quizSlopContentSource: isQuizSlop ? quizSlopContentSource : undefined,
+        quizSlopGeneratorModelId:
+          isQuizSlop && quizSlopContentSource === "AI"
+            ? quizSlopGeneratorModelId || undefined
+            : undefined,
         seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
         timersDisabled,
         ttsMode: isQuizSlop ? undefined : ttsMode,
@@ -286,6 +174,7 @@ export default function HostPage() {
     } catch (error) {
       setError(getConvexErrorMessage(error, "Failed to create game"));
     } finally {
+      creatingRef.current = false;
       setLoading(false);
     }
   }
@@ -327,109 +216,12 @@ export default function HostPage() {
           className="flex flex-col lg:flex-row lg:gap-x-12 lg:items-start"
         >
           <div className="flex-1 min-w-0">
-            <div className="mb-6">
-              <p className="block text-sm font-medium text-ink-dim mb-2">Game Mode</p>
-              <div>
-                <motion.button
-                  type="button"
-                  onClick={() => setGameModePickerOpen((open) => !open)}
-                  className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
-                    gameModePickerOpen
-                      ? "border-punch bg-punch/10 text-punch"
-                      : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
-                  }`}
-                  {...buttonTap}
-                >
-                  <span className="flex items-center justify-between">
-                    <span className="min-w-0">
-                      <span
-                        className={`text-sm font-semibold block ${gameModePickerOpen ? "text-punch" : "text-ink"}`}
-                      >
-                        {selectedGameType.displayName}
-                      </span>
-                      <span
-                        className={`text-[11px] leading-snug block mt-0.5 ${gameModePickerOpen ? "text-punch/70" : "text-ink-dim/60"}`}
-                      >
-                        {selectedGameType.description}
-                      </span>
-                    </span>
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="shrink-0 ml-3 transition-transform duration-200"
-                      style={{ transform: gameModePickerOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </span>
-                </motion.button>
-
-                <AnimatePresence>
-                  {gameModePickerOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-2 rounded-xl border-2 border-edge bg-surface">
-                        {GAME_TYPE_OPTIONS.map((option) => {
-                          const selected = gameType === option.id;
-                          return (
-                            <button
-                              key={option.id}
-                              type="button"
-                              onClick={() => {
-                                setGameType(option.id);
-                                setGameModePickerOpen(false);
-                              }}
-                              className={`w-full border-b border-edge/40 px-4 py-3 text-left transition-colors cursor-pointer last:border-b-0 ${
-                                selected ? "bg-punch/10" : "hover:bg-raised/60"
-                              }`}
-                            >
-                              <span className="flex items-center justify-between">
-                                <span className="min-w-0">
-                                  <span
-                                    className={`font-semibold text-sm block ${selected ? "text-punch" : "text-ink"}`}
-                                  >
-                                    {option.displayName}
-                                  </span>
-                                  <span className="text-[11px] text-ink-dim/60 leading-snug block mt-0.5">
-                                    {option.description}
-                                  </span>
-                                </span>
-                                {selected && (
-                                  <svg
-                                    className="shrink-0 text-punch ml-3"
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="3"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                )}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
+            <HostGameModePicker
+              gameType={gameType}
+              open={gameModePickerOpen}
+              onGameTypeChange={setGameType}
+              onOpenChange={setGameModePickerOpen}
+            />
 
             {isMatchSlop && (
               <div className="mb-6">
@@ -689,13 +481,21 @@ export default function HostPage() {
               </div>
             )}
 
-            {selectedGameType.timerToggleDescription && (
+            {isQuizSlop && (
+              <QuizSlopContentSourceField
+                contentSource={quizSlopContentSource}
+                verifier={quizSlopVerifier}
+                onChange={setQuizSlopContentSource}
+              />
+            )}
+
+            {selectedGameType.timerToggle && (
               <div className="mb-6">
                 <Toggle
                   checked={timersDisabled}
                   onChange={setTimersDisabled}
-                  label="Disable Timers"
-                  description={selectedGameType.timerToggleDescription}
+                  label={selectedGameType.timerToggle.label}
+                  description={selectedGameType.timerToggle.description}
                 />
               </div>
             )}
@@ -712,166 +512,14 @@ export default function HostPage() {
             )}
 
             {selectedGameType.supportsNarrator && (
-              <div className="mb-6">
-                <Toggle
-                  checked={ttsMode === "ON"}
-                  onChange={(v) => setTtsMode(v ? "ON" : "OFF")}
-                  label="Game Narrator"
-                  description="AI game-show host narrates the entire game aloud"
-                >
-                  <AnimatePresence>
-                    {ttsMode === "ON" && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="mt-3">
-                          <div className="flex gap-2">
-                            <motion.button
-                              type="button"
-                              onClick={() => {
-                                setTtsVoice("RANDOM");
-                                setVoicePickerOpen(false);
-                              }}
-                              className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-sm font-semibold text-center transition-colors cursor-pointer ${
-                                ttsVoice === "RANDOM"
-                                  ? "bg-punch/15 border-punch text-punch"
-                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                              }`}
-                              {...buttonTap}
-                            >
-                              <span className="inline-flex items-center gap-1.5">
-                                <svg
-                                  width="14"
-                                  height="14"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2.5"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <polyline points="16 3 21 3 21 8" />
-                                  <line x1="4" y1="20" x2="21" y2="3" />
-                                  <polyline points="21 16 21 21 16 21" />
-                                  <line x1="15" y1="15" x2="21" y2="21" />
-                                  <line x1="4" y1="4" x2="9" y2="9" />
-                                </svg>
-                                Random
-                              </span>
-                            </motion.button>
-                            <motion.button
-                              type="button"
-                              onClick={() => setVoicePickerOpen((v) => !v)}
-                              className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold transition-colors cursor-pointer ${
-                                ttsVoice !== "RANDOM"
-                                  ? "bg-punch/15 border-punch text-punch"
-                                  : "bg-surface/80 border-edge text-ink-dim hover:border-edge-strong hover:text-ink"
-                              }`}
-                              {...buttonTap}
-                            >
-                              <span className="inline-flex items-center gap-1.5">
-                                {ttsVoice !== "RANDOM"
-                                  ? (getNarratorVoice(ttsVoice)?.name ?? "Pick Voice")
-                                  : "Pick Voice"}
-                                <svg
-                                  width="12"
-                                  height="12"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="3"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="transition-transform duration-200"
-                                  style={{
-                                    transform: voicePickerOpen ? "rotate(180deg)" : "rotate(0deg)",
-                                  }}
-                                >
-                                  <polyline points="6 9 12 15 18 9" />
-                                </svg>
-                              </span>
-                            </motion.button>
-                          </div>
-
-                          <AnimatePresence>
-                            {voicePickerOpen && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="overflow-hidden"
-                              >
-                                <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
-                                  {NARRATOR_VOICES.map((voice) => {
-                                    const selected = ttsVoice === voice.id;
-                                    return (
-                                      <button
-                                        key={voice.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setTtsVoice(voice.id);
-                                          setVoicePickerOpen(false);
-                                        }}
-                                        className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors cursor-pointer border-b border-edge/40 last:border-b-0 ${
-                                          selected ? "bg-punch/10" : "hover:bg-raised/60"
-                                        }`}
-                                      >
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex items-center gap-2">
-                                            <span
-                                              className={`font-semibold text-sm ${selected ? "text-punch" : "text-ink"}`}
-                                            >
-                                              {voice.name}
-                                            </span>
-                                            <span
-                                              className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${
-                                                selected
-                                                  ? "bg-punch/15 text-punch"
-                                                  : "bg-raised text-ink-dim"
-                                              }`}
-                                            >
-                                              {voice.trait}
-                                            </span>
-                                          </div>
-                                          <p
-                                            className={`text-xs mt-0.5 leading-snug ${selected ? "text-punch/70" : "text-ink-dim"}`}
-                                          >
-                                            {voice.description}
-                                          </p>
-                                        </div>
-                                        {selected && (
-                                          <svg
-                                            className="shrink-0 text-punch"
-                                            width="16"
-                                            height="16"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="3"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                          >
-                                            <polyline points="20 6 9 17 4 12" />
-                                          </svg>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </Toggle>
-              </div>
+              <HostNarratorSettings
+                mode={ttsMode}
+                pickerOpen={voicePickerOpen}
+                voice={ttsVoice}
+                onModeChange={setTtsMode}
+                onPickerOpenChange={setVoicePickerOpen}
+                onVoiceChange={setTtsVoice}
+              />
             )}
 
             <ErrorBanner error={error} />
@@ -879,7 +527,7 @@ export default function HostPage() {
             <motion.button
               type="submit"
               disabled={loading}
-              className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-white font-display font-bold py-4 px-8 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+              className="w-full bg-punch/90 backdrop-blur-sm hover:bg-punch-hover disabled:opacity-50 text-accent-ink font-display font-bold py-4 px-8 rounded-xl text-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
               onClick={(e) => triggerElement(e.currentTarget)}
               {...buttonTapPrimary}
             >
@@ -928,16 +576,20 @@ export default function HostPage() {
               humanOnly={!selectedGameType.supportsAiPlayers}
             />
             {!selectedGameType.supportsAiPlayers ? (
-              <div className="rounded-xl border-2 border-edge bg-surface/80 p-5 text-sm text-ink-dim">
-                <p className="font-semibold text-ink">
-                  {selectedGameType.displayName} is for {selectedGameType.minPlayers}–
-                  {selectedGameType.maxPlayers} humans.
-                </p>
-                <p className="mt-2 leading-relaxed">
-                  Create the room, put the stage on the shared screen, then have everyone join on
-                  their own device. Each player privately picks a topic and answers from their
-                  controller.
-                </p>
+              <div className="space-y-4">
+                <HumanPlayerGuidance
+                  displayName={selectedGameType.displayName}
+                  minPlayers={selectedGameType.minPlayers}
+                  maxPlayers={selectedGameType.maxPlayers}
+                  quizSlop={isQuizSlop}
+                />
+
+                {isQuizSlop && quizSlopContentSource === "AI" && (
+                  <QuizSlopGeneratorPicker
+                    selectedModelId={quizSlopGeneratorModelId}
+                    onChange={setQuizSlopGeneratorModelId}
+                  />
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-2">

@@ -15,6 +15,10 @@ import { maxPlayersByGameType } from "./gameLimits";
 import type { GameType } from "../src/games/core/types";
 import { getAiModel, selectUniqueModelsByProvider } from "./modelCatalog";
 import {
+  resolveQuizSlopContentConfig,
+  type QuizSlopContentConfig,
+} from "../src/games/quizslop/content-source/content-config";
+import {
   gameStatusValidator,
   gameTypeValidator,
   matchSlopIdentityValidator,
@@ -92,6 +96,8 @@ export const create = action({
     hostSecret: v.string(),
     personaIdentity: v.optional(matchSlopIdentityValidator),
     personaModelId: v.optional(v.string()),
+    quizSlopContentSource: v.optional(v.union(v.literal("CATALOG"), v.literal("AI"))),
+    quizSlopGeneratorModelId: v.optional(v.string()),
     seekerIdentity: v.optional(matchSlopIdentityValidator),
     timersDisabled: v.optional(v.boolean()),
     totalRounds: v.optional(v.number()),
@@ -117,6 +123,11 @@ export const create = action({
       if (args.totalRounds !== undefined) {
         throw new ConvexError("QuizSlop derives its round count from the frozen roster");
       }
+    } else if (
+      args.quizSlopContentSource !== undefined ||
+      args.quizSlopGeneratorModelId !== undefined
+    ) {
+      throw new ConvexError("QuizSlop content settings are only available for QuizSlop");
     }
     const hostParticipation =
       args.gameType === "MATCHSLOP" ? "DISPLAY_ONLY" : (args.hostParticipation ?? "PLAYER");
@@ -124,6 +135,24 @@ export const create = action({
     const personaModelId = args.personaModelId?.trim() || null;
     if (args.gameType === "MATCHSLOP" && (!personaModelId || !getAiModel(personaModelId))) {
       throw new ConvexError("Persona model is required for MatchSlop");
+    }
+    let quizSlopContentConfig: QuizSlopContentConfig = resolveQuizSlopContentConfig({
+      mode: "CATALOG",
+    });
+    if (args.gameType === "QUIZSLOP" && (args.quizSlopContentSource ?? "CATALOG") === "AI") {
+      if (!args.quizSlopGeneratorModelId?.trim()) {
+        throw new ConvexError("Choose a question generator for Fresh AI Pack");
+      }
+      try {
+        quizSlopContentConfig = resolveQuizSlopContentConfig({
+          mode: "AI",
+          generatorModelId: args.quizSlopGeneratorModelId,
+        });
+      } catch (error) {
+        throw new ConvexError(error instanceof Error ? error.message : "Invalid QuizSlop model");
+      }
+    } else if (args.gameType === "QUIZSLOP" && args.quizSlopGeneratorModelId !== undefined) {
+      throw new ConvexError("A question generator can only be set for Fresh AI Pack");
     }
 
     const capabilitySecret = createCapabilitySecret();
@@ -164,6 +193,15 @@ export const create = action({
         hostParticipation,
         personaIdentity: args.personaIdentity ?? "OTHER",
         personaModelId,
+        quizSlopContentSource: quizSlopContentConfig.mode,
+        quizSlopGeneratorModelId:
+          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.generatorModelId : null,
+        quizSlopPromptVersion:
+          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.promptVersion : null,
+        quizSlopSchemaVersion:
+          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.schemaVersion : null,
+        quizSlopVerifierModelId:
+          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.verifierModelId : null,
         roomCode,
         seekerIdentity: args.seekerIdentity ?? "OTHER",
         timersDisabled: args.timersDisabled ?? false,
@@ -172,6 +210,30 @@ export const create = action({
         ttsVoice: ttsMode === "ON" ? args.ttsVoice?.trim() || "RANDOM" : "RANDOM",
       });
       if (result.kind === "ROOM_CODE_TAKEN") continue;
+
+      if (quizSlopContentConfig.mode === "AI") {
+        const packArgs = {
+          gameId: result.gameId,
+          generatorModelId: quizSlopContentConfig.generatorModelId,
+        };
+        try {
+          await ctx.runMutation(internal.quizslopPackJobs.queueFreshPack, packArgs);
+        } catch {
+          // Room creation has already committed. Recover to a complete catalog
+          // pack instead of orphaning the room or returning an action error.
+          try {
+            await ctx.runMutation(internal.quizslopPackJobs.recoverFreshPack, packArgs);
+          } catch {
+            try {
+              await ctx.runMutation(internal.quizslopPackJobs.markFreshPackFailed, packArgs);
+            } catch {
+              // `roomsInternal.createRoom` transactionally scheduled the same
+              // idempotent queue operation. Never hide a successfully created
+              // room merely because this eager preflight path was interrupted.
+            }
+          }
+        }
+      }
 
       return {
         capability: encodeCapability(result.sessionId, capabilitySecret),

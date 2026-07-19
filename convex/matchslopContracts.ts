@@ -1,4 +1,4 @@
-import { makeFunctionReference, type FunctionReference } from "convex/server";
+import { makeFunctionReference } from "convex/server";
 import type { Infer } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -19,6 +19,7 @@ import {
   matchSlopVoteContextValidator,
   matchSlopVoteReadyContextValidator,
 } from "./matchslopValidators";
+import { makeInternalWorkflowReference } from "./workflowReference";
 
 export type MatchSlopJobStage = "IMAGE" | "POST_MORTEM" | "PROFILE" | "REPLY" | "RESPONSE" | "VOTE";
 
@@ -67,33 +68,22 @@ export type GeneratedPostMortem = {
   usage: Usage;
 };
 
-function internalWorkflowReference<Args extends Record<string, unknown>>(
-  name: string,
-): FunctionReference<"mutation", "internal", { args: Args }, string> {
-  return makeFunctionReference(name) as unknown as FunctionReference<
-    "mutation",
-    "internal",
-    { args: Args },
-    string
-  >;
-}
-
-export const profilePipelineRef = internalWorkflowReference<WorkflowJobArgs>(
+export const profilePipelineRef = makeInternalWorkflowReference<WorkflowJobArgs>(
   "matchslopWorkflow:profilePipeline",
 );
-export const imagePipelineRef = internalWorkflowReference<WorkflowJobArgs>(
+export const imagePipelineRef = makeInternalWorkflowReference<WorkflowJobArgs>(
   "matchslopWorkflow:imagePipeline",
 );
-export const responsePipelineRef = internalWorkflowReference<WorkflowJobArgs>(
+export const responsePipelineRef = makeInternalWorkflowReference<WorkflowJobArgs>(
   "matchslopWorkflow:responsePipeline",
 );
-export const votePipelineRef = internalWorkflowReference<WorkflowJobArgs>(
+export const votePipelineRef = makeInternalWorkflowReference<WorkflowJobArgs>(
   "matchslopWorkflow:votePipeline",
 );
-export const replyPipelineRef = internalWorkflowReference<WorkflowJobArgs>(
+export const replyPipelineRef = makeInternalWorkflowReference<WorkflowJobArgs>(
   "matchslopWorkflow:replyPipeline",
 );
-export const postMortemPipelineRef = internalWorkflowReference<WorkflowJobArgs>(
+export const postMortemPipelineRef = makeInternalWorkflowReference<WorkflowJobArgs>(
   "matchslopWorkflow:postMortemPipeline",
 );
 

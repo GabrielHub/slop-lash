@@ -1,12 +1,12 @@
 "use client";
 
 import { useAction } from "convex/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NarratorPlaybackQueue } from "@/games/sloplash/narrator-audio";
 import type { NarrationCue } from "@/games/sloplash/narrator-events";
 import { BoundedSerialQueue } from "@/games/sloplash/narrator-request-queue";
 import type { GameStatus } from "@/lib/types";
-import { setNarratorDucking } from "@/lib/sounds";
+import { getAudioStatus, setNarratorDucking, subscribeAudio } from "@/lib/sounds";
 import { api } from "../../convex/_generated/api";
 
 const MAX_PENDING_NARRATIONS = 4;
@@ -20,14 +20,25 @@ interface UseNarratorOptions {
 
 interface UseNarratorReturn {
   narrate: (cue: NarrationCue) => void;
+  error: string | null;
   isReady: boolean;
-  isSpeaking: boolean;
+  status: NarratorStatus;
 }
+
+export type NarratorStatus = "off" | "blocked" | "ready" | "generating" | "speaking" | "error";
 
 interface NarrationTask {
   capability: string;
   cue: NarrationCue;
   lifecycleGeneration: number;
+}
+
+const getServerAudioStatus = () => "idle" as const;
+
+function getNarratorErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : "Narrator speech generation failed";
 }
 
 export function useNarrator({
@@ -39,6 +50,9 @@ export function useNarrator({
   const generateNarration = useAction(api.narrator.generate);
   const generateNarrationRef = useRef(generateNarration);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [narratorError, setNarratorError] = useState<string | null>(null);
+  const audioStatus = useSyncExternalStore(subscribeAudio, getAudioStatus, getServerAudioStatus);
   const playbackQueueRef = useRef<NarratorPlaybackQueue | null>(null);
   const requestQueueRef = useRef<BoundedSerialQueue<NarrationTask> | null>(null);
   const lifecycleGenerationRef = useRef(0);
@@ -59,19 +73,29 @@ export function useNarrator({
       MAX_PENDING_NARRATIONS,
       async ({ capability, cue, lifecycleGeneration }) => {
         if (!mountedRef.current || lifecycleGeneration !== lifecycleGenerationRef.current) return;
-        const result = await generateNarrationRef.current({
-          capability,
-          eventType: cue.eventType,
-          fallbackText: cue.fallbackText,
-          ...(cue.generationContext ? { generationContext: cue.generationContext } : {}),
-        });
-        if (!mountedRef.current || lifecycleGeneration !== lifecycleGenerationRef.current) return;
-        const playbackQueue =
-          playbackQueueRef.current ?? new NarratorPlaybackQueue(handleActiveChange);
-        playbackQueueRef.current = playbackQueue;
-        await playbackQueue.enqueueEncoded(result.audioBase64);
+        setIsGenerating(true);
+        try {
+          const result = await generateNarrationRef.current({
+            capability,
+            eventType: cue.eventType,
+            fallbackText: cue.fallbackText,
+            ...(cue.generationContext ? { generationContext: cue.generationContext } : {}),
+          });
+          if (!mountedRef.current || lifecycleGeneration !== lifecycleGenerationRef.current) return;
+          const playbackQueue =
+            playbackQueueRef.current ?? new NarratorPlaybackQueue(handleActiveChange);
+          playbackQueueRef.current = playbackQueue;
+          await playbackQueue.enqueueEncoded(result.audioBase64);
+          if (mountedRef.current) setNarratorError(null);
+        } finally {
+          if (mountedRef.current) setIsGenerating(false);
+        }
       },
-      (error) => console.warn("[narrator] speech generation failed:", error),
+      (error) => {
+        const message = getNarratorErrorMessage(error);
+        if (mountedRef.current) setNarratorError(message);
+        console.warn("[narrator] speech generation failed:", error);
+      },
     );
     return requestQueueRef.current;
   }, [handleActiveChange]);
@@ -88,12 +112,19 @@ export function useNarrator({
     Boolean(roomCapability) &&
     Boolean(gameStatus) &&
     gameStatus !== "LOBBY";
-  const canEnqueue = narratorEnabled && gameStatus !== "FINAL_RESULTS";
+  const narratorReady = narratorEnabled && audioStatus === "ready";
+  const canEnqueue = narratorReady && gameStatus !== "FINAL_RESULTS";
+
+  useEffect(() => {
+    if (canEnqueue) return;
+    stopNarration();
+  }, [canEnqueue, stopNarration]);
 
   useEffect(() => {
     if (narratorEnabled) return;
-    stopNarration();
-  }, [narratorEnabled, stopNarration]);
+    setNarratorError(null);
+    setIsGenerating(false);
+  }, [narratorEnabled]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -121,9 +152,24 @@ export function useNarrator({
     [canEnqueue, getRequestQueue, roomCapability],
   );
 
+  const status: NarratorStatus = !narratorEnabled
+    ? "off"
+    : audioStatus === "error" || audioStatus === "unsupported"
+      ? "error"
+      : audioStatus !== "ready"
+        ? "blocked"
+        : isSpeaking
+          ? "speaking"
+          : isGenerating
+            ? "generating"
+            : narratorError
+              ? "error"
+              : "ready";
+
   return {
     narrate,
-    isReady: narratorEnabled,
-    isSpeaking,
+    error: narratorError,
+    isReady: narratorReady,
+    status,
   };
 }

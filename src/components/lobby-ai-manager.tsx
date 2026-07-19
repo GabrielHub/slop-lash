@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { AI_MODELS, getModelByModelId, type AIModel } from "@/lib/models";
+import { AI_MODELS, getCostTier, getModelByModelId, type AIModel } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { buttonTap, fadeInUp, staggerContainer } from "@/lib/animations";
 import type { GameState } from "@/lib/types";
@@ -13,14 +13,6 @@ import {
   useLobbyAddAiPlayerMutation,
   useLobbyRemoveAiPlayerMutation,
 } from "@/hooks/use-game-runtime";
-
-function getCostTier(model: AIModel): string {
-  const perGame =
-    ((3 * 8 * 100) / 1_000_000) * model.inputPer1M + ((3 * 8 * 50) / 1_000_000) * model.outputPer1M;
-  if (perGame < 0.001) return "$";
-  if (perGame < 0.005) return "$$";
-  return "$$$";
-}
 
 export function LobbyAiManager({
   game,

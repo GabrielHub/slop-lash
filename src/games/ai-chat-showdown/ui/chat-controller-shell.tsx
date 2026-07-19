@@ -9,6 +9,7 @@ import { api } from "../../../../convex/_generated/api";
 import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { CompletionCard } from "@/components/completion-card";
+import { AudioControls } from "@/components/audio-controls";
 import {
   floatIn,
   buttonTap,
@@ -23,6 +24,7 @@ import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { isActiveCompetitor } from "@/games/core/game-rules";
+import { playSound } from "@/lib/sounds";
 
 function phaseAccent(status: string) {
   switch (status) {
@@ -83,14 +85,19 @@ function ChatControllerHeader({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {accent && (
+          <AudioControls color="var(--teal)" />
+          {phase && accent && (
             <span
               className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${accent.pill}`}
             >
-              {phaseLabel(phase!)}
+              {phaseLabel(phase)}
             </span>
           )}
-          {roundLabel && <span className="text-[11px] text-ink-dim font-mono">{roundLabel}</span>}
+          {roundLabel && (
+            <span className="hidden text-[11px] text-ink-dim font-mono sm:inline">
+              {roundLabel}
+            </span>
+          )}
         </div>
       </div>
       {accent && <div className={`h-[2px] w-full transition-colors duration-500 ${accent.line}`} />}
@@ -156,12 +163,14 @@ export function ChatControllerShell({ code }: { code: string }) {
     try {
       if (path === "start") {
         await startMutation({ capability: hostCapability });
+        playSound("game-start");
       } else {
         if (!gameState) return;
         await advanceMutation({
           capability: hostCapability,
           expectedPhaseGeneration: gameState.version,
         });
+        playSound("round-transition");
       }
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Action failed"));
@@ -184,6 +193,7 @@ export function ChatControllerShell({ code }: { code: string }) {
       });
       setSubmittedPromptIds((prev) => new Set(prev).add(promptId));
       setResponseText("");
+      playSound("submitted");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Failed to submit"));
     } finally {
@@ -202,6 +212,7 @@ export function ChatControllerShell({ code }: { code: string }) {
         responseId: responseId as Id<"responses">,
       });
       setVotingPromptIds((prev) => new Set(prev).add(promptId));
+      playSound("vote-cast");
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, "Failed to vote"));
     } finally {

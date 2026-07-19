@@ -4,71 +4,61 @@
  * that stay authoritative until playtest evidence replaces them.
  */
 
-export const MIN_PLAYERS = 2;
+export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 8;
-export const MAX_SPECTATORS = 0;
 
-/** Standard length: one warm-up + one Home Turf per frozen player + one finale. */
-export const EXTRA_ROUNDS_BEYOND_HOME_TURF = 2;
-export const MIN_TOTAL_ROUNDS = MIN_PLAYERS + EXTRA_ROUNDS_BEYOND_HOME_TURF;
-export const MAX_TOTAL_ROUNDS = MAX_PLAYERS + EXTRA_ROUNDS_BEYOND_HOME_TURF;
+/** Section counts keep every exam between 18 and 24 official answers. */
+const SECTIONS_BY_PLAYER_COUNT: Readonly<Record<number, number>> = {
+  3: 6,
+  4: 5,
+  5: 4,
+  6: 4,
+  7: 3,
+  8: 3,
+};
 
-/** `games.totalRounds` sentinel while a QuizSlop game is still in the lobby. */
-export const TOTAL_ROUNDS_UNSET = 0;
+export const PASS_PERCENT = 70;
+export const SABOTAGE_WRONG_ANSWER_POINTS = 1;
+export const SABOTAGE_OVERRIDE_BONUS = 1;
 
-export const QUIZ_CORRECT_POINTS = 100;
-export const FINAL_QUIZ_CORRECT_POINTS = 200;
-export const CALL_SLOP_POINTS = 150;
-export const CALL_SLOP_TOKENS_PER_GAME = 2;
-export const DISPUTES_PER_PLAYER_PER_GAME = 1;
+export function sectionsForPlayerCount(playerCount: number): number {
+  const sections = SECTIONS_BY_PLAYER_COUNT[playerCount];
+  if (sections === undefined) {
+    throw new Error(`QuizSlop needs ${MIN_PLAYERS}-${MAX_PLAYERS} players`);
+  }
+  return sections;
+}
 
-/** Phase timer defaults, in seconds. */
-export const HOUSE_VOTE_SECONDS = 12;
-export const HOUSE_VOTE_REVEAL_SECONDS = 3;
-export const TOPIC_REVEAL_SECONDS = 8;
-export const SLOP_CALL_SECONDS = 10;
-export const SLOP_CALL_REVEAL_SECONDS = 3;
-export const ANSWER_SECONDS = 25;
-export const QUESTION_REVEAL_SECONDS_PER_GROUP = 6;
-export const DISPUTE_WINDOW_SECONDS = 8;
-export const DISPUTE_VOTE_SECONDS = 12;
-export const ROUND_RESULTS_SECONDS = 8;
-/** Continuity grace applies even when gameplay timers are disabled. */
-export const CONTINUITY_GRACE_SECONDS = 15;
+/** The review follows the last section in the first half of the exam. */
+export function proctorReviewAfterSection(sectionCount: number): number {
+  return Math.ceil(sectionCount / 2);
+}
 
-/** Custom-topic setup bounds (Milestone 3; enforced from the first schema). */
-export const MAX_CUSTOM_REVISIONS_PER_PLAYER = 3;
-export const MAX_CUSTOM_REVISIONS_PER_ROOM = 24;
-export const NORMALIZATION_DEADLINE_SECONDS = 15;
-export const PACK_BUILD_DEADLINE_SECONDS = 60;
+/** Cooperative exam phase timers. Passive phases remain host-skippable. */
+export const SECTION_INTRO_SECONDS = 6;
+export const SCRATCH_SECONDS = 30;
+export const PROXY_ANSWER_SECONDS = 35;
+export const ORAL_DEFENSE_SECONDS = 30;
+export const SECTION_RESULTS_SECONDS = 10;
+export const PROCTOR_REVIEW_VOTE_SECONDS = 20;
+export const PROCTOR_REVIEW_RESULT_SECONDS = 8;
+export const FINAL_ACCUSATION_SECONDS = 25;
 
-/** Structural query caps for an eight-player game. Read cap + 1 and fail closed. */
-export const MAX_FROZEN_PLAYERS = MAX_PLAYERS;
-export const MAX_ROUNDS_CAP = MAX_TOTAL_ROUNDS;
-/** 8 Home Topics + 1 warm-up + 3 finalists. */
-export const MAX_FROZEN_TOPICS = 12;
-export const MAX_QUESTION_GROUPS_PER_ROUND = 4;
-export const MAX_ASSIGNMENTS_PER_ROUND = MAX_PLAYERS;
-export const MAX_CALLS_PER_ROUND = MAX_PLAYERS;
-export const MAX_BALLOTS_PER_ROUND = 4;
-export const MAX_DISPUTE_VOTES_PER_ROUND = 32;
+/** Largest full exam: eight candidates times three sections. */
+export const MAX_TOTAL_EXAM_QUESTIONS = 24;
 export const MIN_SOURCES_PER_QUESTION = 1;
 export const MAX_SOURCES_PER_QUESTION = 3;
 export const QUESTIONS_PER_PACK = 4;
-export const FINAL_SLATE_SIZE = 3;
-export const CATALOG_FALLBACK_OFFER_SIZE = 3;
 
 /** Reviewed catalog launch minimums. */
 export const MIN_CATALOG_TOPICS = 12;
 export const MIN_CATALOG_CATEGORIES = 6;
 
 /** Unicode-character text bounds shared by Zod and Convex validators. */
-export const MAX_RAW_TOPIC_LENGTH = 120;
 export const MAX_TOPIC_LABEL_LENGTH = 56;
 export const MAX_TOPIC_SCOPE_LENGTH = 180;
 export const MAX_TOPIC_EXCLUSIONS = 3;
 export const MAX_TOPIC_EXCLUSION_LENGTH = 80;
-export const MAX_TOPIC_ALTERNATIVES = 3;
 export const SHA256_HEX_LENGTH = 64;
 export const CANONICAL_KEY_LENGTH = SHA256_HEX_LENGTH;
 export const MAX_DISPLAY_PROMPT_LENGTH = 220;

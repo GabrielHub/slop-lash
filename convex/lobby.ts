@@ -16,8 +16,6 @@ import { WRITING_DURATION_SECONDS } from "../src/games/sloplash/game-constants";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { minPlayersByGameType } from "./gameLimits";
 import { requireContinuingPlayers } from "./gamePhase";
-import { deleteMaterializedTopic } from "./quizslopMaterialization";
-import { loadQuizslopTopicForOwner } from "./quizslopData";
 
 const MAX_LOBBY_PLAYERS = 16;
 const MAX_PLAYER_SESSIONS = 8;
@@ -249,6 +247,9 @@ export const kickHuman = mutation({
   returns: v.object({ success: v.literal(true) }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
+    if (authorized.game.gameType === "QUIZSLOP" && authorized.game.status !== "LOBBY") {
+      throw new ConvexError("QuizSlop roster is frozen after the game starts");
+    }
     if (authorized.game.status !== "LOBBY" && authorized.game.status !== "ROUND_RESULTS") {
       throw new ConvexError("Can only kick players during lobby or between rounds");
     }
@@ -281,10 +282,6 @@ export const kickHuman = mutation({
 
     await deletePlayerSessions(ctx, authorized.game._id, target._id);
     if (authorized.game.status === "LOBBY") {
-      if (authorized.game.gameType === "QUIZSLOP") {
-        const topic = await loadQuizslopTopicForOwner(ctx, authorized.game._id, target._id);
-        if (topic) await deleteMaterializedTopic(ctx, topic);
-      }
       await ctx.db.delete("players", target._id);
     } else {
       // Preserve historical response/vote authors for results and recaps while

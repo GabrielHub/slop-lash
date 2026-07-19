@@ -1,8 +1,10 @@
 import { ConvexError } from "convex/values";
-
-const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const ROOM_CODE_LENGTH = 6;
-const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/u;
+import {
+  isRoomCode,
+  normalizeRoomCodeValue,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+} from "../src/lib/room-code";
 
 export function createRoomCode(): string {
   const bytes = new Uint8Array(ROOM_CODE_LENGTH);
@@ -11,8 +13,8 @@ export function createRoomCode(): string {
 }
 
 export function normalizeRoomCode(roomCode: string): string {
-  const normalized = roomCode.trim().toUpperCase();
-  if (!ROOM_CODE_PATTERN.test(normalized)) {
+  const normalized = normalizeRoomCodeValue(roomCode);
+  if (!isRoomCode(normalized)) {
     throw new ConvexError("Room code must be 6 characters using A-Z or 2-9");
   }
   return normalized;

@@ -127,6 +127,47 @@ describe("Convex lobby controls", () => {
     expect(game?.playerCount).toBe(2);
   });
 
+  test("lets a QuizSlop host remove lobby players but preserves the frozen roster", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const host = await backend.action(api.rooms.create, {
+      gameType: "QUIZSLOP",
+      hostName: "Host",
+      hostSecret: "host-secret",
+    });
+    const removed = await backend.action(api.rooms.join, {
+      name: "Removed Candidate",
+      roomCode: host.roomCode,
+    });
+    const remaining = await backend.action(api.rooms.join, {
+      name: "Remaining Candidate",
+      roomCode: host.roomCode,
+    });
+
+    await backend.mutation(api.lobby.kickHuman, {
+      capability: host.capability,
+      targetPlayerId: removed.playerId!,
+    });
+
+    await expect(
+      backend.query(api.rooms.summary, { capability: removed.capability }),
+    ).rejects.toThrow("Invalid or expired room capability");
+    const lobby = await backend.query(api.quizslopViews.stageView, {
+      capability: host.capability,
+    });
+    expect(lobby.roster.map((player) => player.name)).toEqual(["Host", "Remaining Candidate"]);
+
+    await backend.run(async (ctx) => {
+      await ctx.db.patch("games", host.gameId, { status: "ROUND_RESULTS" });
+    });
+    await expect(
+      backend.mutation(api.lobby.kickHuman, {
+        capability: host.capability,
+        targetPlayerId: remaining.playerId!,
+      }),
+    ).rejects.toThrow("QuizSlop roster is frozen after the game starts");
+  });
+
   test("starts Slop-Lash with paired prompts, a writing deadline, and AI jobs", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
@@ -320,7 +361,11 @@ describe("Convex lobby controls", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["openai/gpt-5.6-luna", "google/gemini-3.1-flash-lite", "anthropic/claude-haiku-4.5"],
+      aiModelIds: [
+        "openai/gpt-5.6-luna",
+        "google/gemini-3.1-flash-lite",
+        "anthropic/claude-haiku-4.5",
+      ],
       gameType: "MATCHSLOP",
       hostSecret: "host-secret",
       personaIdentity: "WOMAN",

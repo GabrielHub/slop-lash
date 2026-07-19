@@ -1,4 +1,4 @@
-import { getAudioContext, getNarratorBusNode } from "@/lib/sounds";
+import { activateAudio, getAudioContext, getNarratorBusNode } from "@/lib/sounds";
 
 const INITIAL_BUFFER_S = 0.05;
 const STALE_THRESHOLD_S = 3;
@@ -24,9 +24,12 @@ export class NarratorPlaybackQueue {
 
   async enqueueEncoded(base64: string): Promise<void> {
     if (this.destroyed) return;
-    const busNode = getNarratorBusNode();
-    if (!busNode) return;
+    if (!(await activateAudio())) {
+      throw new Error("Audio is waiting for user interaction");
+    }
     const { ctx } = getAudioContext();
+    const busNode = getNarratorBusNode();
+    if (!busNode) throw new Error("Narrator audio bus is unavailable");
     // Decoding is async, so a clear() can land mid-flight. Anything queued
     // before that clear must not reach the speakers.
     const generation = this.generation;

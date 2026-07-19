@@ -34,6 +34,7 @@ const audio = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/sounds", () => ({
+  activateAudio: async () => true,
   getAudioContext: () => ({ ctx: audio.ctx, gain: {} }),
   getNarratorBusNode: () => audio.busNode,
 }));
@@ -77,6 +78,7 @@ describe("NarratorPlaybackQueue", () => {
     );
 
     const pending = queue.enqueueEncoded("YQ==");
+    await Promise.resolve();
     queue.clear();
     releaseDecode?.({ duration: 1 });
     await pending;

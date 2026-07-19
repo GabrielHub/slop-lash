@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { GameState } from "@/lib/types";
@@ -9,22 +9,14 @@ import { Writing } from "@/app/game/[code]/writing";
 import { Voting } from "@/app/game/[code]/voting";
 import { Results } from "@/app/game/[code]/results";
 import { phaseTransition, fadeInUp } from "@/lib/animations";
-import {
-  playSound,
-  preloadSounds,
-  subscribeAudio,
-  isMuted,
-  toggleMute,
-  getVolume,
-  setVolume,
-  SOUND_NAMES,
-} from "@/lib/sounds";
+import { playSound } from "@/lib/sounds";
 import { useNarrator } from "@/hooks/use-narrator";
 import { useGameStream } from "@/hooks/use-game-stream";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useSloplashEndMutation } from "@/hooks/use-game-runtime";
 import { NarratorIndicator } from "@/components/narrator-indicator";
+import { AudioControls } from "@/components/audio-controls";
 import {
   buildGameStartNarration,
   buildHurryUpNarration,
@@ -51,13 +43,6 @@ export function GameShell({
   const { gameState, error } = useGameStream(code, viewMode);
   useScreenWakeLock(gameState != null);
   const [endingGame, setEndingGame] = useState(false);
-  const soundsMuted = useSyncExternalStore(subscribeAudio, isMuted, () => false);
-  const soundsVolume = useSyncExternalStore(subscribeAudio, getVolume, () => 0.5);
-
-  useEffect(() => {
-    window.addEventListener("pointerdown", preloadSounds, { once: true });
-    return () => window.removeEventListener("pointerdown", preloadSounds);
-  }, []);
 
   const prevStatus = useRef(gameState?.status);
   useEffect(() => {
@@ -85,8 +70,9 @@ export function GameShell({
   const isHost = !!roomSession?.hostCapability || playerId === gameState?.hostPlayerId;
   const {
     narrate,
+    error: narratorError,
     isReady: narratorReady,
-    isSpeaking: narratorSpeaking,
+    status: narratorStatus,
   } = useNarrator({
     roomCapability: roomSession?.hostCapability,
     isHost,
@@ -264,37 +250,6 @@ export function GameShell({
     }
   }
 
-  function volumeIcon(): React.ReactNode {
-    const svgProps = {
-      width: 16,
-      height: 16,
-      viewBox: "0 0 24 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: 2,
-      strokeLinecap: "round" as const,
-      strokeLinejoin: "round" as const,
-    };
-
-    if (soundsMuted) {
-      return (
-        <svg {...svgProps}>
-          <path d="M11 5L6 9H2v6h4l5 4V5z" />
-          <line x1="23" y1="9" x2="17" y2="15" />
-          <line x1="17" y1="9" x2="23" y2="15" />
-        </svg>
-      );
-    }
-
-    return (
-      <svg {...svgProps}>
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-        {soundsVolume >= 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
-        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-      </svg>
-    );
-  }
-
   const gameHeader = (
     <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center justify-between bg-base/80 backdrop-blur-sm border-b border-edge">
       <div className="flex items-center gap-2">
@@ -308,57 +263,15 @@ export function GameShell({
         <span className="font-mono font-bold text-xs tracking-widest text-ink-dim">
           {gameState.roomCode}
         </span>
-        {narratorReady && (
+        {narratorStatus !== "off" && (
           <>
             <span className="text-edge-strong">|</span>
-            <NarratorIndicator state={narratorSpeaking ? "speaking" : "ready"} />
+            <NarratorIndicator state={narratorStatus} detail={narratorError} />
           </>
         )}
       </div>
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={toggleMute}
-            aria-label={soundsMuted ? "Unmute sounds" : "Mute sounds"}
-            className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
-          >
-            {volumeIcon()}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={soundsMuted ? 0 : soundsVolume}
-            onChange={(e) => setVolume(parseFloat(e.target.value))}
-            aria-label="Volume"
-            className="volume-slider hidden sm:block w-16 h-4 cursor-pointer"
-          />
-          <button
-            onClick={() => {
-              const names = SOUND_NAMES;
-              playSound(names[Math.floor(Math.random() * names.length)]);
-            }}
-            aria-label="Test sound"
-            title="Play a random sound to test volume"
-            className="text-ink-dim hover:text-ink transition-colors cursor-pointer"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" />
-              <circle cx="18" cy="16" r="3" />
-            </svg>
-          </button>
-        </div>
+        <AudioControls />
         {canEndGame && (
           <button
             onClick={handleEndGame}

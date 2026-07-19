@@ -5,7 +5,8 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { PlayerAvatar } from "@/components/player-avatar";
-import { playSound, preloadSounds } from "@/lib/sounds";
+import { AudioControls } from "@/components/audio-controls";
+import { playSound } from "@/lib/sounds";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { MIN_PLAYERS } from "../game-constants";
 import { useOptimisticChat } from "./use-optimistic-chat";
@@ -24,6 +25,7 @@ import {
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { buildChatFeed } from "./chat-feed";
 import { ChatBar, TypingDots } from "./chat-components";
+import { RoomInviteButton } from "@/components/room-invite-button";
 
 /* ─── Main component ─── */
 
@@ -201,12 +203,6 @@ export function ChatGameShell({
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [gameState?.status, gameState?.currentRound, chatMessages.length]);
-
-  // Preload sounds
-  useEffect(() => {
-    window.addEventListener("pointerdown", preloadSounds, { once: true });
-    return () => window.removeEventListener("pointerdown", preloadSounds);
-  }, []);
 
   // Derived state
   const isHost = hostCapability !== null;
@@ -485,28 +481,31 @@ export function ChatGameShell({
       const canStart = activePlayers.length >= MIN_PLAYERS;
       const needed = MIN_PLAYERS - activePlayers.length;
       return (
-        <motion.button
-          onClick={(e) => {
-            if (startPendingRef.current) return;
-            triggerElement(e.currentTarget);
-            void handleStartGame();
-          }}
-          disabled={startPendingRef.current || !canStart}
-          className="w-full py-3 rounded-xl font-bold text-sm transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-          style={{
-            background: canStart ? "var(--cs-accent)" : "var(--cs-raised)",
-            color: canStart ? "var(--cs-bg)" : "var(--cs-ink-dim)",
-            border: canStart ? "none" : "1px solid var(--cs-edge)",
-          }}
-          whileHover={canStart ? { scale: 1.02 } : {}}
-          whileTap={canStart ? { scale: 0.98 } : {}}
-        >
-          {startPendingRef.current
-            ? "Starting..."
-            : canStart
-              ? "Start Game"
-              : `Need ${needed} more player${needed === 1 ? "" : "s"}`}
-        </motion.button>
+        <div className="space-y-2">
+          <RoomInviteButton roomCode={game.roomCode} tone="chat" className="w-full" />
+          <motion.button
+            onClick={(e) => {
+              if (startPendingRef.current) return;
+              triggerElement(e.currentTarget);
+              void handleStartGame();
+            }}
+            disabled={startPendingRef.current || !canStart}
+            className="w-full py-3 rounded-xl font-bold text-sm transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              background: canStart ? "var(--cs-accent)" : "var(--cs-raised)",
+              color: canStart ? "var(--cs-bg)" : "var(--cs-ink-dim)",
+              border: canStart ? "none" : "1px solid var(--cs-edge)",
+            }}
+            whileHover={canStart ? { scale: 1.02 } : {}}
+            whileTap={canStart ? { scale: 0.98 } : {}}
+          >
+            {startPendingRef.current
+              ? "Starting..."
+              : canStart
+                ? "Start Game"
+                : `Need ${needed} more player${needed === 1 ? "" : "s"}`}
+          </motion.button>
+        </div>
       );
     }
 
@@ -629,6 +628,7 @@ export function ChatGameShell({
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <AudioControls color="var(--cs-ink-dim)" />
           {game.status !== "LOBBY" && (
             <span
               className="text-[10px] font-mono font-semibold tabular-nums"

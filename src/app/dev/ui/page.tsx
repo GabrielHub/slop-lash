@@ -168,8 +168,8 @@ export default function DevUiIndexPage() {
             <h2 className="font-display text-xl font-bold text-ink">QuizSlop</h2>
           </div>
           <p className="text-sm text-ink-dim mb-4">
-            Milestone 0 fixture prototype: a scripted four-player game stepped beat-by-beat, with
-            the stage and four controllers synced across tabs.
+            Cooperative S.L.O.P. exam fixture: Candidate scratch work, rotated Proxy answers,
+            suspension, the integrity hearing, and the final transcript stay synced across tabs.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div
@@ -183,11 +183,11 @@ export default function DevUiIndexPage() {
                 </span>
               </div>
               <h2 className="font-display text-lg font-bold text-ink">
-                Scripted four-player prototype
+                Cooperative exam prototype
               </h2>
               <p className="mt-1 text-sm text-ink-dim">
-                Warm-up, Home Turf rounds, Call Slop, batched disputes, and the 200-point finale as
-                navigable beats.
+                Twelve navigable beats cover role letters, private scratch answers, Proxy handoffs,
+                oral defenses, a one-section suspension, and the final accusation.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link

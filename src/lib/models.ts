@@ -175,6 +175,16 @@ export function calculateCostUsd(
   );
 }
 
+/** Rough per-game cost bucket ("$"/"$$"/"$$$") for a model, based on a typical
+ * 3-round / 8-player game at ~100 input + ~50 output tokens per call. */
+export function getCostTier(model: AIModel): string {
+  const perGame =
+    ((3 * 8 * 100) / 1_000_000) * model.inputPer1M + ((3 * 8 * 50) / 1_000_000) * model.outputPer1M;
+  if (perGame < 0.001) return "$";
+  if (perGame < 0.005) return "$$";
+  return "$$$";
+}
+
 export function getModelIconForTheme(model: AIModel, theme: "light" | "dark"): string {
   return theme === "light" && model.iconDark ? model.iconDark : model.icon;
 }

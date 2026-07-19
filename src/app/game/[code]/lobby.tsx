@@ -16,6 +16,7 @@ import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useLobbyKickHumanMutation, useLobbyStartMutation } from "@/hooks/use-game-runtime";
 import { buildRoomCapabilityLink } from "@/lib/room-capability-link";
+import { RoomInviteButton } from "@/components/room-invite-button";
 
 function CheckIcon() {
   return (
@@ -187,7 +188,7 @@ export function Lobby({
               ))}
             </motion.div>
             <div
-              className={`mt-4 flex items-center gap-4 ${compactStage ? "justify-center lg:justify-start" : "justify-center"}`}
+              className={`mt-4 flex flex-wrap items-center gap-2 ${compactStage ? "justify-center lg:justify-start" : "justify-center"}`}
             >
               <button
                 onClick={copyCode}
@@ -218,34 +219,37 @@ export function Lobby({
                 )}
               </button>
               {isHost && (
-                <button
-                  onClick={copyTvLink}
-                  className="inline-flex items-center gap-1.5 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
-                >
-                  {tvCopied ? (
-                    <>
-                      <CheckIcon />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
-                        <polyline points="17 2 12 7 7 2" />
-                      </svg>
-                      TV Link
-                    </>
-                  )}
-                </button>
+                <>
+                  <RoomInviteButton roomCode={game.roomCode} compact />
+                  <button
+                    onClick={copyTvLink}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-ink-dim hover:text-ink transition-colors cursor-pointer"
+                  >
+                    {tvCopied ? (
+                      <>
+                        <CheckIcon />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
+                          <polyline points="17 2 12 7 7 2" />
+                        </svg>
+                        TV Link
+                      </>
+                    )}
+                  </button>
+                </>
               )}
             </div>
           </div>
