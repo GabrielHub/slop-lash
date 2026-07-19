@@ -115,10 +115,14 @@ export function useNarrator({
   const narratorReady = narratorEnabled && audioStatus === "ready";
   const canEnqueue = narratorReady && gameStatus !== "FINAL_RESULTS";
 
+  // Tear down narration only when the narrator itself is disabled (left the
+  // game, back to lobby, host change). Reaching FINAL_RESULTS or a transient
+  // AudioContext suspend gates new enqueues via `canEnqueue`, but must not cut
+  // off narration that is already playing.
   useEffect(() => {
-    if (canEnqueue) return;
+    if (narratorEnabled) return;
     stopNarration();
-  }, [canEnqueue, stopNarration]);
+  }, [narratorEnabled, stopNarration]);
 
   useEffect(() => {
     if (narratorEnabled) return;

@@ -50,6 +50,8 @@ function stageView(): BackendQuizslopStageView {
         proxy: graham,
         authority: "GROUP",
         topic: { label: "Horology" },
+        scratchLocked: true,
+        officialLocked: false,
       },
     ],
     receipts: [
@@ -109,12 +111,16 @@ describe("QuizSlop exam view adapters", () => {
     expect(adaptQuizslopStageView(source).final?.totalQuestions).toBe(20);
   });
 
-  test("marks scratch work closed on the public ledger without exposing private choices", () => {
+  test("surfaces authoritative per-assignment lock state on the public ledger", () => {
+    // During PROXY_ANSWER no receipts exist yet, so lock state must come from the
+    // backend's per-assignment flags, not receipt presence: an official answer
+    // filed this phase has to show as locked on the shared ledger.
     const source = stageView();
     source.phase = "PROXY_ANSWER";
     source.receipts = [];
+    source.pairings[0]!.officialLocked = true;
     const assignment = adaptQuizslopStageView(source).assignments[0];
-    expect(assignment).toMatchObject({ scratchLocked: true, officialLocked: false });
+    expect(assignment).toMatchObject({ scratchLocked: true, officialLocked: true });
   });
 
   test("uses the server's aggregate vote count after Proctor Review closes", () => {

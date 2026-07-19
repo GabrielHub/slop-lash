@@ -119,9 +119,6 @@ function publicAssignment(
   index: number,
   view: BackendCommonView,
 ): QuizslopExamPublicAssignment {
-  const matchingReceipt = view.receipts.find(
-    (entry) => entry.assignmentId === pairing.assignmentId,
-  );
   return {
     id: pairing.assignmentId,
     candidate: pairing.candidate,
@@ -130,9 +127,8 @@ function publicAssignment(
     questionNumber: questionNumber(view, index),
     proxyMode: pairing.authority === "GROUP" ? "GROUP_VOTE" : "PLAYER",
     suspendedProxyName: pairing.authority === "GROUP" ? pairing.proxy.name : null,
-    scratchLocked:
-      view.phase !== "LOBBY_SETUP" && view.phase !== "SECTION_INTRO" && view.phase !== "SCRATCH",
-    officialLocked: matchingReceipt !== undefined,
+    scratchLocked: pairing.scratchLocked,
+    officialLocked: pairing.officialLocked,
   };
 }
 

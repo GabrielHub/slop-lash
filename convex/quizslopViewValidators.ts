@@ -25,6 +25,8 @@ const pairingValidator = v.object({
   proxy: playerRefValidator,
   authority: quizslopAnswerAuthorityValidator,
   topic: topicValidator,
+  scratchLocked: v.boolean(),
+  officialLocked: v.boolean(),
 });
 const receiptValidator = v.object({
   assignmentId: v.id("quizSlopAssignments"),

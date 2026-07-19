@@ -165,6 +165,8 @@ function pairings(data: ViewData) {
       proxy: content.proxy,
       authority: assignment.answerAuthority,
       topic: content.topic,
+      scratchLocked: assignment.scratchLockedAt !== undefined,
+      officialLocked: assignment.officialLockedAt !== undefined,
     };
   });
 }
