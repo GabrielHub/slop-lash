@@ -18,7 +18,7 @@ import {
 function request(): QuizSlopFreshPackRequest {
   const config = resolveQuizSlopContentConfig({
     mode: "AI",
-    generatorModelId: "google/gemini-3.1-flash-lite",
+    generatorModelId: "google/gemini-3.5-flash-lite",
   });
   if (config.mode !== "AI") throw new Error("expected AI config");
   return quizSlopFreshPackRequestSchema.parse({

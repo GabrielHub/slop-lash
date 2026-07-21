@@ -10,7 +10,7 @@ describe("gameplay reasoning policy", () => {
   });
 
   test("uses portable AI SDK reasoning for supported providers", () => {
-    expect(getGameplayReasoningSettings("google/gemini-3.1-flash-lite")).toEqual({
+    expect(getGameplayReasoningSettings("google/gemini-3.5-flash-lite")).toEqual({
       reasoning: "high",
     });
     expect(getGameplayReasoningSettings("deepseek/deepseek-v4-flash")).toEqual({

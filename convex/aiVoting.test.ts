@@ -75,8 +75,8 @@ async function createVotingGame(gameType: VotingGameType, foreignQueuedJobs = 0)
   const host = await backend.action(api.rooms.create, {
     aiModelIds:
       gameType === "SLOPLASH"
-        ? ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"]
-        : ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
+        ? ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"]
+        : ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
     gameType,
     hostName: "Host",
     hostSecret: "host-secret",
@@ -142,7 +142,7 @@ async function createTimersDisabledAiOnlyChatslopVotingGame() {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
+    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
     gameType: "AI_CHAT_SHOWDOWN",
     hostParticipation: "DISPLAY_ONLY",
     hostSecret: "host-secret",

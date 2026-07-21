@@ -1,174 +1,265 @@
 import { v } from "convex/values";
 import {
-  quizslopAnswerAuthorityValidator,
-  quizslopContentSourceValidator,
-  quizslopDefenseKindValidator,
+  quizslopCategoryValidator,
+  quizslopDisputeReasonValidator,
   quizslopPackStatusValidator,
   quizslopPhaseValidator,
-  quizslopRoleValidator,
+  quizslopQuestionRulingValidator,
+  quizslopRoundKindValidator,
+  quizslopTopicSetupStateValidator,
 } from "./quizslopValidators";
 
-const playerRefValidator = v.object({ playerId: v.id("players"), name: v.string() });
-const topicValidator = v.object({
+const publicTopicValidator = v.object({
   label: v.string(),
+  scope: v.string(),
+  category: quizslopCategoryValidator,
 });
-const questionValidator = v.object({
-  assignmentId: v.id("quizSlopAssignments"),
-  candidate: playerRefValidator,
-  topic: topicValidator,
-  displayPrompt: v.string(),
-  choices: v.array(v.string()),
+
+const identifiedTopicValidator = v.object({
+  topicId: v.id("quizSlopTopics"),
+  ...publicTopicValidator.fields,
 });
-const pairingValidator = v.object({
-  assignmentId: v.id("quizSlopAssignments"),
-  candidate: playerRefValidator,
-  proxy: playerRefValidator,
-  authority: quizslopAnswerAuthorityValidator,
-  topic: topicValidator,
-  scratchLocked: v.boolean(),
-  officialLocked: v.boolean(),
+
+const scoreboardEntryValidator = v.object({
+  playerId: v.id("players"),
+  name: v.string(),
+  seatOrder: v.number(),
+  connected: v.boolean(),
+  total: v.number(),
+  quizSubtotal: v.number(),
+  callSubtotal: v.number(),
+  tokensRemaining: v.number(),
+  disputeAvailable: v.boolean(),
 });
-const receiptValidator = v.object({
-  assignmentId: v.id("quizSlopAssignments"),
-  candidate: playerRefValidator,
-  proxy: playerRefValidator,
-  authority: quizslopAnswerAuthorityValidator,
-  topic: topicValidator,
-  displayPrompt: v.string(),
-  choices: v.array(v.string()),
-  scratchSelectedIndex: v.union(v.number(), v.null()),
-  officialSelectedIndex: v.union(v.number(), v.null()),
-  correctIndex: v.number(),
-  scratchCorrect: v.boolean(),
-  officialCorrect: v.boolean(),
-  explanation: v.string(),
-  defenses: v.array(
+
+const revealGroupValidator = v.object({
+  questionId: v.id("quizSlopQuestions"),
+  systemVoid: v.boolean(),
+  displayPrompt: v.union(v.string(), v.null()),
+  choices: v.union(v.array(v.string()), v.null()),
+  correctIndex: v.union(v.number(), v.null()),
+  explanation: v.union(v.string(), v.null()),
+  sources: v.array(v.object({ title: v.string(), url: v.union(v.string(), v.null()) })),
+  players: v.array(
     v.object({
-      player: playerRefValidator,
-      kind: quizslopDefenseKindValidator,
-      text: v.string(),
+      playerId: v.id("players"),
+      name: v.string(),
+      selectedIndex: v.union(v.number(), v.null()),
+      correct: v.boolean(),
+      timedOut: v.boolean(),
+      provisionalQuizDelta: v.number(),
     }),
   ),
+  ruling: v.union(quizslopQuestionRulingValidator, v.null()),
 });
+
+const ballotValidator = v.object({
+  disputeId: v.id("quizSlopDisputes"),
+  questionId: v.id("quizSlopQuestions"),
+  displayPrompt: v.string(),
+  reason: quizslopDisputeReasonValidator,
+  initiatorName: v.string(),
+  votesResolved: v.number(),
+  votersTotal: v.number(),
+  ruling: v.union(quizslopQuestionRulingValidator, v.null()),
+});
+
+const settledCallValidator = v.object({
+  callerName: v.string(),
+  targetName: v.string(),
+  outcome: v.union(v.literal("WON"), v.literal("LOST"), v.literal("REFUNDED")),
+  callDelta: v.number(),
+});
+
 const finalValidator = v.union(
   v.object({
-    rawCorrect: v.number(),
-    sabotagePoints: v.number(),
-    adjustedCorrect: v.number(),
-    passed: v.boolean(),
-    saboteur: playerRefValidator,
-    saboteurIdentified: v.boolean(),
+    standings: v.array(
+      v.object({
+        playerId: v.id("players"),
+        name: v.string(),
+        total: v.number(),
+        quizSubtotal: v.number(),
+        successfulCalls: v.number(),
+        winner: v.boolean(),
+      }),
+    ),
+    awards: v.array(
+      v.object({
+        kind: v.union(
+          v.literal("CALLED_IT"),
+          v.literal("FALSE_ALARM_DEPARTMENT"),
+          v.literal("SUSPICIOUSLY_WELL_READ"),
+        ),
+        recipients: v.array(v.string()),
+        stat: v.string(),
+      }),
+    ),
   }),
   v.null(),
 );
 
-const sharedFields = {
+const sharedViewFields = {
+  id: v.id("games"),
   roomCode: v.string(),
   phase: quizslopPhaseValidator,
   version: v.number(),
   phaseDeadline: v.union(v.string(), v.null()),
   serverNow: v.string(),
   timersDisabled: v.boolean(),
-  sectionNumber: v.number(),
-  totalSections: v.number(),
-  passPercent: v.number(),
-  content: v.object({
-    source: quizslopContentSourceValidator,
-    packStatus: quizslopPackStatusValidator,
-    generatorModelName: v.union(v.string(), v.null()),
-  }),
-  teamScore: v.object({
-    rawCorrect: v.number(),
-    attempted: v.number(),
-    totalQuestions: v.number(),
-    integrityAdjustmentSealed: v.boolean(),
-  }),
-  roster: v.array(
+  currentRound: v.number(),
+  totalRounds: v.number(),
+  roundKind: v.union(quizslopRoundKindValidator, v.null()),
+  pointValue: v.number(),
+  voiceLine: v.union(v.object({ text: v.string(), accessibleLabel: v.string() }), v.null()),
+  scoreboard: v.array(scoreboardEntryValidator),
+  currentTopic: v.union(identifiedTopicValidator, v.null()),
+  topicOwnerName: v.union(v.string(), v.null()),
+  slate: v.array(identifiedTopicValidator),
+  revealGroups: v.array(revealGroupValidator),
+  revealOrdinal: v.number(),
+  revealTotal: v.number(),
+  ballots: v.array(ballotValidator),
+  roundDeltas: v.array(
     v.object({
       playerId: v.id("players"),
       name: v.string(),
-      seatOrder: v.number(),
-      connected: v.boolean(),
-      suspendedThisSection: v.boolean(),
+      quizDelta: v.number(),
+      callDelta: v.number(),
     }),
   ),
-  pairings: v.array(pairingValidator),
-  receipts: v.array(receiptValidator),
-  submissionProgress: v.union(v.object({ resolved: v.number(), total: v.number() }), v.null()),
-  reviewResult: v.union(
-    v.object({
-      suspendedPlayer: v.union(playerRefValidator, v.null()),
-      votesCast: v.number(),
-      votersTotal: v.number(),
-    }),
-    v.null(),
-  ),
+  settledCalls: v.array(settledCallValidator),
   final: finalValidator,
 };
 
 export const stageViewValidator = v.object({
-  ...sharedFields,
+  ...sharedViewFields,
   me: v.object({
     isHost: v.boolean(),
     playerId: v.union(v.id("players"), v.null()),
+    sessionId: v.id("playerSessions"),
   }),
   lobby: v.union(
     v.object({
+      packStatus: quizslopPackStatusValidator,
+      statuses: v.array(
+        v.object({
+          playerId: v.id("players"),
+          name: v.string(),
+          connected: v.boolean(),
+          state: quizslopTopicSetupStateValidator,
+        }),
+      ),
       canStart: v.boolean(),
+      minPlayers: v.number(),
+      maxPlayers: v.number(),
     }),
+    v.null(),
+  ),
+  houseVote: v.union(
+    v.object({
+      resolvedCount: v.number(),
+      eligibleCount: v.number(),
+      voteCounts: v.union(
+        v.array(v.object({ topicId: v.id("quizSlopTopics"), votes: v.number() })),
+        v.null(),
+      ),
+    }),
+    v.null(),
+  ),
+  callProgress: v.union(
+    v.object({ resolvedCount: v.number(), eligibleCount: v.number() }),
+    v.null(),
+  ),
+  callReveal: v.union(
+    v.array(
+      v.object({
+        callerId: v.id("players"),
+        callerName: v.string(),
+        targetId: v.id("players"),
+        targetName: v.string(),
+      }),
+    ),
+    v.null(),
+  ),
+  answerProgress: v.union(
+    v.object({ lockedCount: v.number(), assignedCount: v.number() }),
     v.null(),
   ),
 });
 
-const privateAssignmentValidator = v.object({
-  ...questionValidator.fields,
-  selectedIndex: v.union(v.number(), v.null()),
-  locked: v.boolean(),
-});
-
 export const controllerViewValidator = v.object({
-  ...sharedFields,
+  ...sharedViewFields,
   me: v.object({
     isHost: v.boolean(),
     playerId: v.union(v.id("players"), v.null()),
     name: v.union(v.string(), v.null()),
-    role: v.union(quizslopRoleValidator, v.null()),
+    isParticipant: v.boolean(),
+    tokensRemaining: v.number(),
+    disputeAvailable: v.boolean(),
+    total: v.number(),
+    quizSubtotal: v.number(),
+    callSubtotal: v.number(),
   }),
   lobby: v.union(
     v.object({
+      packStatus: quizslopPackStatusValidator,
+      myTopicState: quizslopTopicSetupStateValidator,
+      myTopic: v.union(publicTopicValidator, v.null()),
+      myCatalogTopicId: v.union(v.string(), v.null()),
+      offers: v.array(
+        v.object({
+          catalogTopicId: v.string(),
+          label: v.string(),
+          scope: v.string(),
+          category: quizslopCategoryValidator,
+        }),
+      ),
+      everyoneReady: v.boolean(),
       canStart: v.boolean(),
+      minPlayers: v.number(),
+      maxPlayers: v.number(),
     }),
     v.null(),
   ),
-  candidateAssignment: v.union(privateAssignmentValidator, v.null()),
-  proxyAssignment: v.union(privateAssignmentValidator, v.null()),
-  groupVoteAssignment: v.union(privateAssignmentValidator, v.null()),
-  defenses: v.array(
+  houseVote: v.union(
     v.object({
-      assignmentId: v.id("quizSlopAssignments"),
-      kind: quizslopDefenseKindValidator,
-      candidate: playerRefValidator,
-      proxy: playerRefValidator,
-      displayPrompt: v.string(),
-      submittedText: v.union(v.string(), v.null()),
-      locked: v.boolean(),
+      eligible: v.boolean(),
+      myVoteTopicId: v.union(v.id("quizSlopTopics"), v.null()),
     }),
+    v.null(),
   ),
-  suspensionVote: v.union(
+  call: v.union(
     v.object({
-      targets: v.array(playerRefValidator),
-      selectedTargetId: v.union(v.id("players"), v.null()),
-      abstained: v.boolean(),
+      eligible: v.boolean(),
+      targets: v.array(v.object({ playerId: v.id("players"), name: v.string() })),
+      resolved: v.boolean(),
+      myTargetId: v.union(v.id("players"), v.null()),
+      held: v.boolean(),
+    }),
+    v.null(),
+  ),
+  answer: v.union(
+    v.object({
+      assigned: v.boolean(),
+      displayPrompt: v.union(v.string(), v.null()),
+      choices: v.union(v.array(v.string()), v.null()),
+      selectedIndex: v.union(v.number(), v.null()),
       locked: v.boolean(),
     }),
     v.null(),
   ),
-  finalAccusation: v.union(
+  dispute: v.union(
     v.object({
-      targets: v.array(playerRefValidator),
-      selectedTargetId: v.union(v.id("players"), v.null()),
-      locked: v.boolean(),
+      canInitiate: v.boolean(),
+      challengeableQuestionIds: v.array(v.id("quizSlopQuestions")),
     }),
     v.null(),
+  ),
+  disputeVoteEligible: v.boolean(),
+  myDisputeVotes: v.array(
+    v.object({
+      disputeId: v.id("quizSlopDisputes"),
+      choice: v.union(v.literal("UPHOLD"), v.literal("VOID")),
+    }),
   ),
 });

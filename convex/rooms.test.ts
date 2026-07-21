@@ -183,7 +183,7 @@ describe("room capabilities", () => {
     const backend = createTestBackend();
     await expect(
       backend.action(api.rooms.create, {
-        aiModelIds: ["google/gemini-3.1-flash-lite"],
+        aiModelIds: ["google/gemini-3.5-flash-lite"],
         gameType: "SLOPLASH",
         hostName: "gemini",
         hostSecret: "host-secret",

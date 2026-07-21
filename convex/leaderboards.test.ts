@@ -116,7 +116,7 @@ async function seedCompletedGame() {
       name: "Gemini",
       normalizedName: "gemini",
       type: "AI",
-      modelId: "google/gemini-3.1-flash-lite",
+      modelId: "google/gemini-3.5-flash-lite",
       idleRounds: 0,
       score: 50,
       humorRating: 1,
@@ -190,7 +190,7 @@ async function seedCompletedGame() {
     }
     await ctx.db.insert("gameModelUsage", {
       gameId,
-      modelId: "google/gemini-3.1-flash-lite",
+      modelId: "google/gemini-3.5-flash-lite",
       inputTokens: 10,
       outputTokens: 5,
       costUsd: 0.01,
@@ -231,11 +231,11 @@ describe("Convex leaderboard projection", () => {
           voteShare: 100,
         },
         {
-          key: "google/gemini-3.1-flash-lite",
-          name: "Gemini 3.1 Flash Lite",
+          key: "google/gemini-3.5-flash-lite",
+          name: "Gemini 3.5 Flash Lite",
           shortName: "Gemini",
           type: "AI",
-          modelId: "google/gemini-3.1-flash-lite",
+          modelId: "google/gemini-3.5-flash-lite",
           totalVotes: 0,
           totalResponses: 1,
           matchupsWon: 0,
@@ -246,8 +246,8 @@ describe("Convex leaderboard projection", () => {
       ],
       headToHead: [
         {
-          modelId: "google/gemini-3.1-flash-lite",
-          modelName: "Gemini 3.1 Flash Lite",
+          modelId: "google/gemini-3.5-flash-lite",
+          modelName: "Gemini 3.5 Flash Lite",
           modelShortName: "Gemini",
           humanWins: 1,
           aiWins: 0,
@@ -269,8 +269,8 @@ describe("Convex leaderboard projection", () => {
       ],
       modelUsage: [
         {
-          modelId: "google/gemini-3.1-flash-lite",
-          modelName: "Gemini 3.1 Flash Lite",
+          modelId: "google/gemini-3.5-flash-lite",
+          modelName: "Gemini 3.5 Flash Lite",
           modelShortName: "Gemini",
           inputTokens: 10,
           outputTokens: 5,

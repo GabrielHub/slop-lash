@@ -78,7 +78,7 @@ function batchSpecs(request: ReturnType<typeof quizSlopFreshPackRequestSchema.pa
 
 /**
  * Lobby-only durable preflight. It freezes all 96–100 question variants before
- * gameplay can enter SECTION_INTRO; callers persist either the complete AI pack
+ * gameplay can enter TOPIC_REVEAL; callers persist either the complete AI pack
  * or the complete reviewed-catalog fallback returned here.
  */
 export const packPipeline = gameWorkflow

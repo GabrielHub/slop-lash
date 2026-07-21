@@ -47,7 +47,7 @@ so scoring and recaps can distinguish them.
 
 Hosts can optionally enable low-latency speech through `openai/tts-1` on the
 Vercel AI Gateway. Matchups and countdowns use deterministic verbatim scripts.
-For transitions and results, `google/gemini-3.1-flash-lite` writes a short host
+For transitions and results, `google/gemini-3.5-flash-lite` writes a short host
 line with narrator-specific minimal reasoning before TTS. A bounded FIFO keeps
 complete audio clips in event order. Narration does not participate in
 authoritative game state.
@@ -59,7 +59,7 @@ per provider. Gameplay uses the following reasoning budget policy:
 
 | Gateway model                  | Reasoning |
 | ------------------------------ | --------- |
-| `google/gemini-3.1-flash-lite` | High      |
+| `google/gemini-3.5-flash-lite` | High      |
 | `zai/glm-5.2`                  | Minimal   |
 | `deepseek/deepseek-v4-flash`   | Max       |
 | `openai/gpt-5.6-luna`          | Minimal   |

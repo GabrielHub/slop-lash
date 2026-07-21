@@ -168,8 +168,8 @@ export default function DevUiIndexPage() {
             <h2 className="font-display text-xl font-bold text-ink">QuizSlop</h2>
           </div>
           <p className="text-sm text-ink-dim mb-4">
-            Cooperative S.L.O.P. exam fixture: Candidate scratch work, rotated Proxy answers,
-            suspension, the integrity hearing, and the final transcript stay synced across tabs.
+            Adaptive party-trivia fixture: reveal a topic, predict a miss, answer privately, then
+            share each question and result with the room.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div
@@ -183,11 +183,11 @@ export default function DevUiIndexPage() {
                 </span>
               </div>
               <h2 className="font-display text-lg font-bold text-ink">
-                Cooperative exam prototype
+                QuizSlop round-flow prototype
               </h2>
               <p className="mt-1 text-sm text-ink-dim">
-                Twelve navigable beats cover role letters, private scratch answers, Proxy handoffs,
-                oral defenses, a one-section suspension, and the final accusation.
+                Navigate the full opening, middle, dispute, and finale sequences across the shared
+                stage and private player controller.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link

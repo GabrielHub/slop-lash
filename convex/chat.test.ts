@@ -80,7 +80,7 @@ describe("reactive Convex chat", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(createRoom, {
-      aiModelIds: ["google/gemini-3.1-flash-lite"],
+      aiModelIds: ["google/gemini-3.5-flash-lite"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -144,7 +144,7 @@ describe("reactive Convex chat", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(createRoom, {
-      aiModelIds: ["google/gemini-3.1-flash-lite"],
+      aiModelIds: ["google/gemini-3.5-flash-lite"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",

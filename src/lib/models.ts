@@ -22,13 +22,13 @@ export const LEGACY_MODEL_SHORT_NAME = "Legacy";
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: "google/gemini-3.1-flash-lite",
-    name: "Gemini 3.1 Flash Lite",
+    id: "google/gemini-3.5-flash-lite",
+    name: "Gemini 3.5 Flash Lite",
     shortName: "Gemini",
     provider: "Google",
     icon: "/icons/gemini-color.svg",
-    inputPer1M: 0.25,
-    outputPer1M: 1.5,
+    inputPer1M: 0.3,
+    outputPer1M: 2.5,
     reasoningLevel: "high",
   },
   {

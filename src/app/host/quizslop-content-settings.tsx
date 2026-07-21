@@ -19,8 +19,8 @@ export function QuizSlopContentSourceField({
 }) {
   return (
     <div className="mb-6 rounded-2xl border-2 border-edge bg-surface/70 p-4">
-      <p className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-ink-dim/60">
-        Examination materials
+      <p className="mb-1 font-mono text-xs font-bold uppercase tracking-[0.18em] text-ink-dim/70">
+        Question source
       </p>
       <Toggle
         checked={contentSource === "AI"}
@@ -28,14 +28,14 @@ export function QuizSlopContentSourceField({
         label="Fresh AI Question Pack"
         description={
           contentSource === "AI"
-            ? "Your chosen model writes a frozen test before play. A separate house verifier checks it; unsafe packs fall back to the catalog."
+            ? "Your chosen model writes a frozen question pack before play. A separate house verifier checks it; unsafe packs fall back to the catalog."
             : "Uses the reviewed catalog. Fast, dependable, and legally distinct from studying."
         }
       />
       {contentSource === "AI" && verifier ? (
         <div className="mt-3 flex items-center gap-3 rounded-xl border border-ai/30 bg-ai-soft/35 px-3 py-2.5">
           <ModelIcon model={verifier} size={22} className="shrink-0" />
-          <p className="min-w-0 text-xs leading-relaxed text-ink-dim">
+          <p className="min-w-0 text-sm leading-relaxed text-ink-dim">
             <span className="font-semibold text-ink">{verifier.name}</span> handles the fixed
             verifier pass after the generator writes each batch.
           </p>
@@ -55,10 +55,10 @@ export function QuizSlopGeneratorPicker({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-dim/60">
+        <p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-ink-dim/70">
           Question Generator
         </p>
-        <span className="text-[11px] text-ink-dim/50">one model, no classmates</span>
+        <span className="text-xs text-ink-dim/70">one model, no AI players</span>
       </div>
       <div className="grid grid-cols-1 gap-2">
         {AI_MODELS.map((model) => {
@@ -82,14 +82,14 @@ export function QuizSlopGeneratorPicker({
                   <span className="truncate text-sm font-semibold">{model.name}</span>
                   <span className="shrink-0 text-xs text-ink-dim/60">{model.provider}</span>
                 </span>
-                <span className="font-mono text-[11px] text-ink-dim/50">
-                  rewrites reviewed facts into a frozen exam
+                <span className="font-mono text-xs text-ink-dim/70">
+                  rewrites reviewed facts into a frozen question pack
                 </span>
               </span>
               {selected ? (
                 <span
                   aria-label="Selected"
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ai text-[11px] font-black text-accent-ink"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ai text-xs font-black text-accent-ink"
                 >
                   ✓
                 </span>

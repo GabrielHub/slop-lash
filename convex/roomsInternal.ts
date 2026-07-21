@@ -160,9 +160,11 @@ export const createRoom = internalMutation({
         ...(args.quizSlopPromptVersion ? { promptVersion: args.quizSlopPromptVersion } : {}),
         ...(args.quizSlopSchemaVersion ? { schemaVersion: args.quizSlopSchemaVersion } : {}),
         packStatus: args.quizSlopContentSource === "AI" ? "PENDING" : "CATALOG_READY",
-        rawCorrect: 0,
-        attempted: 0,
-        sabotagePoints: 0,
+        revealOrdinal: 0,
+        customRevisionsReserved: 0,
+        customTopicsEnabled: false,
+        outcome: "IN_PROGRESS",
+        updatedAt: now,
       });
       if (args.quizSlopContentSource === "AI" && args.quizSlopGeneratorModelId) {
         // Schedule inside the room-creation transaction. If the calling action

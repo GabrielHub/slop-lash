@@ -1,6 +1,7 @@
 /* ============================================
-   QUIZSLOP THEME: "HOSTILE TESTING CENTER"
-   Institutional paper, fluorescent status marks, and a red pen with authority.
+   QUIZSLOP THEME: "ON-AIR STUDIO"
+   An energetic, slightly unreliable AI game show.
+   Marquee amber + signal cyan + stamp red on deep indigo.
    ============================================ */
 
 [data-game="quizslop"] {
@@ -39,31 +40,37 @@
   --qs-ink: #221d3a;
   --qs-ink-dim: #6f6890;
   --qs-accent-ink: #ffffff;
-  --qs-marquee: #b87e00;
+  --qs-marquee: #9a6700;
   --qs-marquee-soft: #b87e001f;
-  --qs-signal: #0b9e8c;
+  --qs-signal: #08786c;
   --qs-signal-soft: #0b9e8c1a;
-  --qs-punch: #e03e57;
+  --qs-punch: #c72a45;
   --qs-punch-soft: #e03e571f;
-  --qs-win: #148a4d;
+  --qs-win: #0f773f;
   --qs-win-soft: #148a4d1a;
   --qs-fail: #cf2f42;
   --qs-fail-soft: #cf2f421c;
-  --qs-token: #b87e00;
+  --qs-token: #9a6700;
   --qs-token-ink: #ffffff;
   --qs-edge: #ded8c9;
   --qs-edge-strong: #bdb5a0;
   --qs-shadow: 0 2px 10px rgba(34, 29, 58, 0.1);
 }
 
-/* --- Fluorescent score-line glow (static; readable at any motion setting) --- */
+/* --- QuizSlop marquee glow (static; readable at any motion setting) --- */
 .qs-marquee-text {
   text-shadow:
     0 0 60px color-mix(in srgb, var(--qs-marquee) 30%, transparent),
     0 3px 18px color-mix(in srgb, var(--qs-marquee) 18%, transparent);
 }
 
-/* --- Proctor stamp slam --- */
+/* Shared audio controls inherit a compact global label; QuizSlop never renders sub-12px text. */
+[data-game="quizslop"] fieldset[aria-label="Audio controls"] button,
+[data-game="quizslop"] fieldset[aria-label="Audio controls"] output {
+  font-size: 0.75rem;
+}
+
+/* --- QuizSlop Call Slop stamp slam --- */
 @keyframes qs-stamp {
   0% {
     transform: scale(2.1) rotate(6deg);
@@ -83,7 +90,7 @@
   animation: qs-stamp 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
-/* --- Restrained glitch: only for pack-building or administrative-failure moments --- */
+/* --- QuizSlop restrained glitch: only for building/voided moments --- */
 @keyframes qs-glitch {
   0%,
   86%,

@@ -20,7 +20,7 @@ import {
   sha256Hex,
 } from "../../src/games/quizslop/canonical-key";
 import {
-  MAX_TOTAL_EXAM_QUESTIONS,
+  MAX_FROZEN_TOPICS,
   MAX_TOPIC_EXCLUSION_LENGTH,
   MAX_TOPIC_EXCLUSIONS,
   MAX_TOPIC_LABEL_LENGTH,
@@ -67,9 +67,9 @@ export async function collectStructuralFailures(
   }
 
   const nonRetired = catalog.filter((topic) => !topic.retired);
-  if (nonRetired.length < MAX_TOTAL_EXAM_QUESTIONS) {
+  if (nonRetired.length < MAX_FROZEN_TOPICS) {
     failures.push(
-      `capacity invariant: ${nonRetired.length} non-retired topics; a maximum-size exam needs ${MAX_TOTAL_EXAM_QUESTIONS} unique topic slots`,
+      `capacity invariant: ${nonRetired.length} non-retired topics; a full fresh pack needs ${MAX_FROZEN_TOPICS} unique topic banks`,
     );
   }
 

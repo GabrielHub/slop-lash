@@ -137,7 +137,7 @@ describe("QuizSlop fresh-pack persistence", () => {
       personaModelId: null,
       quizSlopContentSource: "AI",
       quizSlopGeneratorModelId: GENERATOR_MODEL_ID,
-      quizSlopPromptVersion: "quizslop-fresh-pack-v1",
+      quizSlopPromptVersion: "quizslop-fresh-pack-v2",
       quizSlopSchemaVersion: "quizslop-frozen-pack-v1",
       quizSlopVerifierModelId: QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
       roomCode: "QSAFE1",
@@ -290,6 +290,78 @@ describe("QuizSlop fresh-pack persistence", () => {
         }),
       ]),
     );
+  });
+
+  test("starts from the complete 25-bank AI pack but builds only players plus two rounds", async () => {
+    const backend = createTestBackend({ registerWorkflow: false });
+    const host = await backend.action(api.rooms.create, {
+      gameType: "QUIZSLOP",
+      hostName: "Registrar",
+      hostSecret: "host-secret",
+      quizSlopContentSource: "AI",
+      quizSlopGeneratorModelId: GENERATOR_MODEL_ID,
+    });
+    const guest = await backend.action(api.rooms.join, {
+      name: "Bea",
+      roomCode: host.roomCode,
+    });
+    const frozen = await backend.run(async (ctx) => ({
+      state: await ctx.db
+        .query("quizSlopState")
+        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .unique(),
+      topics: await ctx.db
+        .query("quizSlopTopics")
+        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .collect(),
+    }));
+    expect(frozen.state).toMatchObject({ contentSource: "AI", packStatus: "FALLBACK" });
+    expect(frozen.topics).toHaveLength(25);
+    const players = [host, guest];
+    for (const [index, player] of players.entries()) {
+      const catalogTopicId = frozen.topics[index]?.catalogTopicId;
+      if (!catalogTopicId) throw new Error("Expected a frozen catalog-backed topic");
+      await expect(
+        backend.mutation(api.quizslop.chooseCatalogTopic, {
+          capability: player.capability,
+          catalogTopicId,
+        }),
+      ).resolves.toMatchObject({ kind: "CONFIRMED" });
+      await backend.mutation(api.presence.heartbeat, {
+        capability: player.capability,
+        interval: 5_000,
+        sessionId: `00000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, "0")}`,
+      });
+    }
+
+    await expect(
+      backend.mutation(api.quizslop.start, { capability: host.capability }),
+    ).resolves.toEqual({ started: true, totalRounds: 4 });
+    const started = await backend.run(async (ctx) => ({
+      game: await ctx.db.get("games", host.gameId),
+      state: await ctx.db
+        .query("quizSlopState")
+        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .unique(),
+      topics: await ctx.db
+        .query("quizSlopTopics")
+        .withIndex("by_gameId", (index) => index.eq("gameId", host.gameId))
+        .collect(),
+      rounds: await ctx.db
+        .query("quizSlopRounds")
+        .withIndex("by_gameId_and_deckOrdinal", (index) => index.eq("gameId", host.gameId))
+        .collect(),
+    }));
+    expect(started.topics).toHaveLength(25);
+    expect(started.rounds.map((round) => round.kind)).toEqual([
+      "WARM_UP",
+      "HOME_TURF",
+      "HOME_TURF",
+      "HOUSE_CHOICE",
+    ]);
+    expect(started.game).toMatchObject({ totalRounds: 4, currentRound: 1 });
+    expect(started.game?.phaseDeadline).toBeUndefined();
+    expect(started.state).toMatchObject({ phase: "TOPIC_REVEAL", deckPosition: 0 });
   });
 
   test("rejects an AI pack that omits per-batch generator or verifier provenance", async () => {

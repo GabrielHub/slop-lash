@@ -276,7 +276,7 @@ describe("Convex Slop-Lash state machine", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3.1-flash-lite"],
+      aiModelIds: ["google/gemini-3.5-flash-lite"],
       gameType: "SLOPLASH",
       hostName: "Host",
       hostSecret: "host-secret",

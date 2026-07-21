@@ -57,7 +57,7 @@ export function HumanPlayerGuidance({
         Create the room, put the stage on the shared screen, then have everyone join on their own
         device.
         {quizSlop
-          ? " Every section, each candidate gets a different question and answers for somebody else. One candidate is catastrophically unhelpful."
+          ? " Each round reveals a topic, lets players optionally Call Slop on a friend, collects one private answer, then reveals every question to the room."
           : " Private controls stay on each player’s device."}
       </p>
     </div>

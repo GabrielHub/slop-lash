@@ -374,7 +374,7 @@ describe("ChatSlop Convex state machine", () => {
     });
 
     const second = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
+      aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Second Host",
       hostSecret: "host-secret",
@@ -491,7 +491,7 @@ describe("ChatSlop Convex state machine", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
+      aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -630,7 +630,7 @@ describe("ChatSlop Convex state machine", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna"],
+      aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
       gameType: "AI_CHAT_SHOWDOWN",
       hostName: "Host",
       hostSecret: "host-secret",

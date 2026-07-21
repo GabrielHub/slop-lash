@@ -1,51 +1,92 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion, AnimatePresence, MotionConfig } from "motion/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { ErrorBanner } from "@/components/error-banner";
 import { RoomInviteButton } from "@/components/room-invite-button";
 import { Timer } from "@/components/timer";
+import { collapseExpand, phaseTransition } from "@/lib/animations";
 import { useConvexRoomPresence } from "@/hooks/use-convex-room-presence";
 import { useConvexRoomSession } from "@/hooks/use-convex-room-session";
 import { useScreenWakeLock } from "@/hooks/use-screen-wake-lock";
-import { collapseExpand } from "@/lib/animations";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { playSound, type SoundName } from "@/lib/sounds";
-import { canHostAdvanceQuizslopPhase, getQuizslopHostAdvanceLabel } from "../quizslop-phase-policy";
-import { adaptQuizslopControllerView } from "./quizslop-exam-adapters";
-import { QuizslopExamControllerContent } from "./quizslop-exam-controller";
+import type { QuizslopDisputeReason, QuizslopDisputeVoteChoice } from "../types";
+import { canHostAdvanceQuizslopPhase } from "../quizslop-phase-policy";
+import {
+  getQuizslopAdvanceLabel,
+  getQuizslopPhaseTimerTotal,
+  getQuizslopPhaseAnnouncement,
+  QuizslopFlowProgress,
+} from "./quizslop-flow-progress";
+import {
+  ScoreboardStrip,
+  TokenChips,
+  VoiceLineBanner,
+  formatSignedPoints,
+} from "./quizslop-shared-ui";
+import { QuizslopControllerPhaseContent } from "./quizslop-phase-content";
 import { QuizslopSoundToggle } from "./quizslop-sound-toggle";
-import { QuizslopTutorialGuide } from "./quizslop-tutorial-guide";
+import type {
+  QuizslopChooseTopicResult,
+  QuizslopControllerViewPayload,
+  QuizslopInitiateDisputeResult,
+} from "./quizslop-view-contracts";
 
-export function QuizslopControllerShell({ code }: { code: string }) {
+export interface QuizslopControllerShellFixture {
+  view: QuizslopControllerViewPayload;
+  start(): Promise<void> | void;
+  advance(): Promise<void> | void;
+  chooseCatalogTopic(
+    catalogTopicId: string,
+  ): Promise<QuizslopChooseTopicResult> | QuizslopChooseTopicResult;
+  castHouseVote(topicId: string): Promise<void> | void;
+  submitCall(targetPlayerId: string | null): Promise<void> | void;
+  lockAnswer(selectedIndex: number): Promise<void> | void;
+  initiateDispute(
+    questionId: string,
+    reason: QuizslopDisputeReason,
+  ): Promise<QuizslopInitiateDisputeResult> | QuizslopInitiateDisputeResult;
+  castDisputeVote(disputeId: string, choice: QuizslopDisputeVoteChoice): Promise<void> | void;
+}
+
+export function QuizslopControllerShell({
+  code,
+  fixture,
+}: {
+  code: string;
+  fixture?: QuizslopControllerShellFixture;
+}) {
   const roomSession = useConvexRoomSession(code);
   const playerCapability = roomSession?.playerCapability ?? null;
   const hostCapability = roomSession?.hostCapability ?? null;
   const capability = playerCapability ?? hostCapability;
-  useConvexRoomPresence({ capability });
-  const queried = useQuery(api.quizslopViews.controllerView, capability ? { capability } : "skip");
-  const view = useMemo(
-    () => (queried ? adaptQuizslopControllerView(queried) : undefined),
-    [queried],
+  useConvexRoomPresence({ capability: fixture ? null : capability });
+  const queried = useQuery(
+    api.quizslopViews.controllerView,
+    fixture ? "skip" : capability ? { capability } : "skip",
   );
-  useScreenWakeLock(view !== undefined);
+  const liveView: QuizslopControllerViewPayload | undefined = queried;
+  const view = fixture?.view ?? liveView;
+  useScreenWakeLock(view != null);
 
   const startMutation = useMutation(api.quizslop.start);
   const advanceMutation = useMutation(api.quizslop.advance);
-  const removePlayerMutation = useMutation(api.lobby.kickHuman);
-  const submitScratchMutation = useMutation(api.quizslop.submitScratch);
-  const submitProxyAnswerMutation = useMutation(api.quizslop.submitProxyAnswer);
-  const submitGroupAnswerMutation = useMutation(api.quizslop.submitGroupAnswer);
-  const submitDefenseMutation = useMutation(api.quizslop.submitDefense);
-  const castSuspensionVoteMutation = useMutation(api.quizslop.castSuspensionVote);
-  const castFinalAccusationMutation = useMutation(api.quizslop.castFinalAccusation);
+  const chooseCatalogTopicMutation = useMutation(api.quizslop.chooseCatalogTopic);
+  const castHouseVoteMutation = useMutation(api.quizslop.castHouseVote);
+  const submitCallMutation = useMutation(api.quizslop.submitCall);
+  const lockAnswerMutation = useMutation(api.quizslop.lockAnswer);
+  const initiateDisputeMutation = useMutation(api.quizslop.initiateDispute);
+  const castDisputeVoteMutation = useMutation(api.quizslop.castDisputeVote);
 
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
+  const [topicTakenNotice, setTopicTakenNotice] = useState<string | null>(null);
+  const [disputeNotice, setDisputeNotice] = useState<string | null>(null);
   const phaseKeyRef = useRef("");
 
   useEffect(() => {
@@ -55,24 +96,29 @@ export function QuizslopControllerShell({ code }: { code: string }) {
     };
   }, []);
 
+  // Reset transient notices whenever the authoritative phase tuple moves, so a
+  // reload or reconnect renders purely from the server view.
   useEffect(() => {
     if (!view) return;
-    const key = `${view.phase}:${view.sectionNumber}:${view.version}`;
-    if (phaseKeyRef.current === key) return;
-    phaseKeyRef.current = key;
+    const nextKey = `${view.phase}:${view.currentRound}:${view.revealOrdinal}`;
+    if (phaseKeyRef.current === nextKey) return;
+    phaseKeyRef.current = nextKey;
     setActionError("");
+    setDisputeNotice(null);
+    if (view.phase !== "LOBBY_SETUP") setTopicTakenNotice(null);
   }, [view]);
 
   async function runAction(
     key: string,
-    action: () => Promise<boolean>,
+    action: () => Promise<void> | void,
     fallback: string,
-    sound: SoundName,
+    sound?: SoundName,
   ) {
     setBusyAction(key);
     setActionError("");
     try {
-      if (await action()) playSound(sound);
+      await action();
+      if (sound) playSound(sound);
     } catch (cause) {
       setActionError(getConvexErrorMessage(cause, fallback));
     } finally {
@@ -80,124 +126,157 @@ export function QuizslopControllerShell({ code }: { code: string }) {
     }
   }
 
-  async function handleHostAction(kind: "start" | "advance") {
-    if (!view) return;
+  async function handleChooseTopic(catalogTopicId: string) {
+    setTopicTakenNotice(null);
     await runAction(
-      kind,
+      `topic:${catalogTopicId}`,
       async () => {
-        if (!hostCapability) return false;
-        if (kind === "start") {
-          await startMutation({ capability: hostCapability });
-        } else {
-          await advanceMutation({
-            capability: hostCapability,
-            expectedPhaseGeneration: view.version,
-          });
+        const result = fixture
+          ? await fixture.chooseCatalogTopic(catalogTopicId)
+          : playerCapability
+            ? await chooseCatalogTopicMutation({ capability: playerCapability, catalogTopicId })
+            : null;
+        if (result?.kind === "TOPIC_TAKEN") {
+          setTopicTakenNotice("Someone claimed that topic first. Here are fresh picks.");
         }
-        return true;
       },
-      "The proctor could not move the exam",
-      kind === "start" ? "game-start" : "phase-transition",
-    );
-  }
-
-  async function handleAnswer(kind: "scratch" | "proxy" | "group", selectedIndex: number) {
-    if (!view) return;
-    await runAction(
-      kind,
-      async () => {
-        if (!playerCapability) return false;
-        const args = {
-          capability: playerCapability,
-          selectedIndex,
-          expectedPhaseGeneration: view.version,
-        };
-        if (kind === "scratch") await submitScratchMutation(args);
-        if (kind === "proxy") await submitProxyAnswerMutation(args);
-        if (kind === "group") await submitGroupAnswerMutation(args);
-        return true;
-      },
-      "The answer sheet jammed on the way into the machine",
-      kind === "group" ? "vote-cast" : kind === "proxy" ? "stamp-slam" : "submitted",
-    );
-  }
-
-  async function handleRemovePlayer(targetPlayerId: string) {
-    if (!view || view.phase !== "LOBBY_SETUP" || !view.me.isHost) return;
-    const target = view.roster.find((player) => player.playerId === targetPlayerId);
-    if (!target || target.playerId === view.me.playerId) return;
-    if (!window.confirm(`Remove ${target.name} from this room?`)) return;
-    await runAction(
-      `remove:${targetPlayerId}`,
-      async () => {
-        if (!hostCapability) return false;
-        await removePlayerMutation({
-          capability: hostCapability,
-          targetPlayerId: targetPlayerId as Id<"players">,
-        });
-        return true;
-      },
-      "The proctor could not remove that player",
-      "player-leave",
-    );
-  }
-
-  async function handleDefense(assignmentId: string, text: string) {
-    if (!view) return;
-    await runAction(
-      `defense:${assignmentId}`,
-      async () => {
-        if (!playerCapability) return false;
-        await submitDefenseMutation({
-          capability: playerCapability,
-          assignmentId: assignmentId as Id<"quizSlopAssignments">,
-          text,
-          expectedPhaseGeneration: view.version,
-        });
-        return true;
-      },
-      "The stenographer rejected that statement",
+      "Could not confirm that topic",
       "submitted",
     );
   }
 
-  async function handleSuspensionVote(targetPlayerId: string | null) {
+  async function handleHouseVote(topicId: string) {
     if (!view) return;
     await runAction(
-      "suspension",
+      `vote:${topicId}`,
       async () => {
-        if (!playerCapability) return false;
-        await castSuspensionVoteMutation({
-          capability: playerCapability,
-          targetPlayerId: targetPlayerId as Id<"players"> | null,
-          expectedPhaseGeneration: view.version,
-        });
-        return true;
+        if (fixture) {
+          await fixture.castHouseVote(topicId);
+        } else if (playerCapability) {
+          await castHouseVoteMutation({
+            capability: playerCapability,
+            topicId: topicId as Id<"quizSlopTopics">,
+            expectedPhaseGeneration: view.version,
+          });
+        }
       },
-      "The disciplinary ballot was returned for excessive sincerity",
+      "Could not cast your vote",
       "vote-cast",
     );
   }
 
-  async function handleAccusation(targetPlayerId: string) {
+  async function handleSubmitCall(targetPlayerId: string | null) {
     if (!view) return;
     await runAction(
-      "accusation",
+      "call",
       async () => {
-        if (!playerCapability) return false;
-        await castFinalAccusationMutation({
-          capability: playerCapability,
-          targetPlayerId: targetPlayerId as Id<"players">,
-          expectedPhaseGeneration: view.version,
-        });
-        return true;
+        if (fixture) {
+          await fixture.submitCall(targetPlayerId);
+        } else if (playerCapability) {
+          await submitCallMutation({
+            capability: playerCapability,
+            targetPlayerId: targetPlayerId === null ? null : (targetPlayerId as Id<"players">),
+            expectedPhaseGeneration: view.version,
+          });
+        }
       },
-      "The integrity office misplaced your accusation",
+      "Could not lock your call",
+      "submitted",
+    );
+  }
+
+  async function handleLockAnswer(selectedIndex: number) {
+    if (!view) return;
+    await runAction(
+      "answer",
+      async () => {
+        if (fixture) {
+          await fixture.lockAnswer(selectedIndex);
+        } else if (playerCapability) {
+          await lockAnswerMutation({
+            capability: playerCapability,
+            selectedIndex,
+            expectedPhaseGeneration: view.version,
+          });
+        }
+      },
+      "Could not lock your answer",
+      "submitted",
+    );
+  }
+
+  async function handleInitiateDispute(questionId: string, reason: QuizslopDisputeReason) {
+    if (!view) return;
+    setDisputeNotice(null);
+    await runAction(
+      "dispute",
+      async () => {
+        const result = fixture
+          ? await fixture.initiateDispute(questionId, reason)
+          : playerCapability
+            ? await initiateDisputeMutation({
+                capability: playerCapability,
+                questionId: questionId as Id<"quizSlopQuestions">,
+                reason,
+                expectedPhaseGeneration: view.version,
+              })
+            : null;
+        if (result?.kind === "ALREADY_OPEN") {
+          setDisputeNotice(
+            "That question is already challenged. Your token is safe — pick a different one.",
+          );
+        }
+      },
+      "Could not file the challenge",
+      "submitted",
+    );
+  }
+
+  async function handleDisputeVote(disputeId: string, choice: QuizslopDisputeVoteChoice) {
+    if (!view) return;
+    await runAction(
+      `ballot:${disputeId}`,
+      async () => {
+        if (fixture) {
+          await fixture.castDisputeVote(disputeId, choice);
+        } else if (playerCapability) {
+          await castDisputeVoteMutation({
+            capability: playerCapability,
+            disputeId: disputeId as Id<"quizSlopDisputes">,
+            choice,
+            expectedPhaseGeneration: view.version,
+          });
+        }
+      },
+      "Could not cast that ruling",
       "vote-cast",
     );
   }
 
-  if (!capability) {
+  async function handleHostAction(kind: "start" | "advance") {
+    if (!view) return;
+    await runAction(
+      `host:${kind}`,
+      async () => {
+        if (fixture) {
+          await (kind === "start" ? fixture.start() : fixture.advance());
+        } else if (hostCapability) {
+          if (kind === "start") {
+            await startMutation({ capability: hostCapability });
+          } else {
+            await advanceMutation({
+              capability: hostCapability,
+              expectedPhaseGeneration: view.version,
+            });
+          }
+        }
+      },
+      "Host action failed",
+      kind === "start" ? "game-start" : "phase-transition",
+    );
+  }
+
+  if (!fixture && !capability) {
     return (
       <main className="flex min-h-svh items-center justify-center px-6">
         <p className="font-display text-xl font-bold text-fail">
@@ -212,145 +291,222 @@ export function QuizslopControllerShell({ code }: { code: string }) {
       <main className="flex min-h-svh items-center justify-center px-6">
         <div
           className="h-8 w-8 animate-spin rounded-full border-2"
-          style={{ borderColor: "var(--qs-edge)", borderTopColor: "var(--qs-punch)" }}
+          style={{ borderColor: "var(--qs-edge)", borderTopColor: "var(--qs-marquee)" }}
         />
       </main>
     );
   }
 
-  const showHostAdvance =
-    view.me.isHost && canHostAdvanceQuizslopPhase(view.phase, view.timersDisabled);
+  const phase = view.phase;
+  // A playing host queries the controller with their player capability so the
+  // view can include private answer controls. Keep the separately-held host
+  // capability as the authority for host tools on that same screen.
+  const isHost = view.me.isHost || (!fixture && hostCapability !== null);
+  const inRound = phase !== "LOBBY_SETUP" && phase !== "FINAL_RESULTS" && phase !== "ABANDONED";
+  const showHostAdvance = isHost && canHostAdvanceQuizslopPhase(phase, view.timersDisabled);
+
   return (
-    <div
-      className="relative flex min-h-svh flex-col overflow-x-hidden"
-      style={{ color: "var(--qs-ink)", background: "var(--qs-bg)" }}
-    >
-      <div
-        className="pointer-events-none fixed inset-0 z-0 opacity-70"
-        aria-hidden="true"
-        style={{
-          background:
-            "linear-gradient(102deg, transparent 0 48%, color-mix(in srgb, var(--qs-punch) 5%, transparent) 48% 48.2%, transparent 48.2%), radial-gradient(circle at 92% 8%, var(--qs-marquee-soft), transparent 35%)",
-        }}
-      />
-      <header
-        className="sticky top-0 z-30 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5 backdrop-blur-md sm:px-6 lg:px-8"
-        style={{
-          borderColor: "var(--qs-edge)",
-          background: "color-mix(in srgb, var(--qs-bg) 90%, transparent)",
-        }}
-      >
-        <div className="min-w-0">
-          <p
-            className="font-display text-sm font-black uppercase"
-            style={{ color: "var(--qs-punch)" }}
-          >
-            QuizSlop{" "}
+    <MotionConfig reducedMotion="user">
+      <div className="relative flex min-h-svh flex-col" style={{ color: "var(--qs-ink)" }}>
+        <header
+          className="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5 backdrop-blur-md"
+          style={{
+            borderColor: "var(--qs-edge)",
+            background: "color-mix(in srgb, var(--qs-bg) 88%, transparent)",
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
             <span
-              className="font-mono text-[9px] tracking-[0.18em]"
+              className="font-display text-sm font-black"
+              style={{ color: "var(--qs-marquee)" }}
+            >
+              QUIZSLOP
+            </span>
+            <span
+              className="font-mono text-xs font-bold tracking-widest"
               style={{ color: "var(--qs-ink-dim)" }}
             >
-              · {view.roomCode}
+              {view.roomCode}
             </span>
-          </p>
-          <p
-            className="truncate font-mono text-[9px] font-black uppercase tracking-[0.16em]"
-            style={{ color: "var(--qs-ink-dim)" }}
-          >
-            {view.me.name ?? "Display proctor"} · {view.phase.toLowerCase().replaceAll("_", " ")}
-          </p>
-        </div>
-        <QuizslopSoundToggle />
-      </header>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {view.me.isParticipant && (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="font-mono text-sm font-bold tabular-nums"
+                  style={{ color: "var(--qs-marquee)" }}
+                >
+                  {view.me.total}
+                </span>
+                <TokenChips remaining={view.me.tokensRemaining} size={20} />
+              </span>
+            )}
+            {inRound && view.totalRounds > 0 && (
+              <span
+                className="font-mono text-xs tabular-nums"
+                style={{ color: "var(--qs-ink-dim)" }}
+              >
+                R{view.currentRound}/{view.totalRounds}
+              </span>
+            )}
+            <QuizslopSoundToggle />
+          </div>
+        </header>
 
-      <main className="relative z-10 flex-1 pb-28">
-        {view.phaseDeadline !== null && view.phase !== "FINAL_RESULTS" ? (
-          <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6 lg:px-8">
-            <Timer deadline={view.phaseDeadline} serverNow={view.serverNow} />
-          </div>
-        ) : null}
-        {view.timersDisabled && view.phase !== "FINAL_RESULTS" ? (
-          <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6 lg:px-8">
-            <QuizslopTutorialGuide phase={view.phase} />
-          </div>
-        ) : null}
-        <AnimatePresence>
-          {actionError ? (
+        <output className="sr-only" aria-live="polite" aria-atomic="true">
+          {getQuizslopPhaseAnnouncement(
+            phase,
+            view.currentRound,
+            view.totalRounds,
+            view.revealOrdinal,
+            view.revealTotal,
+          )}
+        </output>
+
+        <main className="z-10 mx-auto w-full max-w-md flex-1 px-4 py-5">
+          {inRound ? (
+            <div className="mb-4">
+              <QuizslopFlowProgress
+                phase={phase}
+                currentRound={view.currentRound}
+                tutorialMode={view.timersDisabled}
+                surface="controller"
+              />
+            </div>
+          ) : null}
+
+          {(view.phaseDeadline !== null || view.timersDisabled) &&
+            phase !== "FINAL_RESULTS" &&
+            phase !== "ABANDONED" && (
+              <div className="mb-4">
+                <Timer
+                  deadline={view.phaseDeadline}
+                  serverNow={view.serverNow}
+                  total={getQuizslopPhaseTimerTotal(phase)}
+                  disabled={view.timersDisabled && view.phaseDeadline === null}
+                />
+              </div>
+            )}
+
+          <AnimatePresence>
+            {actionError && (
+              <motion.div
+                key="error"
+                className="mb-3"
+                variants={collapseExpand}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <ErrorBanner error={actionError} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="wait">
             <motion.div
-              key="error"
-              className="mx-auto mt-4 w-full max-w-6xl px-4 sm:px-6 lg:px-8"
-              variants={collapseExpand}
+              key={`${phase}:${view.currentRound}:${view.revealOrdinal}`}
+              variants={phaseTransition}
               initial="hidden"
               animate="visible"
               exit="exit"
             >
-              <ErrorBanner error={actionError} />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-        <QuizslopExamControllerContent
-          view={view}
-          busyAction={busyAction}
-          actions={{
-            start: () => void handleHostAction("start"),
-            removePlayer: (playerId) => void handleRemovePlayer(playerId),
-            submitScratch: (selectedIndex) => void handleAnswer("scratch", selectedIndex),
-            submitProxyAnswer: (selectedIndex) => void handleAnswer("proxy", selectedIndex),
-            submitGroupAnswer: (selectedIndex) => void handleAnswer("group", selectedIndex),
-            submitDefense: (assignmentId, text) => void handleDefense(assignmentId, text),
-            castSuspensionVote: (targetPlayerId) => void handleSuspensionVote(targetPlayerId),
-            castFinalAccusation: (targetPlayerId) => void handleAccusation(targetPlayerId),
-          }}
-        />
-      </main>
-
-      {view.me.isHost ? (
-        <aside
-          className="fixed inset-x-0 bottom-0 z-30 border-t px-4 py-3 backdrop-blur-md sm:px-6 lg:left-auto lg:right-5 lg:bottom-5 lg:w-72 lg:border"
-          style={{
-            borderColor: "var(--qs-edge-strong)",
-            background: "color-mix(in srgb, var(--qs-bg) 94%, transparent)",
-          }}
-        >
-          <p
-            className="font-mono text-[9px] font-black uppercase tracking-[0.2em]"
-            style={{ color: "var(--qs-ink-dim)" }}
-          >
-            Proctor controls
-          </p>
-          <div className="mt-2 flex gap-2 lg:grid lg:grid-cols-2">
-            {view.phase === "LOBBY_SETUP" ? (
-              <RoomInviteButton roomCode={view.roomCode} tone="quiz" className="min-w-0 flex-1" />
-            ) : null}
-            <Link
-              href={`/stage/${view.roomCode}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-w-0 flex-1 border px-3 py-2 text-center font-mono text-[9px] font-black uppercase tracking-wider"
-              style={{ borderColor: "var(--qs-marquee)", color: "var(--qs-marquee)" }}
-            >
-              Shared stage
-            </Link>
-            {showHostAdvance ? (
-              <button
-                type="button"
-                disabled={busyAction !== null}
-                onClick={() => void handleHostAction("advance")}
-                className="min-w-0 flex-1 cursor-pointer border px-3 py-2 font-mono text-[9px] font-black uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-40 lg:col-span-2"
-                style={{
-                  borderColor: "var(--qs-punch)",
-                  background: "var(--qs-punch)",
-                  color: "var(--qs-accent-ink)",
+              <QuizslopControllerPhaseContent
+                view={view}
+                isHost={isHost}
+                busyAction={busyAction}
+                topicTakenNotice={topicTakenNotice}
+                disputeNotice={disputeNotice}
+                actions={{
+                  chooseTopic: (catalogTopicId) => void handleChooseTopic(catalogTopicId),
+                  castHouseVote: (topicId) => void handleHouseVote(topicId),
+                  submitCall: (targetPlayerId) => void handleSubmitCall(targetPlayerId),
+                  lockAnswer: (selectedIndex) => void handleLockAnswer(selectedIndex),
+                  initiateDispute: (questionId, reason) =>
+                    void handleInitiateDispute(questionId, reason),
+                  castDisputeVote: (disputeId, choice) => void handleDisputeVote(disputeId, choice),
+                  start: () => void handleHostAction("start"),
                 }}
+              />
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Host tools: a playing host opens the shared stage in its own tab. */}
+          {isHost && (
+            <div
+              className="mt-6 flex flex-col gap-2 rounded-2xl border p-3"
+              style={{ borderColor: "var(--qs-edge)", background: "var(--qs-surface)" }}
+            >
+              <p
+                className="font-mono text-xs font-bold uppercase tracking-[0.18em]"
+                style={{ color: "var(--qs-ink-dim)" }}
               >
-                {busyAction === "advance"
-                  ? "Processing..."
-                  : getQuizslopHostAdvanceLabel(view.phase)}
-              </button>
-            ) : null}
+                Host tools
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {phase === "LOBBY_SETUP" ? (
+                  <RoomInviteButton
+                    roomCode={view.roomCode}
+                    tone="quiz"
+                    className="min-w-40 flex-1"
+                  />
+                ) : null}
+                <Link
+                  href={`/stage/${view.roomCode}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider"
+                  style={{ borderColor: "var(--qs-signal)", color: "var(--qs-signal)" }}
+                >
+                  Open stage
+                </Link>
+                {showHostAdvance && (
+                  <button
+                    type="button"
+                    disabled={busyAction !== null}
+                    onClick={() => void handleHostAction("advance")}
+                    className="cursor-pointer rounded-xl px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ background: "var(--qs-signal)", color: "var(--qs-accent-ink)" }}
+                  >
+                    {busyAction === "host:advance"
+                      ? "Working..."
+                      : getQuizslopAdvanceLabel(
+                          phase,
+                          view.revealOrdinal,
+                          view.revealTotal,
+                          view.currentRound,
+                          view.totalRounds,
+                        )}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5">
+            <VoiceLineBanner voiceLine={view.voiceLine} />
           </div>
-        </aside>
-      ) : null}
-    </div>
+
+          {view.scoreboard.length > 0 && phase === "ROUND_RESULTS" && (
+            <div className="mt-4">
+              <ScoreboardStrip scoreboard={view.scoreboard} highlightPlayerId={view.me.playerId} />
+            </div>
+          )}
+
+          {view.me.isParticipant &&
+            phase !== "ROUND_RESULTS" &&
+            phase !== "FINAL_RESULTS" &&
+            phase !== "ABANDONED" && (
+              <p
+                className="mt-4 text-center font-mono text-xs tabular-nums"
+                style={{ color: "var(--qs-ink-dim)" }}
+              >
+                {view.me.name ?? "You"} · {view.me.total} pts · quiz {view.me.quizSubtotal} · calls{" "}
+                {formatSignedPoints(view.me.callSubtotal)}
+              </p>
+            )}
+        </main>
+      </div>
+    </MotionConfig>
   );
 }

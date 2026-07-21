@@ -31,7 +31,7 @@ describe("QuizSlop trusted evidence adapter", () => {
   it("builds a complete preflight request with all 25 distinct four-tier banks", () => {
     const config = resolveQuizSlopContentConfig({
       mode: "AI",
-      generatorModelId: "google/gemini-3.1-flash-lite",
+      generatorModelId: "google/gemini-3.5-flash-lite",
     });
     if (config.mode !== "AI") throw new Error("expected AI config");
     const result = buildReviewedFreshPackRequest({

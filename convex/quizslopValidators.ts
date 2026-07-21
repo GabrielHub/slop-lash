@@ -41,20 +41,80 @@ export const quizslopComedyDeviceValidator = v.union(
 
 export const quizslopPhaseValidator = v.union(
   v.literal("LOBBY_SETUP"),
-  v.literal("SECTION_INTRO"),
-  v.literal("SCRATCH"),
-  v.literal("PROXY_ANSWER"),
-  v.literal("ORAL_DEFENSE"),
-  v.literal("SECTION_RESULTS"),
-  v.literal("PROCTOR_REVIEW_VOTE"),
-  v.literal("PROCTOR_REVIEW_RESULT"),
-  v.literal("FINAL_ACCUSATION"),
+  v.literal("HOUSE_VOTE"),
+  v.literal("HOUSE_VOTE_REVEAL"),
+  v.literal("TOPIC_REVEAL"),
+  v.literal("SLOP_CALL"),
+  v.literal("SLOP_CALL_REVEAL"),
+  v.literal("ANSWER"),
+  v.literal("QUESTION_REVEAL"),
+  v.literal("DISPUTE_VOTE"),
+  v.literal("ROUND_RESULTS"),
+  v.literal("CONTINUITY_GRACE"),
   v.literal("FINAL_RESULTS"),
+  v.literal("ABANDONED"),
 );
 
-export const quizslopRoleValidator = v.union(v.literal("CREW"), v.literal("SABOTEUR"));
+export const quizslopRoundKindValidator = v.union(
+  v.literal("WARM_UP"),
+  v.literal("HOME_TURF"),
+  v.literal("HOUSE_CHOICE"),
+);
 
-export const quizslopAnswerAuthorityValidator = v.union(v.literal("PROXY"), v.literal("GROUP"));
+export const quizslopTopicSetupStateValidator = v.union(
+  v.literal("NEEDS_TOPIC"),
+  v.literal("NORMALIZING"),
+  v.literal("AWAITING_CONFIRMATION"),
+  v.literal("BUILDING"),
+  v.literal("READY"),
+  v.literal("NEEDS_REVISION"),
+  v.literal("NEEDS_FALLBACK"),
+);
+
+export const quizslopTopicSourceTypeValidator = v.union(v.literal("CUSTOM"), v.literal("CATALOG"));
+
+export const quizslopDeckRoleValidator = v.union(
+  v.literal("WARM_UP"),
+  v.literal("HOME_TURF"),
+  v.literal("FINALIST"),
+);
+
+export const quizslopQuestionRulingValidator = v.union(
+  v.literal("UNCHALLENGED_VALID"),
+  v.literal("UPHELD"),
+  v.literal("PLAYER_VOIDED"),
+  v.literal("SYSTEM_VOID"),
+);
+
+export const quizslopDisputeReasonValidator = v.union(
+  v.literal("WRONG_ANSWER_KEY"),
+  v.literal("MULTIPLE_DEFENSIBLE_ANSWERS"),
+  v.literal("SOURCE_DOES_NOT_SUPPORT"),
+);
+
+export const quizslopDisputeVoteChoiceValidator = v.union(v.literal("UPHOLD"), v.literal("VOID"));
+
+export const quizslopCallOutcomeValidator = v.union(
+  v.literal("WON"),
+  v.literal("LOST"),
+  v.literal("REFUNDED"),
+);
+
+export const quizslopOutcomeValidator = v.union(
+  v.literal("IN_PROGRESS"),
+  v.literal("COMPLETED"),
+  v.literal("ABANDONED"),
+);
+
+export const quizslopEligibilityKindValidator = v.union(
+  v.literal("HOUSE_VOTE"),
+  v.literal("CALL"),
+  v.literal("ANSWER"),
+  v.literal("DISPUTE_WINDOW"),
+  v.literal("DISPUTE_VOTE"),
+);
+
+export const quizslopScoreEventKindValidator = v.union(v.literal("QUIZ"), v.literal("CALL"));
 
 export const quizslopContentSourceValidator = v.union(v.literal("CATALOG"), v.literal("AI"));
 
@@ -66,8 +126,6 @@ export const quizslopPackStatusValidator = v.union(
   v.literal("FALLBACK"),
   v.literal("FAILED"),
 );
-
-export const quizslopDefenseKindValidator = v.union(v.literal("CANDIDATE"), v.literal("PROXY"));
 
 /** Provenance for a frozen game-owned question. */
 export const quizslopProvenanceValidator = v.object({

@@ -1,5 +1,6 @@
 import { QUIZSLOP_TOPIC_CATALOG } from "../config/topic-catalog";
-import { SHIPPABLE_COMEDY_RATINGS, type QuizslopCatalogTopic } from "../types";
+import { isShippableCatalogTopic } from "../catalog";
+import type { QuizslopCatalogTopic } from "../types";
 import type { QuizSlopContentConfig } from "./content-config";
 import {
   quizSlopFreshPackRequestSchema,
@@ -29,18 +30,6 @@ type QuizSlopEvidenceResolution =
       kind: "UNAVAILABLE";
       reason: "NOT_FOUND" | "RETIRED" | "NOT_HUMAN_APPROVED" | "INVALID_SNAPSHOT";
     };
-
-function hasCompleteHumanApproval(topic: QuizslopCatalogTopic): boolean {
-  return (
-    topic.review.approved &&
-    topic.review.reviewer !== null &&
-    topic.review.reviewedAt !== null &&
-    topic.review.factualState === "APPROVED" &&
-    topic.review.comedyState === "APPROVED" &&
-    topic.review.comedyRating !== null &&
-    SHIPPABLE_COMEDY_RATINGS.includes(topic.review.comedyRating)
-  );
-}
 
 function adaptQuestion(
   topic: QuizslopCatalogTopic,
@@ -77,7 +66,7 @@ export function resolveReviewedCatalogEvidence(catalogTopicId: string): QuizSlop
   const topic = QUIZSLOP_TOPIC_CATALOG.find((candidate) => candidate.id === catalogTopicId);
   if (!topic) return { kind: "UNAVAILABLE", reason: "NOT_FOUND" };
   if (topic.retired) return { kind: "UNAVAILABLE", reason: "RETIRED" };
-  if (!hasCompleteHumanApproval(topic)) {
+  if (!isShippableCatalogTopic(topic)) {
     return { kind: "UNAVAILABLE", reason: "NOT_HUMAN_APPROVED" };
   }
 

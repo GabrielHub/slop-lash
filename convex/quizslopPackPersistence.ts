@@ -81,18 +81,23 @@ async function materializePack(
   ctx: MutationCtx,
   gameId: Id<"games">,
   pack: QuizSlopFrozenPack,
+  now: number,
 ): Promise<void> {
   await Promise.all(
     pack.banks.map(async (bank) => {
       const topicId = await ctx.db.insert("quizSlopTopics", {
         gameId,
+        sourceType: "CATALOG",
         catalogTopicId: bank.topic.id,
         packVersion: bank.topic.packVersion,
+        revision: 0,
         label: bank.topic.label,
         scope: bank.topic.scope,
         category: bank.topic.category,
         exclusions: [...bank.topic.exclusions],
         canonicalKey: bank.topic.canonicalKey,
+        setupState: "READY",
+        updatedAt: now,
       });
       await Promise.all(
         bank.questions.map(async (question) => {
@@ -142,7 +147,7 @@ export async function persistQuizSlopPack(
   args: { game: Doc<"games">; pack: QuizSlopFrozenPack; now: number },
 ): Promise<void> {
   await Promise.all([
-    materializePack(ctx, args.game._id, args.pack),
+    materializePack(ctx, args.game._id, args.pack, args.now),
     addPackUsage(ctx, args.game, args.pack.usage, args.now),
   ]);
 }

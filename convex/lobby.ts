@@ -16,6 +16,8 @@ import { WRITING_DURATION_SECONDS } from "../src/games/sloplash/game-constants";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { minPlayersByGameType } from "./gameLimits";
 import { requireContinuingPlayers } from "./gamePhase";
+import { loadQuizslopState, loadQuizslopTopicForOwner } from "./quizslopData";
+import { deleteMaterializedTopic } from "./quizslopMaterialization";
 
 const MAX_LOBBY_PLAYERS = 16;
 const MAX_PLAYER_SESSIONS = 8;
@@ -282,6 +284,22 @@ export const kickHuman = mutation({
 
     await deletePlayerSessions(ctx, authorized.game._id, target._id);
     if (authorized.game.status === "LOBBY") {
+      if (authorized.game.gameType === "QUIZSLOP") {
+        const [state, topic] = await Promise.all([
+          loadQuizslopState(ctx, authorized.game._id),
+          loadQuizslopTopicForOwner(ctx, authorized.game._id, target._id),
+        ]);
+        if (topic) {
+          if (state?.contentSource === "AI") {
+            await ctx.db.patch("quizSlopTopics", topic._id, {
+              ownerPlayerId: undefined,
+              updatedAt: Date.now(),
+            });
+          } else {
+            await deleteMaterializedTopic(ctx, topic);
+          }
+        }
+      }
       await ctx.db.delete("players", target._id);
     } else {
       // Preserve historical response/vote authors for results and recaps while

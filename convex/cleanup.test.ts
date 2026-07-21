@@ -12,15 +12,20 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import {
   QUIZSLOP_HOST_SECRET,
-  castFinalAccusationAs,
-  castSuspensionVoteAs,
+  advanceToPhase,
+  castDisputeVoteAs,
+  castHouseVoteAs,
+  chooseDistinctTopics,
   createPresenceController,
   createQuizslopRoom,
-  getParticipants,
+  getCurrentRound,
   hostAdvance,
+  initiateDisputeAs,
+  lockAnswerAs,
   playerIdOf,
-  playSectionToResults,
+  playStandardRound,
   startQuizslop,
+  submitCallAs,
 } from "./quizslopTestKit";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -149,7 +154,7 @@ async function seedGameWithDependents(
     });
     await ctx.db.insert("gameModelUsage", {
       gameId,
-      modelId: "google/gemini-3.1-flash-lite",
+      modelId: "google/gemini-3.5-flash-lite",
       inputTokens: 1,
       outputTokens: 1,
       costUsd: 0.001,
@@ -500,44 +505,44 @@ describe("Convex scheduled cleanup", () => {
     vi.setSystemTime(new Date("2026-07-15T20:00:00.000Z"));
     vi.stubEnv("HOST_SECRET", QUIZSLOP_HOST_SECRET);
     const backend = createTestBackend();
-    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea", "Cody"] });
+    const room = await createQuizslopRoom(backend, { joinerNames: ["Bea"] });
     const presence = createPresenceController(backend);
     const guestB = room.guests[0]!;
+    await chooseDistinctTopics(backend, room.players);
     await presence.heartbeatAll(room.players);
     await startQuizslop(backend, room.host);
     const gameId = room.host.gameId;
 
-    // Seed direct answers, oral defenses, the review ballot, one GROUP answer,
-    // and final accusations so every v2-owned table has rows before cleanup.
-    await playSectionToResults(backend, room.host, room.players, {
-      proxyCorrect: (session) => session !== room.host,
-      submitDefenses: true,
-    });
+    // Warm-up with a call and a settled dispute so every mode table gains rows.
+    await advanceToPhase(backend, room.host, "SLOP_CALL");
+    await submitCallAs(backend, room.host, playerIdOf(guestB));
+    await advanceToPhase(backend, room.host, "ANSWER");
+    await lockAnswerAs(backend, room.host, true);
+    await lockAnswerAs(backend, guestB, false);
+    await advanceToPhase(backend, room.host, "QUESTION_REVEAL");
+    const warmUpRound = await getCurrentRound(backend, gameId);
+    const challenged = warmUpRound.revealQuestionIds?.[0];
+    if (!challenged) throw new Error("Expected a revealed warm-up question");
+    const opened = await initiateDisputeAs(backend, guestB, challenged);
+    if (opened.kind !== "OPENED") throw new Error("Expected an opened dispute");
     await hostAdvance(backend, room.host);
-    await playSectionToResults(backend, room.host, room.players);
-    await hostAdvance(backend, room.host);
-    await playSectionToResults(backend, room.host, room.players);
-    expect(await hostAdvance(backend, room.host)).toBe("PROCTOR_REVIEW_VOTE");
-    await castSuspensionVoteAs(backend, room.host, playerIdOf(guestB));
-    await castSuspensionVoteAs(backend, room.guests[1]!, playerIdOf(guestB));
-    await castSuspensionVoteAs(backend, guestB, null);
-    expect(await hostAdvance(backend, room.host)).toBe("PROCTOR_REVIEW_RESULT");
-    await hostAdvance(backend, room.host);
-    await playSectionToResults(backend, room.host, room.players);
-    await hostAdvance(backend, room.host);
-    await playSectionToResults(backend, room.host, room.players);
-    await hostAdvance(backend, room.host);
-    await playSectionToResults(backend, room.host, room.players);
-    expect(await hostAdvance(backend, room.host)).toBe("FINAL_ACCUSATION");
-    const firstParticipant = (await getParticipants(backend, gameId))[0];
-    if (!firstParticipant) throw new Error("Expected a frozen participant");
-    for (const player of room.players) {
-      await castFinalAccusationAs(backend, player, firstParticipant.playerId);
-    }
+    await castDisputeVoteAs(backend, room.host, opened.disputeId, "UPHOLD");
+    await castDisputeVoteAs(backend, guestB, opened.disputeId, "UPHOLD");
+
+    // Home Turf rounds, a house vote, and the finale reach FINAL_RESULTS.
+    await playStandardRound(backend, room.host, room.players);
+    await playStandardRound(backend, room.host, room.players);
+    expect(await hostAdvance(backend, room.host)).toBe("HOUSE_VOTE");
+    const finale = await getCurrentRound(backend, gameId);
+    const finalists = finale.finalistTopicIds ?? [];
+    await castHouseVoteAs(backend, room.host, finalists[0]!);
+    await castHouseVoteAs(backend, guestB, finalists[0]!);
+    await playStandardRound(backend, room.host, room.players);
     expect(await hostAdvance(backend, room.host)).toBe("FINAL_RESULTS");
 
     // Age the finished room past the transient-final retention cutoff.
-    for (const player of room.players) await presence.disconnect(player);
+    await presence.disconnect(room.host);
+    await presence.disconnect(guestB);
     await backend.run(async (ctx) => {
       await ctx.db.patch("games", gameId, { updatedAt: 1_000, finalizedAt: 1_000 });
       const sessions = await ctx.db
@@ -586,24 +591,24 @@ describe("Convex scheduled cleanup", () => {
           rounds: (
             await ctx.db
               .query("quizSlopRounds")
-              .withIndex("by_gameId_and_sectionIndex", (index) => index.eq("gameId", gameId))
+              .withIndex("by_gameId_and_deckOrdinal", (index) => index.eq("gameId", gameId))
               .take(take)
           ).length,
-          groupAnswers: (
+          eligibility: (
             await ctx.db
-              .query("quizSlopGroupAnswers")
+              .query("quizSlopEligibility")
               .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
               .take(take)
           ).length,
-          defenses: (
+          houseVotes: (
             await ctx.db
-              .query("quizSlopDefenses")
+              .query("quizSlopHouseVotes")
               .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
               .take(take)
           ).length,
-          suspensionVotes: (
+          calls: (
             await ctx.db
-              .query("quizSlopSuspensionVotes")
+              .query("quizSlopCalls")
               .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
               .take(take)
           ).length,
@@ -613,10 +618,22 @@ describe("Convex scheduled cleanup", () => {
               .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
               .take(take)
           ).length,
-          accusations: (
+          disputes: (
             await ctx.db
-              .query("quizSlopAccusations")
+              .query("quizSlopDisputes")
               .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
+              .take(take)
+          ).length,
+          disputeVotes: (
+            await ctx.db
+              .query("quizSlopDisputeVotes")
+              .withIndex("by_gameId", (index) => index.eq("gameId", gameId))
+              .take(take)
+          ).length,
+          scoreEvents: (
+            await ctx.db
+              .query("quizSlopScoreEvents")
+              .withIndex("by_gameId_and_key", (index) => index.eq("gameId", gameId))
               .take(take)
           ).length,
         };

@@ -73,12 +73,12 @@ export const GAME_TYPE_OPTIONS_BY_ID = {
   },
   QUIZSLOP: {
     displayName: "QuizSlop",
-    description: "A cooperative standardized test with one deeply unhelpful classmate",
+    description: "Adaptive party trivia: know your niche, predict your friends, share the reveal",
     supportsNarrator: false,
     supportsAiPlayers: false,
     timerToggle: {
       label: "Tutorial Mode",
-      description: "Explains each step and waits for the host before moving on",
+      description: "Explains each beat and waits for the host throughout the game",
     },
     hostPlaysDescription: {
       PLAYER: "Host answers here and opens the shared stage in a separate tab",

@@ -5,230 +5,279 @@ import {
   listBoundaryActivePlayerIds,
   listGamePlayers,
   listQuestionsForTopic,
-  listQuizslopParticipants,
   listQuizslopTopics,
-  loadQuizslopRoundBySection,
 } from "./quizslopData";
-import { assertFrozenQuestionIntegrity } from "./quizslopIntegrity";
-import { transitionQuizslopPhase, type QuizslopEngineBundle } from "./quizslopLifecycle";
 import { materializeCatalogTopic } from "./quizslopMaterialization";
+import { transitionQuizslopPhase, type QuizslopEngineBundle } from "./quizslopLifecycle";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
-import { proxySeatForCandidate, topicIndexForAssignment } from "../src/games/quizslop/cooperative";
-import { QUIZSLOP_TOPIC_CATALOG } from "../src/games/quizslop/config/topic-catalog";
-import { INITIAL_TIER } from "../src/games/quizslop/difficulty";
+import { availableCatalogTopics } from "../src/games/quizslop/catalog";
 import {
+  CALL_SLOP_TOKENS_PER_GAME,
+  EXTRA_ROUNDS_BEYOND_HOME_TURF,
+  FINAL_QUIZ_CORRECT_POINTS,
+  FINAL_SLATE_SIZE,
   MAX_PLAYERS,
   MIN_PLAYERS,
-  proctorReviewAfterSection,
-  SECTION_INTRO_SECONDS,
-  sectionsForPlayerCount,
+  QUESTIONS_PER_PACK,
+  QUIZ_CORRECT_POINTS,
 } from "../src/games/quizslop/game-constants";
+import { INITIAL_TIER } from "../src/games/quizslop/difficulty";
+import { orderHomeTopics, selectFinalSlate, selectWarmUpTopic } from "../src/games/quizslop/deck";
 import { QUIZSLOP_TIERS } from "../src/games/quizslop/types";
 
 const PLAYABLE_PACK_STATUSES = new Set(["CATALOG_READY", "READY", "FALLBACK"]);
 
-function randomSeat(count: number): number {
-  // Convex seeds Math.random inside mutations so retries stay deterministic.
-  return Math.floor(Math.random() * count);
-}
-
-function catalogTopicsForPlay() {
-  return QUIZSLOP_TOPIC_CATALOG.filter(
-    (topic) => !topic.retired && topic.review.approved && topic.review.factualState === "APPROVED",
-  );
-}
-
-async function ensureCatalogPack(ctx: MutationCtx, bundle: QuizslopEngineBundle): Promise<void> {
-  const existing = await listQuizslopTopics(ctx, bundle.game._id);
-  if (existing.length > 0) return;
-  const catalog = catalogTopicsForPlay();
-  if (catalog.length < MIN_PLAYERS) {
-    throw new ConvexError("The reviewed QuizSlop catalog is not large enough to start");
+async function requireCompletePack(ctx: MutationCtx, topic: Doc<"quizSlopTopics">): Promise<void> {
+  const questions = await listQuestionsForTopic(ctx, topic._id);
+  const tiers = new Set(questions.map((question) => question.tier));
+  if (
+    questions.length !== QUESTIONS_PER_PACK ||
+    tiers.size !== QUIZSLOP_TIERS.length ||
+    QUIZSLOP_TIERS.some((tier) => !tiers.has(tier))
+  ) {
+    throw new ConvexError(`${topic.label}'s question pack is incomplete`);
   }
-  await Promise.all(catalog.map((topic) => materializeCatalogTopic(ctx, bundle.game._id, topic)));
 }
 
-async function validateFrozenPack(
+async function ensureEnoughFrozenTopics(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
-  requiredTopicCount: number,
-): Promise<Doc<"quizSlopTopics">[]> {
-  const topics = await listQuizslopTopics(ctx, bundle.game._id);
-  if (topics.length < requiredTopicCount) {
-    throw new ConvexError(
-      `The frozen question pack needs ${requiredTopicCount} unique topics for this exam`,
-    );
-  }
-  if (new Set(topics.map((topic) => topic.canonicalKey)).size !== topics.length) {
-    throw new ConvexError("The frozen question pack contains duplicate topics");
-  }
-  await Promise.all(
-    topics.map(async (topic) => {
-      const questions = await listQuestionsForTopic(ctx, topic._id);
-      const tiers = new Set(questions.map((question) => question.tier));
-      if (
-        questions.length !== QUIZSLOP_TIERS.length ||
-        tiers.size !== QUIZSLOP_TIERS.length ||
-        QUIZSLOP_TIERS.some((tier) => !tiers.has(tier))
-      ) {
-        throw new ConvexError(`${topic.label} must have exactly one question per difficulty tier`);
-      }
-      await Promise.all(
-        questions.map((question) =>
-          assertFrozenQuestionIntegrity(ctx, {
-            gameId: bundle.game._id,
-            topicId: topic._id,
-            question,
-          }),
-        ),
-      );
-    }),
-  );
-  return topics.toSorted(
-    (left, right) => left.label.localeCompare(right.label) || left._id.localeCompare(right._id),
-  );
-}
-
-/** Materializes one section after the previous scratch results have updated tiers. */
-export async function materializeSectionAssignments(
-  ctx: MutationCtx,
-  bundle: QuizslopEngineBundle,
-  sectionIndex: number,
+  required: number,
   now: number,
-): Promise<void> {
-  const round = await loadQuizslopRoundBySection(ctx, bundle.game._id, sectionIndex);
-  if (!round) throw new ConvexError("QuizSlop section is missing");
-  if (round.assignmentsMaterializedAt !== undefined) return;
-  const [participants, topics] = await Promise.all([
-    listQuizslopParticipants(ctx, bundle.game._id),
-    listQuizslopTopics(ctx, bundle.game._id),
-  ]);
-  const readyTopics = topics.toSorted(
-    (left, right) => left.label.localeCompare(right.label) || left._id.localeCompare(right._id),
-  );
-  const roster = participants.toSorted((left, right) => left.seatOrder - right.seatOrder);
-  if (roster.some((participant, seatOrder) => participant.seatOrder !== seatOrder)) {
-    throw new ConvexError("The frozen QuizSlop roster has invalid seat ordering");
-  }
-  if (readyTopics.length < roster.length) {
-    throw new ConvexError("Not enough frozen topics remain for unique section assignments");
+): Promise<Doc<"quizSlopTopics">[]> {
+  let topics = await listQuizslopTopics(ctx, bundle.game._id);
+  if (topics.length >= required) return topics;
+  if (bundle.state.contentSource !== "CATALOG") {
+    throw new ConvexError("The frozen QuizSlop pack does not contain enough topic banks");
   }
 
-  const assignmentSpecs = await Promise.all(
-    roster.map(async (candidate) => {
-      const topic =
-        readyTopics[
-          topicIndexForAssignment(
-            sectionIndex,
-            candidate.seatOrder,
-            roster.length,
-            readyTopics.length,
-          )
-        ];
-      if (!topic) throw new ConvexError("Topic rotation failed");
-      const tierQuestions = (await listQuestionsForTopic(ctx, topic._id)).filter(
-        (question) => question.tier === candidate.hiddenTier,
-      );
-      const question =
-        tierQuestions[(sectionIndex + candidate.seatOrder) % Math.max(1, tierQuestions.length)];
-      if (!question)
-        throw new ConvexError(`${topic.label} has no ${candidate.hiddenTier} question`);
-      const proxySeat = proxySeatForCandidate(candidate.seatOrder, sectionIndex, roster.length);
-      const proxy = roster[proxySeat];
-      if (!proxy) throw new ConvexError("Proxy rotation failed");
-      const groupOwnsAnswer =
-        bundle.state.suspensionAppliedSection === sectionIndex &&
-        bundle.state.suspendedPlayerId === proxy.playerId;
-      return { candidate, groupOwnsAnswer, proxy, question, topic };
-    }),
+  const existingKeys = new Set(topics.map((topic) => topic.canonicalKey));
+  const existingCatalogIds = new Set(
+    topics.flatMap((topic) => (topic.catalogTopicId ? [topic.catalogTopicId] : [])),
   );
+  const candidates = availableCatalogTopics({
+    canonicalKeys: existingKeys,
+    catalogTopicIds: existingCatalogIds,
+  });
+  const needed = required - topics.length;
+  if (candidates.length < needed) {
+    throw new ConvexError("Not enough reviewed catalog topics remain to build the deck");
+  }
   await Promise.all(
-    assignmentSpecs.map(({ candidate, groupOwnsAnswer, proxy, question, topic }) =>
-      ctx.db.insert("quizSlopAssignments", {
-        gameId: bundle.game._id,
-        roundId: round._id,
-        candidatePlayerId: candidate.playerId,
-        proxyPlayerId: proxy.playerId,
-        answerAuthority: groupOwnsAnswer ? "GROUP" : "PROXY",
-        topicId: topic._id,
-        questionId: question._id,
-        tierAtAssignment: candidate.hiddenTier,
+    candidates.slice(0, needed).map((topic) =>
+      materializeCatalogTopic(ctx, bundle.game._id, topic, {
+        setupState: "READY",
+        now,
       }),
     ),
   );
-  await ctx.db.patch("quizSlopRounds", round._id, { assignmentsMaterializedAt: now });
+  topics = await listQuizslopTopics(ctx, bundle.game._id);
+  return topics;
 }
 
-/** Freezes the roster, permanent role, content pack, sections, and first assignments. */
+async function freezeTopicRoles(
+  ctx: MutationCtx,
+  bundle: QuizslopEngineBundle,
+  players: readonly Doc<"players">[],
+  now: number,
+) {
+  const playerIds = new Set(players.map((player) => player._id));
+  const existingTopics = await listQuizslopTopics(ctx, bundle.game._id);
+  const unavailableOwnedTopics = existingTopics.filter(
+    (topic) => topic.ownerPlayerId !== undefined && !playerIds.has(topic.ownerPlayerId),
+  ).length;
+  const requiredTopics = players.length + 1 + FINAL_SLATE_SIZE + unavailableOwnedTopics;
+  const topics = await ensureEnoughFrozenTopics(ctx, bundle, requiredTopics, now);
+  if (new Set(topics.map((topic) => topic.canonicalKey)).size !== topics.length) {
+    throw new ConvexError("The frozen QuizSlop pack contains duplicate topics");
+  }
+  await Promise.all(topics.map((topic) => requireCompletePack(ctx, topic)));
+
+  const ownedTopics = topics.filter((topic) => topic.ownerPlayerId !== undefined);
+  const claimedByPlayer = new Map(
+    ownedTopics.map((topic) => [topic.ownerPlayerId!, topic] as const),
+  );
+  if (claimedByPlayer.size !== ownedTopics.length) {
+    throw new ConvexError("A player has more than one confirmed Home Topic");
+  }
+
+  const homeRows: Array<{ player: Doc<"players">; topic: Doc<"quizSlopTopics"> }> = [];
+  for (const player of players) {
+    const topic = claimedByPlayer.get(player._id);
+    if (!topic || topic.setupState !== "READY") {
+      throw new ConvexError(`${player.name} does not have a confirmed topic yet`);
+    }
+    homeRows.push({ player, topic });
+  }
+
+  const homeIds = new Set(homeRows.map((entry) => entry.topic._id));
+  const deckCandidates = topics.filter(
+    (topic) => !homeIds.has(topic._id) && topic.ownerPlayerId === undefined,
+  );
+  const ranked = deckCandidates.map((topic) => ({
+    topicId: topic._id,
+    category: topic.category,
+    rank: Math.random(),
+  }));
+  const warmUp = selectWarmUpTopic(ranked);
+  if (!warmUp) throw new ConvexError("Failed to select a warm-up topic");
+  const finalists = selectFinalSlate(ranked.filter((topic) => topic.topicId !== warmUp.topicId));
+  if (finalists.length !== FINAL_SLATE_SIZE) {
+    throw new ConvexError("Failed to select the final House Choice slate");
+  }
+
+  const topicById = new Map(topics.map((topic) => [topic._id, topic]));
+  const warmUpTopic = topicById.get(warmUp.topicId);
+  if (!warmUpTopic) throw new ConvexError("Warm-up topic disappeared from the frozen pack");
+  const finalistRows = finalists
+    .map((entry) => {
+      const topic = topicById.get(entry.topicId);
+      if (!topic) throw new ConvexError("Finalist topic disappeared from the frozen pack");
+      return { entry, topic, displayRank: Math.random() };
+    })
+    .toSorted(
+      (left, right) =>
+        left.displayRank - right.displayRank || left.topic._id.localeCompare(right.topic._id),
+    );
+
+  await Promise.all([
+    ctx.db.patch("quizSlopTopics", warmUpTopic._id, {
+      deckRole: "WARM_UP",
+      deckOrdinal: 0,
+      selectionRank: warmUp.rank,
+      updatedAt: now,
+    }),
+    ...finalistRows.map(({ entry, topic }, index) =>
+      ctx.db.patch("quizSlopTopics", topic._id, {
+        deckRole: "FINALIST",
+        selectionRank: entry.rank,
+        tieBreakRank: Math.random(),
+        slateDisplayOrder: index,
+        updatedAt: now,
+      }),
+    ),
+  ]);
+
+  return {
+    homeRows,
+    warmUpTopic,
+    finalistTopicIds: finalistRows.map(({ topic }) => topic._id),
+  };
+}
+
+/** Freezes the roster, fresh pack, deck, and initial participant state. */
 export async function startQuizslopGame(
   ctx: MutationCtx,
   bundle: QuizslopEngineBundle,
   now: number,
 ): Promise<void> {
-  if (bundle.game.status !== "LOBBY" || bundle.state.phase !== "LOBBY_SETUP") {
+  const { game, state } = bundle;
+  if (game.status !== "LOBBY" || state.phase !== "LOBBY_SETUP") {
     throw new ConvexError("QuizSlop game already started");
   }
-  if (!PLAYABLE_PACK_STATUSES.has(bundle.state.packStatus)) {
+  if (!PLAYABLE_PACK_STATUSES.has(state.packStatus)) {
     throw new ConvexError("The QuizSlop question pack is not ready");
   }
+
   const [players, boundaryActive] = await Promise.all([
-    listGamePlayers(ctx, bundle.game._id),
-    listBoundaryActivePlayerIds(ctx, bundle.game._id),
+    listGamePlayers(ctx, game._id),
+    listBoundaryActivePlayerIds(ctx, game._id),
   ]);
-  const eligible = players
+  const startEligible = players
     .filter(isActiveCompetitor)
     .filter((player) => player.type === "HUMAN" && boundaryActive.has(player._id))
     .toSorted((left, right) => left.joinedAt - right.joinedAt || left._id.localeCompare(right._id));
-  if (eligible.length < MIN_PLAYERS || eligible.length > MAX_PLAYERS) {
+  if (startEligible.length < MIN_PLAYERS || startEligible.length > MAX_PLAYERS) {
     throw new ConvexError(
       `QuizSlop needs ${MIN_PLAYERS}-${MAX_PLAYERS} connected players to start`,
     );
   }
 
-  if (bundle.state.contentSource === "CATALOG" || bundle.state.packStatus === "FALLBACK") {
-    await ensureCatalogPack(ctx, bundle);
-  }
-  const sectionCount = sectionsForPlayerCount(eligible.length);
-  await validateFrozenPack(ctx, bundle, eligible.length * sectionCount);
-  const saboteurSeat = randomSeat(eligible.length);
+  const { homeRows, warmUpTopic, finalistTopicIds } = await freezeTopicRoles(
+    ctx,
+    bundle,
+    startEligible,
+    now,
+  );
+  const homeRanked = homeRows.map((entry) => ({
+    topicId: entry.topic._id,
+    category: entry.topic.category,
+    rank: Math.random(),
+  }));
+  const orderedHome = orderHomeTopics(homeRanked);
+  const homeByTopicId = new Map(homeRows.map((entry) => [entry.topic._id, entry]));
+  const orderedHomeRows = orderedHome.map((ranked, index) => {
+    const entry = homeByTopicId.get(ranked.topicId);
+    if (!entry) throw new ConvexError("Home topic ordering lost a topic");
+    return { deckOrdinal: index + 1, entry, rank: ranked.rank };
+  });
+
+  const totalRounds = startEligible.length + EXTRA_ROUNDS_BEYOND_HOME_TURF;
   await Promise.all([
-    ...eligible.map(async (player, seatOrder) => {
+    ctx.db.insert("quizSlopRounds", {
+      gameId: game._id,
+      deckOrdinal: 0,
+      kind: "WARM_UP",
+      topicId: warmUpTopic._id,
+      pointValue: QUIZ_CORRECT_POINTS,
+    }),
+    ...orderedHomeRows.map(async ({ deckOrdinal, entry, rank }) => {
       await Promise.all([
-        ctx.db.insert("quizSlopParticipants", {
-          gameId: bundle.game._id,
-          playerId: player._id,
-          seatOrder,
-          role: seatOrder === saboteurSeat ? "SABOTEUR" : "CREW",
-          hiddenTier: INITIAL_TIER,
+        ctx.db.patch("quizSlopTopics", entry.topic._id, {
+          deckRole: "HOME_TURF",
+          deckOrdinal,
+          selectionRank: rank,
+          updatedAt: now,
         }),
-        player.score === 0 ? Promise.resolve() : ctx.db.patch("players", player._id, { score: 0 }),
+        ctx.db.insert("quizSlopRounds", {
+          gameId: game._id,
+          deckOrdinal,
+          kind: "HOME_TURF",
+          topicId: entry.topic._id,
+          pointValue: QUIZ_CORRECT_POINTS,
+        }),
       ]);
     }),
-    ...Array.from({ length: sectionCount }, (_, sectionIndex) =>
-      ctx.db.insert("quizSlopRounds", { gameId: bundle.game._id, sectionIndex }),
-    ),
+    ctx.db.insert("quizSlopRounds", {
+      gameId: game._id,
+      deckOrdinal: totalRounds - 1,
+      kind: "HOUSE_CHOICE",
+      pointValue: FINAL_QUIZ_CORRECT_POINTS,
+      finalistTopicIds,
+    }),
+    ...startEligible.map(async (player, seatOrder) => {
+      await Promise.all([
+        ctx.db.insert("quizSlopParticipants", {
+          gameId: game._id,
+          playerId: player._id,
+          seatOrder,
+          hiddenTier: INITIAL_TIER,
+          callTokens: CALL_SLOP_TOKENS_PER_GAME,
+          disputeAvailable: true,
+          quizSubtotal: 0,
+          callSubtotal: 0,
+          total: 0,
+          correctAnswers: 0,
+          successfulCalls: 0,
+          incorrectCalls: 0,
+        }),
+        ...(player.score !== 0 ? [ctx.db.patch("players", player._id, { score: 0 })] : []),
+      ]);
+    }),
   ]);
 
-  const statePatch = {
-    sectionCount,
-    reviewAfterSection: proctorReviewAfterSection(sectionCount),
-    rawCorrect: 0,
-    attempted: 0,
-    sabotagePoints: 0,
-  };
-  const gamePatch = { totalRounds: sectionCount, playerCount: eligible.length };
-  await Promise.all([
-    ctx.db.patch("quizSlopState", bundle.state._id, statePatch),
-    ctx.db.patch("games", bundle.game._id, gamePatch),
-  ]);
-  bundle.state = { ...bundle.state, ...statePatch };
-  bundle.game = { ...bundle.game, ...gamePatch };
-  await materializeSectionAssignments(ctx, bundle, 0, now);
+  const gamePatch = { totalRounds, playerCount: startEligible.length };
+  await ctx.db.patch("games", game._id, gamePatch);
+  bundle.game = { ...game, ...gamePatch };
   await transitionQuizslopPhase(ctx, bundle, {
-    phase: "SECTION_INTRO",
+    phase: "TOPIC_REVEAL",
     now,
-    deadlineSeconds: SECTION_INTRO_SECONDS,
+    // The opening explanation is always host-paced so every room sees the
+    // rules before the first timed action. Later topic reveals use the normal
+    // readable timer in quizslopGameplay.
+    deadlineSeconds: null,
     deckPosition: 0,
     currentRound: 1,
+    roundKind: "WARM_UP",
   });
 }

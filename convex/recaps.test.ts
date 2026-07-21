@@ -54,7 +54,7 @@ async function seedRecapGame(status: "VOTING" | "FINAL_RESULTS" = "FINAL_RESULTS
       name: "Gemini",
       normalizedName: "gemini",
       type: "AI",
-      modelId: "google/gemini-3.1-flash-lite",
+      modelId: "google/gemini-3.5-flash-lite",
       idleRounds: 0,
       score: 100,
       humorRating: 1.4,
@@ -114,7 +114,7 @@ async function seedRecapGame(status: "VOTING" | "FINAL_RESULTS" = "FINAL_RESULTS
     });
     await ctx.db.insert("gameModelUsage", {
       gameId,
-      modelId: "google/gemini-3.1-flash-lite",
+      modelId: "google/gemini-3.5-flash-lite",
       inputTokens: 12,
       outputTokens: 8,
       costUsd: 0.02,
@@ -148,7 +148,7 @@ describe("Convex recaps", () => {
         ],
         modelUsages: [
           {
-            modelId: "google/gemini-3.1-flash-lite",
+            modelId: "google/gemini-3.5-flash-lite",
             inputTokens: 12,
             outputTokens: 8,
             costUsd: 0.02,

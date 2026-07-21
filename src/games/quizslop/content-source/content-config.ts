@@ -1,6 +1,6 @@
 import { getModelByModelId } from "../../../lib/models";
 
-export const QUIZSLOP_AI_PROMPT_VERSION = "quizslop-fresh-pack-v1";
+export const QUIZSLOP_AI_PROMPT_VERSION = "quizslop-fresh-pack-v2";
 export const QUIZSLOP_AI_SCHEMA_VERSION = "quizslop-frozen-pack-v1";
 
 /** Server-owned. Hosts choose only the generator. */

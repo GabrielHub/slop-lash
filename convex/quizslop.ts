@@ -7,41 +7,60 @@ import { requireExpectedPhaseGeneration } from "./gamePhase";
 import {
   getQuizslopParticipant,
   getQuizslopState,
-  listQuizslopParticipants,
-  listRoundAssignments,
-  loadCandidateAssignment,
-  loadProxyAssignment,
-  loadQuizslopRoundBySection,
+  isEligible,
+  listRoundDisputes,
+  listQuizslopTopics,
+  loadAssignmentForPlayer,
+  loadQuizslopRoundByOrdinal,
+  loadQuizslopTopicForOwner,
   requireQuizslopGame,
 } from "./quizslopData";
 import { forceAdvanceQuizslop, settleQuizslopQuorum } from "./quizslopGameplay";
 import { loadQuizslopBundle, type QuizslopEngineBundle } from "./quizslopLifecycle";
 import { startQuizslopGame } from "./quizslopSetup";
-import { quizslopPhaseValidator } from "./quizslopValidators";
+import { deleteMaterializedTopic, materializeCatalogTopic } from "./quizslopMaterialization";
+import {
+  quizslopDisputeReasonValidator,
+  quizslopDisputeVoteChoiceValidator,
+  quizslopPhaseValidator,
+} from "./quizslopValidators";
+import { QUIZSLOP_TOPIC_CATALOG } from "../src/games/quizslop/config/topic-catalog";
+import { isShippableCatalogTopic } from "../src/games/quizslop/catalog";
+import { CHOICES_PER_QUESTION } from "../src/games/quizslop/game-constants";
 import { canHostAdvanceQuizslopPhase } from "../src/games/quizslop/quizslop-phase-policy";
+import { disputesInRulingOrder } from "../src/games/quizslop/disputes";
+
+/**
+ * QuizSlop public mutations. Every gameplay mutation validates capability,
+ * game type, frozen participation where required, the exact mode phase, and
+ * the expected shared phase generation; scheduled deadline work re-validates
+ * the same identifiers and becomes a stale no-op.
+ */
 
 const phaseResultValidator = v.object({ phase: quizslopPhaseValidator });
-const MAX_DEFENSE_LENGTH = 280;
 
-async function requireBundle(ctx: MutationCtx, game: Doc<"games">): Promise<QuizslopEngineBundle> {
+async function requireQuizslopBundle(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+): Promise<QuizslopEngineBundle> {
   requireQuizslopGame(game);
-  return { game, state: await getQuizslopState(ctx, game._id) };
+  const state = await getQuizslopState(ctx, game._id);
+  return { game, state };
 }
 
-function requireOpen(bundle: QuizslopEngineBundle): void {
-  if (bundle.game.finalizedAt !== undefined) throw new ConvexError("This QuizSlop exam has ended");
-}
-
-async function currentRound(ctx: MutationCtx, bundle: QuizslopEngineBundle) {
-  const round = await loadQuizslopRoundBySection(ctx, bundle.game._id, bundle.state.deckPosition);
-  if (!round) throw new ConvexError("QuizSlop section is missing");
-  return round;
-}
-
-function requireChoice(selectedIndex: number): void {
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= 4) {
-    throw new ConvexError("Invalid answer choice");
+function requireOpenGame(bundle: QuizslopEngineBundle): void {
+  if (bundle.game.finalizedAt !== undefined) {
+    throw new ConvexError("This QuizSlop game has ended");
   }
+}
+
+async function loadCurrentRoundOrThrow(
+  ctx: MutationCtx,
+  bundle: QuizslopEngineBundle,
+): Promise<Doc<"quizSlopRounds">> {
+  const round = await loadQuizslopRoundByOrdinal(ctx, bundle.game._id, bundle.state.deckPosition);
+  if (!round) throw new ConvexError("QuizSlop round is missing");
+  return round;
 }
 
 export const start = mutation({
@@ -49,8 +68,9 @@ export const start = mutation({
   returns: v.object({ started: v.boolean(), totalRounds: v.number() }),
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
     if (bundle.game.status !== "LOBBY") {
+      // Idempotent re-submit after a slow network: report the started game.
       return { started: false, totalRounds: bundle.game.totalRounds };
     }
     await startQuizslopGame(ctx, bundle, Date.now());
@@ -58,119 +78,185 @@ export const start = mutation({
   },
 });
 
-export const submitScratch = mutation({
-  args: {
-    capability: v.string(),
-    selectedIndex: v.number(),
-    expectedPhaseGeneration: v.number(),
-  },
-  returns: phaseResultValidator,
+/**
+ * Confirms one reviewed catalog topic as the player's Home Topic. The first
+ * version keeps custom topics disabled, so this is the entire setup surface.
+ * Confirmation atomically claims the topic's canonical key; a lost race
+ * returns TOPIC_TAKEN so the controller can refresh its offers.
+ */
+export const chooseCatalogTopic = mutation({
+  args: { capability: v.string(), catalogTopicId: v.string() },
+  returns: v.union(
+    v.object({ kind: v.literal("CONFIRMED"), topicId: v.id("quizSlopTopics") }),
+    v.object({ kind: v.literal("TOPIC_TAKEN") }),
+  ),
   handler: async (ctx, args) => {
-    requireChoice(args.selectedIndex);
     const authorized = await requirePlayerCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
-    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
-    if (bundle.state.phase !== "SCRATCH") throw new ConvexError("Scratch sheets are closed");
-    const round = await currentRound(ctx, bundle);
-    const assignment = await loadCandidateAssignment(ctx, round._id, authorized.player._id);
-    if (!assignment) throw new ConvexError("You are not a candidate in this section");
-    if (assignment.scratchLockedAt !== undefined) {
-      if (assignment.scratchSelectedIndex === args.selectedIndex) {
-        return { phase: bundle.state.phase };
-      }
-      throw new ConvexError("Your scratch answer is already locked");
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    if (bundle.game.status !== "LOBBY" || bundle.state.phase !== "LOBBY_SETUP") {
+      throw new ConvexError("Topics can only be chosen in the lobby");
     }
-    const now = Date.now();
-    await ctx.db.patch("quizSlopAssignments", assignment._id, {
-      scratchSelectedIndex: args.selectedIndex,
-      scratchLockedAt: now,
-    });
-    const advanced = await settleQuizslopQuorum(ctx, bundle, now);
-    return { phase: advanced ?? bundle.state.phase };
-  },
-});
+    if (authorized.player.type !== "HUMAN" || authorized.player.participationStatus !== "ACTIVE") {
+      throw new ConvexError("Only active players confirm a Home Topic");
+    }
 
-export const submitProxyAnswer = mutation({
-  args: {
-    capability: v.string(),
-    selectedIndex: v.number(),
-    expectedPhaseGeneration: v.number(),
-  },
-  returns: phaseResultValidator,
-  handler: async (ctx, args) => {
-    requireChoice(args.selectedIndex);
-    const authorized = await requirePlayerCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
-    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
-    if (bundle.state.phase !== "PROXY_ANSWER") {
-      throw new ConvexError("Official answer sheets are closed");
-    }
-    const round = await currentRound(ctx, bundle);
-    const assignment = await loadProxyAssignment(ctx, round._id, authorized.player._id);
-    if (!assignment) throw new ConvexError("You have no proxy assignment this section");
-    if (assignment.answerAuthority !== "PROXY") {
-      throw new ConvexError("The proctor suspended you from proxy duty this section");
-    }
-    if (assignment.officialLockedAt !== undefined) {
-      if (assignment.officialSelectedIndex === args.selectedIndex) {
-        return { phase: bundle.state.phase };
-      }
-      throw new ConvexError("Your official answer is already locked");
-    }
-    const now = Date.now();
-    await ctx.db.patch("quizSlopAssignments", assignment._id, {
-      officialSelectedIndex: args.selectedIndex,
-      officialLockedAt: now,
-    });
-    const advanced = await settleQuizslopQuorum(ctx, bundle, now);
-    return { phase: advanced ?? bundle.state.phase };
-  },
-});
-
-/** One private ballot toward the orphaned GROUP answer, in addition to normal proxy duty. */
-export const submitGroupAnswer = mutation({
-  args: {
-    capability: v.string(),
-    selectedIndex: v.number(),
-    expectedPhaseGeneration: v.number(),
-  },
-  returns: phaseResultValidator,
-  handler: async (ctx, args) => {
-    requireChoice(args.selectedIndex);
-    const authorized = await requirePlayerCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
-    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
-    if (bundle.state.phase !== "PROXY_ANSWER") throw new ConvexError("Group ballots are closed");
-    const participant = await getQuizslopParticipant(ctx, bundle.game._id, authorized.player._id);
-    if (!participant) throw new ConvexError("You are not in the frozen roster");
-    if (bundle.state.suspendedPlayerId === authorized.player._id) {
-      throw new ConvexError("The suspended player cannot join the group ballot");
-    }
-    const round = await currentRound(ctx, bundle);
-    const groupAssignment = (await listRoundAssignments(ctx, round._id)).find(
-      (assignment) => assignment.answerAuthority === "GROUP",
+    const topics = await listQuizslopTopics(ctx, bundle.game._id);
+    const frozenTopic = topics.find((topic) => topic.catalogTopicId === args.catalogTopicId);
+    const catalogTopic = QUIZSLOP_TOPIC_CATALOG.find(
+      (topic) => topic.id === args.catalogTopicId && isShippableCatalogTopic(topic),
     );
-    if (!groupAssignment) throw new ConvexError("There is no group answer this section");
+    if (!frozenTopic && (!catalogTopic || bundle.state.contentSource !== "CATALOG")) {
+      throw new ConvexError("Unknown catalog topic");
+    }
+
+    const existing = await loadQuizslopTopicForOwner(ctx, bundle.game._id, authorized.player._id);
+    if (existing?.catalogTopicId === args.catalogTopicId && existing.setupState === "READY") {
+      return { kind: "CONFIRMED" as const, topicId: existing._id };
+    }
+
+    // Atomic canonical-key claim against every other player's confirmed topic.
+    const requestedCanonicalKey = frozenTopic?.canonicalKey ?? catalogTopic?.canonicalKey;
+    const claimedByOther = topics.some(
+      (topic) =>
+        topic.ownerPlayerId !== undefined &&
+        topic.ownerPlayerId !== authorized.player._id &&
+        (topic.catalogTopicId === args.catalogTopicId ||
+          (requestedCanonicalKey !== undefined && topic.canonicalKey === requestedCanonicalKey)),
+    );
+    if (claimedByOther) return { kind: "TOPIC_TAKEN" as const };
+
+    const now = Date.now();
+    if (existing) {
+      if (bundle.state.contentSource === "AI") {
+        await ctx.db.patch("quizSlopTopics", existing._id, {
+          ownerPlayerId: undefined,
+          setupState: "READY",
+          updatedAt: now,
+        });
+      } else {
+        await deleteMaterializedTopic(ctx, existing);
+      }
+    }
+    const topicId = frozenTopic
+      ? frozenTopic._id
+      : await materializeCatalogTopic(ctx, bundle.game._id, catalogTopic!, {
+          ownerPlayerId: authorized.player._id,
+          setupState: "READY",
+          now,
+        });
+    if (frozenTopic) {
+      await ctx.db.patch("quizSlopTopics", frozenTopic._id, {
+        ownerPlayerId: authorized.player._id,
+        setupState: "READY",
+        updatedAt: now,
+      });
+    }
+    await ctx.db.patch("games", bundle.game._id, { updatedAt: now });
+    return { kind: "CONFIRMED" as const, topicId };
+  },
+});
+
+export const castHouseVote = mutation({
+  args: {
+    capability: v.string(),
+    topicId: v.id("quizSlopTopics"),
+    expectedPhaseGeneration: v.number(),
+  },
+  returns: phaseResultValidator,
+  handler: async (ctx, args) => {
+    const authorized = await requirePlayerCapability(ctx, args.capability);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    requireOpenGame(bundle);
+    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
+    if (bundle.state.phase !== "HOUSE_VOTE") {
+      throw new ConvexError("The final topic vote is not open");
+    }
+    const round = await loadCurrentRoundOrThrow(ctx, bundle);
+    if (!(await isEligible(ctx, round._id, "HOUSE_VOTE", authorized.player._id))) {
+      throw new ConvexError("You are not in this vote's roster");
+    }
+    if (!(round.finalistTopicIds ?? []).includes(args.topicId)) {
+      throw new ConvexError("That topic is not on the final slate");
+    }
     const existing = await ctx.db
-      .query("quizSlopGroupAnswers")
-      .withIndex("by_assignmentId_and_voterId", (index) =>
-        index.eq("assignmentId", groupAssignment._id).eq("voterId", authorized.player._id),
+      .query("quizSlopHouseVotes")
+      .withIndex("by_roundId_and_playerId", (index) =>
+        index.eq("roundId", round._id).eq("playerId", authorized.player._id),
       )
       .unique();
     if (existing) {
-      if (existing.selectedIndex === args.selectedIndex) return { phase: bundle.state.phase };
-      throw new ConvexError("Your group ballot is already locked");
+      if (existing.topicId === args.topicId) {
+        return { phase: bundle.state.phase };
+      }
+      throw new ConvexError("Your vote is already locked");
     }
     const now = Date.now();
-    await ctx.db.insert("quizSlopGroupAnswers", {
+    await ctx.db.insert("quizSlopHouseVotes", {
       gameId: bundle.game._id,
       roundId: round._id,
-      assignmentId: groupAssignment._id,
-      voterId: authorized.player._id,
-      selectedIndex: args.selectedIndex,
+      playerId: authorized.player._id,
+      topicId: args.topicId,
+      castAt: now,
+    });
+    const advanced = await settleQuizslopQuorum(ctx, bundle, now);
+    return { phase: advanced ?? bundle.state.phase };
+  },
+});
+
+export const submitCall = mutation({
+  args: {
+    capability: v.string(),
+    /** Null records an explicit hold. */
+    targetPlayerId: v.union(v.id("players"), v.null()),
+    expectedPhaseGeneration: v.number(),
+  },
+  returns: phaseResultValidator,
+  handler: async (ctx, args) => {
+    const authorized = await requirePlayerCapability(ctx, args.capability);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    requireOpenGame(bundle);
+    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
+    if (bundle.state.phase !== "SLOP_CALL") {
+      throw new ConvexError("Call Slop is not open");
+    }
+    const round = await loadCurrentRoundOrThrow(ctx, bundle);
+    if (!(await isEligible(ctx, round._id, "CALL", authorized.player._id))) {
+      throw new ConvexError("You are not in this round's call roster");
+    }
+    const existing = await ctx.db
+      .query("quizSlopCalls")
+      .withIndex("by_roundId_and_callerId", (index) =>
+        index.eq("roundId", round._id).eq("callerId", authorized.player._id),
+      )
+      .unique();
+    if (existing) {
+      if ((existing.targetId ?? null) === args.targetPlayerId) {
+        return { phase: bundle.state.phase };
+      }
+      throw new ConvexError("Your Call Slop choice is already locked");
+    }
+
+    const now = Date.now();
+    if (args.targetPlayerId !== null) {
+      if (args.targetPlayerId === authorized.player._id) {
+        throw new ConvexError("You cannot call yourself");
+      }
+      if (!(await isEligible(ctx, round._id, "CALL", args.targetPlayerId))) {
+        throw new ConvexError("That player is not call-eligible this round");
+      }
+      const participant = await getQuizslopParticipant(ctx, bundle.game._id, authorized.player._id);
+      if (!participant || participant.callTokens < 1) {
+        throw new ConvexError("You have no Call Slop tokens left");
+      }
+      await ctx.db.patch("quizSlopParticipants", participant._id, {
+        callTokens: participant.callTokens - 1,
+      });
+    }
+    await ctx.db.insert("quizSlopCalls", {
+      gameId: bundle.game._id,
+      roundId: round._id,
+      callerId: authorized.player._id,
+      ...(args.targetPlayerId !== null ? { targetId: args.targetPlayerId } : {}),
       lockedAt: now,
     });
     const advanced = await settleQuizslopQuorum(ctx, bundle, now);
@@ -178,144 +264,154 @@ export const submitGroupAnswer = mutation({
   },
 });
 
-export const submitDefense = mutation({
+export const lockAnswer = mutation({
   args: {
     capability: v.string(),
-    assignmentId: v.id("quizSlopAssignments"),
-    text: v.string(),
+    selectedIndex: v.number(),
     expectedPhaseGeneration: v.number(),
   },
   returns: phaseResultValidator,
   handler: async (ctx, args) => {
     const authorized = await requirePlayerCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    requireOpenGame(bundle);
     requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
-    if (bundle.state.phase !== "ORAL_DEFENSE") throw new ConvexError("Oral defense is closed");
-    const text = args.text.trim();
-    if (!text || text.length > MAX_DEFENSE_LENGTH) {
-      throw new ConvexError(`Defense must be 1-${MAX_DEFENSE_LENGTH} characters`);
-    }
-    const round = await currentRound(ctx, bundle);
-    const assignment = await ctx.db.get("quizSlopAssignments", args.assignmentId);
-    if (!assignment || assignment.roundId !== round._id || assignment.officialCorrect !== false) {
-      throw new ConvexError("That assignment does not require an oral defense");
-    }
-    const isCandidate = assignment.candidatePlayerId === authorized.player._id;
-    const isProxy =
-      assignment.answerAuthority === "PROXY" && assignment.proxyPlayerId === authorized.player._id;
-    if (!isCandidate && !isProxy) throw new ConvexError("You are not assigned to this defense");
-    const existing = await ctx.db
-      .query("quizSlopDefenses")
-      .withIndex("by_assignmentId_and_playerId", (index) =>
-        index.eq("assignmentId", assignment._id).eq("playerId", authorized.player._id),
-      )
-      .unique();
-    if (existing) {
-      if (existing.text === text) return { phase: bundle.state.phase };
-      throw new ConvexError("Your oral defense is already on the record");
-    }
-    const now = Date.now();
-    await ctx.db.insert("quizSlopDefenses", {
-      gameId: bundle.game._id,
-      roundId: round._id,
-      assignmentId: assignment._id,
-      playerId: authorized.player._id,
-      kind: isCandidate ? "CANDIDATE" : "PROXY",
-      text,
-      submittedAt: now,
-    });
-    const advanced = await settleQuizslopQuorum(ctx, bundle, now);
-    return { phase: advanced ?? bundle.state.phase };
-  },
-});
-
-export const castSuspensionVote = mutation({
-  args: {
-    capability: v.string(),
-    targetPlayerId: v.union(v.id("players"), v.null()),
-    expectedPhaseGeneration: v.number(),
-  },
-  returns: phaseResultValidator,
-  handler: async (ctx, args) => {
-    const authorized = await requirePlayerCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
-    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
-    if (bundle.state.phase !== "PROCTOR_REVIEW_VOTE") {
-      throw new ConvexError("The Proctor Review ballot is closed");
-    }
-    const participants = await listQuizslopParticipants(ctx, bundle.game._id);
-    if (!participants.some((participant) => participant.playerId === authorized.player._id)) {
-      throw new ConvexError("You are not in the frozen roster");
+    if (bundle.state.phase !== "ANSWER") {
+      throw new ConvexError("The answer phase is not open");
     }
     if (
-      args.targetPlayerId !== null &&
-      !participants.some((participant) => participant.playerId === args.targetPlayerId)
+      !Number.isInteger(args.selectedIndex) ||
+      args.selectedIndex < 0 ||
+      args.selectedIndex >= CHOICES_PER_QUESTION
     ) {
-      throw new ConvexError("That player is not on the exam roster");
+      throw new ConvexError("Invalid answer choice");
     }
-    const existing = await ctx.db
-      .query("quizSlopSuspensionVotes")
-      .withIndex("by_gameId_and_playerId", (index) =>
-        index.eq("gameId", bundle.game._id).eq("playerId", authorized.player._id),
-      )
-      .unique();
-    if (existing) {
-      if ((existing.targetPlayerId ?? null) === args.targetPlayerId) {
+    const round = await loadCurrentRoundOrThrow(ctx, bundle);
+    const assignment = await loadAssignmentForPlayer(ctx, round._id, authorized.player._id);
+    if (!assignment) {
+      throw new ConvexError("You have no question this round");
+    }
+    if (assignment.lockedAt !== undefined) {
+      if (assignment.selectedIndex === args.selectedIndex) {
         return { phase: bundle.state.phase };
       }
-      throw new ConvexError("Your suspension ballot is already locked");
+      throw new ConvexError("Your answer is already locked");
     }
     const now = Date.now();
-    await ctx.db.insert("quizSlopSuspensionVotes", {
-      gameId: bundle.game._id,
-      playerId: authorized.player._id,
-      ...(args.targetPlayerId ? { targetPlayerId: args.targetPlayerId } : {}),
-      castAt: now,
+    await ctx.db.patch("quizSlopAssignments", assignment._id, {
+      selectedIndex: args.selectedIndex,
+      lockedAt: now,
+      timedOut: false,
     });
     const advanced = await settleQuizslopQuorum(ctx, bundle, now);
     return { phase: advanced ?? bundle.state.phase };
   },
 });
 
-export const castFinalAccusation = mutation({
+export const initiateDispute = mutation({
   args: {
     capability: v.string(),
-    targetPlayerId: v.id("players"),
+    questionId: v.id("quizSlopQuestions"),
+    reason: quizslopDisputeReasonValidator,
+    expectedPhaseGeneration: v.number(),
+  },
+  returns: v.union(
+    v.object({ kind: v.literal("OPENED"), disputeId: v.id("quizSlopDisputes") }),
+    v.object({ kind: v.literal("ALREADY_OPEN") }),
+  ),
+  handler: async (ctx, args) => {
+    const authorized = await requirePlayerCapability(ctx, args.capability);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    requireOpenGame(bundle);
+    requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
+    if (bundle.state.phase !== "QUESTION_REVEAL") {
+      throw new ConvexError("Challenges are only available during the shared reveal");
+    }
+    const round = await loadCurrentRoundOrThrow(ctx, bundle);
+    if (!(await isEligible(ctx, round._id, "DISPUTE_WINDOW", authorized.player._id))) {
+      throw new ConvexError("You are not in this round's dispute roster");
+    }
+    const revealedQuestionIds = (round.revealQuestionIds ?? []).slice(
+      0,
+      bundle.state.revealOrdinal + 1,
+    );
+    if (!revealedQuestionIds.includes(args.questionId)) {
+      throw new ConvexError("Only revealed questions can be challenged");
+    }
+    if ((round.systemVoidQuestionIds ?? []).includes(args.questionId)) {
+      throw new ConvexError("A voided question cannot be challenged");
+    }
+    const existing = await ctx.db
+      .query("quizSlopDisputes")
+      .withIndex("by_roundId_and_questionId", (index) =>
+        index.eq("roundId", round._id).eq("questionId", args.questionId),
+      )
+      .unique();
+    if (existing) return { kind: "ALREADY_OPEN" as const };
+
+    const participant = await getQuizslopParticipant(ctx, bundle.game._id, authorized.player._id);
+    if (!participant || !participant.disputeAvailable) {
+      throw new ConvexError("You have already used your dispute this game");
+    }
+    const now = Date.now();
+    await ctx.db.patch("quizSlopParticipants", participant._id, { disputeAvailable: false });
+    const disputeId = await ctx.db.insert("quizSlopDisputes", {
+      gameId: bundle.game._id,
+      roundId: round._id,
+      questionId: args.questionId,
+      initiatorId: authorized.player._id,
+      reason: args.reason,
+      createdAt: now,
+    });
+    return { kind: "OPENED" as const, disputeId };
+  },
+});
+
+export const castDisputeVote = mutation({
+  args: {
+    capability: v.string(),
+    disputeId: v.id("quizSlopDisputes"),
+    choice: quizslopDisputeVoteChoiceValidator,
     expectedPhaseGeneration: v.number(),
   },
   returns: phaseResultValidator,
   handler: async (ctx, args) => {
     const authorized = await requirePlayerCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    requireOpenGame(bundle);
     requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
-    if (bundle.state.phase !== "FINAL_ACCUSATION") {
-      throw new ConvexError("The Academic Integrity Hearing is closed");
+    if (bundle.state.phase !== "DISPUTE_VOTE") {
+      throw new ConvexError("The dispute vote is not open");
     }
-    const participants = await listQuizslopParticipants(ctx, bundle.game._id);
-    if (!participants.some((participant) => participant.playerId === authorized.player._id)) {
-      throw new ConvexError("You are not in the frozen roster");
+    const round = await loadCurrentRoundOrThrow(ctx, bundle);
+    if (!(await isEligible(ctx, round._id, "DISPUTE_VOTE", authorized.player._id))) {
+      throw new ConvexError("You are not in this vote's roster");
     }
-    if (!participants.some((participant) => participant.playerId === args.targetPlayerId)) {
-      throw new ConvexError("That player is not on the exam roster");
+    const dispute = await ctx.db.get("quizSlopDisputes", args.disputeId);
+    if (!dispute || dispute.roundId !== round._id || dispute.ruling !== undefined) {
+      throw new ConvexError("That dispute is not open for voting");
+    }
+    const openDisputes = disputesInRulingOrder(await listRoundDisputes(ctx, round._id));
+    if (openDisputes[bundle.state.revealOrdinal]?._id !== dispute._id) {
+      throw new ConvexError("That challenge is not up for ruling yet");
     }
     const existing = await ctx.db
-      .query("quizSlopAccusations")
-      .withIndex("by_gameId_and_playerId", (index) =>
-        index.eq("gameId", bundle.game._id).eq("playerId", authorized.player._id),
+      .query("quizSlopDisputeVotes")
+      .withIndex("by_disputeId_and_voterId", (index) =>
+        index.eq("disputeId", dispute._id).eq("voterId", authorized.player._id),
       )
       .unique();
     if (existing) {
-      if (existing.targetPlayerId === args.targetPlayerId) return { phase: bundle.state.phase };
-      throw new ConvexError("Your accusation is already locked");
+      if (existing.choice === args.choice) return { phase: bundle.state.phase };
+      throw new ConvexError("Your dispute vote is already locked");
     }
     const now = Date.now();
-    await ctx.db.insert("quizSlopAccusations", {
+    await ctx.db.insert("quizSlopDisputeVotes", {
       gameId: bundle.game._id,
-      playerId: authorized.player._id,
-      targetPlayerId: args.targetPlayerId,
+      roundId: round._id,
+      disputeId: dispute._id,
+      voterId: authorized.player._id,
+      choice: args.choice,
       castAt: now,
     });
     const advanced = await settleQuizslopQuorum(ctx, bundle, now);
@@ -323,13 +419,18 @@ export const castFinalAccusation = mutation({
   },
 });
 
+/**
+ * Host advancement: closes a submission phase applying documented defaults,
+ * or continues past a passive reveal/results phase. With timers disabled this
+ * is the host's `Close phase`/`Continue` control.
+ */
 export const advance = mutation({
   args: { capability: v.string(), expectedPhaseGeneration: v.number() },
   returns: phaseResultValidator,
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
-    const bundle = await requireBundle(ctx, authorized.game);
-    requireOpen(bundle);
+    const bundle = await requireQuizslopBundle(ctx, authorized.game);
+    requireOpenGame(bundle);
     requireExpectedPhaseGeneration(bundle.game.phaseGeneration, args.expectedPhaseGeneration);
     if (!canHostAdvanceQuizslopPhase(bundle.state.phase, bundle.game.timersDisabled)) {
       throw new ConvexError("This phase advances by player quorum or its server deadline");
@@ -341,7 +442,11 @@ export const advance = mutation({
 });
 
 export const enforceDeadline = internalMutation({
-  args: { gameId: v.id("games"), deadline: v.number(), phaseGeneration: v.number() },
+  args: {
+    gameId: v.id("games"),
+    deadline: v.number(),
+    phaseGeneration: v.number(),
+  },
   returns: v.object({ advanced: v.boolean() }),
   handler: async (ctx, args) => {
     const bundle = await loadQuizslopBundle(ctx, args.gameId);
@@ -355,6 +460,7 @@ export const enforceDeadline = internalMutation({
     ) {
       return { advanced: false };
     }
-    return { advanced: (await forceAdvanceQuizslop(ctx, bundle, now)) !== null };
+    const phase = await forceAdvanceQuizslop(ctx, bundle, now);
+    return { advanced: phase !== null };
   },
 });

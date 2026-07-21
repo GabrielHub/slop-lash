@@ -23,9 +23,9 @@ export function computeTimerPercentage(remaining: number, total: number): number
   return Math.min(100, Math.max(0, (remaining / total) * 100));
 }
 
-function getUrgency(pct: number): "urgent" | "warning" | "normal" {
-  if (pct < 20) return "urgent";
-  if (pct < 40) return "warning";
+export function getTimerUrgency(pct: number, remaining: number): "urgent" | "warning" | "normal" {
+  if (remaining <= 5 || pct < 20) return "urgent";
+  if (remaining <= 10 || pct < 40) return "warning";
   return "normal";
 }
 
@@ -86,12 +86,16 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
 
   if (disabled) {
     return (
-      <div className="w-full">
+      <div className="w-full" role="timer" aria-live="off" aria-label="Timer off">
         <div className="flex items-baseline justify-between mb-2">
           <span className="text-sm font-medium text-ui-muted">Timer</span>
           <span className="font-mono font-bold text-lg text-ui-faint">OFF</span>
         </div>
-        <div className="h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border border-edge">
+        <progress className="sr-only" aria-label="Timer off" max={1} value={0} />
+        <div
+          aria-hidden="true"
+          className="h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border border-edge"
+        >
           <div className="h-full rounded-full bg-ink-dim/20 w-full" />
         </div>
       </div>
@@ -101,7 +105,9 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
   const remaining = computeRemainingSeconds(deadline, nowMs);
   const pct = computeTimerPercentage(remaining, total);
   const isAdvancing = remaining === 0 && deadline != null;
-  const urgency = getUrgency(pct);
+  const urgency = getTimerUrgency(pct, remaining);
+  const accessibleTotal = Math.max(1, total);
+  const accessibleRemaining = Math.min(accessibleTotal, remaining);
 
   const urgencyStyles = {
     urgent: {
@@ -127,7 +133,12 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
   const style = urgencyStyles[urgency];
 
   return (
-    <div className="w-full">
+    <div
+      className="w-full"
+      role="timer"
+      aria-live="off"
+      aria-label={isAdvancing ? "Time expired; advancing" : `${remaining} seconds remaining`}
+    >
       <div className="flex items-baseline justify-between mb-2">
         <span className="text-sm font-medium text-ui-muted">Time remaining</span>
         <AnimatePresence mode="wait">
@@ -143,7 +154,17 @@ export function Timer({ deadline, disabled, total: totalOverride, serverNow }: T
           </motion.span>
         </AnimatePresence>
       </div>
-      <div className={`h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border transition-colors duration-500 ${style.track}`}>
+      <progress
+        className="sr-only"
+        aria-label="Time remaining"
+        aria-valuetext={isAdvancing ? "Time expired; advancing" : `${remaining} seconds remaining`}
+        max={accessibleTotal}
+        value={accessibleRemaining}
+      />
+      <div
+        aria-hidden="true"
+        className={`h-3 bg-raised/80 backdrop-blur-sm rounded-full overflow-hidden border transition-colors duration-500 ${style.track}`}
+      >
         <div
           className={`h-full rounded-full transition-all duration-1000 ease-linear ${style.bar}`}
           style={{ width: `${pct}%`, boxShadow: style.glow }}

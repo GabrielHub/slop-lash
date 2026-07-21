@@ -582,7 +582,7 @@ describe("Convex MatchSlop backend", () => {
   test("starts mode-local AI workflows and cancels a response that becomes stale", async () => {
     const backend = createTestBackend();
     const fixture = await createMatch(backend, {
-      aiModelIds: ["google/gemini-3.1-flash-lite"],
+      aiModelIds: ["google/gemini-3.5-flash-lite"],
       humanNames: ["Avery"],
     });
     const started = await backend.mutation(startGamePipelinesRef, {
@@ -621,7 +621,7 @@ describe("Convex MatchSlop backend", () => {
         selectedPromptId: "profile-1",
         failReason: null,
         usage: {
-          modelId: "google/gemini-3.1-flash-lite",
+          modelId: "google/gemini-3.5-flash-lite",
           inputTokens: 10,
           outputTokens: 5,
           costUsd: 0.001,

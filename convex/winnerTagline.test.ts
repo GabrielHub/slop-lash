@@ -77,7 +77,7 @@ type TestBackend = ReturnType<typeof createTestBackend>;
 async function createAiGame(backend: TestBackend, totalRounds = 1) {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const host = await backend.action(createRoom, {
-    aiModelIds: ["google/gemini-3.1-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
+    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
     gameType: "SLOPLASH",
     hostParticipation: "DISPLAY_ONLY",
     hostSecret: "host-secret",
