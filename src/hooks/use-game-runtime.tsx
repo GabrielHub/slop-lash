@@ -14,21 +14,7 @@ export type GameRuntimeMutation<Reference extends PublicMutation> = (
   args: FunctionArgs<Reference>,
 ) => Promise<FunctionReturnType<Reference>>;
 
-export interface GameRuntimeChatMessage {
-  clientId: string | null;
-  content: string;
-  createdAt: string;
-  id: string;
-  playerId: string;
-  replyToId: string | null;
-}
-
 export interface GameRuntimeMutations {
-  chatSend?: GameRuntimeMutation<typeof api.chat.send>;
-  chatslopAdvance?: GameRuntimeMutation<typeof api.chatslop.advance>;
-  chatslopEnd?: GameRuntimeMutation<typeof api.chatslop.end>;
-  chatslopRespond?: GameRuntimeMutation<typeof api.chatslop.respond>;
-  chatslopVote?: GameRuntimeMutation<typeof api.chatslop.vote>;
   lobbyAddAiPlayer?: GameRuntimeMutation<typeof api.lobby.addAiPlayer>;
   lobbyKickHuman?: GameRuntimeMutation<typeof api.lobby.kickHuman>;
   lobbyRemoveAiPlayer?: GameRuntimeMutation<typeof api.lobby.removeAiPlayer>;
@@ -41,12 +27,6 @@ export interface GameRuntimeMutations {
 }
 
 export interface GameRuntime {
-  chat?: {
-    canLoadMore?: boolean;
-    isLoading?: boolean;
-    messages: GameRuntimeChatMessage[];
-    loadMore?: (numItems: number) => void;
-  };
   controllerState?: ControllerGameState;
   error?: string | null;
   gameState: GameState;
@@ -71,31 +51,6 @@ export function useGameRuntime(roomCode?: string): GameRuntime | null {
   const runtime = useContext(GameRuntimeContext);
   if (!runtime || roomCode === undefined) return runtime;
   return runtime.roomCode.trim().toUpperCase() === roomCode.trim().toUpperCase() ? runtime : null;
-}
-
-export function useChatSendMutation(): GameRuntimeMutation<typeof api.chat.send> {
-  const live = useMutation(api.chat.send);
-  return useGameRuntime()?.mutations?.chatSend ?? live;
-}
-
-export function useChatslopAdvanceMutation(): GameRuntimeMutation<typeof api.chatslop.advance> {
-  const live = useMutation(api.chatslop.advance);
-  return useGameRuntime()?.mutations?.chatslopAdvance ?? live;
-}
-
-export function useChatslopEndMutation(): GameRuntimeMutation<typeof api.chatslop.end> {
-  const live = useMutation(api.chatslop.end);
-  return useGameRuntime()?.mutations?.chatslopEnd ?? live;
-}
-
-export function useChatslopRespondMutation(): GameRuntimeMutation<typeof api.chatslop.respond> {
-  const live = useMutation(api.chatslop.respond);
-  return useGameRuntime()?.mutations?.chatslopRespond ?? live;
-}
-
-export function useChatslopVoteMutation(): GameRuntimeMutation<typeof api.chatslop.vote> {
-  const live = useMutation(api.chatslop.vote);
-  return useGameRuntime()?.mutations?.chatslopVote ?? live;
 }
 
 export function useLobbyAddAiPlayerMutation(): GameRuntimeMutation<typeof api.lobby.addAiPlayer> {

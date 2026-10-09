@@ -2,7 +2,6 @@ import { v } from "convex/values";
 
 export const gameTypeValidator = v.union(
   v.literal("SLOPLASH"),
-  v.literal("AI_CHAT_SHOWDOWN"),
   v.literal("MATCHSLOP"),
   v.literal("QUIZSLOP"),
 );
@@ -57,7 +56,6 @@ export const matchSlopTranscriptOutcomeValidator = v.union(
 export const generationKindValidator = v.union(
   v.literal("RESPONSE"),
   v.literal("VOTE"),
-  v.literal("CHAT_REPLY"),
   v.literal("WINNER_TAGLINE"),
   v.literal("MATCHSLOP_PROFILE"),
   v.literal("MATCHSLOP_IMAGE"),

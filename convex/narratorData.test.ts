@@ -10,6 +10,13 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
+const { generateSpeechMock } = vi.hoisted(() => ({ generateSpeechMock: vi.fn() }));
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return { ...actual, generateSpeech: generateSpeechMock };
+});
+
 const authorizeSpeech = makeFunctionReference<
   "query",
   { capability: string },
@@ -36,7 +43,7 @@ describe("narrator speech authorization", () => {
       hostSecret: "host-secret",
       timersDisabled: true,
       ttsMode: "ON",
-      ttsVoice: "nova",
+      ttsVoice: "Sulafat",
     });
     const guestOne = await backend.action(api.rooms.join, {
       name: "Guest One",
@@ -57,8 +64,26 @@ describe("narrator speech authorization", () => {
     ).rejects.toThrow("Host capability required");
     await expect(backend.query(authorizeSpeech, { capability: host.capability })).resolves.toEqual({
       gameId: host.gameId,
-      voice: "nova",
+      voice: "Sulafat",
     });
+
+    vi.stubEnv("AI_GATEWAY_API_KEY", "test-api-key");
+    generateSpeechMock.mockResolvedValue({ audio: { base64: "test-wav-audio" } });
+    await expect(
+      backend.action(api.narrator.generate, {
+        capability: host.capability,
+        eventType: "hurry_up",
+        fallbackText: "Ten seconds left.",
+      }),
+    ).resolves.toEqual({ audioBase64: "test-wav-audio" });
+    expect(generateSpeechMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ modelId: "google/gemini-3.8-flash-lite-tts" }),
+        voice: "Sulafat",
+        outputFormat: "wav",
+        text: "Ten seconds left.",
+      }),
+    );
 
     await backend.run(async (ctx) => {
       await ctx.db.patch("games", host.gameId, { status: "FINAL_RESULTS" });
@@ -72,7 +97,7 @@ describe("narrator speech authorization", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      gameType: "AI_CHAT_SHOWDOWN",
+      gameType: "QUIZSLOP",
       hostName: "Host",
       hostSecret: "host-secret",
     });

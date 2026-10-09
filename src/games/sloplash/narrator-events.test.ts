@@ -76,7 +76,7 @@ function makeGame(): { game: GameState; prompt: GamePrompt } {
       phaseDeadline: null,
       timersDisabled: true,
       ttsMode: "ON",
-      ttsVoice: "nova",
+      ttsVoice: "Sulafat",
       votingPromptIndex: 0,
       votingRevealing: false,
       nextGameCode: null,

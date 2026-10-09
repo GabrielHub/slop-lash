@@ -1,4 +1,4 @@
-export const NARRATOR_TTS_MODEL = "openai/tts-1";
+export const NARRATOR_TTS_MODEL = "google/gemini-3.8-flash-lite-tts";
 export const NARRATOR_SCRIPT_MODEL = "google/gemini-3.5-flash-lite";
 
 export const NARRATOR_SCRIPT_INSTRUCTIONS = `You write one short spoken line for the live host of Slop-Lash, a comedy game show.

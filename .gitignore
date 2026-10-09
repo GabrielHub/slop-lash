@@ -51,3 +51,4 @@ skills-lock.json
 
 # playwright output
 /output/
+.playwright-cli/

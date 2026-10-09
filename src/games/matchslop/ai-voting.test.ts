@@ -9,7 +9,7 @@ vi.mock("ai", () => ({
   createGateway: vi.fn(() => vi.fn()),
 }));
 
-import { aiVoteNWay } from "./ai";
+import { aiVoteNWay } from "./ai-voting";
 
 describe("aiVoteNWay", () => {
   beforeEach(() => {
@@ -31,7 +31,7 @@ describe("aiVoteNWay", () => {
     generateTextMock.mockRejectedValue(gatewayError);
 
     const result = await aiVoteNWay(
-      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4.1-flash",
       "prompt",
       [
         { id: "resp-a", label: "A", text: "A joke" },
@@ -44,7 +44,7 @@ describe("aiVoteNWay", () => {
     expect(result).toEqual({
       chosenResponseId: "resp-b",
       usage: {
-        modelId: "deepseek/deepseek-v4-flash",
+        modelId: "deepseek/deepseek-v4.1-flash",
         inputTokens: 0,
         outputTokens: 0,
         costUsd: 0,
@@ -53,7 +53,7 @@ describe("aiVoteNWay", () => {
     });
 
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining("[chatslop:aiVoteNWay] deepseek/deepseek-v4-flash FAILED"),
+      expect.stringContaining("[matchslop:aiVoteNWay] deepseek/deepseek-v4.1-flash FAILED"),
       expect.objectContaining({
         failReason: "timeout",
         abortSignal: expect.objectContaining({

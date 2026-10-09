@@ -10,7 +10,7 @@ import {
   extractUsage,
   simpleHash,
   type AiUsage,
-} from "../src/games/ai-chat-showdown/ai";
+} from "../src/games/matchslop/ai-voting";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
 import { getGameplayReasoningSettings } from "../src/lib/ai-reasoning";
 import type { MatchSlopPersonaSeed } from "../src/games/matchslop/config/persona-examples";
@@ -180,15 +180,11 @@ async function requestPersonaImage(prompt: string): Promise<string> {
   const apiKey = env.FAL_KEY;
   if (!apiKey) throw new Error("Fal API key is missing. Set FAL_KEY in the environment.");
   fal.config({ credentials: apiKey });
-  const result = await fal.run("fal-ai/z-image/turbo", {
+  const result = await fal.run("recraft/v4.1/flash/text-to-image", {
     input: {
       prompt,
       image_size: "landscape_4_3",
-      num_images: 1,
       enable_safety_checker: true,
-      output_format: "webp",
-      acceleration: "regular",
-      enable_prompt_expansion: false,
     },
   });
   const parsed = falResponseSchema.parse(result.data);

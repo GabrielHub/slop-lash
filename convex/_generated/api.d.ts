@@ -8,9 +8,6 @@
  * @module
  */
 
-import type * as aiChatReplyActions from "../aiChatReplyActions.js";
-import type * as aiChatReplyContracts from "../aiChatReplyContracts.js";
-import type * as aiChatReplyData from "../aiChatReplyData.js";
 import type * as aiGateway from "../aiGateway.js";
 import type * as aiGenerationActions from "../aiGenerationActions.js";
 import type * as aiGenerationContracts from "../aiGenerationContracts.js";
@@ -19,8 +16,6 @@ import type * as aiVotingActions from "../aiVotingActions.js";
 import type * as aiVotingContracts from "../aiVotingContracts.js";
 import type * as aiVotingData from "../aiVotingData.js";
 import type * as capabilities from "../capabilities.js";
-import type * as chat from "../chat.js";
-import type * as chatslop from "../chatslop.js";
 import type * as cleanup from "../cleanup.js";
 import type * as components_ from "../components.js";
 import type * as crons from "../crons.js";
@@ -85,9 +80,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  aiChatReplyActions: typeof aiChatReplyActions;
-  aiChatReplyContracts: typeof aiChatReplyContracts;
-  aiChatReplyData: typeof aiChatReplyData;
   aiGateway: typeof aiGateway;
   aiGenerationActions: typeof aiGenerationActions;
   aiGenerationContracts: typeof aiGenerationContracts;
@@ -96,8 +88,6 @@ declare const fullApi: ApiFromModules<{
   aiVotingContracts: typeof aiVotingContracts;
   aiVotingData: typeof aiVotingData;
   capabilities: typeof capabilities;
-  chat: typeof chat;
-  chatslop: typeof chatslop;
   cleanup: typeof cleanup;
   components: typeof components_;
   crons: typeof crons;

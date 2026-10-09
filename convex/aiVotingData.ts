@@ -7,7 +7,6 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import {
   enqueueQueuedVoteJobsRef,
   generateVoteRef,
-  settleChatslopVoteQuorumRef,
   settleSloplashVoteQuorumRef,
   voteWorkCompleteRef,
   type VoteWorkArgs,
@@ -53,7 +52,7 @@ const finalStatusValidator = v.union(
 const voteContextValidator = v.union(
   v.object({
     kind: v.literal("ready"),
-    gameType: v.union(v.literal("SLOPLASH"), v.literal("AI_CHAT_SHOWDOWN")),
+    gameType: v.literal("SLOPLASH"),
     modelId: v.string(),
     playerId: v.id("players"),
     promptText: v.string(),
@@ -72,7 +71,7 @@ const voteContextValidator = v.union(
 );
 
 type VotingGame = Doc<"games"> & {
-  gameType: "SLOPLASH" | "AI_CHAT_SHOWDOWN";
+  gameType: "SLOPLASH";
 };
 
 interface VotingBundle {
@@ -124,14 +123,6 @@ function isSloplashVotable(responses: Doc<"responses">[], promptId: Id<"prompts"
   );
 }
 
-function isChatslopVotable(responses: Doc<"responses">[], promptId: Id<"prompts">): boolean {
-  const promptResponses = responsesForPrompt(responses, promptId);
-  return (
-    promptResponses.length >= 2 &&
-    promptResponses.some((response) => response.text !== FORFEIT_MARKER)
-  );
-}
-
 async function loadVotingBundle(
   db: DatabaseReader,
   game: VotingGame,
@@ -152,51 +143,32 @@ async function loadVotingBundle(
       .take(MAX_ROUND_RESPONSES),
   ]);
 
-  if (game.gameType === "SLOPLASH") {
-    const votingPrompts = prompts
-      .filter((prompt) => isSloplashVotable(responses, prompt._id))
-      .toSorted((left, right) => left._id.localeCompare(right._id));
-    return {
-      prompts,
-      responses,
-      currentPrompt: votingPrompts[game.votingPromptIndex] ?? null,
-      votingPrompts,
-    };
-  }
-
-  const prompt = prompts.find((candidate) => candidate.ordinal === 0) ?? null;
-  const votingPrompts = prompt && isChatslopVotable(responses, prompt._id) ? [prompt] : [];
+  const votingPrompts = prompts
+    .filter((prompt) => isSloplashVotable(responses, prompt._id))
+    .toSorted((left, right) => left._id.localeCompare(right._id));
   return {
     prompts,
     responses,
-    currentPrompt: votingPrompts[0] ?? null,
+    currentPrompt: votingPrompts[game.votingPromptIndex] ?? null,
     votingPrompts,
   };
 }
 
 function getCandidates(
-  gameType: VotingGame["gameType"],
   bundle: VotingBundle,
   promptId: Id<"prompts">,
   voterId: Id<"players">,
 ): Doc<"responses">[] {
   const promptResponses = responsesForPrompt(bundle.responses, promptId);
-  if (gameType === "SLOPLASH") {
-    if (
-      promptResponses.length !== 2 ||
-      promptResponses.some(
-        (response) => response.text === FORFEIT_MARKER || response.playerId === voterId,
-      )
-    ) {
-      return [];
-    }
-    return promptResponses;
+  if (
+    promptResponses.length !== 2 ||
+    promptResponses.some(
+      (response) => response.text === FORFEIT_MARKER || response.playerId === voterId,
+    )
+  ) {
+    return [];
   }
-
-  if (!isChatslopVotable(bundle.responses, promptId)) return [];
-  return promptResponses.filter(
-    (response) => response.text !== FORFEIT_MARKER && response.playerId !== voterId,
-  );
+  return promptResponses;
 }
 
 async function validateVoteJob(
@@ -230,7 +202,7 @@ async function validateVoteJob(
   if (!gameDoc || !round || !prompt || !player) {
     return { kind: "stale", reason: "AI vote context no longer exists" };
   }
-  if (gameDoc.gameType !== "SLOPLASH" && gameDoc.gameType !== "AI_CHAT_SHOWDOWN") {
+  if (gameDoc.gameType !== "SLOPLASH") {
     return { kind: "stale", reason: "Game type does not generate comedy votes" };
   }
   const game: VotingGame = { ...gameDoc, gameType: gameDoc.gameType };
@@ -263,23 +235,8 @@ async function validateVoteJob(
   if (bundle.currentPrompt?._id !== prompt._id) {
     return { kind: "stale", reason: "Voting prompt is not currently visible" };
   }
-  if (game.gameType === "AI_CHAT_SHOWDOWN") {
-    const assignment = await db
-      .query("promptAssignments")
-      .withIndex("by_promptId_and_playerId", (index) =>
-        index.eq("promptId", prompt._id).eq("playerId", player._id),
-      )
-      .unique();
-    if (!assignment || assignment.gameId !== game._id || assignment.roundId !== round._id) {
-      return { kind: "stale", reason: "AI voter is not assigned to this ChatSlop prompt" };
-    }
-  }
-
-  const candidates = getCandidates(game.gameType, bundle, prompt._id, player._id);
-  if (
-    (game.gameType === "SLOPLASH" && candidates.length !== 2) ||
-    (game.gameType === "AI_CHAT_SHOWDOWN" && candidates.length === 0)
-  ) {
+  const candidates = getCandidates(bundle, prompt._id, player._id);
+  if (candidates.length !== 2) {
     return { kind: "stale", reason: "Voting prompt has no eligible peer responses" };
   }
 
@@ -323,9 +280,7 @@ async function markSucceededAndSettle(
     completedAt: now,
     updatedAt: now,
   });
-  const settleQuorumRef =
-    game.gameType === "SLOPLASH" ? settleSloplashVoteQuorumRef : settleChatslopVoteQuorumRef;
-  await ctx.scheduler.runAfter(0, settleQuorumRef, { gameId: game._id });
+  await ctx.scheduler.runAfter(0, settleSloplashVoteQuorumRef, { gameId: game._id });
 }
 
 async function failCurrentVoteWork(
@@ -364,9 +319,7 @@ async function failCurrentVoteWork(
   }
 
   await markTerminal(ctx, job, status, reason);
-  const settleQuorumRef =
-    game.gameType === "SLOPLASH" ? settleSloplashVoteQuorumRef : settleChatslopVoteQuorumRef;
-  await ctx.scheduler.runAfter(0, settleQuorumRef, { gameId: game._id });
+  await ctx.scheduler.runAfter(0, settleSloplashVoteQuorumRef, { gameId: game._id });
 }
 
 export const enqueueQueuedVoteJobs = internalMutation({
@@ -395,11 +348,7 @@ export const enqueueQueuedVoteJobs = internalMutation({
     if (jobs.length === 0) return result;
 
     const gameDoc = await ctx.db.get("games", args.gameId);
-    if (
-      !gameDoc ||
-      (gameDoc.gameType !== "SLOPLASH" && gameDoc.gameType !== "AI_CHAT_SHOWDOWN") ||
-      gameDoc.status !== "VOTING"
-    ) {
+    if (!gameDoc || gameDoc.gameType !== "SLOPLASH" || gameDoc.status !== "VOTING") {
       for (const job of jobs) {
         await markTerminal(ctx, job, "CANCELED", "Voting phase is no longer current");
         result.canceled += 1;
@@ -450,25 +399,19 @@ export const enqueueQueuedVoteJobs = internalMutation({
         continue;
       }
 
-      if (game.gameType === "SLOPLASH") {
-        const promptIndex = bundle.votingPrompts.findIndex(
-          (candidate) => candidate._id === prompt._id,
-        );
-        if (promptIndex < 0 || promptIndex < game.votingPromptIndex) {
-          await markTerminal(ctx, job, "CANCELED", "Voting prompt is no longer current");
-          result.canceled += 1;
-          continue;
-        }
-        if (promptIndex > game.votingPromptIndex) {
-          result.skipped += 1;
-          continue;
-        }
-        if (game.votingRevealing) {
-          await markTerminal(ctx, job, "CANCELED", "Voting prompt is no longer current");
-          result.canceled += 1;
-          continue;
-        }
-      } else if (prompt._id !== bundle.currentPrompt._id || game.votingRevealing) {
+      const promptIndex = bundle.votingPrompts.findIndex(
+        (candidate) => candidate._id === prompt._id,
+      );
+      if (promptIndex < 0 || promptIndex < game.votingPromptIndex) {
+        await markTerminal(ctx, job, "CANCELED", "Voting prompt is no longer current");
+        result.canceled += 1;
+        continue;
+      }
+      if (promptIndex > game.votingPromptIndex) {
+        result.skipped += 1;
+        continue;
+      }
+      if (game.votingRevealing) {
         await markTerminal(ctx, job, "CANCELED", "Voting prompt is no longer current");
         result.canceled += 1;
         continue;
@@ -617,9 +560,6 @@ export const persistVote = internalMutation({
     if (args.responseId !== null && !candidateIds.has(args.responseId)) {
       return { status: "STALE" as const, reason: "Selected response is not an eligible peer" };
     }
-    if (game.gameType === "AI_CHAT_SHOWDOWN" && args.reactions.length > 0) {
-      throw new Error("ChatSlop votes cannot create response reactions");
-    }
     if (
       args.usage.modelId !== player.modelId ||
       !Number.isFinite(args.usage.inputTokens) ||
@@ -742,7 +682,7 @@ export const finishVoteJob = internalMutation({
       job.attempt !== args.attempt ||
       job.generationKey !== expectedGenerationKey(args.roundNumber, args.promptId, playerId) ||
       !gameDoc ||
-      (gameDoc.gameType !== "SLOPLASH" && gameDoc.gameType !== "AI_CHAT_SHOWDOWN")
+      gameDoc.gameType !== "SLOPLASH"
     ) {
       await markTerminal(ctx, job, "CANCELED", "AI vote attempt is no longer current");
       return { status: "CANCELED" as const };

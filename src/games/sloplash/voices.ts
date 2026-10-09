@@ -6,17 +6,12 @@ export interface NarratorVoice {
 }
 
 export const NARRATOR_VOICES: NarratorVoice[] = [
-  { id: "alloy", name: "Alloy", trait: "Versatile", description: "Balanced and adaptable" },
-  { id: "echo", name: "Echo", trait: "Smooth", description: "Steady and conversational" },
-  {
-    id: "fable",
-    name: "Fable",
-    trait: "Expressive",
-    description: "Animated storytelling delivery",
-  },
-  { id: "onyx", name: "Onyx", trait: "Deep", description: "Rich and authoritative" },
-  { id: "nova", name: "Nova", trait: "Warm", description: "Friendly and energetic" },
-  { id: "shimmer", name: "Shimmer", trait: "Clear", description: "Bright and crisp" },
+  { id: "Kore", name: "Kore", trait: "Firm", description: "Confident and direct" },
+  { id: "Puck", name: "Puck", trait: "Upbeat", description: "Bright and playful" },
+  { id: "Charon", name: "Charon", trait: "Informative", description: "Clear and measured" },
+  { id: "Fenrir", name: "Fenrir", trait: "Excitable", description: "Lively and enthusiastic" },
+  { id: "Aoede", name: "Aoede", trait: "Breezy", description: "Relaxed and easygoing" },
+  { id: "Sulafat", name: "Sulafat", trait: "Warm", description: "Friendly and inviting" },
 ];
 
 export const VOICE_IDS = NARRATOR_VOICES.map((voice) => voice.id);

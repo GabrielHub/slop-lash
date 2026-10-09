@@ -178,7 +178,6 @@ async function deleteGameData(
     responses,
     votes,
     reactions,
-    messages,
     modelUsages,
     jobs,
     states,
@@ -225,10 +224,6 @@ async function deleteGameData(
       .withIndex("by_gameId_and_createdAt", (index) => index.eq("gameId", game._id))
       .take(limit),
     ctx.db
-      .query("chatMessages")
-      .withIndex("by_gameId_and_createdAt", (index) => index.eq("gameId", game._id))
-      .take(limit),
-    ctx.db
       .query("gameModelUsage")
       .withIndex("by_gameId_and_modelId", (index) => index.eq("gameId", game._id))
       .take(limit),
@@ -257,7 +252,6 @@ async function deleteGameData(
     responses,
     votes,
     reactions,
-    messages,
     modelUsages,
     jobs,
     states,
@@ -280,8 +274,6 @@ async function deleteGameData(
   for (const row of responses.slice(0, DELETE_BATCH_SIZE))
     await ctx.db.delete("responses", row._id);
   for (const row of prompts.slice(0, DELETE_BATCH_SIZE)) await ctx.db.delete("prompts", row._id);
-  for (const row of messages.slice(0, DELETE_BATCH_SIZE))
-    await ctx.db.delete("chatMessages", row._id);
   for (const row of modelUsages.slice(0, DELETE_BATCH_SIZE))
     await ctx.db.delete("gameModelUsage", row._id);
   for (const row of jobs.slice(0, DELETE_BATCH_SIZE))
@@ -366,7 +358,7 @@ export const scheduleStaleRoomCleanup = internalMutation({
     const lobbyCutoff = now - STALE_LOBBY_IDLE_MS;
     const abandonedCutoff = now - ABANDONED_GAME_IDLE_MS;
     const transientFinalCutoff = now - TRANSIENT_FINAL_RETENTION_MS;
-    const [lobbies, writing, voting, roundResults, chatFinals, matchFinals, quizFinals] =
+    const [lobbies, writing, voting, roundResults, matchFinals, quizFinals] =
       await Promise.all([
         ctx.db
           .query("games")
@@ -396,15 +388,6 @@ export const scheduleStaleRoomCleanup = internalMutation({
           .query("games")
           .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
             index
-              .eq("gameType", "AI_CHAT_SHOWDOWN")
-              .eq("status", "FINAL_RESULTS")
-              .lte("finalizedAt", transientFinalCutoff),
-          )
-          .take(MAX_CANDIDATES_PER_POLICY),
-        ctx.db
-          .query("games")
-          .withIndex("by_gameType_and_status_and_finalizedAt", (index) =>
-            index
               .eq("gameType", "MATCHSLOP")
               .eq("status", "FINAL_RESULTS")
               .lte("finalizedAt", transientFinalCutoff),
@@ -427,7 +410,7 @@ export const scheduleStaleRoomCleanup = internalMutation({
         cutoff: abandonedCutoff,
         policy: "ABANDONED_GAME" as const,
       })),
-      ...[...chatFinals, ...matchFinals, ...quizFinals].map((game) => ({
+      ...[...matchFinals, ...quizFinals].map((game) => ({
         game,
         cutoff: transientFinalCutoff,
         policy: "TRANSIENT_FINAL" as const,

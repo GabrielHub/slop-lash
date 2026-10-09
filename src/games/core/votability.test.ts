@@ -18,11 +18,6 @@ describe("isPromptVotable", () => {
     expect(isPromptVotable("MATCHSLOP", [forfeit, forfeit])).toBe(false);
   });
 
-  it("keeps a ChatSlop prompt votable while any real response remains, above the floor", () => {
-    expect(isPromptVotable("AI_CHAT_SHOWDOWN", [real, forfeit])).toBe(true);
-    expect(isPromptVotable("AI_CHAT_SHOWDOWN", [forfeit, forfeit])).toBe(false);
-    expect(isPromptVotable("AI_CHAT_SHOWDOWN", [real])).toBe(false);
-  });
 
   it("drops a Slop-Lash matchup as soon as either side forfeits", () => {
     expect(isPromptVotable("SLOPLASH", [real, real])).toBe(true);

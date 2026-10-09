@@ -385,16 +385,6 @@ export const start = mutation({
       phaseDeadline = authorized.game.timersDisabled
         ? undefined
         : now + WRITING_DURATION_SECONDS * 1_000;
-    } else if (authorized.game.gameType === "AI_CHAT_SHOWDOWN") {
-      const [promptText] = getRandomPrompts(1);
-      await createPrompt(
-        ctx,
-        authorized.game._id,
-        roundId,
-        0,
-        promptText ?? "Make us laugh!",
-        playerIds,
-      );
     } else {
       const matchState = await ctx.db
         .query("matchSlopState")

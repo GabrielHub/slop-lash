@@ -42,7 +42,7 @@ describe("analyzePromptOutcome", () => {
             id: "ai-player",
             name: "AI",
             type: "AI",
-            modelId: "openai/gpt-5.6-luna",
+            modelId: "openai/gpt-6.1-sol",
             idleRounds: 0,
             humorRating: 1,
             winStreak: 0,

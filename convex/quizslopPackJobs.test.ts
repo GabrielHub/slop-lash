@@ -21,7 +21,7 @@ import {
 import { packValidationError, readFrozenResult } from "./quizslopPackValidation";
 
 const modules = import.meta.glob("./**/*.ts");
-const GENERATOR_MODEL_ID = "anthropic/claude-haiku-4.5";
+const GENERATOR_MODEL_ID = "anthropic/claude-haiku-5.5";
 
 function createTestBackend(options: { registerWorkflow?: boolean } = {}) {
   const backend = convexTest(schema, modules);

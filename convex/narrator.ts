@@ -125,7 +125,7 @@ export const generate = action({
       model: getGatewaySpeechModel(NARRATOR_TTS_MODEL, apiKey),
       text: script,
       voice: resolveVoice(voice, gameId),
-      outputFormat: "mp3",
+      outputFormat: "wav",
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(NARRATOR_TTS_TIMEOUT_MS),
     });

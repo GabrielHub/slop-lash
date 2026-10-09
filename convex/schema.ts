@@ -213,20 +213,6 @@ export default defineSchema({
     .index("by_gameId_and_roundId", ["gameId", "roundId"])
     .index("by_gameId_and_createdAt", ["gameId", "createdAt"]),
 
-  chatMessages: defineTable({
-    gameId: v.id("games"),
-    playerId: v.id("players"),
-    roundNumber: v.optional(v.number()),
-    content: v.string(),
-    replyToId: v.optional(v.id("chatMessages")),
-    clientId: v.optional(v.string()),
-    createdAt: v.number(),
-  })
-    .index("by_gameId_and_createdAt", ["gameId", "createdAt"])
-    .index("by_gameId_and_roundNumber_and_createdAt", ["gameId", "roundNumber", "createdAt"])
-    .index("by_playerId_and_clientId", ["playerId", "clientId"])
-    .index("by_playerId_and_createdAt", ["playerId", "createdAt"]),
-
   gameModelUsage: defineTable({
     gameId: v.id("games"),
     modelId: v.string(),

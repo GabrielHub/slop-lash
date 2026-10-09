@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   SLOPLASH_SCENARIOS,
-  CHATSLOP_SCENARIOS,
   MATCHSLOP_SCENARIOS,
   MOCK_SCENARIOS,
 } from "@/dev/game-fixtures/scenarios";
@@ -134,31 +133,6 @@ export default function DevUiIndexPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             {SLOPLASH_SCENARIOS.map((scenario, index) => (
               <ScenarioCard key={scenario.slug} scenario={scenario} index={index} />
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <div className="flex items-center justify-between gap-4 mb-2">
-            <h2 className="font-display text-xl font-bold text-ink">ChatSlop</h2>
-            <Link
-              href="/dev/components/chatslop"
-              className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
-            >
-              Components
-            </Link>
-          </div>
-          <p className="text-sm text-ink-dim mb-4">
-            ChatSlop fixtures with optimistic chat, disconnect/quorum, and rejoin flows.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {CHATSLOP_SCENARIOS.map((scenario, index) => (
-              <ScenarioCard
-                key={scenario.slug}
-                scenario={scenario}
-                index={index}
-                badge="ChatSlop"
-              />
             ))}
           </div>
         </section>

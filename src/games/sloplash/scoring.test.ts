@@ -33,7 +33,7 @@ describe("scorePrompt forfeit handling", () => {
   });
 
   it("scores the remaining contenders by real votes when one of many forfeits", () => {
-    // ChatSlop runs a single N-way prompt. One AI generation failing inserts a
+    // An N-way prompt has multiple contenders. One AI generation failing inserts a
     // forfeit; that must not discard everyone else's votes.
     const responses = [
       response("a"),

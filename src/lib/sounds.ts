@@ -1,5 +1,5 @@
 const SOUND_MAP = {
-  // Shared sounds (used by both sloplash and chatslop)
+  // Shared game sounds
   "game-start": "/sfx/shared/game-start.mp3",
   "phase-transition": "/sfx/shared/phase-transition.mp3",
   submitted: "/sfx/shared/submitted.mp3",
@@ -15,12 +15,11 @@ const SOUND_MAP = {
   "vote-reveal": "/sfx/sloplash/vote-reveal.mp3",
   "timer-warning": "/sfx/sloplash/timer-warning.mp3",
   "prompt-advance": "/sfx/sloplash/prompt-advance.mp3",
-  // Chatslop-specific sounds
-  "chat-send": "/sfx/chatslop/chat-send.mp3",
-  "chat-receive": "/sfx/chatslop/chat-receive.mp3",
-  "all-in": "/sfx/chatslop/all-in.mp3",
-  "round-start": "/sfx/chatslop/round-start.mp3",
-  "player-ready": "/sfx/chatslop/player-ready.mp3",
+  // MatchSlop conversation sounds
+  "chat-send": "/sfx/matchslop/chat-send.mp3",
+  "chat-receive": "/sfx/matchslop/chat-receive.mp3",
+  "all-in": "/sfx/matchslop/all-in.mp3",
+  "round-start": "/sfx/matchslop/round-start.mp3",
 } as const;
 
 export type SoundName = keyof typeof SOUND_MAP;
@@ -89,7 +88,6 @@ const DEFAULT_SOUND_GAIN_MULTIPLIER: Partial<Record<SoundName, number>> = {
   "chat-receive": 0.5,
   "all-in": 0.85,
   "round-start": 0.85,
-  "player-ready": 0.7,
 };
 
 type SoundTuningStorage = {

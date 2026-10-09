@@ -28,7 +28,7 @@ export interface ResponsePromptContext {
 export type ResponseGenerationContext =
   | {
       kind: "ready";
-      gameType: "SLOPLASH" | "AI_CHAT_SHOWDOWN";
+      gameType: "SLOPLASH";
       modelId: string;
       playerId: Id<"players">;
       prompts: ResponsePromptContext[];
@@ -140,9 +140,3 @@ export const settleSloplashQuorumRef = makeFunctionReference<
   { gameId: Id<"games"> },
   unknown
 >("sloplash:settleQuorum");
-
-export const settleChatslopQuorumRef = makeFunctionReference<
-  "mutation",
-  { gameId: Id<"games"> },
-  unknown
->("chatslop:settleQuorum");

@@ -2,12 +2,6 @@
 
 import { v } from "convex/values";
 import { aiVote as generateSloplashVote } from "../src/games/sloplash/ai";
-import {
-  aiVoteNWay as generateChatslopVote,
-  LABELS,
-  simpleHash,
-} from "../src/games/ai-chat-showdown/ai";
-import type { Id } from "./_generated/dataModel";
 import { internalAction } from "./_generated/server";
 import { requireAiGatewayApiKey } from "./aiGateway";
 import {
@@ -16,8 +10,6 @@ import {
   finishVoteJobRef,
   loadVoteContextRef,
   persistVoteRef,
-  type VoteReaction,
-  type VoteUsage,
 } from "./aiVotingContracts";
 
 const voteWorkArgsValidator = {
@@ -63,52 +55,28 @@ export const generateVote = internalAction({
     }
 
     const apiKey = requireAiGatewayApiKey();
-    let responseId: Id<"responses"> | null = null;
-    let failReason: string | null = null;
-    let reactions: VoteReaction[] = [];
-    let usage: VoteUsage;
 
-    if (context.gameType === "SLOPLASH") {
-      const [responseA, responseB] = context.candidates;
-      if (!responseA || !responseB) throw new Error("Slop-Lash vote requires two responses");
-      const generated = await generateSloplashVote(
-        context.modelId,
-        context.promptText,
-        responseA.text,
-        responseB.text,
-        apiKey,
-      );
-      responseId =
-        generated.choice === "A"
-          ? responseA.responseId
-          : generated.choice === "B"
-            ? responseB.responseId
-            : null;
-      failReason = generated.failReason;
-      reactions = [
-        ...generated.reactionsA.map((emoji) => ({ responseId: responseA.responseId, emoji })),
-        ...generated.reactionsB.map((emoji) => ({ responseId: responseB.responseId, emoji })),
-      ];
-      usage = generated.usage;
-    } else {
-      const labeledResponses = context.candidates.map((candidate, index) => ({
-        id: candidate.responseId,
-        label: LABELS[index] ?? String(index),
-        text: candidate.text,
-      }));
-      const generated = await generateChatslopVote(
-        context.modelId,
-        context.promptText,
-        labeledResponses,
-        simpleHash(`${args.gameId}:${args.roundNumber}:${context.playerId}`),
-        { apiKey },
-      );
-      responseId =
-        context.candidates.find((candidate) => candidate.responseId === generated.chosenResponseId)
-          ?.responseId ?? null;
-      failReason = responseId ? generated.failReason : (generated.failReason ?? "invalid-choice");
-      usage = generated.usage;
-    }
+    const [responseA, responseB] = context.candidates;
+    if (!responseA || !responseB) throw new Error("Slop-Lash vote requires two responses");
+    const generated = await generateSloplashVote(
+      context.modelId,
+      context.promptText,
+      responseA.text,
+      responseB.text,
+      apiKey,
+    );
+    const responseId =
+      generated.choice === "A"
+        ? responseA.responseId
+        : generated.choice === "B"
+          ? responseB.responseId
+          : null;
+    const failReason = generated.failReason;
+    const reactions = [
+      ...generated.reactionsA.map((emoji) => ({ responseId: responseA.responseId, emoji })),
+      ...generated.reactionsB.map((emoji) => ({ responseId: responseB.responseId, emoji })),
+    ];
+    const usage = generated.usage;
 
     const persisted = await ctx.runMutation(persistVoteRef, {
       ...args,

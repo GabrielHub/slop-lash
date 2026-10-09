@@ -7,7 +7,7 @@ import { resolveQuizSlopContentConfig } from "../src/games/quizslop/content-sour
 import { quizSlopFreshPackBatchSchema } from "../src/games/quizslop/content-source/contracts";
 import { generationPayload, usageFor } from "./quizslopPackAiBoundary";
 
-const GENERATOR_MODEL_ID = "anthropic/claude-haiku-4.5";
+const GENERATOR_MODEL_ID = "anthropic/claude-haiku-5.5";
 
 function reviewedBatch() {
   const config = resolveQuizSlopContentConfig({
@@ -48,10 +48,10 @@ describe("QuizSlop AI pack action boundaries", () => {
   test("prices an unknown provider revision through its requested catalog alias", () => {
     const usage = usageFor(
       GENERATOR_MODEL_ID,
-      "anthropic/claude-haiku-4.5-20260718-provider-revision",
+      "anthropic/claude-haiku-5.5-20260718-provider-revision",
       { inputTokens: 1_000, outputTokens: 500 },
     );
-    expect(usage.actualModelId).toBe("anthropic/claude-haiku-4.5-20260718-provider-revision");
+    expect(usage.actualModelId).toBe("anthropic/claude-haiku-5.5-20260718-provider-revision");
     expect(usage.costUsd).toBe(calculateCostUsd(GENERATOR_MODEL_ID, 1_000, 500));
     expect(usage.costUsd).toBeGreaterThan(0);
   });

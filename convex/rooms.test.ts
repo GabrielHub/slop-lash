@@ -4,6 +4,7 @@
 import presenceTest from "@convex-dev/presence/test";
 import workflowTest from "@convex-dev/workflow/test";
 import { convexTest } from "convex-test";
+import { makeFunctionReference } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { api } from "./_generated/api";
 import schema from "./schema";
@@ -23,6 +24,21 @@ afterEach(() => {
 });
 
 describe("room capabilities", () => {
+  test("rejects the removed ChatSlop mode at the room creation boundary", async () => {
+    vi.stubEnv("HOST_SECRET", "host-secret");
+    const backend = createTestBackend();
+    const createRoom = makeFunctionReference<
+      "action",
+      { gameType: string; hostSecret: string },
+      unknown
+    >("rooms:create");
+
+    await expect(
+      backend.action(createRoom, { gameType: "AI_CHAT_SHOWDOWN", hostSecret: "host-secret" }),
+    ).rejects.toThrow(/Validator error:.*AI_CHAT_SHOWDOWN/);
+    expect(await backend.run((ctx) => ctx.db.query("games").take(1))).toEqual([]);
+  });
+
   test("creates, joins, rejoins, and reads a room without trusting player IDs", async () => {
     vi.stubEnv("HOST_SECRET", "correct horse battery staple");
     const backend = createTestBackend();
@@ -213,7 +229,7 @@ describe("room capabilities", () => {
       hostName: "Should not become a player",
       hostParticipation: "PLAYER",
       hostSecret: "host-secret",
-      personaModelId: "openai/gpt-5.6-luna",
+      personaModelId: "openai/gpt-6.1-sol",
       seekerIdentity: "OTHER",
       personaIdentity: "WOMAN",
     });
@@ -241,7 +257,7 @@ describe("room capabilities", () => {
       backend.action(api.rooms.create, {
         gameType: "MATCHSLOP",
         hostSecret: "host-secret",
-        personaModelId: "openai/gpt-5.6-luna",
+        personaModelId: "openai/gpt-6.1-sol",
       }),
     ).rejects.toThrow("MatchSlop requires seekerIdentity and personaIdentity");
   });
@@ -411,7 +427,7 @@ describe("QuizSlop content configuration", () => {
       hostName: "Registrar",
       hostSecret: "host-secret",
       quizSlopContentSource: "AI",
-      quizSlopGeneratorModelId: "anthropic/claude-haiku-4.5",
+      quizSlopGeneratorModelId: "anthropic/claude-haiku-5.5",
     });
 
     const snapshot = await backend.run(async (ctx) => ({
@@ -429,8 +445,8 @@ describe("QuizSlop content configuration", () => {
     const { job, state } = snapshot;
     expect(state).toMatchObject({
       contentSource: "AI",
-      generatorModelId: "anthropic/claude-haiku-4.5",
-      verifierModelId: "openai/gpt-5.6-luna",
+      generatorModelId: "anthropic/claude-haiku-5.5",
+      verifierModelId: "openai/gpt-6.1-sol",
       packStatus: "GENERATING",
     });
     expect(job).toMatchObject({

@@ -9,7 +9,7 @@ export type ParticipationStatus = "ACTIVE" | "DISCONNECTED";
 
 export type TtsMode = "OFF" | "ON";
 
-/** A Gateway TTS voice ID (e.g. "nova", "onyx") or "RANDOM". */
+/** A Gateway TTS voice ID (e.g. "Kore", "Puck") or "RANDOM". */
 export type TtsVoice = string;
 
 export interface GamePlayer {
@@ -23,15 +23,6 @@ export interface GamePlayer {
   winStreak: number;
   participationStatus: ParticipationStatus;
   lastSeen: string;
-}
-
-export interface GameChatMessage {
-  id: string;
-  gameId: string;
-  playerId: string;
-  roundNumber: number | null;
-  content: string;
-  createdAt: string;
 }
 
 export interface GameReaction {

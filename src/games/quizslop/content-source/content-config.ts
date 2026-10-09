@@ -4,7 +4,7 @@ export const QUIZSLOP_AI_PROMPT_VERSION = "quizslop-fresh-pack-v2";
 export const QUIZSLOP_AI_SCHEMA_VERSION = "quizslop-frozen-pack-v1";
 
 /** Server-owned. Hosts choose only the generator. */
-export const QUIZSLOP_FIXED_VERIFIER_MODEL_ID = "openai/gpt-5.6-luna";
+export const QUIZSLOP_FIXED_VERIFIER_MODEL_ID = "openai/gpt-6.1-sol";
 
 export type QuizSlopContentConfig =
   | { mode: "CATALOG" }

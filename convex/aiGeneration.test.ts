@@ -28,13 +28,6 @@ vi.mock("../src/games/sloplash/ai", () => ({
   }),
 }));
 
-vi.mock("../src/games/ai-chat-showdown/ai", () => ({
-  generateJoke: async (modelId: string, promptText: string) => ({
-    text: `mocked ChatSlop: ${promptText}`,
-    usage: { modelId, inputTokens: 3, outputTokens: 2, costUsd: 0.0002 },
-    failReason: null,
-  }),
-}));
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -53,7 +46,7 @@ async function createStartedSloplash() {
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
+    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-6.1-sol"],
     gameType: "SLOPLASH",
     hostName: "Host",
     hostSecret: "host-secret",
@@ -64,27 +57,13 @@ async function createStartedSloplash() {
   return { backend, host, started };
 }
 
-async function createStartedChatslop() {
-  vi.stubEnv("HOST_SECRET", "host-secret");
-  const backend = createTestBackend();
-  const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
-    gameType: "AI_CHAT_SHOWDOWN",
-    hostName: "Host",
-    hostSecret: "host-secret",
-  });
-  const started = await backend.mutation(api.lobby.start, {
-    capability: host.capability,
-  });
-  return { backend, host, started };
-}
 
 async function createTimersDisabledAiOnlySloplash() {
   vi.useFakeTimers();
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
+    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-6.1-sol", "anthropic/claude-haiku-5.5"],
     gameType: "SLOPLASH",
     hostParticipation: "DISPLAY_ONLY",
     hostSecret: "host-secret",
@@ -135,7 +114,7 @@ describe("AI response generation jobs", () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
-      aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
+      aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-6.1-sol"],
       gameType: "SLOPLASH",
       hostName: "Host",
       hostSecret: "host-secret",
@@ -146,8 +125,8 @@ describe("AI response generation jobs", () => {
       for (let index = 0; index < 32; index += 1) {
         await ctx.db.insert("generationJobs", {
           gameId: host.gameId,
-          kind: "CHAT_REPLY",
-          generationKey: `foreign-chat:${index}`,
+          kind: "MATCHSLOP_IMAGE",
+          generationKey: `foreign-image:${index}`,
           status: "QUEUED",
           attempt: 0,
           createdAt: now + index,
@@ -188,7 +167,7 @@ describe("AI response generation jobs", () => {
       foreign: await ctx.db
         .query("generationJobs")
         .withIndex("by_gameId_and_kind_and_status", (index) =>
-          index.eq("gameId", host.gameId).eq("kind", "CHAT_REPLY"),
+          index.eq("gameId", host.gameId).eq("kind", "MATCHSLOP_IMAGE"),
         )
         .take(64),
       responses: await ctx.db
@@ -373,75 +352,6 @@ describe("AI response generation jobs", () => {
     expect(persisted.usage?.costUsd).toBeCloseTo(0.003);
   });
 
-  test("loads and completes ChatSlop response jobs through the same guarded lifecycle", async () => {
-    vi.useFakeTimers();
-    const { backend, host, started } = await createStartedChatslop();
-    const seeded = await backend.run(async (ctx) => {
-      const game = await ctx.db.get("games", host.gameId);
-      const job = await ctx.db
-        .query("generationJobs")
-        .withIndex("by_gameId_and_status", (index) =>
-          index.eq("gameId", host.gameId).eq("status", "QUEUED"),
-        )
-        .first();
-      if (!game || !job) throw new Error("Expected a queued ChatSlop response job");
-      const now = Date.now();
-      await ctx.db.patch("generationJobs", job._id, {
-        status: "RUNNING",
-        attempt: 1,
-        workId: "chat-work",
-        startedAt: now,
-        updatedAt: now,
-      });
-      return { game, job };
-    });
-    const args: ResponseWorkArgs = {
-      jobId: seeded.job._id,
-      gameId: host.gameId,
-      roundId: started.roundId,
-      roundNumber: 1,
-      phaseGeneration: seeded.game.phaseGeneration,
-      attempt: 1,
-    };
-
-    const context = await backend.query(loadResponseContextRef, args);
-    if (context.kind !== "ready") throw new Error(context.reason);
-    expect(context.gameType).toBe("AI_CHAT_SHOWDOWN");
-    expect(context.prompts).toHaveLength(1);
-    expect(context.history).toEqual([]);
-    const prompt = context.prompts[0];
-    if (!prompt) throw new Error("Expected one ChatSlop prompt");
-
-    await expect(
-      backend.mutation(persistResponseRef, {
-        ...args,
-        promptId: prompt.promptId,
-        text: "ChatSlop generated response",
-        failReason: null,
-        usage: {
-          modelId: context.modelId,
-          inputTokens: 4,
-          outputTokens: 6,
-          costUsd: 0.004,
-        },
-      }),
-    ).resolves.toEqual({ status: "INSERTED" });
-    await expect(backend.mutation(finishResponseJobRef, args)).resolves.toEqual({
-      status: "SUCCEEDED",
-    });
-
-    const persisted = await backend.run(async (ctx) => ({
-      job: await ctx.db.get("generationJobs", seeded.job._id),
-      response: await ctx.db
-        .query("responses")
-        .withIndex("by_promptId_and_playerId", (index) =>
-          index.eq("promptId", prompt.promptId).eq("playerId", context.playerId),
-        )
-        .unique(),
-    }));
-    expect(persisted.job?.status).toBe("SUCCEEDED");
-    expect(persisted.response?.text).toBe("ChatSlop generated response");
-  });
 
   test("materializes failed AI responses and settles a timers-disabled writing phase", async () => {
     const { backend, host, started } = await createTimersDisabledAiOnlySloplash();

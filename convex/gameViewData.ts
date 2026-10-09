@@ -316,7 +316,6 @@ function mapRoundPrompts(
           (response) =>
             response.promptId === prompt._id &&
             (game.status !== "WRITING" ||
-              game.gameType === "AI_CHAT_SHOWDOWN" ||
               game.gameType === "MATCHSLOP" ||
               response.playerId === viewerPlayerId),
         )
@@ -385,7 +384,6 @@ export async function loadStageRounds(
 ) {
   if (
     (game.gameType !== "SLOPLASH" &&
-      game.gameType !== "AI_CHAT_SHOWDOWN" &&
       game.gameType !== "MATCHSLOP") ||
     game.status === "LOBBY"
   ) {

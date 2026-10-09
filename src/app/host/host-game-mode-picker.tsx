@@ -5,10 +5,6 @@ import {
   MIN_PLAYERS as SLOPLASH_MIN_PLAYERS,
 } from "@/games/sloplash/game-constants";
 import {
-  MAX_PLAYERS as CHATSLOP_MAX_PLAYERS,
-  MIN_PLAYERS as CHATSLOP_MIN_PLAYERS,
-} from "@/games/ai-chat-showdown/game-constants";
-import {
   MAX_PLAYERS as MATCHSLOP_MAX_PLAYERS,
   MIN_PLAYERS as MATCHSLOP_MIN_PLAYERS,
 } from "@/games/matchslop/game-constants";
@@ -50,16 +46,6 @@ export const GAME_TYPE_OPTIONS_BY_ID = {
     hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
     minPlayers: SLOPLASH_MIN_PLAYERS,
     maxPlayers: SLOPLASH_MAX_PLAYERS,
-  },
-  AI_CHAT_SHOWDOWN: {
-    displayName: "ChatSlop",
-    description: "AI group chat game — one prompt, everyone competes, no spectators",
-    supportsNarrator: false,
-    supportsAiPlayers: true,
-    timerToggle: null,
-    hostPlaysDescription: DEFAULT_HOST_PLAYS_DESCRIPTION,
-    minPlayers: CHATSLOP_MIN_PLAYERS,
-    maxPlayers: CHATSLOP_MAX_PLAYERS,
   },
   MATCHSLOP: {
     displayName: "MatchSlop",

@@ -7,8 +7,6 @@ import { useMutation } from "convex/react";
 import type { GameType } from "@/games/core/types";
 import { GameShell } from "@/components/game-shell";
 import { ControllerShell } from "@/components/controller-shell";
-import { ChatGameShell } from "@/games/ai-chat-showdown/ui/chat-game-shell";
-import { ChatControllerShell } from "@/games/ai-chat-showdown/ui/chat-controller-shell";
 import { MatchSlopGameShell } from "@/games/matchslop/ui/matchslop-game-shell";
 import { MatchSlopControllerShell } from "@/games/matchslop/ui/matchslop-controller-shell";
 import { QuizslopGameShell } from "@/games/quizslop/ui/quizslop-game-shell";
@@ -151,8 +149,6 @@ function resolveGameShell(
   switch (gameType) {
     case "SLOPLASH":
       return <GameShell code={code} viewMode={viewMode} />;
-    case "AI_CHAT_SHOWDOWN":
-      return <ChatGameShell code={code} viewMode={viewMode} />;
     case "MATCHSLOP":
       return <MatchSlopGameShell code={code} viewMode={viewMode} />;
     case "QUIZSLOP":
@@ -170,8 +166,6 @@ function resolveControllerShell(gameType: GameType, code: string) {
   switch (gameType) {
     case "SLOPLASH":
       return <ControllerShell code={code} />;
-    case "AI_CHAT_SHOWDOWN":
-      return <ChatControllerShell code={code} />;
     case "MATCHSLOP":
       return <MatchSlopControllerShell code={code} />;
     case "QUIZSLOP":

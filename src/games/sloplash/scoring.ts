@@ -158,8 +158,8 @@ export function scorePrompt(
 
   // A forfeited response is never votable and never wins. The prompt is only
   // uncontested when a single contender remains -- the 2-way Slop-Lash case.
-  // With more contenders (ChatSlop runs one N-way prompt), the others still
-  // competed for real votes, so score them normally and leave forfeiters at 0.
+  // With more contenders, the others still competed for real votes, so score
+  // them normally and leave forfeiters at 0.
   const contenders = responses.filter((r) => r.text !== FORFEIT_MARKER);
   if (contenders.length < responses.length && contenders.length <= 1) {
     return scoreForfeit(responses, playerStates, roundMult, eligibleVoterCount, result);

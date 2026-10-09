@@ -157,7 +157,7 @@ async function createMatch(
     gameType: "MATCHSLOP",
     hostSecret: "host-secret",
     personaIdentity: "WOMAN",
-    personaModelId: "openai/gpt-5.6-luna",
+    personaModelId: "openai/gpt-6.1-sol",
     seekerIdentity: "MAN",
     timersDisabled: options?.timersDisabled ?? true,
     totalRounds: 2,
@@ -221,7 +221,7 @@ describe("Convex MatchSlop backend", () => {
       gameType: "MATCHSLOP",
       hostSecret: "host-secret",
       personaIdentity: "WOMAN",
-      personaModelId: "openai/gpt-5.6-luna",
+      personaModelId: "openai/gpt-6.1-sol",
       seekerIdentity: "MAN",
     });
     const guest: Session = await backend.action(api.rooms.join, {
@@ -274,7 +274,7 @@ describe("Convex MatchSlop backend", () => {
       gameType: "MATCHSLOP",
       hostSecret: "host-secret",
       personaIdentity: "WOMAN",
-      personaModelId: "openai/gpt-5.6-luna",
+      personaModelId: "openai/gpt-6.1-sol",
       seekerIdentity: "MAN",
       timersDisabled: false,
       totalRounds: 2,
@@ -303,7 +303,7 @@ describe("Convex MatchSlop backend", () => {
         jobId: profileJob._id,
         profile: PROFILE,
         usage: {
-          modelId: "openai/gpt-5.6-luna",
+          modelId: "openai/gpt-6.1-sol",
           inputTokens: 100,
           outputTokens: 50,
           costUsd: 0.001,

@@ -1,7 +1,6 @@
 "use node";
 
 import { v } from "convex/values";
-import { generateJoke as generateChatJoke } from "../src/games/ai-chat-showdown/ai";
 import { generateJoke as generateSloplashJoke } from "../src/games/sloplash/ai";
 import { internalAction } from "./_generated/server";
 import { requireAiGatewayApiKey } from "./aiGateway";
@@ -54,10 +53,12 @@ export const generateResponse = internalAction({
     let persistedResponses = 0;
     let duplicateResponses = 0;
     for (const prompt of context.prompts) {
-      const generated =
-        context.gameType === "SLOPLASH"
-          ? await generateSloplashJoke(context.modelId, prompt.text, apiKey, context.history)
-          : await generateChatJoke(context.modelId, prompt.text, apiKey);
+      const generated = await generateSloplashJoke(
+        context.modelId,
+        prompt.text,
+        apiKey,
+        context.history,
+      );
       const persisted = await ctx.runMutation(persistResponseRef, {
         ...args,
         promptId: prompt.promptId,

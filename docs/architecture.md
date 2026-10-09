@@ -9,7 +9,7 @@ checked-in schemas remain the source of truth for implementation details.
 
 ### Next.js and React
 
-Next.js 16.2 and React 19 own routing, rendering, layouts, and browser UI. The
+Next.js 16.4 and React 19 own routing, rendering, layouts, and browser UI. The
 root Convex provider creates the browser client from `NEXT_PUBLIC_CONVEX_URL`.
 Feature components subscribe to the smallest useful backend view rather than
 maintaining a parallel client cache.
@@ -34,7 +34,7 @@ internal mutation. Normal game transitions call public mutations directly.
 ### Convex data and functions
 
 Convex stores rooms, sessions, players, rounds, prompts, responses, votes,
-reactions, chat, generation jobs, usage, recaps, and leaderboard projections.
+reactions, generation jobs, usage, recaps, and leaderboard projections.
 Queries use bounded indexed reads. Mutations keep related state transitions
 atomic, and actions delegate persistence back to guarded mutations.
 
@@ -53,7 +53,7 @@ The installed components have deliberately separate responsibilities:
 | Workpool  | Bounded concurrency and completion callbacks for independent AI jobs | Multi-step product workflow state                 |
 | Workflow  | Durable orchestration of dependent, multi-step operations            | Browser presence or authoritative game tables     |
 
-AI response, vote, chat-reply, and other generation records use durable
+AI response, vote, and other generation records use durable
 application job rows for idempotency and stale-result guards. Workpool executes
 the external call, and guarded Convex mutations atomically persist the result
 and usage. Workflow is reserved for sequences where later work depends on

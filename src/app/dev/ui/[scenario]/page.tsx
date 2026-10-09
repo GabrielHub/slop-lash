@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { MockGameShell } from "@/dev/game-fixtures/mock-game-shell";
-import { MockChatGameShell } from "@/dev/game-fixtures/mock-chat-game-shell";
 import { MockMatchSlopGameShell } from "@/dev/game-fixtures/mock-matchslop-game-shell";
 import { MOCK_SCENARIOS, getMockScenario } from "@/dev/game-fixtures/scenarios";
 
@@ -26,16 +25,6 @@ export default async function DevUiScenarioPage({
       ? MOCK_SCENARIOS[index + 1]?.slug
       : undefined;
 
-  if (scenario.game.gameType === "AI_CHAT_SHOWDOWN") {
-    return (
-      <MockChatGameShell
-        key={slug}
-        scenario={scenario}
-        previousSlug={previousSlug}
-        nextSlug={nextSlug}
-      />
-    );
-  }
   if (scenario.game.gameType === "MATCHSLOP") {
     return (
       <MockMatchSlopGameShell

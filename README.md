@@ -1,8 +1,8 @@
 # Slop-Lash
 
 Slop-Lash is a comedy party game where humans and AI models write responses,
-vote, react, and compete live in shared rooms. The repository also contains AI
-Chat Showdown and MatchSlop modes built on the same room platform.
+vote, react, and compete live in shared rooms. The repository also contains
+MatchSlop and QuizSlop modes built on the same room platform.
 
 ## How Slop-Lash Works
 
@@ -45,8 +45,9 @@ so scoring and recaps can distinguish them.
 
 ### Voice Readout
 
-Hosts can optionally enable low-latency speech through `openai/tts-1` on the
-Vercel AI Gateway. Matchups and countdowns use deterministic verbatim scripts.
+Hosts can optionally enable speech through `google/gemini-3.8-flash-lite-tts`
+on the Vercel AI Gateway, using Google voices and WAV audio. Matchups and
+countdowns use deterministic verbatim scripts.
 For transitions and results, `google/gemini-3.5-flash-lite` writes a short host
 line with narrator-specific minimal reasoning before TTS. A bounded FIFO keeps
 complete audio clips in event order. Narration does not participate in
@@ -57,27 +58,27 @@ authoritative game state.
 AI players run through the Vercel AI Gateway, with at most one selected model
 per provider. Gameplay uses the following reasoning budget policy:
 
-| Gateway model                  | Reasoning |
-| ------------------------------ | --------- |
-| `google/gemini-3.5-flash-lite` | High      |
-| `zai/glm-5.2`                  | Minimal   |
-| `deepseek/deepseek-v4-flash`   | Max       |
-| `openai/gpt-5.6-luna`          | Minimal   |
-| `moonshotai/kimi-k2.5`         | Medium    |
-| `xiaomi/mimo-v2.5-pro`         | High      |
-| `xai/grok-4.5`                 | Low       |
-| `alibaba/qwen3.5-flash`        | High      |
-| `anthropic/claude-haiku-4.5`   | Low       |
+| Gateway model                    | Reasoning |
+| -------------------------------- | --------- |
+| `google/gemini-3.5-flash-lite`     | High      |
+| `zai/glm-5.3-flash`               | Low       |
+| `deepseek/deepseek-v4.1-flash`     | Max       |
+| `openai/gpt-6.1-sol`              | Low       |
+| `xiaomi/mimo-v2.6-flash`           | High      |
+| `anthropic/claude-haiku-5.5`       | Low       |
 
 The table describes AI-player reasoning. Narrator script generation overrides
 Gemini to minimal reasoning because latency matters more than depth for a
 24-word spoken transition.
 
+QuizSlop verifies generated packs with `openai/gpt-6.1-sol`. MatchSlop generates
+portrait images through Fal's `recraft/v4.1/flash/text-to-image` endpoint.
+
 ## Architecture
 
 | Layer             | Technology and responsibility                                                         |
 | ----------------- | ------------------------------------------------------------------------------------- |
-| Web               | Next.js 16.2, React 19, TypeScript, Tailwind CSS 4                                    |
+| Web               | Next.js 16.4, React 19, TypeScript, Tailwind CSS 4                                    |
 | Client data       | Convex React hooks for reactive reads and writes                                      |
 | Backend           | A fresh Convex deployment containing room, game, recap, and leaderboard state         |
 | AI                | AI SDK 7 through the Vercel AI Gateway                                                |
@@ -106,7 +107,7 @@ restarts. See [Architecture](docs/architecture.md) for the full boundary map.
 - A Vercel AI Gateway key for AI generation and narration
 - An optional Fal key for MatchSlop image generation
 
-The repository pins Node 24 through `devEngines` and pnpm 11 through
+The repository pins Node 24 through `devEngines` and pnpm 12 through
 `packageManager`; use Vite Plus to select the runtime and install packages.
 
 ### 1. Install dependencies

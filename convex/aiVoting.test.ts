@@ -15,7 +15,6 @@ import {
   generateVoteRef,
   loadVoteContextRef,
   persistVoteRef,
-  settleChatslopVoteQuorumRef,
   settleSloplashVoteQuorumRef,
   voteWorkCompleteRef,
   type VoteWorkArgs,
@@ -37,21 +36,6 @@ vi.mock("../src/games/sloplash/ai", () => ({
   }),
 }));
 
-vi.mock("../src/games/ai-chat-showdown/ai", () => ({
-  LABELS: ["A", "B", "C", "D", "E", "F", "G", "H"],
-  simpleHash: (value: string) => value.length,
-  generateJoke: async (modelId: string, promptText: string) => ({
-    text: `mocked response: ${promptText}`,
-    usage: { modelId, inputTokens: 1, outputTokens: 1, costUsd: 0.0001 },
-    failReason: null,
-  }),
-  aiVoteNWay: async (modelId: string, _promptText: string, responses: Array<{ id: string }>) => ({
-    chosenResponseId: responses.at(-1)?.id ?? "",
-    usage: { modelId, inputTokens: 6, outputTokens: 4, costUsd: 0.002 },
-    failReason: null,
-  }),
-}));
-
 const modules = import.meta.glob("./**/*.ts");
 
 beforeEach(() => {
@@ -66,18 +50,18 @@ function createTestBackend() {
 }
 
 type Backend = ReturnType<typeof createTestBackend>;
-type VotingGameType = "SLOPLASH" | "AI_CHAT_SHOWDOWN";
 
-async function createVotingGame(gameType: VotingGameType, foreignQueuedJobs = 0) {
+async function createVotingGame(foreignQueuedJobs = 0) {
   vi.useFakeTimers();
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds:
-      gameType === "SLOPLASH"
-        ? ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"]
-        : ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna"],
-    gameType,
+    aiModelIds: [
+      "google/gemini-3.5-flash-lite",
+      "openai/gpt-6.1-sol",
+      "anthropic/claude-haiku-5.5",
+    ],
+    gameType: "SLOPLASH",
     hostName: "Host",
     hostSecret: "host-secret",
     timersDisabled: true,
@@ -93,8 +77,8 @@ async function createVotingGame(gameType: VotingGameType, foreignQueuedJobs = 0)
       for (let index = 0; index < foreignQueuedJobs; index += 1) {
         await ctx.db.insert("generationJobs", {
           gameId: host.gameId,
-          kind: "CHAT_REPLY",
-          generationKey: `foreign-chat:${index}`,
+          kind: "MATCHSLOP_IMAGE",
+          generationKey: `foreign-image:${index}`,
           status: "QUEUED",
           attempt: 0,
           createdAt: now + index,
@@ -131,19 +115,23 @@ async function createVotingGame(gameType: VotingGameType, foreignQueuedJobs = 0)
     }
   });
 
-  const settleRef =
-    gameType === "SLOPLASH" ? settleSloplashVoteQuorumRef : settleChatslopVoteQuorumRef;
-  await backend.mutation(settleRef, { gameId: host.gameId });
+  await backend.mutation(settleSloplashVoteQuorumRef, { gameId: host.gameId });
   return { backend, host, started };
 }
 
-async function createTimersDisabledAiOnlyChatslopVotingGame() {
+async function createTimersDisabledAiOnlySloplashVotingGame() {
   vi.useFakeTimers();
   vi.stubEnv("HOST_SECRET", "host-secret");
   const backend = createTestBackend();
   const host = await backend.action(api.rooms.create, {
-    aiModelIds: ["google/gemini-3.5-flash-lite", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5"],
-    gameType: "AI_CHAT_SHOWDOWN",
+    aiModelIds: [
+      "google/gemini-3.5-flash-lite",
+      "openai/gpt-6.1-sol",
+      "anthropic/claude-haiku-5.5",
+      "zai/glm-5.3-flash",
+      "deepseek/deepseek-v4.1-flash",
+    ],
+    gameType: "SLOPLASH",
     hostParticipation: "DISPLAY_ONLY",
     hostSecret: "host-secret",
     timersDisabled: true,
@@ -156,7 +144,7 @@ async function createTimersDisabledAiOnlyChatslopVotingGame() {
       .withIndex("by_gameId_and_roundId", (index) =>
         index.eq("gameId", host.gameId).eq("roundId", started.roundId),
       )
-      .take(8);
+      .take(16);
     for (const [index, assignment] of assignments.entries()) {
       await ctx.db.insert("responses", {
         gameId: host.gameId,
@@ -169,7 +157,7 @@ async function createTimersDisabledAiOnlyChatslopVotingGame() {
       });
     }
   });
-  await backend.mutation(settleChatslopVoteQuorumRef, { gameId: host.gameId });
+  await backend.mutation(settleSloplashVoteQuorumRef, { gameId: host.gameId });
   return { backend, host, started };
 }
 
@@ -202,17 +190,12 @@ async function loadVotingSnapshot(backend: Backend, gameId: Id<"games">, roundId
         .take(256),
     ]);
     if (!game || !round) throw new Error("Expected a current voting round");
-    const votingPrompts =
-      game.gameType === "SLOPLASH"
-        ? prompts
-            .filter((prompt) => {
-              const promptResponses = responses.filter(
-                (response) => response.promptId === prompt._id,
-              );
-              return promptResponses.length >= 2;
-            })
-            .toSorted((left, right) => left._id.localeCompare(right._id))
-        : prompts.filter((prompt) => prompt.ordinal === 0);
+    const votingPrompts = prompts
+      .filter((prompt) => {
+        const promptResponses = responses.filter((response) => response.promptId === prompt._id);
+        return promptResponses.length >= 2;
+      })
+      .toSorted((left, right) => left._id.localeCompare(right._id));
     const currentPrompt = votingPrompts[game.votingPromptIndex];
     if (!currentPrompt) throw new Error("Expected a visible voting prompt");
     return {
@@ -256,7 +239,7 @@ afterEach(() => {
 
 describe("AI vote generation jobs", () => {
   test("hands only the visible Slop-Lash prompt to Workpool and preserves future backlog", async () => {
-    const { backend, host, started } = await createVotingGame("SLOPLASH");
+    const { backend, host, started } = await createVotingGame();
     const before = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     expect(before.game).toMatchObject({ status: "VOTING", votingRevealing: false });
     const currentJobs = before.voteJobs.filter((job) =>
@@ -291,16 +274,19 @@ describe("AI vote generation jobs", () => {
   });
 
   test("drains queued votes through the exact kind/status index behind foreign work", async () => {
-    const { backend, host, started } = await createVotingGame("AI_CHAT_SHOWDOWN", 32);
+    const { backend, host, started } = await createVotingGame(32);
     const before = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     expect(before.voteJobs.length).toBeGreaterThan(0);
+    const currentJobs = before.voteJobs.filter((job) =>
+      job.generationKey.includes(`:${before.currentPrompt._id}:`),
+    );
 
     const result = await backend.mutation(enqueueQueuedVoteJobsRef, {
       gameId: host.gameId,
     });
     expect(result).toEqual({
-      enqueued: before.voteJobs.length,
-      skipped: 0,
+      enqueued: currentJobs.length,
+      skipped: before.voteJobs.length - currentJobs.length,
       failed: 0,
       canceled: 0,
     });
@@ -309,7 +295,7 @@ describe("AI vote generation jobs", () => {
       ctx.db
         .query("generationJobs")
         .withIndex("by_gameId_and_kind_and_status", (index) =>
-          index.eq("gameId", host.gameId).eq("kind", "CHAT_REPLY"),
+          index.eq("gameId", host.gameId).eq("kind", "MATCHSLOP_IMAGE"),
         )
         .take(64),
     );
@@ -318,7 +304,7 @@ describe("AI vote generation jobs", () => {
   });
 
   test("cancels unstarted Slop-Lash votes when the visible prompt is already revealing", async () => {
-    const { backend, host, started } = await createVotingGame("SLOPLASH");
+    const { backend, host, started } = await createVotingGame();
     const before = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     const currentJobs = before.voteJobs.filter((job) =>
       job.generationKey.includes(`:${before.currentPrompt._id}:`),
@@ -362,7 +348,7 @@ describe("AI vote generation jobs", () => {
   });
 
   test("runs the Slop-Lash action with redacted peers and atomically stores reactions and usage", async () => {
-    const { backend, host, started } = await createVotingGame("SLOPLASH");
+    const { backend, host, started } = await createVotingGame();
     await backend.mutation(enqueueQueuedVoteJobsRef, { gameId: host.gameId });
     const snapshot = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     const job = snapshot.voteJobs.find(
@@ -416,42 +402,8 @@ describe("AI vote generation jobs", () => {
     expect(unchanged).toMatchObject({ aiInputTokens: 5, aiOutputTokens: 3 });
   });
 
-  test("runs the ChatSlop N-way action without exposing authors or creating reactions", async () => {
-    const { backend, host, started } = await createVotingGame("AI_CHAT_SHOWDOWN");
-    await backend.mutation(enqueueQueuedVoteJobsRef, { gameId: host.gameId });
-    const snapshot = await loadVotingSnapshot(backend, host.gameId, started.roundId);
-    const job = snapshot.voteJobs.find((candidate) => candidate.workId !== undefined);
-    if (!job) throw new Error("Expected a ChatSlop vote job");
-    const args = workArgs(job, snapshot.game, snapshot.round, snapshot.currentPrompt._id);
-
-    await expect(backend.action(generateVoteRef, args)).resolves.toEqual({
-      status: "SUCCEEDED",
-      persistedVote: true,
-      duplicateVote: false,
-    });
-    const persisted = await backend.run(async (ctx) => ({
-      game: await ctx.db.get("games", host.gameId),
-      job: await ctx.db.get("generationJobs", job._id),
-      vote: await ctx.db
-        .query("votes")
-        .withIndex("by_promptId_and_voterId", (index) =>
-          index.eq("promptId", args.promptId).eq("voterId", voterId(job)),
-        )
-        .unique(),
-      reactions: await ctx.db
-        .query("reactions")
-        .withIndex("by_gameId_and_createdAt", (index) => index.eq("gameId", host.gameId))
-        .take(16),
-    }));
-    expect(persisted.job?.status).toBe("SUCCEEDED");
-    expect(persisted.vote?.responseId).toBeDefined();
-    expect(persisted.reactions).toEqual([]);
-    expect(persisted.game).toMatchObject({ aiInputTokens: 6, aiOutputTokens: 4 });
-    expect(persisted.game?.aiCostUsd).toBeCloseTo(0.002);
-  });
-
   test("deduplicates vote, reaction, and usage writes by prompt and voter", async () => {
-    const { backend, host, started } = await createVotingGame("SLOPLASH");
+    const { backend, host, started } = await createVotingGame();
     await backend.mutation(enqueueQueuedVoteJobsRef, { gameId: host.gameId });
     const snapshot = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     const job = snapshot.voteJobs.find((candidate) => candidate.workId !== undefined);
@@ -523,11 +475,11 @@ describe("AI vote generation jobs", () => {
   });
 
   test("cancels stale phase writes and records thrown Workpool failures", async () => {
-    const { backend, host, started } = await createVotingGame("AI_CHAT_SHOWDOWN");
+    const { backend, host, started } = await createVotingGame();
     await backend.mutation(enqueueQueuedVoteJobsRef, { gameId: host.gameId });
     const snapshot = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     const [staleJob, failedJob] = snapshot.voteJobs.filter((job) => job.workId !== undefined);
-    if (!staleJob || !failedJob) throw new Error("Expected two ChatSlop vote jobs");
+    if (!staleJob || !failedJob) throw new Error("Expected two Slop-Lash vote jobs");
     const staleArgs = workArgs(staleJob, snapshot.game, snapshot.round, snapshot.currentPrompt._id);
     const failedArgs = workArgs(
       failedJob,
@@ -601,7 +553,7 @@ describe("AI vote generation jobs", () => {
   });
 
   test("materializes failed AI abstentions and settles timers-disabled voting", async () => {
-    const { backend, host, started } = await createTimersDisabledAiOnlyChatslopVotingGame();
+    const { backend, host, started } = await createTimersDisabledAiOnlySloplashVotingGame();
     await backend.mutation(enqueueQueuedVoteJobsRef, { gameId: host.gameId });
     const snapshot = await loadVotingSnapshot(backend, host.gameId, started.roundId);
     const jobs = snapshot.voteJobs.filter((job) => job.workId !== undefined);
@@ -669,6 +621,7 @@ describe("AI vote generation jobs", () => {
 
     await backend.finishAllScheduledFunctions(() => vi.runAllTimers());
     const settledGame = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
-    expect(settledGame?.status).not.toBe("VOTING");
+    expect(settledGame).toMatchObject({ status: "VOTING", votingRevealing: true });
+    expect(settledGame?.phaseGeneration).toBe(snapshot.game.phaseGeneration + 1);
   });
 });

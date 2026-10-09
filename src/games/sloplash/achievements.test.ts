@@ -52,7 +52,7 @@ function makeGame(overrides: Partial<GameState> = {}): GameState {
         id: "ai1",
         name: "GPT",
         type: "AI",
-        modelId: "openai/gpt-5.6-luna",
+        modelId: "openai/gpt-6.1-sol",
         score: 200,
         humorRating: 1.0,
         winStreak: 0,
@@ -266,7 +266,7 @@ describe("computeAchievements", () => {
           id: "ai1",
           name: "GPT",
           type: "AI",
-          modelId: "openai/gpt-5.6-luna",
+          modelId: "openai/gpt-6.1-sol",
           score: 0,
           humorRating: 1.0,
           winStreak: 0,
@@ -343,7 +343,7 @@ describe("computeAchievements", () => {
           id: "ai1",
           name: "GPT",
           type: "AI",
-          modelId: "openai/gpt-5.6-luna",
+          modelId: "openai/gpt-6.1-sol",
           score: 0,
           humorRating: 1.0,
           winStreak: 0,
@@ -394,7 +394,7 @@ describe("computeAchievements", () => {
                   playerId: "ai1",
                   text: "AI loses",
                   playerType: "AI",
-                  modelId: "openai/gpt-5.6-luna",
+                  modelId: "openai/gpt-6.1-sol",
                 },
               ],
               [
@@ -459,7 +459,7 @@ describe("computeAchievements", () => {
           id: "ai1",
           name: "GPT",
           type: "AI",
-          modelId: "openai/gpt-5.6-luna",
+          modelId: "openai/gpt-6.1-sol",
           score: 100,
           humorRating: 1.0,
           winStreak: 0,
@@ -533,7 +533,7 @@ describe("computeAchievements", () => {
           id: "ai1",
           name: "GPT",
           type: "AI",
-          modelId: "openai/gpt-5.6-luna",
+          modelId: "openai/gpt-6.1-sol",
           score: 0,
           humorRating: 1.0,
           winStreak: 0,
@@ -608,7 +608,7 @@ describe("computeAchievements", () => {
                   playerId: "ai1",
                   text: "AI answer",
                   playerType: "AI",
-                  modelId: "openai/gpt-5.6-luna",
+                  modelId: "openai/gpt-6.1-sol",
                 },
               ],
               [],
@@ -645,7 +645,7 @@ describe("computeAchievements", () => {
           id: "ai1",
           name: "GPT",
           type: "AI",
-          modelId: "openai/gpt-5.6-luna",
+          modelId: "openai/gpt-6.1-sol",
           score: 0,
           humorRating: 1.0,
           winStreak: 0,
@@ -661,9 +661,9 @@ describe("computeAchievements", () => {
     expect(ironWill[0].playerName).toBe("Alice");
   });
 
-  it("returns empty for AI_CHAT_SHOWDOWN games (achievements are Slop-Lash only)", () => {
+  it("returns empty for MATCHSLOP games (achievements are Slop-Lash only)", () => {
     const game = makeGame({
-      gameType: "AI_CHAT_SHOWDOWN",
+      gameType: "MATCHSLOP",
       players: [
         {
           id: "p1",

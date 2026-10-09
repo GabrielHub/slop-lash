@@ -353,17 +353,6 @@ export function DevComponentsPlayground() {
           </Link>
 
           <Link
-            href="/dev/components/chatslop"
-            className="rounded-xl border-2 border-edge bg-surface/80 p-5 transition-colors hover:border-edge-strong"
-            style={{ boxShadow: "var(--shadow-card)" }}
-          >
-            <h2 className="font-display text-lg font-bold text-ink">ChatSlop Components</h2>
-            <p className="mt-1 text-sm text-ink-dim">
-              Chat bubbles, chat bar, vote options, result rows, progress pills, game cards.
-            </p>
-          </Link>
-
-          <Link
             href="/dev/components/matchslop"
             className="rounded-xl border-2 border-edge bg-surface/80 p-5 transition-colors hover:border-edge-strong"
             style={{ boxShadow: "var(--shadow-card)" }}

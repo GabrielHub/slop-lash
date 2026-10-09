@@ -65,7 +65,7 @@ describe("Convex room client session mapping", () => {
     const input = roomResultToSessionInput({
       capability: "session.secret",
       gameId: "game" as Id<"games">,
-      gameType: "AI_CHAT_SHOWDOWN",
+      gameType: "MATCHSLOP",
       playerId: "player" as Id<"players">,
       playerName: "Guest",
       playerType: "HUMAN",

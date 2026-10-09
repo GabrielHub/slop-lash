@@ -8,7 +8,7 @@ import {
   type RoomInviteShareOutcome,
 } from "@/lib/room-invite-share";
 
-type InviteButtonTone = "default" | "chat" | "match" | "quiz";
+type InviteButtonTone = "default" | "match" | "quiz";
 type InviteButtonStatus = "idle" | "sharing" | RoomInviteShareOutcome;
 
 const TONE_STYLES: Record<InviteButtonTone, CSSProperties> = {
@@ -16,11 +16,6 @@ const TONE_STYLES: Record<InviteButtonTone, CSSProperties> = {
     background: "var(--surface)",
     borderColor: "var(--edge)",
     color: "var(--ink)",
-  },
-  chat: {
-    background: "var(--cs-raised)",
-    borderColor: "var(--cs-edge)",
-    color: "var(--cs-ink)",
   },
   match: {
     background: "var(--ms-raised)",

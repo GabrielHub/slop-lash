@@ -8,7 +8,6 @@ import {
   enqueueQueuedResponseJobsRef,
   generateResponseRef,
   responseWorkCompleteRef,
-  settleChatslopQuorumRef,
   settleSloplashQuorumRef,
   type ResponseHistoryEntry,
   type ResponseWorkArgs,
@@ -43,7 +42,7 @@ const finalStatusValidator = v.union(
 const responseContextValidator = v.union(
   v.object({
     kind: v.literal("ready"),
-    gameType: v.union(v.literal("SLOPLASH"), v.literal("AI_CHAT_SHOWDOWN")),
+    gameType: v.literal("SLOPLASH"),
     modelId: v.string(),
     playerId: v.id("players"),
     prompts: v.array(
@@ -114,7 +113,7 @@ async function validateResponseJob(
   if (!game || !round || !player) {
     return { kind: "stale", reason: "Response generation context no longer exists" };
   }
-  if (game.gameType !== "SLOPLASH" && game.gameType !== "AI_CHAT_SHOWDOWN") {
+  if (game.gameType !== "SLOPLASH") {
     return { kind: "stale", reason: "Game type does not generate comedy responses" };
   }
   if (
@@ -251,10 +250,6 @@ async function markTerminal(
   });
 }
 
-function responseSettlementRef(game: Doc<"games">) {
-  return game.gameType === "SLOPLASH" ? settleSloplashQuorumRef : settleChatslopQuorumRef;
-}
-
 async function failCurrentResponseWork(
   ctx: MutationCtx,
   job: Doc<"generationJobs">,
@@ -308,7 +303,7 @@ async function failCurrentResponseWork(
   }
 
   await markTerminal(ctx, job, status, reason);
-  await ctx.scheduler.runAfter(0, responseSettlementRef(game), { gameId: game._id });
+  await ctx.scheduler.runAfter(0, settleSloplashQuorumRef, { gameId: game._id });
 }
 
 export const enqueueQueuedResponseJobs = internalMutation({
@@ -337,11 +332,7 @@ export const enqueueQueuedResponseJobs = internalMutation({
     if (jobs.length === 0) return result;
 
     const game = await ctx.db.get("games", args.gameId);
-    if (
-      !game ||
-      (game.gameType !== "SLOPLASH" && game.gameType !== "AI_CHAT_SHOWDOWN") ||
-      game.status !== "WRITING"
-    ) {
+    if (!game || game.gameType !== "SLOPLASH" || game.status !== "WRITING") {
       for (const job of jobs) {
         await markTerminal(ctx, job, "CANCELED", "Writing phase is no longer current");
         result.canceled += 1;
@@ -486,10 +477,7 @@ export const loadResponseContext = internalQuery({
         prompts.push({ promptId: prompt._id, text: prompt.text, ordinal: prompt.ordinal });
     }
 
-    const history =
-      game.gameType === "SLOPLASH"
-        ? await buildResponseHistory(ctx.db, game._id, player._id, args.roundNumber)
-        : [];
+    const history = await buildResponseHistory(ctx.db, game._id, player._id, args.roundNumber);
     return {
       kind: "ready" as const,
       gameType: game.gameType,
@@ -684,7 +672,7 @@ export const finishResponseJob = internalMutation({
       completedAt: now,
       updatedAt: now,
     });
-    await ctx.scheduler.runAfter(0, responseSettlementRef(game), { gameId: game._id });
+    await ctx.scheduler.runAfter(0, settleSloplashQuorumRef, { gameId: game._id });
     return { status: "SUCCEEDED" as const };
   },
 });

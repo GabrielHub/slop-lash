@@ -29,4 +29,13 @@ describe("QuizSlop content configuration", () => {
       resolveQuizSlopContentConfig({ mode: "AI", generatorModelId: "somebody/free-mystery" }),
     ).toThrow(/Unsupported QuizSlop generator model/u);
   });
+
+  it.each(["moonshotai/kimi-k2.5", "alibaba/qwen3.5-flash", "xai/grok-4.5"])(
+    "rejects removed model %s as a generator",
+    (generatorModelId) => {
+      expect(() => resolveQuizSlopContentConfig({ mode: "AI", generatorModelId })).toThrow(
+        /Unsupported QuizSlop generator model/u,
+      );
+    },
+  );
 });

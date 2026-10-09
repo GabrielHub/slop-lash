@@ -62,7 +62,7 @@ function createTestBackend() {
 }
 
 async function seedGameWithDependents(
-  gameType: "SLOPLASH" | "AI_CHAT_SHOWDOWN",
+  gameType: "SLOPLASH" | "MATCHSLOP",
   status: "LOBBY" | "WRITING" | "FINAL_RESULTS",
   timestamp: number,
 ) {
@@ -146,12 +146,6 @@ async function seedGameWithDependents(
       emoji: "fire",
       createdAt: timestamp,
     });
-    await ctx.db.insert("chatMessages", {
-      gameId,
-      playerId,
-      content: "message",
-      createdAt: timestamp,
-    });
     await ctx.db.insert("gameModelUsage", {
       gameId,
       modelId: "google/gemini-3.5-flash-lite",
@@ -191,11 +185,7 @@ afterEach(() => {
 
 describe("Convex scheduled cleanup", () => {
   test("deletes completed transient games and every owned dependent row", async () => {
-    const { backend, gameId } = await seedGameWithDependents(
-      "AI_CHAT_SHOWDOWN",
-      "FINAL_RESULTS",
-      1_000,
-    );
+    const { backend, gameId } = await seedGameWithDependents("MATCHSLOP", "FINAL_RESULTS", 1_000);
     await expect(
       backend.mutation(deleteGameIfStale, {
         cutoff: 2_000,
@@ -215,7 +205,6 @@ describe("Convex scheduled cleanup", () => {
       responses: await ctx.db.query("responses").take(8),
       votes: await ctx.db.query("votes").take(8),
       reactions: await ctx.db.query("reactions").take(8),
-      messages: await ctx.db.query("chatMessages").take(8),
       usages: await ctx.db.query("gameModelUsage").take(8),
       jobs: await ctx.db.query("generationJobs").take(8),
     }));
@@ -229,7 +218,6 @@ describe("Convex scheduled cleanup", () => {
       responses: [],
       votes: [],
       reactions: [],
-      messages: [],
       usages: [],
       jobs: [],
     });
@@ -238,7 +226,7 @@ describe("Convex scheduled cleanup", () => {
   test("cancels exact active work before deleting any other room state", async () => {
     vi.useFakeTimers();
     const { backend, gameId, playerId } = await seedGameWithDependents(
-      "AI_CHAT_SHOWDOWN",
+      "MATCHSLOP",
       "FINAL_RESULTS",
       1_000,
     );
@@ -312,7 +300,7 @@ describe("Convex scheduled cleanup", () => {
 
   test("cleans terminal workflow storage and tolerates already-missing workflows", async () => {
     const { backend, gameId, playerId } = await seedGameWithDependents(
-      "AI_CHAT_SHOWDOWN",
+      "MATCHSLOP",
       "FINAL_RESULTS",
       1_000,
     );
@@ -377,22 +365,12 @@ describe("Convex scheduled cleanup", () => {
 
   test("continues cleanup in scheduled batches when a room exceeds one transaction", async () => {
     vi.useFakeTimers();
-    const { backend, gameId, playerId } = await seedGameWithDependents(
-      "AI_CHAT_SHOWDOWN",
-      "FINAL_RESULTS",
-      1_000,
-    );
+    const { backend, gameId } = await seedGameWithDependents("MATCHSLOP", "FINAL_RESULTS", 1_000);
     await backend.run(async (ctx) => {
       for (let index = 0; index < 40; index += 1) {
-        await ctx.db.insert("chatMessages", {
-          gameId,
-          playerId,
-          content: `message-${index}`,
-          createdAt: 1_001 + index,
-        });
+        await ctx.db.insert("rounds", { gameId, roundNumber: index + 2 });
       }
     });
-
     await expect(
       backend.mutation(deleteGameIfStale, {
         cutoff: 2_000,
@@ -406,8 +384,8 @@ describe("Convex scheduled cleanup", () => {
     await expect(
       backend.run(async (ctx) =>
         ctx.db
-          .query("chatMessages")
-          .withIndex("by_gameId_and_createdAt", (index) => index.eq("gameId", gameId))
+          .query("rounds")
+          .withIndex("by_gameId_and_roundNumber", (index) => index.eq("gameId", gameId))
           .take(1),
       ),
     ).resolves.toEqual([]);
@@ -429,7 +407,7 @@ describe("Convex scheduled cleanup", () => {
       ),
     ).resolves.not.toBeNull();
 
-    const active = await seedGameWithDependents("AI_CHAT_SHOWDOWN", "WRITING", 1_000);
+    const active = await seedGameWithDependents("MATCHSLOP", "WRITING", 1_000);
     await active.backend.run(async (ctx) => {
       await ctx.db.patch("playerSessions", active.sessionId, { lastSeenAt: 2_500 });
     });
@@ -447,7 +425,7 @@ describe("Convex scheduled cleanup", () => {
   });
 
   test("measures transient retention from finalization rather than room creation", async () => {
-    const recentFinal = await seedGameWithDependents("AI_CHAT_SHOWDOWN", "FINAL_RESULTS", 3_000);
+    const recentFinal = await seedGameWithDependents("MATCHSLOP", "FINAL_RESULTS", 3_000);
     await recentFinal.backend.run(async (ctx) => {
       await ctx.db.patch("games", recentFinal.gameId, { createdAt: 1_000 });
     });
