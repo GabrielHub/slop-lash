@@ -130,5 +130,5 @@ export const MATCHSLOP_PLAYER_EXAMPLES: string[] = [
   "We've matched before, you told me I didn't know Matt Damon movies I KNOW Matt Damon movies my hands were just freezing",
 
   // ─── CURSED QUESTION / OFF-TOPIC ASK ───
-  "How many weeks pregnant is the perfect amount of weeks? Asking for a friend"
+  "How many weeks pregnant is the perfect amount of weeks? Asking for a friend",
 ];

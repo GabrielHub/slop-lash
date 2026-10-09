@@ -1,205 +1,57 @@
 import Link from "next/link";
-import {
-  SLOPLASH_SCENARIOS,
-  MATCHSLOP_SCENARIOS,
-  MOCK_SCENARIOS,
-} from "@/dev/game-fixtures/scenarios";
+import { FIXTURES } from "@/dev/fixtures";
 import { DevThemeToggle } from "@/dev/dev-theme-toggle";
 
 export const metadata = {
-  title: "Dev UI Mock Flow",
+  title: "Dev UI Fixtures",
 };
-
-function ScenarioCard({
-  scenario,
-  index,
-  badge,
-}: {
-  scenario: (typeof MOCK_SCENARIOS)[number];
-  index: number;
-  badge?: string;
-}) {
-  return (
-    <Link
-      key={scenario.slug}
-      href={`/dev/ui/${scenario.slug}`}
-      className="rounded-xl border-2 border-edge bg-surface/80 p-4 backdrop-blur-sm transition-colors hover:border-edge-strong"
-      style={{ boxShadow: "var(--shadow-card)" }}
-    >
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-xs font-mono text-ink-dim">#{index + 1}</span>
-        <div className="flex items-center gap-1.5">
-          {badge && (
-            <span className="rounded-full border border-teal/40 bg-teal/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-teal">
-              {badge}
-            </span>
-          )}
-          <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-ink-dim">
-            {scenario.game.status}
-          </span>
-        </div>
-      </div>
-      <h2 className="font-display text-lg font-bold text-ink">{scenario.title}</h2>
-      <p className="mt-1 text-sm text-ink-dim">{scenario.description}</p>
-      <p className="mt-2 text-xs font-mono text-ink-dim/80">
-        viewer: {scenario.playerId ?? "none"}
-      </p>
-    </Link>
-  );
-}
-
-function MatchSlopScenarioCard({
-  scenario,
-  index,
-}: {
-  scenario: (typeof MATCHSLOP_SCENARIOS)[number];
-  index: number;
-}) {
-  return (
-    <div
-      className="rounded-xl border-2 border-edge bg-surface/80 p-4 backdrop-blur-sm"
-      style={{ boxShadow: "var(--shadow-card)" }}
-    >
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-xs font-mono text-ink-dim">#{index + 1}</span>
-        <div className="flex items-center gap-1.5">
-          <span className="rounded-full border border-punch/40 bg-punch/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-punch">
-            MatchSlop
-          </span>
-          <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-ink-dim">
-            {scenario.game.status}
-          </span>
-        </div>
-      </div>
-      <h2 className="font-display text-lg font-bold text-ink">{scenario.title}</h2>
-      <p className="mt-1 text-sm text-ink-dim">{scenario.description}</p>
-      <p className="mt-2 text-xs font-mono text-ink-dim/80">
-        default controller viewer: {scenario.playerId ?? "none"}
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Link
-          href={`/dev/ui/${scenario.slug}`}
-          className="rounded-md border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
-        >
-          Stage
-        </Link>
-        <Link
-          href={`/dev/ui/${scenario.slug}/controller`}
-          className="rounded-md border border-punch/40 bg-punch/10 px-3 py-2 text-sm text-punch hover:border-punch hover:bg-punch/15"
-        >
-          Controller
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 export default function DevUiIndexPage() {
   return (
     <main className="min-h-svh px-6 py-10">
-      <div className="mx-auto w-full max-w-5xl">
-        <header className="mb-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="mb-2 text-xs font-mono tracking-widest text-ink-dim">MOCK GAME FLOW</p>
-              <h1 className="font-display text-3xl font-bold text-ink">UI Iteration Routes</h1>
-              <p className="mt-2 max-w-2xl text-sm text-ink-dim">
-                These routes render the real game screens with fixture state so you can iterate on
-                layout and styling without playing through a live session.
-              </p>
-            </div>
-            <DevThemeToggle />
+      <div className="mx-auto max-w-5xl space-y-10">
+        <header className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-bold text-ink">Game fixtures</h1>
+            <p className="mt-1 text-sm text-ink-dim">
+              Static room views rendered through the live stage and controller screens.
+            </p>
           </div>
-          <div className="mt-4">
-            <Link
-              href="/dev/components"
-              className="inline-flex rounded-md border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
-            >
-              Shared Components
-            </Link>
-          </div>
+          <DevThemeToggle />
         </header>
-
-        <section className="mb-10">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <h2 className="font-display text-xl font-bold text-ink">Slop-Lash</h2>
-            <Link
-              href="/dev/components/sloplash"
-              className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
-            >
-              Components
-            </Link>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {SLOPLASH_SCENARIOS.map((scenario, index) => (
-              <ScenarioCard key={scenario.slug} scenario={scenario} index={index} />
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <div className="flex items-center justify-between gap-4 mb-2">
-            <h2 className="font-display text-xl font-bold text-ink">QuizSlop</h2>
-          </div>
-          <p className="text-sm text-ink-dim mb-4">
-            Adaptive party-trivia fixture: reveal a topic, predict a miss, answer privately, then
-            share each question and result with the room.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div
-              className="rounded-xl border-2 border-edge bg-surface/80 p-4 backdrop-blur-sm"
-              style={{ boxShadow: "var(--shadow-card)" }}
-            >
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-xs font-mono text-ink-dim">#1</span>
-                <span className="rounded-full border border-gold/40 bg-gold-soft px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-gold">
-                  QuizSlop
-                </span>
-              </div>
-              <h2 className="font-display text-lg font-bold text-ink">
-                QuizSlop round-flow prototype
-              </h2>
-              <p className="mt-1 text-sm text-ink-dim">
-                Navigate the full opening, middle, dispute, and finale sequences across the shared
-                stage and private player controller.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href="/dev/ui/quizslop-prototype"
-                  className="rounded-md border border-edge px-3 py-2 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
+        {Object.entries(FIXTURES).map(([gameType, fixtures]) => (
+          <section key={gameType}>
+            <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-dim">
+              {gameType}
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {fixtures.map((fixture) => (
+                <div
+                  key={fixture.id}
+                  className="rounded-xl border-2 border-edge bg-surface/80 p-4"
+                  style={{ boxShadow: "var(--shadow-card)" }}
                 >
-                  Stage
-                </Link>
-                <Link
-                  href="/dev/ui/quizslop-prototype/controller?player=P1"
-                  className="rounded-md border border-punch/40 bg-punch/10 px-3 py-2 text-sm text-punch hover:border-punch hover:bg-punch/15"
-                >
-                  Controller (P1)
-                </Link>
-              </div>
+                  <p className="font-display font-bold text-ink">{fixture.label}</p>
+                  <p className="mt-1 text-xs font-mono text-ink-dim">
+                    {fixture.view.room.status} · {fixture.view.room.phase}
+                  </p>
+                  <div className="mt-3 flex gap-2 text-sm">
+                    {(["stage", "controller", "game"] as const).map((layout) => (
+                      <Link
+                        key={layout}
+                        href={`/dev/ui/${fixture.id}?layout=${layout}`}
+                        className="rounded-md border border-edge px-2 py-1 text-ink-dim hover:border-edge-strong hover:text-ink"
+                      >
+                        {layout}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {fixtures.length === 0 && <p className="text-sm text-ink-dim">No fixtures yet.</p>}
             </div>
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <div className="flex items-center justify-between gap-4 mb-2">
-            <h2 className="font-display text-xl font-bold text-ink">MatchSlop</h2>
-            <Link
-              href="/dev/components/matchslop"
-              className="rounded-md border border-edge px-3 py-1.5 text-sm text-ink-dim hover:border-edge-strong hover:text-ink"
-            >
-              Components
-            </Link>
-          </div>
-          <p className="text-sm text-ink-dim mb-4">
-            TV-first stage fixtures plus dedicated phone controller previews.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {MATCHSLOP_SCENARIOS.map((scenario, index) => (
-              <MatchSlopScenarioCard key={scenario.slug} scenario={scenario} index={index} />
-            ))}
-          </div>
-        </section>
+          </section>
+        ))}
       </div>
     </main>
   );

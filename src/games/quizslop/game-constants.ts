@@ -7,9 +7,6 @@
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 8;
 
-/** Standard length: one warm-up + one Home Turf per frozen player + one finale. */
-export const EXTRA_ROUNDS_BEYOND_HOME_TURF = 2;
-
 export const QUIZ_CORRECT_POINTS = 100;
 export const FINAL_QUIZ_CORRECT_POINTS = 200;
 export const CALL_SLOP_POINTS = 150;
@@ -17,48 +14,28 @@ export const CALL_SLOP_TOKENS_PER_GAME = 2;
 
 /** Phase timer defaults, in seconds. */
 export const HOUSE_VOTE_SECONDS = 30;
-export const HOUSE_VOTE_REVEAL_SECONDS = 15;
 export const TOPIC_REVEAL_SECONDS = 25;
 export const SLOP_CALL_SECONDS = 30;
-export const SLOP_CALL_REVEAL_SECONDS = 15;
 export const ANSWER_SECONDS = 60;
 export const QUESTION_REVEAL_SECONDS_PER_GROUP = 30;
-export const DISPUTE_VOTE_SECONDS = 30;
 export const ROUND_RESULTS_SECONDS = 30;
-/** Continuity grace applies even when gameplay timers are disabled. */
-export const CONTINUITY_GRACE_SECONDS = 15;
 
-/** Custom-topic setup bounds (Milestone 3; enforced from the first schema). */
-export const MAX_CUSTOM_REVISIONS_PER_PLAYER = 3;
-export const MAX_CUSTOM_REVISIONS_PER_ROOM = 24;
-export const NORMALIZATION_DEADLINE_SECONDS = 15;
-export const PACK_BUILD_DEADLINE_SECONDS = 60;
-
-/** Structural query caps for an eight-player game. Read cap + 1 and fail closed. */
-export const MAX_FROZEN_PLAYERS = MAX_PLAYERS;
-/** Every fresh pack freezes the complete 25-bank reviewed preflight. */
+/** The catalog checks require at least this many live topics. */
 export const MAX_FROZEN_TOPICS = 25;
-export const MAX_ASSIGNMENTS_PER_ROUND = MAX_PLAYERS;
-export const MAX_CALLS_PER_ROUND = MAX_PLAYERS;
-export const MAX_BALLOTS_PER_ROUND = 4;
-export const MAX_DISPUTE_VOTES_PER_ROUND = 32;
 export const MIN_SOURCES_PER_QUESTION = 1;
 export const MAX_SOURCES_PER_QUESTION = 3;
 export const QUESTIONS_PER_PACK = 4;
 export const FINAL_SLATE_SIZE = 3;
-export const CATALOG_FALLBACK_OFFER_SIZE = 3;
 
 /** Reviewed catalog launch minimums. */
 export const MIN_CATALOG_TOPICS = 12;
 export const MIN_CATALOG_CATEGORIES = 6;
 
 /** Unicode-character text bounds shared by Zod and Convex validators. */
-export const MAX_RAW_TOPIC_LENGTH = 120;
 export const MAX_TOPIC_LABEL_LENGTH = 56;
 export const MAX_TOPIC_SCOPE_LENGTH = 180;
 export const MAX_TOPIC_EXCLUSIONS = 3;
 export const MAX_TOPIC_EXCLUSION_LENGTH = 80;
-export const MAX_TOPIC_ALTERNATIVES = 3;
 export const SHA256_HEX_LENGTH = 64;
 export const CANONICAL_KEY_LENGTH = SHA256_HEX_LENGTH;
 export const MAX_DISPLAY_PROMPT_LENGTH = 220;

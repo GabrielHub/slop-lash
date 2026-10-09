@@ -1,0 +1,306 @@
+import { ConvexError, v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import { internalMutation, mutation, type MutationCtx } from "./_generated/server";
+import { requireHost } from "./capabilities";
+import { cancelGameJobs } from "./jobs";
+import { getMode } from "./modes";
+import type { RoomSettings } from "./rooms";
+import { HOST_FAILOVER_MS, loadActivePlayers, loadConnectedPlayers, loadPresence } from "./roster";
+
+/** Where a phase goes next. `seconds: null` waits for players or the host. */
+export type Transition = {
+  phase: string;
+  seconds: number | null;
+  step?: number;
+  round?: number;
+  /** The deadline only bounds an AI wait; screens show no countdown for it. */
+  watchdog?: boolean;
+};
+
+export type AdvanceReason = "complete" | "deadline" | "host";
+
+/** What every game mode provides; the engine owns everything else. */
+export interface GameMode {
+  minPlayers: number;
+  maxPlayers: number;
+  /** Finished rooms stay for their recap page instead of being deleted after an hour. */
+  keepsRecaps?: boolean;
+  /** Creates the mode's own state for a new room. */
+  createRoom?(ctx: MutationCtx, game: Doc<"games">, settings: RoomSettings): Promise<void>;
+  /** Cleans up after a player leaves the lobby or is removed mid-game. */
+  onPlayerRemoved?(ctx: MutationCtx, game: Doc<"games">, player: Doc<"players">): Promise<void>;
+  /** Validates the lobby and returns the first phase. Throw to refuse. */
+  start(ctx: MutationCtx, game: Doc<"games">, players: Doc<"players">[]): Promise<Transition>;
+  /** Whether everyone the phase is waiting on has acted. `connected` excludes absent humans. */
+  isComplete(ctx: MutationCtx, game: Doc<"games">, connected: Doc<"players">[]): Promise<boolean>;
+  /** Closes the current phase (filling gaps such as forfeits) and picks the next one. */
+  next(ctx: MutationCtx, game: Doc<"games">, reason: AdvanceReason): Promise<Transition | "FINISH">;
+  /** Runs after a phase is entered, e.g. to queue AI work. */
+  onEnter?(ctx: MutationCtx, game: Doc<"games">): Promise<void>;
+  /** Runs once when the game ends early or naturally, before the status flips. */
+  onFinish?(ctx: MutationCtx, game: Doc<"games">, early: boolean): Promise<void>;
+}
+
+/** A phase deadline that respects the room's "no timers" setting. */
+export function timed(game: Doc<"games">, seconds: number): number | null {
+  return game.timersDisabled ? null : seconds;
+}
+
+/** If a scheduled tick was lost, the sweep fires it this long after the deadline. */
+const MISSED_DEADLINE_GRACE_MS = 10_000;
+const SWEEP_BATCH = 50;
+
+async function reload(ctx: MutationCtx, gameId: Id<"games">): Promise<Doc<"games">> {
+  const game = await ctx.db.get("games", gameId);
+  if (!game) throw new ConvexError("Game not found");
+  return game;
+}
+
+/** The only way a game moves to another phase. */
+export async function enterPhase(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  transition: Transition,
+): Promise<void> {
+  const now = Date.now();
+  const phaseGeneration = game.phaseGeneration + 1;
+  const phaseDeadline =
+    transition.seconds === null ? undefined : now + Math.max(1, transition.seconds) * 1_000;
+  await ctx.db.patch("games", game._id, {
+    status: "PLAYING",
+    phase: transition.phase,
+    step: transition.step ?? 0,
+    round: transition.round ?? game.round,
+    phaseGeneration,
+    phaseStartedAt: now,
+    phaseDeadline,
+    deadlineHidden: transition.watchdog || undefined,
+    updatedAt: now,
+  });
+  if (phaseDeadline !== undefined) {
+    await ctx.scheduler.runAt(phaseDeadline, internal.engine.tick, {
+      gameId: game._id,
+      phaseGeneration,
+    });
+  }
+  await getMode(game.gameType).onEnter?.(ctx, await reload(ctx, game._id));
+}
+
+export async function finishGame(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  early: boolean,
+): Promise<void> {
+  if (game.status === "FINISHED") return;
+  try {
+    await ctx.runMutation(internal.engine.runFinishHook, { gameId: game._id, early });
+  } catch (error) {
+    // A broken scoring hook must never keep a room from ending.
+    console.error(`[engine] finish hook failed for ${game._id}`, error);
+  }
+  const now = Date.now();
+  await ctx.db.patch("games", game._id, {
+    status: "FINISHED",
+    phase: "FINAL",
+    step: 0,
+    phaseGeneration: game.phaseGeneration + 1,
+    phaseStartedAt: now,
+    phaseDeadline: undefined,
+    deadlineHidden: undefined,
+    finishedAt: now,
+    updatedAt: now,
+  });
+  await cancelGameJobs(ctx, game._id);
+  try {
+    await getMode(game.gameType).onEnter?.(ctx, await reload(ctx, game._id));
+  } catch (error) {
+    console.error(`[engine] final onEnter failed for ${game._id}`, error);
+  }
+}
+
+async function advance(ctx: MutationCtx, game: Doc<"games">, reason: AdvanceReason) {
+  const result = await getMode(game.gameType).next(ctx, game, reason);
+  const current = await reload(ctx, game._id);
+  if (result === "FINISH") await finishGame(ctx, current, false);
+  else await enterPhase(ctx, current, result);
+}
+
+/**
+ * Advances when everyone the phase is waiting on has acted. Call after any
+ * player input or AI result; it is a cheap no-op otherwise.
+ */
+export async function settle(ctx: MutationCtx, gameId: Id<"games">): Promise<boolean> {
+  const game = await ctx.db.get("games", gameId);
+  if (!game || game.status !== "PLAYING") return false;
+  const { players, connected } = await loadConnectedPlayers(ctx, game, Date.now());
+  // With every human away, nobody is watching: let the clock run instead of
+  // racing through phases on AI input alone.
+  const humansHere = connected.some((player) => player.type === "HUMAN");
+  const humansExist = players.some((player) => player.type === "HUMAN");
+  if (humansExist && !humansHere) return false;
+  if (!(await getMode(game.gameType).isComplete(ctx, game, connected))) return false;
+  await advance(ctx, game, "complete");
+  return true;
+}
+
+/** Moves host controls to a connected human when the current host is gone. */
+async function failOverHost(ctx: MutationCtx, game: Doc<"games">, now: number): Promise<void> {
+  const [players, presence] = await Promise.all([
+    loadActivePlayers(ctx, game._id),
+    loadPresence(ctx, game._id),
+  ]);
+  const hostPlayerActive = players.some((player) => player._id === game.hostPlayerId);
+  const hostIds = [hostPlayerActive ? game.hostPlayerId : undefined, game.hostSessionId].filter(
+    (id): id is NonNullable<typeof id> => id !== undefined,
+  );
+  if (hostIds.some((id) => presence.get(id)?.online)) return;
+  const hostLastSeen = Math.max(
+    game.createdAt,
+    ...hostIds.map((id) => presence.get(id)?.lastDisconnected ?? 0),
+  );
+  if (now - hostLastSeen < HOST_FAILOVER_MS) return;
+  const successor = players
+    .filter((player) => player.type === "HUMAN" && presence.get(player._id)?.online)
+    .toSorted((left, right) => left.joinedAt - right.joinedAt)[0];
+  if (successor && successor._id !== game.hostPlayerId) {
+    await ctx.db.patch("games", game._id, { hostPlayerId: successor._id, updatedAt: now });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal entry points
+// ---------------------------------------------------------------------------
+
+/** Runs a mode's `next` in a subtransaction so a failure rolls back cleanly. */
+export const runAdvance = internalMutation({
+  args: {
+    gameId: v.id("games"),
+    phaseGeneration: v.number(),
+    reason: v.union(v.literal("complete"), v.literal("deadline"), v.literal("host")),
+  },
+  handler: async (ctx, args) => {
+    const game = await reload(ctx, args.gameId);
+    if (game.status !== "PLAYING" || game.phaseGeneration !== args.phaseGeneration) return;
+    await advance(ctx, game, args.reason);
+  },
+});
+
+export const runFinishHook = internalMutation({
+  args: { gameId: v.id("games"), early: v.boolean() },
+  handler: async (ctx, args) => {
+    const game = await reload(ctx, args.gameId);
+    await getMode(game.gameType).onFinish?.(ctx, game, args.early);
+  },
+});
+
+/**
+ * Advances a phase whose deadline passed. If the mode throws, the game ends
+ * instead of freezing on a phase nobody can leave.
+ */
+async function advanceOrRescue(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  reason: AdvanceReason,
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.engine.runAdvance, {
+      gameId: game._id,
+      phaseGeneration: game.phaseGeneration,
+      reason,
+    });
+  } catch (error) {
+    console.error(`[engine] ${game.gameType} ${game.phase} failed to advance; ending game`, error);
+    await finishGame(ctx, await reload(ctx, game._id), true);
+  }
+}
+
+export const tick = internalMutation({
+  args: { gameId: v.id("games"), phaseGeneration: v.number() },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get("games", args.gameId);
+    if (!game || game.status !== "PLAYING" || game.phaseGeneration !== args.phaseGeneration) {
+      return;
+    }
+    if (game.phaseDeadline === undefined || game.phaseDeadline > Date.now()) return;
+    await advanceOrRescue(ctx, game, "deadline");
+  },
+});
+
+/** Per-room housekeeping: missed deadlines, quorum after someone left, host failover. */
+export const maintain = internalMutation({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get("games", args.gameId);
+    if (!game || game.status === "FINISHED") return;
+    const now = Date.now();
+    await failOverHost(ctx, game, now);
+    if (game.status !== "PLAYING") return;
+    if (game.phaseDeadline !== undefined && game.phaseDeadline + MISSED_DEADLINE_GRACE_MS < now) {
+      await advanceOrRescue(ctx, game, "deadline");
+      return;
+    }
+    try {
+      await settle(ctx, game._id);
+    } catch (error) {
+      console.error(`[engine] settle failed for ${game._id}`, error);
+    }
+  },
+});
+
+/** Cron entry point: fans `maintain` out to every live room. */
+export const sweep = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    for (const status of ["LOBBY", "PLAYING"] as const) {
+      const games = await ctx.db
+        .query("games")
+        .withIndex("by_status_and_updatedAt", (index) => index.eq("status", status))
+        .order("desc")
+        .take(SWEEP_BATCH);
+      for (const game of games) {
+        await ctx.scheduler.runAfter(0, internal.engine.maintain, { gameId: game._id });
+      }
+    }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Host controls
+// ---------------------------------------------------------------------------
+
+export const start = mutation({
+  args: { capability: v.string() },
+  handler: async (ctx, args) => {
+    const { game } = await requireHost(ctx, args.capability);
+    if (game.status !== "LOBBY") throw new ConvexError("The game already started");
+    const mode = getMode(game.gameType);
+    const players = await loadActivePlayers(ctx, game._id);
+    if (players.length < mode.minPlayers) {
+      throw new ConvexError(`Need at least ${mode.minPlayers} players`);
+    }
+    const first = await mode.start(ctx, game, players);
+    await enterPhase(ctx, await reload(ctx, game._id), { round: 1, ...first });
+  },
+});
+
+/** Host "next" / "skip": closes the current phase now. */
+export const advanceByHost = mutation({
+  args: { capability: v.string(), expectedPhaseGeneration: v.number() },
+  handler: async (ctx, args) => {
+    const { game } = await requireHost(ctx, args.capability);
+    if (game.status !== "PLAYING") throw new ConvexError("The game is not running");
+    // A double tap or a timer that just fired already did the job.
+    if (game.phaseGeneration !== args.expectedPhaseGeneration) return;
+    await advance(ctx, game, "host");
+  },
+});
+
+export const end = mutation({
+  args: { capability: v.string() },
+  handler: async (ctx, args) => {
+    const { game } = await requireHost(ctx, args.capability);
+    if (game.status === "LOBBY") throw new ConvexError("The game has not started");
+    await finishGame(ctx, game, true);
+  },
+});

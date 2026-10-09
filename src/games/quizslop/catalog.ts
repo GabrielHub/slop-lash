@@ -15,15 +15,11 @@ export function isShippableCatalogTopic(topic: QuizslopCatalogTopic): boolean {
   );
 }
 
-/** Catalog topics still selectable after excluding every claimed identity. */
-export function availableCatalogTopics(claimed: {
-  canonicalKeys: ReadonlySet<string>;
-  catalogTopicIds: ReadonlySet<string>;
-}): QuizslopCatalogTopic[] {
+/** Shippable catalog topics, minus any already claimed. */
+export function availableCatalogTopics(
+  claimedIds: ReadonlySet<string> = new Set(),
+): QuizslopCatalogTopic[] {
   return QUIZSLOP_TOPIC_CATALOG.filter(
-    (topic) =>
-      isShippableCatalogTopic(topic) &&
-      !claimed.canonicalKeys.has(topic.canonicalKey) &&
-      !claimed.catalogTopicIds.has(topic.id),
+    (topic) => isShippableCatalogTopic(topic) && !claimedIds.has(topic.id),
   );
 }

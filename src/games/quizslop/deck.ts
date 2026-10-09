@@ -133,13 +133,11 @@ export function buildDeck<TopicId extends string, PlayerId extends string>(input
 }): readonly DeckSlot<TopicId, PlayerId>[] {
   return [
     { kind: "WARM_UP", topicId: input.warmUpTopicId, ownerPlayerId: null },
-    ...input.homeTopics.map(
-      (topic): DeckSlot<TopicId, PlayerId> => ({
-        kind: "HOME_TURF",
-        topicId: topic.topicId,
-        ownerPlayerId: topic.ownerPlayerId,
-      }),
-    ),
+    ...input.homeTopics.map((topic): DeckSlot<TopicId, PlayerId> => ({
+      kind: "HOME_TURF",
+      topicId: topic.topicId,
+      ownerPlayerId: topic.ownerPlayerId,
+    })),
     { kind: "HOUSE_CHOICE", topicId: null, ownerPlayerId: null },
   ];
 }

@@ -3,97 +3,53 @@ import { v } from "convex/values";
 import {
   gameStatusValidator,
   gameTypeValidator,
-  generationKindValidator,
-  generationStatusValidator,
-  matchSlopIdentityValidator,
-  matchSlopOutcomeValidator,
-  matchSlopTranscriptOutcomeValidator,
-  participationStatusValidator,
+  jobStatusValidator,
   playerTypeValidator,
-  sessionRoleValidator,
   ttsModeValidator,
 } from "./validators";
-import {
-  matchSlopPendingPersonaReplyValidator,
-  matchSlopPersonaImageValidator,
-  matchSlopPostMortemDraftValidator,
-  matchSlopPostMortemGenerationValidator,
-  matchSlopPostMortemValidator,
-  matchSlopProfileDraftValidator,
-  matchSlopProfileGenerationValidator,
-  matchSlopProfileValidator,
-  matchSlopRoundResultValidator,
-} from "./matchslopValidators";
-import {
-  quizslopCallOutcomeValidator,
-  quizslopCategoryValidator,
-  quizslopComedyDeviceValidator,
-  quizslopContentSourceValidator,
-  quizslopDeckRoleValidator,
-  quizslopDisputeReasonValidator,
-  quizslopDisputeVoteChoiceValidator,
-  quizslopEligibilityKindValidator,
-  quizslopOutcomeValidator,
-  quizslopPackStatusValidator,
-  quizslopPhaseValidator,
-  quizslopProvenanceValidator,
-  quizslopQuestionRulingValidator,
-  quizslopRoundKindValidator,
-  quizslopScoreEventKindValidator,
-  quizslopTierValidator,
-  quizslopTopicSetupStateValidator,
-  quizslopTopicSourceTypeValidator,
-  quizSlopVerifierModelIdValidator,
-} from "./quizslopValidators";
+import { matchslopTables } from "./matchslop/tables";
+import { quizslopTables } from "./quizslop/tables";
 
 export default defineSchema({
+  /**
+   * One row per room. The engine owns `status`, `phase`, `step`, `round`, and
+   * the phase clock; each mode keeps anything else in its own tables.
+   */
   games: defineTable({
     roomCode: v.string(),
     gameType: gameTypeValidator,
     status: gameStatusValidator,
-    currentRound: v.number(),
+    /** Mode-specific phase name; "LOBBY" before start and "FINAL" after. */
+    phase: v.string(),
+    /** Sub-step inside a phase, e.g. which matchup is being voted on. */
+    step: v.number(),
+    round: v.number(),
     totalRounds: v.number(),
-    maxPlayers: v.number(),
-    playerCount: v.number(),
-    hostPlayerId: v.optional(v.id("players")),
+    /** Bumped on every phase change; guards every stale write and timer. */
+    phaseGeneration: v.number(),
+    phaseStartedAt: v.number(),
+    phaseDeadline: v.optional(v.number()),
+    /** The deadline is only a safety net for an AI wait, so screens show no countdown. */
+    deadlineHidden: v.optional(v.boolean()),
+    /** The creating session always keeps host powers. */
     hostSessionId: v.optional(v.id("playerSessions")),
+    /** A big screen created the room rather than one of the players. */
+    displayHost: v.boolean(),
+    /** A player with host powers: the creator if they play, or a failover. */
+    hostPlayerId: v.optional(v.id("players")),
     /** Created without the host password: Haiku writes, Jev judges. */
     freePlay: v.boolean(),
-    personaModelId: v.optional(v.string()),
-    phaseDeadline: v.optional(v.number()),
-    phaseGeneration: v.number(),
     timersDisabled: v.boolean(),
     ttsMode: ttsModeValidator,
     ttsVoice: v.string(),
-    votingPromptIndex: v.number(),
-    votingRevealing: v.boolean(),
-    nextGameId: v.optional(v.id("games")),
-    winnerTagline: v.optional(v.string()),
-    finalizedAt: v.optional(v.number()),
-    leaderboardProjectionStatus: v.optional(
-      v.union(v.literal("PENDING"), v.literal("SCHEDULED"), v.literal("PROJECTED")),
-    ),
-    leaderboardProjectionScheduledAt: v.optional(v.number()),
-    aiInputTokens: v.number(),
-    aiOutputTokens: v.number(),
-    aiCostUsd: v.number(),
+    finishedAt: v.optional(v.number()),
+    leaderboardProjected: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_roomCode", ["roomCode"])
     .index("by_status_and_updatedAt", ["status", "updatedAt"])
-    .index("by_gameType_and_status_and_finalizedAt", ["gameType", "status", "finalizedAt"])
-    .index("by_projection_pending", [
-      "gameType",
-      "status",
-      "leaderboardProjectionStatus",
-      "createdAt",
-    ])
-    .index("by_projection_retry", [
-      "gameType",
-      "leaderboardProjectionStatus",
-      "leaderboardProjectionScheduledAt",
-    ]),
+    .index("by_gameType_and_status_and_finishedAt", ["gameType", "status", "finishedAt"]),
 
   /** Free Play rooms created per UTC day, for the daily cap. */
   freePlayUsage: defineTable({
@@ -101,40 +57,15 @@ export default defineSchema({
     gamesCreated: v.number(),
   }).index("by_day", ["day"]),
 
+  /** A bearer capability for one browser: a seat, or the display-only host. */
   playerSessions: defineTable({
     gameId: v.id("games"),
     playerId: v.optional(v.id("players")),
-    role: sessionRoleValidator,
     capabilityHash: v.string(),
     createdAt: v.number(),
-    lastSeenAt: v.number(),
-    expiresAt: v.optional(v.number()),
-    revokedAt: v.optional(v.number()),
   })
     .index("by_gameId", ["gameId"])
-    .index("by_gameId_and_playerId", ["gameId", "playerId"])
-    .index("by_expiresAt", ["expiresAt"])
-    .index("by_revokedAt", ["revokedAt"]),
-
-  roomPresenceSessions: defineTable({
-    gameId: v.id("games"),
-    roomSessionId: v.id("playerSessions"),
-    tabSessionId: v.string(),
-    sessionToken: v.string(),
-    lastHeartbeatAt: v.number(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_roomSessionId", ["roomSessionId"])
-    .index("by_tabSessionId", ["tabSessionId"])
-    .index("by_sessionToken", ["sessionToken"])
-    .index("by_lastHeartbeatAt", ["lastHeartbeatAt"]),
-
-  roomJoinRateLimits: defineTable({
-    gameId: v.id("games"),
-    normalizedName: v.string(),
-    windowStartedAt: v.number(),
-    attempts: v.number(),
-  }).index("by_gameId_and_normalizedName", ["gameId", "normalizedName"]),
+    .index("by_playerId", ["playerId"]),
 
   players: defineTable({
     gameId: v.id("games"),
@@ -142,21 +73,20 @@ export default defineSchema({
     normalizedName: v.string(),
     type: playerTypeValidator,
     modelId: v.optional(v.string()),
-    idleRounds: v.number(),
     score: v.number(),
     humorRating: v.number(),
     winStreak: v.number(),
-    participationStatus: participationStatusValidator,
+    kickedAt: v.optional(v.number()),
     joinedAt: v.number(),
   })
     .index("by_gameId", ["gameId"])
     .index("by_gameId_and_normalizedName", ["gameId", "normalizedName"]),
 
+  /** Rounds, prompts, responses, and votes are shared by SlopLash and MatchSlop. */
   rounds: defineTable({
     gameId: v.id("games"),
     roundNumber: v.number(),
-    openedAt: v.optional(v.number()),
-    completedAt: v.optional(v.number()),
+    scoredAt: v.optional(v.number()),
   }).index("by_gameId_and_roundNumber", ["gameId", "roundNumber"]),
 
   prompts: defineTable({
@@ -164,46 +94,48 @@ export default defineSchema({
     roundId: v.id("rounds"),
     ordinal: v.number(),
     text: v.string(),
+    /** Players who must answer this prompt. */
+    assigneeIds: v.array(v.id("players")),
+    /** Set once the matchup's points are on the scoreboard. */
+    scoredAt: v.optional(v.number()),
   })
-    .index("by_roundId_and_ordinal", ["roundId", "ordinal"])
-    .index("by_gameId_and_roundId", ["gameId", "roundId"]),
-
-  promptAssignments: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("rounds"),
-    promptId: v.id("prompts"),
-    playerId: v.id("players"),
-  })
-    .index("by_promptId_and_playerId", ["promptId", "playerId"])
-    .index("by_playerId_and_roundId", ["playerId", "roundId"])
-    .index("by_gameId_and_roundId", ["gameId", "roundId"]),
+    .index("by_gameId", ["gameId"])
+    .index("by_roundId", ["roundId"]),
 
   responses: defineTable({
     gameId: v.id("games"),
     roundId: v.id("rounds"),
     promptId: v.id("prompts"),
     playerId: v.id("players"),
+    /** `FORFEIT_MARKER` when nobody answered in time or the AI failed. */
     text: v.string(),
-    metadata: v.optional(v.record(v.string(), v.any())),
+    /** MatchSlop: which profile prompt an opener replies to. */
+    openerPromptId: v.optional(v.string()),
     pointsEarned: v.number(),
-    failReason: v.optional(v.string()),
+    /** SlopLash: points the author (an AI) lost because every human passed. */
+    penalty: v.optional(v.number()),
     submittedAt: v.number(),
   })
-    .index("by_promptId_and_playerId", ["promptId", "playerId"])
-    .index("by_playerId_and_roundId", ["playerId", "roundId"])
-    .index("by_gameId_and_roundId", ["gameId", "roundId"]),
+    .index("by_gameId", ["gameId"])
+    .index("by_roundId", ["roundId"])
+    .index("by_promptId_and_playerId", ["promptId", "playerId"]),
 
   votes: defineTable({
     gameId: v.id("games"),
     roundId: v.id("rounds"),
     promptId: v.id("prompts"),
     voterId: v.id("players"),
+    /** Absent for a pass or a timed-out ballot. */
     responseId: v.optional(v.id("responses")),
-    failReason: v.optional(v.string()),
+    /** True when the ballot was filled because the voter never acted. */
+    timedOut: v.boolean(),
+    /** SlopLash: points this voter lost for passing on a matchup a human wrote. */
+    penalty: v.optional(v.number()),
     castAt: v.number(),
   })
-    .index("by_promptId_and_voterId", ["promptId", "voterId"])
-    .index("by_gameId_and_roundId", ["gameId", "roundId"]),
+    .index("by_gameId", ["gameId"])
+    .index("by_roundId", ["roundId"])
+    .index("by_promptId_and_voterId", ["promptId", "voterId"]),
 
   reactions: defineTable({
     gameId: v.id("games"),
@@ -213,9 +145,29 @@ export default defineSchema({
     emoji: v.string(),
     createdAt: v.number(),
   })
-    .index("by_responseId_and_playerId_and_emoji", ["responseId", "playerId", "emoji"])
-    .index("by_gameId_and_roundId", ["gameId", "roundId"])
-    .index("by_gameId_and_createdAt", ["gameId", "createdAt"]),
+    .index("by_gameId", ["gameId"])
+    .index("by_roundId", ["roundId"])
+    .index("by_responseId_and_playerId_and_emoji", ["responseId", "playerId", "emoji"]),
+
+  /**
+   * One row per AI call. `phaseGeneration` pins phase-bound jobs to the phase
+   * that queued them, so a late result can never land in a later phase.
+   */
+  generationJobs: defineTable({
+    gameId: v.id("games"),
+    kind: v.string(),
+    key: v.string(),
+    phaseGeneration: v.number(),
+    /** Phase-bound jobs are discarded once the phase moves on. */
+    phaseBound: v.boolean(),
+    payload: v.optional(v.any()),
+    status: jobStatusValidator,
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_gameId_and_key", ["gameId", "key"])
+    .index("by_gameId_and_status", ["gameId", "status"]),
 
   gameModelUsage: defineTable({
     gameId: v.id("games"),
@@ -223,304 +175,22 @@ export default defineSchema({
     inputTokens: v.number(),
     outputTokens: v.number(),
     costUsd: v.number(),
-  })
-    .index("by_gameId_and_modelId", ["gameId", "modelId"])
-    .index("by_modelId", ["modelId"]),
+  }).index("by_gameId_and_modelId", ["gameId", "modelId"]),
 
-  matchSlopState: defineTable({
+  /** SlopLash only: the AI leader's victory line for a results phase. */
+  winnerTaglines: defineTable({
     gameId: v.id("games"),
-    seekerIdentity: matchSlopIdentityValidator,
-    personaIdentity: matchSlopIdentityValidator,
-    outcome: matchSlopOutcomeValidator,
-    humanVoteWeight: v.number(),
-    aiVoteWeight: v.number(),
-    comebackRound: v.optional(v.number()),
-    mood: v.number(),
-    selectedPersonaExampleIds: v.array(v.string()),
-    selectedPlayerExamples: v.array(v.string()),
-    profile: v.optional(matchSlopProfileValidator),
-    profileDraft: v.optional(matchSlopProfileDraftValidator),
-    profileGeneration: v.optional(matchSlopProfileGenerationValidator),
-    personaImage: v.optional(matchSlopPersonaImageValidator),
-    lastRoundResult: v.optional(matchSlopRoundResultValidator),
-    pendingPersonaReply: v.optional(matchSlopPendingPersonaReplyValidator),
-    postMortem: v.optional(matchSlopPostMortemValidator),
-    postMortemDraft: v.optional(matchSlopPostMortemDraftValidator),
-    postMortemGeneration: v.optional(matchSlopPostMortemGenerationValidator),
-    latestSignalCategory: v.optional(v.string()),
-    latestSideComment: v.optional(v.string()),
-    latestNextSignal: v.optional(v.string()),
-    latestMoodDelta: v.optional(v.number()),
-    updatedAt: v.number(),
-  }).index("by_gameId", ["gameId"]),
-
-  matchSlopTranscriptEntries: defineTable({
-    gameId: v.id("games"),
-    turn: v.number(),
-    ordinal: v.number(),
-    speaker: v.union(v.literal("PLAYERS"), v.literal("PERSONA")),
-    text: v.string(),
-    outcome: v.optional(matchSlopTranscriptOutcomeValidator),
-    authorName: v.optional(v.string()),
-    selectedPromptText: v.optional(v.string()),
-    selectedPromptId: v.optional(v.string()),
-    mood: v.optional(v.number()),
-    createdAt: v.number(),
-  }).index("by_gameId_and_turn_and_ordinal", ["gameId", "turn", "ordinal"]),
-
-  quizSlopState: defineTable({
-    gameId: v.id("games"),
-    phase: quizslopPhaseValidator,
-    /** Zero-based deck position; `games.currentRound === deckPosition + 1`. */
-    deckPosition: v.number(),
-    /** Frozen question source and generation provenance for this room. */
-    contentSource: quizslopContentSourceValidator,
-    generatorModelId: v.optional(v.string()),
-    verifierModelId: v.optional(quizSlopVerifierModelIdValidator),
-    promptVersion: v.optional(v.string()),
-    schemaVersion: v.optional(v.string()),
-    packStatus: quizslopPackStatusValidator,
-    /** Bounded reveal ordinal while phase is QUESTION_REVEAL. */
-    revealOrdinal: v.number(),
-    /** Custom-topic revision reservations consumed across the room. */
-    customRevisionsReserved: v.number(),
-    /** Milestone 3 feature flag; the first version keeps custom topics off. */
-    customTopicsEnabled: v.boolean(),
-    outcome: quizslopOutcomeValidator,
-    selectedVoiceLineId: v.optional(v.string()),
-    previousVoiceLineId: v.optional(v.string()),
-    updatedAt: v.number(),
-  }).index("by_gameId", ["gameId"]),
-
-  quizSlopParticipants: defineTable({
-    gameId: v.id("games"),
-    playerId: v.id("players"),
-    seatOrder: v.number(),
-    /** Hidden adaptive tier; never returned to a player-facing client. */
-    hiddenTier: quizslopTierValidator,
-    callTokens: v.number(),
-    disputeAvailable: v.boolean(),
-    quizSubtotal: v.number(),
-    callSubtotal: v.number(),
-    total: v.number(),
-    correctAnswers: v.number(),
-    successfulCalls: v.number(),
-    incorrectCalls: v.number(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_gameId_and_playerId", ["gameId", "playerId"]),
-
-  quizSlopTopics: defineTable({
-    gameId: v.id("games"),
-    /** Home Topic owner; absent for warm-up and finalist topics. */
-    ownerPlayerId: v.optional(v.id("players")),
-    sourceType: quizslopTopicSourceTypeValidator,
-    catalogTopicId: v.optional(v.string()),
-    packVersion: v.number(),
-    /** Private raw submission text; custom topics only, owner-visible only. */
-    rawText: v.optional(v.string()),
-    revision: v.number(),
-    label: v.string(),
-    scope: v.string(),
-    category: quizslopCategoryValidator,
-    exclusions: v.array(v.string()),
-    canonicalKey: v.string(),
-    setupState: quizslopTopicSetupStateValidator,
-    /** Role and ordinal assigned by the atomic start transition. */
-    deckRole: v.optional(quizslopDeckRoleValidator),
-    deckOrdinal: v.optional(v.number()),
-    selectionRank: v.optional(v.number()),
-    tieBreakRank: v.optional(v.number()),
-    slateDisplayOrder: v.optional(v.number()),
-    updatedAt: v.number(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_gameId_and_ownerPlayerId", ["gameId", "ownerPlayerId"]),
-
-  quizSlopQuestions: defineTable({
-    gameId: v.id("games"),
-    topicId: v.id("quizSlopTopics"),
-    /** Server-only calibration tier. */
-    tier: quizslopTierValidator,
-    neutralQuestion: v.string(),
-    displayPrompt: v.string(),
-    choices: v.array(v.string()),
-    /** Server-only until the shared reveal boundary. */
-    correctIndex: v.number(),
-    canonicalFact: v.string(),
-    explanation: v.string(),
-    comedyDevices: v.array(quizslopComedyDeviceValidator),
-    provenance: quizslopProvenanceValidator,
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_topicId_and_tier", ["topicId", "tier"]),
-
-  quizSlopQuestionSources: defineTable({
-    gameId: v.id("games"),
-    questionId: v.id("quizSlopQuestions"),
-    url: v.string(),
-    title: v.string(),
-    locator: v.string(),
-    retrievedAt: v.string(),
-    contentHash: v.string(),
-    /** Server-side audit only; never sent to a player-facing client. */
-    supportExcerpt: v.string(),
-    primary: v.boolean(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_questionId", ["questionId"]),
-
-  quizSlopRounds: defineTable({
-    gameId: v.id("games"),
-    /** Zero-based deck ordinal; round number is `deckOrdinal + 1`. */
-    deckOrdinal: v.number(),
-    kind: quizslopRoundKindValidator,
-    /** Frozen topic; for HOUSE_CHOICE set only after the vote resolves. */
-    topicId: v.optional(v.id("quizSlopTopics")),
-    pointValue: v.number(),
-    /** Frozen finalist slate in shuffled display order (HOUSE_CHOICE only). */
-    finalistTopicIds: v.optional(v.array(v.id("quizSlopTopics"))),
-    /** Frozen reveal order of distinct assigned questions (at most four). */
-    revealQuestionIds: v.optional(v.array(v.id("quizSlopQuestions"))),
-    /** Questions ruled SYSTEM_VOID before their group reveal became public. */
-    systemVoidQuestionIds: v.optional(v.array(v.id("quizSlopQuestions"))),
-    /** Post-dispute rulings persisted at settlement (at most four entries). */
-    rulings: v.optional(
-      v.array(
-        v.object({
-          questionId: v.id("quizSlopQuestions"),
-          ruling: quizslopQuestionRulingValidator,
-        }),
-      ),
-    ),
-    settledAt: v.optional(v.number()),
-  }).index("by_gameId_and_deckOrdinal", ["gameId", "deckOrdinal"]),
-
-  /** Boundary-active roster snapshots; one row per eligible player per phase. */
-  quizSlopEligibility: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("quizSlopRounds"),
-    kind: quizslopEligibilityKindValidator,
     phaseGeneration: v.number(),
     playerId: v.id("players"),
-    snapshotAt: v.number(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_roundId_and_kind_and_playerId", ["roundId", "kind", "playerId"]),
-
-  quizSlopHouseVotes: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("quizSlopRounds"),
-    playerId: v.id("players"),
-    topicId: v.id("quizSlopTopics"),
-    castAt: v.number(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_roundId_and_playerId", ["roundId", "playerId"]),
-
-  /** One resolved Call Slop decision per eligible caller per round (call or hold). */
-  quizSlopCalls: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("quizSlopRounds"),
-    callerId: v.id("players"),
-    /** An absent target records an explicit hold, which never spends a token. */
-    targetId: v.optional(v.id("players")),
-    lockedAt: v.number(),
-    outcome: v.optional(quizslopCallOutcomeValidator),
-    callDelta: v.optional(v.number()),
-    tokenRefunded: v.optional(v.boolean()),
-    settledAt: v.optional(v.number()),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_roundId_and_callerId", ["roundId", "callerId"]),
-
-  /** Immutable per-round question assignment plus that player's answer state. */
-  quizSlopAssignments: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("quizSlopRounds"),
-    playerId: v.id("players"),
-    questionId: v.id("quizSlopQuestions"),
-    /** Hidden tier at assignment time; server-only audit. */
-    tierAtAssignment: quizslopTierValidator,
-    assignedAt: v.number(),
-    /** Answer state; an accountable player with no lock at closure is incorrect. */
-    selectedIndex: v.optional(v.number()),
-    lockedAt: v.optional(v.number()),
-    timedOut: v.optional(v.boolean()),
-    correct: v.optional(v.boolean()),
-    quizDelta: v.optional(v.number()),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_roundId_and_playerId", ["roundId", "playerId"])
-    .index("by_roundId_and_questionId", ["roundId", "questionId"]),
-
-  quizSlopDisputes: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("quizSlopRounds"),
-    questionId: v.id("quizSlopQuestions"),
-    initiatorId: v.id("players"),
-    reason: quizslopDisputeReasonValidator,
-    /** Frozen voter denominator captured when the ordered ruling sequence opens. */
-    frozenVoterCount: v.optional(v.number()),
-    ruling: v.optional(quizslopQuestionRulingValidator),
-    createdAt: v.number(),
-    settledAt: v.optional(v.number()),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_roundId_and_questionId", ["roundId", "questionId"]),
-
-  quizSlopDisputeVotes: defineTable({
-    gameId: v.id("games"),
-    roundId: v.id("quizSlopRounds"),
-    disputeId: v.id("quizSlopDisputes"),
-    voterId: v.id("players"),
-    choice: quizslopDisputeVoteChoiceValidator,
-    castAt: v.number(),
-  })
-    .index("by_gameId", ["gameId"])
-    .index("by_disputeId_and_voterId", ["disputeId", "voterId"]),
-
-  /** Unique-key score-event ledger; settlement authority with the subtotals. */
-  quizSlopScoreEvents: defineTable({
-    gameId: v.id("games"),
-    playerId: v.id("players"),
-    roundId: v.id("quizSlopRounds"),
-    /** Idempotency key: `<kind>:<roundId>:<playerId>`. */
-    key: v.string(),
-    kind: quizslopScoreEventKindValidator,
-    delta: v.number(),
-    createdAt: v.number(),
-  })
-    .index("by_gameId_and_key", ["gameId", "key"])
-    .index("by_gameId_and_playerId", ["gameId", "playerId"]),
-
-  generationJobs: defineTable({
-    gameId: v.id("games"),
-    kind: generationKindValidator,
-    generationKey: v.string(),
-    targetId: v.optional(v.string()),
-    status: generationStatusValidator,
-    attempt: v.number(),
-    workId: v.optional(v.string()),
-    workflowId: v.optional(v.string()),
-    error: v.optional(v.string()),
-    createdAt: v.number(),
-    startedAt: v.optional(v.number()),
-    completedAt: v.optional(v.number()),
-    updatedAt: v.number(),
-  })
-    .index("by_gameId_and_generationKey", ["gameId", "generationKey"])
-    .index("by_gameId_and_kind_and_status", ["gameId", "kind", "status"])
-    .index("by_gameId_and_status", ["gameId", "status"])
-    .index("by_gameId_and_status_and_updatedAt", ["gameId", "status", "updatedAt"])
-    .index("by_status_and_updatedAt", ["status", "updatedAt"]),
+    text: v.optional(v.string()),
+  }).index("by_gameId_and_phaseGeneration", ["gameId", "phaseGeneration"]),
 
   leaderboardEntries: defineTable({
     gameType: gameTypeValidator,
     competitorKey: v.string(),
     displayName: v.string(),
     shortName: v.string(),
-    type: v.union(v.literal("HUMAN"), v.literal("AI")),
+    type: playerTypeValidator,
     modelId: v.optional(v.string()),
     totalVotes: v.number(),
     totalResponses: v.number(),
@@ -554,7 +224,7 @@ export default defineSchema({
     promptText: v.string(),
     responseText: v.string(),
     playerName: v.string(),
-    playerType: v.union(v.literal("HUMAN"), v.literal("AI")),
+    playerType: playerTypeValidator,
     modelId: v.optional(v.string()),
     votePct: v.number(),
     voteCount: v.number(),
@@ -576,7 +246,6 @@ export default defineSchema({
   leaderboardStats: defineTable({
     gameType: gameTypeValidator,
     completedGames: v.number(),
-    abandonedGames: v.number(),
     totalPlayers: v.number(),
     totalPrompts: v.number(),
     totalVotes: v.number(),
@@ -585,8 +254,6 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_gameType", ["gameType"]),
 
-  leaderboardProcessedGames: defineTable({
-    gameId: v.id("games"),
-    processedAt: v.number(),
-  }).index("by_gameId", ["gameId"]),
+  ...matchslopTables,
+  ...quizslopTables,
 });

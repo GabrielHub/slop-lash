@@ -53,7 +53,7 @@ export function usePixelDissolve(options: DissolveOptions = {}) {
         }
       }, 5000);
     },
-    [options.colors, options.particleCount]
+    [options.colors, options.particleCount],
   );
 
   return { triggerElement };

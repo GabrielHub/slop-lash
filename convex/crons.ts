@@ -1,44 +1,11 @@
-import { cronJobs, makeFunctionReference } from "convex/server";
-
-const cleanupExpiredSessionsReference = makeFunctionReference<
-  "mutation",
-  Record<string, never>,
-  unknown
->("cleanup:cleanupExpiredSessions");
-
-const cleanupStalePresenceSessionsReference = makeFunctionReference<
-  "mutation",
-  Record<string, never>,
-  unknown
->("cleanup:cleanupStalePresenceSessions");
-
-const scheduleStaleRoomCleanupReference = makeFunctionReference<
-  "mutation",
-  Record<string, never>,
-  unknown
->("cleanup:scheduleStaleRoomCleanup");
-
-const catchUpFinalGamesReference = makeFunctionReference<
-  "mutation",
-  Record<string, never>,
-  unknown
->("leaderboards:catchUpFinalGames");
+import { cronJobs } from "convex/server";
+import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-crons.interval("project completed games", { minutes: 5 }, catchUpFinalGamesReference, {});
-crons.interval(
-  "schedule stale room cleanup",
-  { minutes: 15 },
-  scheduleStaleRoomCleanupReference,
-  {},
-);
-crons.interval(
-  "delete orphaned presence sessions",
-  { minutes: 15 },
-  cleanupStalePresenceSessionsReference,
-  {},
-);
-crons.interval("delete expired room sessions", { hours: 1 }, cleanupExpiredSessionsReference, {});
+// Catches what scheduled timers cannot: lost deadlines, players who walked
+// away mid-phase, and hosts who need replacing.
+crons.interval("maintain live rooms", { seconds: 15 }, internal.engine.sweep, {});
+crons.interval("delete stale rooms", { minutes: 15 }, internal.cleanup.sweep, {});
 
 export default crons;

@@ -91,42 +91,6 @@ export const QUIZSLOP_VOICE_LINES: readonly QuizslopVoiceLine[] = [
     accessibleLabel: "Vote for one of three finalist topics.",
     review: APPROVED_REVIEW,
   },
-  // HOUSE_VOTE_REVEAL
-  {
-    id: "vl-house-vote-reveal-1",
-    tag: "HOUSE_VOTE_REVEAL",
-    text: "The people have spoken, and the tally is in.",
-    accessibleLabel: "The winning final topic is shown.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-house-vote-reveal-2",
-    tag: "HOUSE_VOTE_REVEAL",
-    text: "Your finale topic, freshly elected.",
-    accessibleLabel: "The final topic has been chosen.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-house-vote-reveal-3",
-    tag: "HOUSE_VOTE_REVEAL",
-    text: "The votes are counted. No recounts; this is a party game.",
-    accessibleLabel: "Final topic vote result.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-house-vote-reveal-4",
-    tag: "HOUSE_VOTE_REVEAL",
-    text: "The room has chosen. Someone is thrilled, someone is not.",
-    accessibleLabel: "The chosen final topic is displayed.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-house-vote-reveal-5",
-    tag: "HOUSE_VOTE_REVEAL",
-    text: "Democracy delivered a final topic. Blame is now shared evenly.",
-    accessibleLabel: "Final topic selected by vote.",
-    review: APPROVED_REVIEW,
-  },
   // TOPIC_REVEAL_WARM_UP
   {
     id: "vl-topic-reveal-warm-up-1",
@@ -271,42 +235,6 @@ export const QUIZSLOP_VOICE_LINES: readonly QuizslopVoiceLine[] = [
     accessibleLabel: "Spend a token to call a player, or keep it.",
     review: APPROVED_REVIEW,
   },
-  // SLOP_CALL_REVEAL
-  {
-    id: "vl-slop-call-reveal-1",
-    tag: "SLOP_CALL_REVEAL",
-    text: "Calls are locked. Let's see who doubted whom.",
-    accessibleLabel: "All calls are revealed.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-slop-call-reveal-2",
-    tag: "SLOP_CALL_REVEAL",
-    text: "The accusations are in. Awkward eye contact starts now.",
-    accessibleLabel: "Revealing who called whom.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-slop-call-reveal-3",
-    tag: "SLOP_CALL_REVEAL",
-    text: "Every called-out player, revealed all at once.",
-    accessibleLabel: "Call targets are now shown.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-slop-call-reveal-4",
-    tag: "SLOP_CALL_REVEAL",
-    text: "Predictions unsealed. Friendships remain flexible.",
-    accessibleLabel: "Everyone's calls are revealed together.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-slop-call-reveal-5",
-    tag: "SLOP_CALL_REVEAL",
-    text: "The pointing fingers are now a matter of public record.",
-    accessibleLabel: "The call predictions are shown.",
-    review: APPROVED_REVIEW,
-  },
   // ANSWER
   {
     id: "vl-answer-1",
@@ -379,42 +307,6 @@ export const QUIZSLOP_VOICE_LINES: readonly QuizslopVoiceLine[] = [
     accessibleLabel: "Question results are shown.",
     review: APPROVED_REVIEW,
   },
-  // DISPUTE_VOTE
-  {
-    id: "vl-dispute-vote-1",
-    tag: "DISPUTE_VOTE",
-    text: "The room rules on the challenge. Majority wins.",
-    accessibleLabel: "Vote to uphold or void the challenged question.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-dispute-vote-2",
-    tag: "DISPUTE_VOTE",
-    text: "Vote to uphold or void. The quizmaster awaits judgement.",
-    accessibleLabel: "Cast your dispute vote.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-dispute-vote-3",
-    tag: "DISPUTE_VOTE",
-    text: "Democracy decides whether that question survives.",
-    accessibleLabel: "Vote on the disputed question.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-dispute-vote-4",
-    tag: "DISPUTE_VOTE",
-    text: "Jury duty, party edition. Uphold it or throw it out.",
-    accessibleLabel: "Uphold or void the challenged question.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-dispute-vote-5",
-    tag: "DISPUTE_VOTE",
-    text: "The question is on the stand. Cast your verdict.",
-    accessibleLabel: "Vote on the challenge.",
-    review: APPROVED_REVIEW,
-  },
   // ROUND_RESULTS
   {
     id: "vl-round-results-1",
@@ -449,42 +341,6 @@ export const QUIZSLOP_VOICE_LINES: readonly QuizslopVoiceLine[] = [
     tag: "ROUND_RESULTS",
     text: "Fresh totals. Some points earned, some merely survived.",
     accessibleLabel: "Scores after this round.",
-    review: APPROVED_REVIEW,
-  },
-  // CONTINUITY_GRACE
-  {
-    id: "vl-continuity-grace-1",
-    tag: "CONTINUITY_GRACE",
-    text: "Hang tight, we are waiting on a reconnect.",
-    accessibleLabel: "Paused while waiting for a player to reconnect.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-continuity-grace-2",
-    tag: "CONTINUITY_GRACE",
-    text: "The game paused for a missing player. Stretch a little.",
-    accessibleLabel: "Waiting for players to return.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-continuity-grace-3",
-    tag: "CONTINUITY_GRACE",
-    text: "Holding the line for a moment. Back shortly.",
-    accessibleLabel: "Game paused; it will resume soon.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-continuity-grace-4",
-    tag: "CONTINUITY_GRACE",
-    text: "Someone dropped out. We will give them a beat to return.",
-    accessibleLabel: "Paused for a disconnected player.",
-    review: APPROVED_REVIEW,
-  },
-  {
-    id: "vl-continuity-grace-5",
-    tag: "CONTINUITY_GRACE",
-    text: "Brief intermission while a player hunts for their signal.",
-    accessibleLabel: "Waiting for a reconnect.",
     review: APPROVED_REVIEW,
   },
   // FINAL_RESULTS

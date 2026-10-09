@@ -35,12 +35,7 @@ describe("scorePrompt forfeit handling", () => {
   it("scores the remaining contenders by real votes when one of many forfeits", () => {
     // An N-way prompt has multiple contenders. One AI generation failing inserts a
     // forfeit; that must not discard everyone else's votes.
-    const responses = [
-      response("a"),
-      response("b"),
-      response("c"),
-      response("d", FORFEIT_MARKER),
-    ];
+    const responses = [response("a"), response("b"), response("c"), response("d", FORFEIT_MARKER)];
     const voters = [voter("v1", "c"), voter("v2", "c"), voter("v3", "c")];
     const result = scorePrompt(
       responses,

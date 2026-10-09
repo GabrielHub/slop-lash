@@ -7,11 +7,7 @@ import { AI_MODELS } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { useTheme } from "@/components/theme-provider";
 import { getRandomPrompts } from "@/games/core/prompts";
-import {
-  staggerContainer,
-  fadeInUp,
-  buttonTapPrimary,
-} from "@/lib/animations";
+import { staggerContainer, fadeInUp, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 
 const MotionLink = motion.create(Link);
@@ -72,9 +68,7 @@ export default function Home() {
   const { mounted } = useTheme();
   const { triggerElement } = usePixelDissolve();
   const [currentPrompt, setCurrentPrompt] = useState("");
-  const [tagline] = useState(
-    () => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]
-  );
+  const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
 
   useEffect(() => {
     const prompts = getRandomPrompts(10);
@@ -103,10 +97,7 @@ export default function Home() {
       </div>
 
       {mounted && (
-        <div
-          className="absolute inset-0 hidden md:block pointer-events-none"
-          aria-hidden="true"
-        >
+        <div className="absolute inset-0 hidden md:block pointer-events-none" aria-hidden="true">
           {AI_MODELS.map((model, i) => {
             const pos = ICON_POSITIONS[i];
             if (!pos) return null;
@@ -138,10 +129,7 @@ export default function Home() {
       )}
 
       {mounted && (
-        <div
-          className="absolute inset-0 md:hidden pointer-events-none"
-          aria-hidden="true"
-        >
+        <div className="absolute inset-0 md:hidden pointer-events-none" aria-hidden="true">
           {AI_MODELS.map((model, i) => {
             const pos = MOBILE_ICON_POSITIONS[i];
             if (!pos) return null;
@@ -187,10 +175,7 @@ export default function Home() {
           PARTY PACK
         </motion.h1>
 
-        <motion.div
-          className="flex items-center justify-center gap-3 mb-4"
-          variants={fadeInUp}
-        >
+        <motion.div className="flex items-center justify-center gap-3 mb-4" variants={fadeInUp}>
           <div className="h-0.5 w-10 bg-edge-strong rounded-full" />
           <div className="h-1.5 w-1.5 rounded-full bg-gold" />
           <div className="h-0.5 w-10 bg-edge-strong rounded-full" />
@@ -208,8 +193,7 @@ export default function Home() {
           <div
             className="relative bg-surface/40 backdrop-blur-md border border-edge/60 rounded-2xl px-6 py-5"
             style={{
-              boxShadow:
-                "0 0 24px -4px color-mix(in srgb, var(--ink) 14%, transparent)",
+              boxShadow: "0 0 24px -4px color-mix(in srgb, var(--ink) 14%, transparent)",
             }}
           >
             <div className="h-14 flex items-center justify-center">
@@ -232,10 +216,7 @@ export default function Home() {
           </div>
         </motion.div>
 
-        <motion.div
-          className="flex flex-col sm:flex-row gap-4 justify-center"
-          variants={fadeInUp}
-        >
+        <motion.div className="flex flex-col sm:flex-row gap-4 justify-center" variants={fadeInUp}>
           <MotionLink
             href="/host"
             className="block bg-punch/70 backdrop-blur-md hover:bg-punch/85 text-white font-display font-bold py-4 px-8 rounded-xl text-xl border border-punch/30 transition-colors text-center sm:flex-1 shadow-[0_0_20px_-4px_var(--punch)]"
@@ -247,8 +228,7 @@ export default function Home() {
             href="/join"
             className="block bg-surface/40 backdrop-blur-md hover:bg-surface/60 text-ink font-display font-bold py-4 px-8 rounded-xl text-xl border-2 border-edge/60 hover:border-edge-strong transition-colors text-center sm:flex-1"
             style={{
-              boxShadow:
-                "0 0 24px -4px color-mix(in srgb, var(--ink) 14%, transparent)",
+              boxShadow: "0 0 24px -4px color-mix(in srgb, var(--ink) 14%, transparent)",
             }}
             {...buttonTapPrimary}
           >
@@ -266,7 +246,6 @@ export default function Home() {
             View Leaderboard
           </MotionLink>
         </motion.div>
-
       </motion.div>
 
       {mounted && (

@@ -1,339 +1,36 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
-import { motion } from "motion/react";
 import { api } from "../../../../../convex/_generated/api";
-import { GameState, filterCastVotes } from "@/lib/types";
-import { getModelByModelId } from "@/lib/models";
-import { analyzePromptOutcome, getPromptCardBorder } from "@/app/game/[code]/results";
-import { ModelIcon } from "@/components/model-icon";
-import { PromptOutcomeStamp } from "@/components/prompt-outcome-stamp";
-import { ScoreBarChart } from "@/components/score-bar-chart";
-import { BestPromptsCarousel, extractBestPrompts } from "@/components/best-prompts-carousel";
-import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
-import { fadeInUp, floatIn, staggerContainerSlow, springGentle, popIn } from "@/lib/animations";
+import { StaticRoomProvider } from "@/room/context";
+import { RoomSpinner } from "@/room/gate";
+import { RoomFrame } from "@/room/shell";
 
+/** A finished game's results, shareable with anyone who has the room code. */
 export function RecapShell({ code }: { code: string }) {
-  const recap = useQuery(api.recaps.getByRoomCode, { roomCode: code });
-  const game: GameState | null = recap?.kind === "READY" ? recap.game : null;
-  const error =
-    recap?.kind === "NOT_FOUND"
-      ? "Game not found"
-      : recap?.kind === "UNSUPPORTED_MODE"
-        ? "This game mode has its own results screen and no shareable recap"
-        : recap?.kind === "IN_PROGRESS"
-          ? "Game is still in progress"
-          : null;
-  const errorStatus = recap?.kind === "IN_PROGRESS" ? recap.status : null;
-  const confettiFired = useRef(false);
-
-  // Fire confetti once on load
-  useEffect(() => {
-    if (!game || confettiFired.current) return;
-    confettiFired.current = true;
-
-    const colors = ["#FF5647", "#2DD4B8", "#FFD644"];
-    void import("canvas-confetti").then(({ default: confetti }) => {
-      void confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors });
-      setTimeout(() => {
-        void confetti({
-          particleCount: 50,
-          angle: 120,
-          spread: 60,
-          origin: { x: 0.75, y: 0.6 },
-          colors,
-        });
-      }, 200);
-    });
-  }, [game]);
-
-  /* ---- Loading skeleton ---- */
-  if (!game && !error) {
+  const recap = useQuery(api.views.recap, { roomCode: code });
+  if (recap === undefined) return <RoomSpinner />;
+  if (recap.kind !== "READY") {
     return (
-      <div className="min-h-svh flex flex-col bg-base">
-        <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
-          <div className="h-4 w-20 rounded bg-edge/40 animate-pulse" />
-          <div className="h-4 w-px bg-edge-strong" />
-          <div className="h-4 w-14 rounded bg-edge/40 animate-pulse" />
+      <main className="min-h-svh flex items-center justify-center px-6">
+        <div className="text-center">
+          <p className="text-fail font-display font-bold text-xl mb-3">
+            {recap.kind === "NOT_FOUND" ? "Game not found" : "This game is still going"}
+          </p>
+          <Link
+            href={recap.kind === "NOT_FOUND" ? "/" : `/stage/${code}`}
+            className="text-sm font-medium text-teal hover:underline"
+          >
+            {recap.kind === "NOT_FOUND" ? "Back home" : "Watch it live"}
+          </Link>
         </div>
-        <main className="flex-1 flex flex-col items-center px-6 py-12">
-          <div className="w-full max-w-lg lg:max-w-4xl space-y-8">
-            <div className="flex justify-center">
-              <div className="h-10 w-48 rounded-lg bg-edge/40 animate-pulse" />
-            </div>
-            <div className="lg:grid lg:grid-cols-2 lg:gap-8">
-              <div className="space-y-3 mb-8 lg:mb-0">
-                {[0, 1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-10 rounded-lg bg-edge/40 animate-pulse"
-                    style={{ animationDelay: `${i * 100}ms` }}
-                  />
-                ))}
-              </div>
-              <div className="h-44 rounded-xl bg-edge/40 animate-pulse" />
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  /* ---- Error state ---- */
-  if (error) {
-    const isInProgress = errorStatus !== null;
-    return (
-      <main className="flex-1 flex items-center justify-center px-6">
-        <motion.div className="text-center" variants={fadeInUp} initial="hidden" animate="visible">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-fail-soft border-2 border-fail/30 flex items-center justify-center">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-fail"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="15" y1="9" x2="9" y2="15" />
-              <line x1="9" y1="9" x2="15" y2="15" />
-            </svg>
-          </div>
-          <p className="text-fail font-display font-bold text-xl mb-2">{error}</p>
-          {isInProgress && (
-            <Link
-              href={`/game/${code}`}
-              className="inline-block mt-2 text-sm font-medium text-teal hover:underline"
-            >
-              Join the live game &rarr;
-            </Link>
-          )}
-          <div className="mt-4">
-            <Link href="/" className="text-sm text-ink-dim hover:text-ink transition-colors">
-              Back to Home
-            </Link>
-          </div>
-        </motion.div>
       </main>
     );
   }
-
-  /* ---- Success: render recap ---- */
-  if (!game) return null;
-  const bestPrompts = extractBestPrompts(game);
-
   return (
-    <div className="min-h-svh flex flex-col bg-base">
-      {/* Static header */}
-      <div className="shrink-0 z-30 pl-4 pr-16 py-2.5 flex items-center gap-2 bg-base/80 backdrop-blur-sm border-b border-edge">
-        <span className="font-display font-bold text-xs text-punch tracking-tight">SLOP-LASH</span>
-        <span className="text-edge-strong">|</span>
-        <span className="font-mono font-bold text-xs tracking-widest text-ink-dim">
-          {game.roomCode}
-        </span>
-        <span className="text-edge-strong">|</span>
-        <span className="text-xs font-medium text-ink-dim">Recap</span>
-      </div>
-
-      <main className="flex-1 flex flex-col items-center px-6 py-12">
-        <div className="w-full max-w-lg lg:max-w-4xl">
-          {/* Title */}
-          <div className="text-center mb-10">
-            <motion.h1
-              className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-3"
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            >
-              Game Recap
-            </motion.h1>
-          </div>
-
-          {/* Scoreboard + Best Moments — side by side on desktop */}
-          <div className="lg:grid lg:grid-cols-2 lg:gap-8 mb-10">
-            {/* Score Bar Chart */}
-            <motion.div
-              className="mb-10 lg:mb-0"
-              variants={fadeInUp}
-              initial="hidden"
-              animate="visible"
-            >
-              <h2 className="text-sm font-medium text-ink-dim mb-3">Scoreboard</h2>
-              <ScoreBarChart game={game} />
-            </motion.div>
-
-            {/* Best Prompts Carousel */}
-            {bestPrompts.length > 0 && (
-              <motion.div
-                className="mb-10 lg:mb-0"
-                variants={fadeInUp}
-                initial="hidden"
-                animate="visible"
-                transition={{ delay: 0.3 }}
-              >
-                <h2 className="text-sm font-medium text-ink-dim mb-3">Best Moments</h2>
-                <BestPromptsCarousel prompts={bestPrompts} />
-              </motion.div>
-            )}
-          </div>
-
-          {/* Round-by-round breakdown */}
-          {game.rounds.map((round) => (
-            <motion.div
-              key={round.id}
-              className="mb-10"
-              variants={fadeInUp}
-              initial="hidden"
-              animate="visible"
-            >
-              <h2 className="text-sm font-medium text-ink-dim mb-3">Round {round.roundNumber}</h2>
-              <motion.div
-                className="space-y-5 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5"
-                variants={staggerContainerSlow}
-                initial="hidden"
-                animate="visible"
-              >
-                {round.prompts.map((prompt, promptIdx) => {
-                  const outcome = analyzePromptOutcome(prompt);
-                  const { totalVotes, isUnanimous, aiBeatsHuman, winnerResponseId, allPassed } =
-                    outcome;
-                  const cardStyle = getPromptCardBorder(outcome);
-
-                  return (
-                    <motion.div
-                      key={prompt.id}
-                      className={`p-4 sm:p-5 rounded-xl bg-surface/80 backdrop-blur-md border-2 ${cardStyle.border}`}
-                      style={{ boxShadow: cardStyle.shadow }}
-                      variants={floatIn}
-                    >
-                      <p className="font-display font-semibold text-sm text-gold mb-4">
-                        {prompt.text}
-                      </p>
-                      <div className="space-y-3">
-                        {prompt.responses.map((resp, respIdx) => {
-                          const voteCount = filterCastVotes(prompt.votes).filter(
-                            (v) => v.responseId === resp.id,
-                          ).length;
-                          const pct =
-                            totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
-                          const isWinner = winnerResponseId === resp.id;
-                          const pts = resp.pointsEarned;
-                          const respModel =
-                            resp.player.type === "AI" && resp.player.modelId
-                              ? getModelByModelId(resp.player.modelId)
-                              : null;
-
-                          return (
-                            <div
-                              key={resp.id}
-                              className={`p-3 rounded-xl relative overflow-hidden border-2 ${
-                                isWinner
-                                  ? "border-gold bg-gold-soft/80 backdrop-blur-sm"
-                                  : "border-edge bg-raised/80 backdrop-blur-sm"
-                              }`}
-                            >
-                              {/* Vote bar */}
-                              <motion.div
-                                className={`absolute inset-0 ${
-                                  isWinner ? "bg-gold/10" : "bg-ink/[0.03]"
-                                }`}
-                                initial={{ width: "0%" }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{
-                                  ...springGentle,
-                                  delay: 0.3 + respIdx * 0.15,
-                                }}
-                              />
-                              <div className="relative flex justify-between items-center gap-3">
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-sm leading-snug text-ink">
-                                    {resp.text}
-                                  </p>
-                                  <p className="flex items-center gap-1.5 mt-1">
-                                    {respModel && <ModelIcon model={respModel} size={14} />}
-                                    <span className="text-xs text-ink-dim">{resp.player.name}</span>
-                                    {isWinner && (
-                                      <motion.span
-                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gold/20 text-gold ml-1"
-                                        variants={popIn}
-                                        initial="hidden"
-                                        animate="visible"
-                                        transition={{
-                                          delay: 0.6 + respIdx * 0.15,
-                                        }}
-                                      >
-                                        <svg
-                                          viewBox="0 0 24 24"
-                                          fill="currentColor"
-                                          className="w-2.5 h-2.5"
-                                        >
-                                          <path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.14-3.47-6.22c-.42-.75-1.64-.75-2.06 0L7.01 9.72l-4.23-1.14c-.8-.22-1.63.26-1.84 1.06-.11.4-.02.82.24 1.13L5.5 15.5h13l4.32-4.73c.26-.31.35-.73.25-1.13z" />
-                                        </svg>
-                                        Winner
-                                      </motion.span>
-                                    )}
-                                  </p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span
-                                    className={`font-mono font-bold text-sm tabular-nums ${
-                                      pts < 0
-                                        ? "text-punch"
-                                        : isWinner
-                                          ? "text-gold"
-                                          : "text-ink-dim"
-                                    }`}
-                                  >
-                                    {pts < 0 ? pts.toLocaleString() : `+${pts.toLocaleString()}`}
-                                  </span>
-                                  <p className="text-[11px] text-ink-dim/60 tabular-nums">
-                                    {voteCount} vote
-                                    {voteCount !== 1 ? "s" : ""} ({pct}%)
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <PromptOutcomeStamp
-                        isUnanimous={isUnanimous}
-                        aiBeatsHuman={aiBeatsHuman}
-                        allPassed={allPassed}
-                        delay={0.8 + promptIdx * 0.2}
-                      />
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            </motion.div>
-          ))}
-
-          {/* AI Usage Stats */}
-          <motion.div className="mb-10" variants={fadeInUp} initial="hidden" animate="visible">
-            <h2 className="text-sm font-medium text-ink-dim mb-3">AI Usage</h2>
-            <AiUsageBreakdown
-              modelUsages={game.modelUsages}
-              totalInput={game.aiInputTokens}
-              totalOutput={game.aiOutputTokens}
-              totalCost={game.aiCostUsd}
-            />
-          </motion.div>
-
-          {/* Back to Home */}
-          <div className="text-center pb-8">
-            <Link href="/" className="inline-block text-sm font-medium text-teal hover:underline">
-              &larr; Back to Home
-            </Link>
-          </div>
-        </div>
-      </main>
-    </div>
+    <StaticRoomProvider view={recap.view}>
+      <RoomFrame layout="recap" />
+    </StaticRoomProvider>
   );
 }

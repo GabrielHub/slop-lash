@@ -49,8 +49,7 @@ Hosts can optionally enable speech through `google/gemini-3.8-flash-lite-tts`
 on the Vercel AI Gateway, using Google voices and WAV audio. Matchups and
 countdowns use deterministic verbatim scripts.
 For transitions and results, `google/gemini-3.5-flash-lite` writes a short host
-line with narrator-specific minimal reasoning before TTS. A bounded FIFO keeps
-complete audio clips in event order. Narration does not participate in
+line before TTS. A bounded FIFO keeps complete audio clips in event order. Narration does not participate in
 authoritative game state.
 
 ## AI Models
@@ -58,35 +57,20 @@ authoritative game state.
 AI players run through the Vercel AI Gateway, with at most one selected model
 per provider. Claude Haiku is the exception: it calls the Anthropic API directly
 with `ANTHROPIC_API_KEY`, so it bills the owner's Claude Console credits.
-Gameplay uses the following reasoning budget policy:
+Every model call, including the narrator's script writer, reasons at AI SDK's
+portable `minimal` effort: reasoning stays on at each provider's lowest level.
 
-| Gateway model                  | Reasoning |
-| ------------------------------ | --------- |
-| `google/gemini-3.5-flash-lite` | High      |
-| `zai/glm-5.3-flash`            | Low       |
-| `deepseek/deepseek-v4.1-flash` | Max       |
-| `openai/gpt-6.1-sol`           | Low       |
-| `xiaomi/mimo-v2.6-flash`       | High      |
-| `anthropic/claude-haiku-5.5`   | Low       |
-
-The table describes AI-player reasoning. Narrator script generation overrides
-Gemini to minimal reasoning because latency matters more than depth for a
-24-word spoken transition.
-
-QuizSlop verifies generated packs with `openai/gpt-6.1-sol`. MatchSlop generates
-portrait images through Fal's `recraft/v4.1/flash/text-to-image` endpoint.
+MatchSlop generates portrait images through Fal's `recraft/v4.1/flash/text-to-image` endpoint.
 
 ### Free Play
 
 Anyone can host without the host password. Free Play rooms are pinned on the
 server, whatever the client sends:
 
-- Claude Haiku writes every line: the Slop-Lash bot's answers, the MatchSlop
-  persona, and fresh QuizSlop packs.
-- `typesafe-ai/jev`, a Vercel AI Gateway decision model, does the judging.
-  It casts the Haiku bot's votes and reactions in Slop-Lash and verifies fresh
-  QuizSlop packs. It fails closed unless it passes a question with at least 50%
-  probability.
+- Claude Haiku writes every line: the Slop-Lash bot's answers and the MatchSlop
+  persona.
+- `typesafe-ai/jev`, a Vercel AI Gateway decision model, casts the Haiku bot's
+  votes and reactions in Slop-Lash.
 - Slop-Lash allows one AI player. MatchSlop has no AI teammates and no
   portraits. The narrator needs the host password.
 - `FREE_PLAY_DAILY_GAME_LIMIT` caps free rooms per UTC day (default 50; `0`
@@ -98,9 +82,9 @@ server, whatever the client sends:
 | ----------------- | ------------------------------------------------------------------------------------- |
 | Web               | Next.js 16.4, React 19, TypeScript, Tailwind CSS 4                                    |
 | Client data       | Convex React hooks for reactive reads and writes                                      |
-| Backend           | A fresh Convex deployment containing room, game, recap, and leaderboard state         |
+| Backend           | A fresh Convex deployment; one game engine runs every mode                            |
 | AI                | AI SDK 7 through the Vercel AI Gateway; Claude direct through the Anthropic API       |
-| Async work        | Convex Workpool for bounded AI jobs and Workflow for durable multi-step orchestration |
+| Async work        | Convex Workpool for bounded AI jobs, each with a fallback so AI never blocks a phase  |
 | Realtime presence | Convex Presence for ephemeral online/offline room state                               |
 | Toolchain         | Vite Plus for package installation, runtime selection, tasks, checks, lint, and tests |
 | Hosting           | Vercel for the Next.js application; Convex for backend functions and data             |
@@ -112,9 +96,10 @@ The React application is hook-first:
 - `useAction` starts external work or nondeterministic session setup such as
   generating room capabilities; durable writes still flow through mutations.
 
-Presence is not durable game state. Workpool controls concurrent AI generation,
-while Workflow coordinates multi-step jobs that must survive retries and
-restarts. See [Architecture](docs/architecture.md) for the full boundary map.
+Presence is not durable game state. Workpool controls concurrent AI generation.
+Each game draws a shared `Stage` and a per-player `Controller` inside one room
+shell. See [Architecture](docs/architecture.md) for the engine and the full
+boundary map.
 
 ## Getting Started
 
@@ -194,8 +179,8 @@ Do not prefix secrets with `NEXT_PUBLIC_` or put them in client code.
 
 Convex is the source of truth, and its dataset starts fresh. Legacy database
 records are intentionally not imported. Completed Slop-Lash games retain the
-players, responses, votes, reactions, recaps, and exactly-once leaderboard
-projections needed for historical views; scheduled maintenance removes expired
+players, responses, votes, reactions, and exactly-once leaderboard
+projections needed for recaps and historical views; scheduled maintenance removes expired
 sessions and abandoned or transient rooms.
 
 ## Commands
@@ -204,18 +189,17 @@ Vite Plus has direct commands for checks and tools. Next.js lifecycle commands
 must go through package tasks: direct `vp dev`, `vp build`, and `vp preview`
 invoke Vite itself and are not the Next.js application commands.
 
-| Command                         | Purpose                                                        |
-| ------------------------------- | -------------------------------------------------------------- |
-| `vp install`                    | Install dependencies with the pinned package manager/runtime   |
-| `vp run dev`                    | Start the Next.js development server                           |
-| `vp run build`                  | Create the Next.js production build                            |
-| `vp run start`                  | Serve the Next.js production build                             |
-| `vp check`                      | Run the configured combined lint and type checks               |
-| `vp fmt --check`                | Check repository formatting without changing files             |
-| `vp lint`                       | Run the configured Vite Plus lint rules                        |
-| `vp test`                       | Run the test suite                                             |
-| `vp exec tsc --noEmit`          | Run TypeScript directly when a focused compiler pass is useful |
-| `vp run convex:dev`             | Run and synchronize the development Convex deployment          |
-| `vp run convex:codegen`         | Regenerate the typed Convex API without starting development   |
-| `vp run test:ui:matchslop-sync` | Run the focused MatchSlop Playwright sync test                 |
-| `vp run check:theme-colors`     | Check the theme-color guardrail                                |
+| Command                     | Purpose                                                        |
+| --------------------------- | -------------------------------------------------------------- |
+| `vp install`                | Install dependencies with the pinned package manager/runtime   |
+| `vp run dev`                | Start the Next.js development server                           |
+| `vp run build`              | Create the Next.js production build                            |
+| `vp run start`              | Serve the Next.js production build                             |
+| `vp check`                  | Run the configured combined lint and type checks               |
+| `vp fmt --check`            | Check repository formatting without changing files             |
+| `vp lint`                   | Run the configured Vite Plus lint rules                        |
+| `vp test`                   | Run the test suite                                             |
+| `vp exec tsc --noEmit`      | Run TypeScript directly when a focused compiler pass is useful |
+| `vp run convex:dev`         | Run and synchronize the development Convex deployment          |
+| `vp run convex:codegen`     | Regenerate the typed Convex API without starting development   |
+| `vp run check:theme-colors` | Check the theme-color guardrail                                |

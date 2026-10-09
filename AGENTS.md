@@ -27,9 +27,11 @@ take precedence over this file.
   REST-style routes: `useQuery`/`usePaginatedQuery` for reactive reads,
   `useMutation` for transactional writes, and `useAction` for external services
   or Node.js-only work.
-- Presence owns ephemeral online/offline state, Workpool owns bounded concurrent
-  jobs, and Workflow owns durable multi-step orchestration. Durable game state
-  stays in application tables.
+- Presence owns ephemeral online/offline state and Workpool owns bounded
+  concurrent AI jobs. Durable game state stays in application tables, and every
+  phase change goes through the engine (`convex/engine.ts`). A game mode only
+  supplies its rules (`convex/<mode>/mode.ts`) and its screens (a `GameUi` with
+  a `Stage` and a `Controller`). See `docs/architecture.md`.
 - AI calls go through AI SDK via the Vercel AI Gateway, except Claude models,
   which call the Anthropic API directly (`src/lib/ai-gateway.ts`). Secrets
   (`AI_GATEWAY_API_KEY`, `ANTHROPIC_API_KEY`, `HOST_SECRET`, `FAL_KEY`) live in
@@ -61,8 +63,9 @@ Read the matching doc before working in its area:
 
 ## Guardrails
 
-- Iterate game-flow UI through `/dev/ui` and isolated components through
-  `/dev/components`, then verify meaningful changes in the live flow.
+- Iterate game-flow UI through the fixtures at `/dev/ui` (`?layout=` picks the
+  stage, controller, or docked view), then verify meaningful changes in the
+  live flow.
 - Every push to `master` deploys to production through Vercel. Treat pushes,
   deployment configuration, Convex production deployments, and
   environment-variable changes as production changes and confirm them first.

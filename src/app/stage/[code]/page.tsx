@@ -1,6 +1,5 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
-import { GameShellResolver } from "@/components/shell-resolvers";
+import { RoomScreen } from "@/room/shell";
 
 export const metadata: Metadata = {
   title: "Stage",
@@ -8,10 +7,5 @@ export const metadata: Metadata = {
 
 export default async function StagePage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-
-  return (
-    <Suspense>
-      <GameShellResolver code={code} viewMode="stage" />
-    </Suspense>
-  );
+  return <RoomScreen code={code} layout="stage" />;
 }

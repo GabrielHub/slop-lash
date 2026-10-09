@@ -4,10 +4,6 @@ export const metadata: Metadata = {
   title: "Join a Game",
 };
 
-export default function JoinLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function JoinLayout({ children }: { children: React.ReactNode }) {
   return children;
 }

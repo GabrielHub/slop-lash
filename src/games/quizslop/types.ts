@@ -22,20 +22,6 @@ export type QuizslopCategory =
   | "INTERNET_TECH"
   | "ARTS_CULTURE"
   | "OTHER";
-export const QUIZSLOP_CATEGORIES: readonly QuizslopCategory[] = [
-  "SPORTS",
-  "MUSIC",
-  "FILM_TV",
-  "GAMES",
-  "SCIENCE_NATURE",
-  "HISTORY",
-  "GEOGRAPHY",
-  "FOOD_DRINK",
-  "BOOKS_LANGUAGE",
-  "INTERNET_TECH",
-  "ARTS_CULTURE",
-  "OTHER",
-];
 
 /** Bounded, ordered comedy device tags; the primary device is listed first. */
 export type QuizslopComedyDevice =
@@ -46,15 +32,6 @@ export type QuizslopComedyDevice =
   | "AFFECTIONATE_ROAST"
   | "UNDERSTATEMENT"
   | "WORDPLAY";
-export const QUIZSLOP_COMEDY_DEVICES: readonly QuizslopComedyDevice[] = [
-  "UNEXPECTED_SPECIFICITY",
-  "DRY_ASIDE",
-  "INCONGRUITY",
-  "ANTHROPOMORPHISM",
-  "AFFECTIONATE_ROAST",
-  "UNDERSTATEMENT",
-  "WORDPLAY",
-];
 
 /** Bounded comedy ratings. Only WITTY and BIG_LAUGH can ship. */
 export type QuizslopComedyRating =
@@ -66,77 +43,8 @@ export type QuizslopComedyRating =
   | "ANSWER_LEAK";
 export const SHIPPABLE_COMEDY_RATINGS: readonly QuizslopComedyRating[] = ["BIG_LAUGH", "WITTY"];
 
-/** Exact mode-local phase. The shells render from this, never the coarse shared status. */
-export type QuizslopPhase =
-  | "LOBBY_SETUP"
-  | "HOUSE_VOTE"
-  | "HOUSE_VOTE_REVEAL"
-  | "TOPIC_REVEAL"
-  | "SLOP_CALL"
-  | "SLOP_CALL_REVEAL"
-  | "ANSWER"
-  | "QUESTION_REVEAL"
-  | "DISPUTE_VOTE"
-  | "ROUND_RESULTS"
-  | "CONTINUITY_GRACE"
-  | "FINAL_RESULTS"
-  | "ABANDONED";
-
-/** Coarse shared `games.status` mirrored at phase boundaries. */
-export type QuizslopSharedStatus =
-  | "LOBBY"
-  | "WRITING"
-  | "VOTING"
-  | "ROUND_RESULTS"
-  | "FINAL_RESULTS";
-
-export const SHARED_STATUS_BY_PHASE: Record<QuizslopPhase, QuizslopSharedStatus> = {
-  LOBBY_SETUP: "LOBBY",
-  HOUSE_VOTE: "VOTING",
-  HOUSE_VOTE_REVEAL: "VOTING",
-  TOPIC_REVEAL: "WRITING",
-  SLOP_CALL: "WRITING",
-  SLOP_CALL_REVEAL: "WRITING",
-  ANSWER: "WRITING",
-  QUESTION_REVEAL: "ROUND_RESULTS",
-  DISPUTE_VOTE: "ROUND_RESULTS",
-  ROUND_RESULTS: "ROUND_RESULTS",
-  CONTINUITY_GRACE: "ROUND_RESULTS",
-  FINAL_RESULTS: "FINAL_RESULTS",
-  ABANDONED: "FINAL_RESULTS",
-};
-
 /** Deck slot kinds in play order. */
 export type QuizslopRoundKind = "WARM_UP" | "HOME_TURF" | "HOUSE_CHOICE";
-
-/** Per-player topic setup states shown (redacted) in the shared lobby. */
-export type QuizslopTopicSetupState =
-  | "NEEDS_TOPIC"
-  | "NORMALIZING"
-  | "AWAITING_CONFIRMATION"
-  | "BUILDING"
-  | "READY"
-  | "NEEDS_REVISION"
-  | "NEEDS_FALLBACK";
-
-/** Round ruling persisted per revealed question after disputes close. */
-export type QuizslopQuestionRuling =
-  | "UNCHALLENGED_VALID"
-  | "UPHELD"
-  | "PLAYER_VOIDED"
-  | "SYSTEM_VOID";
-
-export type QuizslopDisputeReason =
-  | "WRONG_ANSWER_KEY"
-  | "MULTIPLE_DEFENSIBLE_ANSWERS"
-  | "SOURCE_DOES_NOT_SUPPORT";
-export const QUIZSLOP_DISPUTE_REASONS: readonly QuizslopDisputeReason[] = [
-  "WRONG_ANSWER_KEY",
-  "MULTIPLE_DEFENSIBLE_ANSWERS",
-  "SOURCE_DOES_NOT_SUPPORT",
-];
-
-export type QuizslopDisputeVoteChoice = "UPHOLD" | "VOID";
 
 /** Non-scoring deterministic final awards based only on visible facts. */
 export type QuizslopAwardKind = "CALLED_IT" | "FALSE_ALARM_DEPARTMENT" | "SUSPICIOUSLY_WELL_READ";
@@ -241,15 +149,11 @@ export interface QuizslopVoiceLine {
 export type QuizslopVoiceEventTag =
   | "LOBBY_SETUP"
   | "HOUSE_VOTE"
-  | "HOUSE_VOTE_REVEAL"
   | "TOPIC_REVEAL_WARM_UP"
   | "TOPIC_REVEAL_HOME_TURF"
   | "TOPIC_REVEAL_HOUSE_CHOICE"
   | "SLOP_CALL"
-  | "SLOP_CALL_REVEAL"
   | "ANSWER"
   | "QUESTION_REVEAL"
-  | "DISPUTE_VOTE"
   | "ROUND_RESULTS"
-  | "CONTINUITY_GRACE"
   | "FINAL_RESULTS";

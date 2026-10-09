@@ -1,19 +1,15 @@
 import { CALL_SLOP_POINTS, FINAL_QUIZ_CORRECT_POINTS, QUIZ_CORRECT_POINTS } from "./game-constants";
-import type { QuizslopAwardKind, QuizslopLadderResult, QuizslopQuestionRuling } from "./types";
+import type { QuizslopAwardKind, QuizslopLadderResult } from "./types";
 
 /**
  * Exact round settlement. This module is pure so the Convex engine, the
- * fixture prototype, and the rules tests apply identical scoring. Settlement
- * runs once per round, only after the shared reveal (and any ordered rulings)
- * closes, and must be idempotent at the persistence layer.
+ * fixtures, and the rules tests apply identical scoring: answers and calls are
+ * marked when answers lock, and the same settlement moves points, refunds, and
+ * hidden ladders onto the seats once the reveal closes.
  */
 
 export function quizPointsForRound(isFinalRound: boolean): number {
   return isFinalRound ? FINAL_QUIZ_CORRECT_POINTS : QUIZ_CORRECT_POINTS;
-}
-
-export function isValidRuling(ruling: QuizslopQuestionRuling): boolean {
-  return ruling === "UNCHALLENGED_VALID" || ruling === "UPHELD";
 }
 
 /** One immutable answer assignment as seen at settlement time. */
@@ -39,8 +35,6 @@ export interface RoundSettlementInput<
 > {
   isFinalRound: boolean;
   assignments: readonly SettlementAssignment<PlayerId, QuestionId>[];
-  /** Post-dispute ruling for every question that received an assignment. */
-  rulings: Readonly<Record<string, QuizslopQuestionRuling>>;
   calls: readonly SettlementCall<PlayerId>[];
 }
 
@@ -52,7 +46,7 @@ export interface PlayerRoundSettlement<PlayerId extends string = string> {
   tokensRefunded: number;
   /** Hidden-ladder effect of this round for the assigned player. */
   ladderResult: QuizslopLadderResult;
-  /** Null when the player had no assignment or the question was voided. */
+  /** Null when the player had no assignment. */
   answeredCorrectly: boolean | null;
 }
 
@@ -77,10 +71,8 @@ function assignmentIsCorrect(assignment: SettlementAssignment): boolean {
 
 /**
  * Applies quiz scoring, Call Slop settlement, refunds, and ladder results in
- * one pass. A voided question contributes no quiz points, causes no ladder
- * movement, neutralizes every call on its assigned players, and refunds those
- * tokens. A call on a player with no assignment (not answer-eligible when the
- * phase opened) is refunded. Being called never changes the target's score.
+ * one pass. A call on a player with no assignment (not in the room when the
+ * questions went out) is refunded. Being called never changes the target's score.
  */
 export function settleRound<PlayerId extends string, QuestionId extends string>(
   input: RoundSettlementInput<PlayerId, QuestionId>,
@@ -88,13 +80,6 @@ export function settleRound<PlayerId extends string, QuestionId extends string>(
   const assignmentByPlayer = new Map<PlayerId, SettlementAssignment<PlayerId, QuestionId>>();
   for (const assignment of input.assignments) {
     assignmentByPlayer.set(assignment.playerId, assignment);
-  }
-
-  const missingRuling = input.assignments.find(
-    (assignment) => input.rulings[assignment.questionId] === undefined,
-  );
-  if (missingRuling) {
-    throw new Error(`Settlement is missing a ruling for question ${missingRuling.questionId}`);
   }
 
   const points = quizPointsForRound(input.isFinalRound);
@@ -115,10 +100,7 @@ export function settleRound<PlayerId extends string, QuestionId extends string>(
   };
 
   for (const assignment of input.assignments) {
-    const ruling = input.rulings[assignment.questionId];
     const player = ensurePlayer(assignment.playerId);
-    // Every questionId is guaranteed a ruling by the missingRuling guard above.
-    if (!isValidRuling(ruling)) continue;
     const correct = assignmentIsCorrect(assignment);
     players.set(assignment.playerId, {
       ...player,
@@ -131,11 +113,8 @@ export function settleRound<PlayerId extends string, QuestionId extends string>(
   const calls: CallRoundSettlement<PlayerId>[] = [];
   for (const call of input.calls) {
     const targetAssignment = assignmentByPlayer.get(call.targetId);
-    const targetRuling = targetAssignment ? input.rulings[targetAssignment.questionId] : undefined;
-    const refunded =
-      !targetAssignment || targetRuling === undefined || !isValidRuling(targetRuling);
     const caller = ensurePlayer(call.callerId);
-    if (refunded) {
+    if (!targetAssignment) {
       calls.push({
         callerId: call.callerId,
         targetId: call.targetId,
@@ -224,31 +203,31 @@ export function getFinalStandingRank(
   return firstMatchingIndex + 1;
 }
 
-export interface AwardStats {
-  playerId: string;
-  name: string;
+export interface AwardStats<PlayerId extends string = string> {
+  playerId: PlayerId;
   successfulCalls: number;
   incorrectCalls: number;
   correctAnswers: number;
 }
 
-export interface ComputedAward {
+export interface ComputedAward<PlayerId extends string = string> {
   kind: QuizslopAwardKind;
-  recipients: readonly string[];
+  /** Player ids; screens show names. */
+  recipients: PlayerId[];
   stat: string;
 }
 
-function awardFor(
+function awardFor<PlayerId extends string>(
   kind: QuizslopAwardKind,
-  stats: readonly AwardStats[],
-  count: (entry: AwardStats) => number,
+  stats: readonly AwardStats<PlayerId>[],
+  count: (entry: AwardStats<PlayerId>) => number,
   describe: (max: number) => string,
-): ComputedAward | null {
+): ComputedAward<PlayerId> | null {
   const max = Math.max(0, ...stats.map(count));
   if (max === 0) return null;
   return {
     kind,
-    recipients: stats.filter((entry) => count(entry) === max).map((entry) => entry.name),
+    recipients: stats.filter((entry) => count(entry) === max).map((entry) => entry.playerId),
     stat: describe(max),
   };
 }
@@ -258,7 +237,9 @@ function awardFor(
  * is omitted when its count is zero, ties share the award, and the underlying
  * stat always ships with the joke. Never derived from hidden tier.
  */
-export function computeAwards(stats: readonly AwardStats[]): readonly ComputedAward[] {
+export function computeAwards<PlayerId extends string>(
+  stats: readonly AwardStats<PlayerId>[],
+): ComputedAward<PlayerId>[] {
   const awards = [
     awardFor(
       "CALLED_IT",
@@ -279,5 +260,31 @@ export function computeAwards(stats: readonly AwardStats[]): readonly ComputedAw
       (max) => `${max} correct answer${max === 1 ? "" : "s"}`,
     ),
   ];
-  return awards.filter((award): award is ComputedAward => award !== null);
+  return awards.filter((award): award is ComputedAward<PlayerId> => award !== null);
+}
+
+/** Running totals a seat carries into the final results. */
+export interface SeatTotals<PlayerId extends string = string> extends AwardStats<PlayerId> {
+  quizPoints: number;
+  callPoints: number;
+}
+
+/** Ranked standings (with competition rank and co-winners) plus the comedy awards. */
+export function finalResults<PlayerId extends string>(seats: readonly SeatTotals<PlayerId>[]) {
+  const { ordered, winnerIds } = rankFinalStandings(
+    seats.map((seat) => ({
+      playerId: seat.playerId,
+      total: seat.quizPoints + seat.callPoints,
+      quizSubtotal: seat.quizPoints,
+      successfulCalls: seat.successfulCalls,
+    })),
+  );
+  return {
+    standings: ordered.map((entry, index) => ({
+      ...entry,
+      rank: getFinalStandingRank(ordered, index) ?? index + 1,
+      winner: winnerIds.includes(entry.playerId),
+    })),
+    awards: computeAwards(seats),
+  };
 }

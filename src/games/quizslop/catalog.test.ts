@@ -4,10 +4,7 @@ import { availableCatalogTopics, isShippableCatalogTopic } from "./catalog";
 
 describe("QuizSlop playable catalog gate", () => {
   test("offers only topics with complete human approval", () => {
-    const offered = availableCatalogTopics({
-      canonicalKeys: new Set(),
-      catalogTopicIds: new Set(),
-    });
+    const offered = availableCatalogTopics();
     expect(offered.length).toBeGreaterThan(0);
     expect(offered.every(isShippableCatalogTopic)).toBe(true);
   });

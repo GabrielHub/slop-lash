@@ -10,7 +10,7 @@ person — backstory first, everything else derived from that.
 
 ONE example is randomly selected per game, filtered by the persona's identity
 (MAN / WOMAN / NON_BINARY / OTHER). This prevents the model from fixating on a
-single style. The example teaches the LLM the *level of detail* and *tone* expected.
+single style. The example teaches the LLM the _level of detail_ and _tone_ expected.
 
 ## Design Philosophy
 
@@ -59,6 +59,7 @@ alongside the backstory during profile generation and directly shapes how the
 persona writes messages in conversation.
 
 Every persona should have a distinct texting style. Think about:
+
 - Capitalization (lowercase? proper? ALL CAPS for emphasis?)
 - Abbreviations (lol, tbh, ngl, rn, ur, idk, etc.)
 - Punctuation habits (minimal? enthusiastic!! em dashes? trailing off...)
@@ -90,7 +91,7 @@ A punchy dating-app headline. Think of what someone would screenshot and send to
 the group chat.
 
 Good: "Cemetery Picnic Planner", "Burger Scientist"
-Bad:  "Cool Guy", "Fun Girl"
+Bad: "Cool Guy", "Fun Girl"
 
 ### 6. BIO (under 220 chars)
 
@@ -100,6 +101,7 @@ details > generic vibes. Steal cadence from real Hinge/Bumble profiles.
 ### 7. DETAILS (profile badge data)
 
 These are the Hinge-style badges shown on the dating card:
+
 - **job**: Their occupation (specific: "pediatric dentist" not "doctor")
 - **school**: Where they went to school (can be null)
 - **height**: Format like `5'8"` or `6'1"`
@@ -136,6 +138,7 @@ Structure — order matters:
 ```
 
 **Key rules (fal.ai Z-Image Turbo):**
+
 - Turbo ignores negative prompts — embed ALL constraints as positive instructions
 - Always say "adult [gender]" to prevent ambiguous ages
 - Name specific clothing; avoid loaded tokens like "model" or "influencer"
@@ -143,6 +146,7 @@ Structure — order matters:
 - Keep backgrounds simple — one location, lightly described
 
 **Key rules (OpenAI prompt guidance):**
+
 - Lead with the most important visual information (subject first)
 - Be precise — "wavy brown hair pushed back" beats "nice hair"
 - Separate persistent traits from per-shot controls
@@ -150,6 +154,7 @@ Structure — order matters:
 ### 10. PROMPT EXAMPLES (exactly 3 strings)
 
 Real dating-app prompt stubs. Should feel consistent with the backstory. Mix types:
+
 - Openers: "I go crazy for", "The best way to ask me out is by"
 - Personality: "My most irrational fear", "A hill I will die on"
 - Vibes: "My simple pleasures", "Typical Sunday"
@@ -164,4 +169,4 @@ Adjectives for the persona's voice. "deadpan" not "funny", "chaotic-good" not
 Funny, specific, slightly absurd. The best ones are weirdly specific observations.
 
 Good: "keeps loose walnuts in pockets"
-Bad:  "bad communicator"
+Bad: "bad communicator"

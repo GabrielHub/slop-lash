@@ -1,5 +1,4 @@
 import presence from "@convex-dev/presence/convex.config.js";
-import workflow from "@convex-dev/workflow/convex.config.js";
 import workpool from "@convex-dev/workpool/convex.config.js";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
@@ -16,6 +15,5 @@ const app = defineApp({
 
 app.use(presence);
 app.use(workpool, { name: "aiGenerationWorkpool" });
-app.use(workflow);
 
 export default app;

@@ -1,6 +1,5 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
-import { ControllerShellResolver } from "@/components/shell-resolvers";
+import { RoomScreen } from "@/room/shell";
 
 export const metadata: Metadata = {
   title: "Controller",
@@ -8,10 +7,5 @@ export const metadata: Metadata = {
 
 export default async function ControllerPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-
-  return (
-    <Suspense>
-      <ControllerShellResolver code={code} />
-    </Suspense>
-  );
+  return <RoomScreen code={code} layout="controller" />;
 }

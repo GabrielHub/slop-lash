@@ -3,4 +3,3 @@ export { comparePlayersByScore, sortPlayersByScore, pickTopScoringPlayer } from 
 
 export { FORFEIT_MARKER, isForfeitMarker } from "./constants";
 export { getRandomPrompts } from "./prompts";
-export { isPromptVotable } from "./votability";

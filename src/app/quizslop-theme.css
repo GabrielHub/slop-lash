@@ -57,6 +57,30 @@
   --qs-shadow: 0 2px 10px rgba(34, 29, 58, 0.1);
 }
 
+/* Games restyle the shared shell and parts by remapping the base tokens. */
+[data-game="quizslop"] {
+  --bg: var(--qs-bg);
+  --surface: var(--qs-surface);
+  --raised: var(--qs-raised);
+  --ink: var(--qs-ink);
+  --ink-dim: var(--qs-ink-dim);
+  --accent-ink: var(--qs-accent-ink);
+  --punch: var(--qs-punch);
+  --punch-hover: var(--qs-punch);
+  --teal: var(--qs-signal);
+  --teal-hover: var(--qs-signal);
+  --teal-soft: var(--qs-signal-soft);
+  --gold: var(--qs-marquee);
+  --gold-soft: var(--qs-marquee-soft);
+  --edge: var(--qs-edge);
+  --edge-strong: var(--qs-edge-strong);
+  --win: var(--qs-win);
+  --win-soft: var(--qs-win-soft);
+  --fail: var(--qs-fail);
+  --fail-soft: var(--qs-fail-soft);
+  --vs-bg: var(--qs-raised);
+}
+
 /* --- QuizSlop marquee glow (static; readable at any motion setting) --- */
 .qs-marquee-text {
   text-shadow:
@@ -90,31 +114,8 @@
   animation: qs-stamp 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
-/* --- QuizSlop restrained glitch: only for building/voided moments --- */
-@keyframes qs-glitch {
-  0%,
-  86%,
-  100% {
-    transform: translate(0, 0);
-  }
-  88% {
-    transform: translate(-2px, 1px) skewX(-1.5deg);
-  }
-  90% {
-    transform: translate(2px, -1px) skewX(1deg);
-  }
-  92% {
-    transform: translate(-1px, 0) skewX(0deg);
-  }
-}
-
-.qs-glitch-edge {
-  animation: qs-glitch 3.2s steps(2, jump-none) infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .qs-stamp,
-  .qs-glitch-edge {
+  .qs-stamp {
     animation: none !important;
   }
 }

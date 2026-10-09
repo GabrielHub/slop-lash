@@ -4,13 +4,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import { AI_MODELS, getModelByModelId, JEV_MODEL } from "@/lib/models";
-import {
-  FREE_PLAY_WRITER_MODEL,
-  FREE_PLAY_WRITER_MODEL_ID,
-  getFreePlayAiPlayerLimit,
-} from "@/lib/free-play";
-import type { TtsMode } from "@/lib/types";
+import { AI_MODELS, getModelByModelId } from "@/lib/models";
+import { FREE_PLAY_WRITER_MODEL_ID, getFreePlayAiPlayerLimit } from "@/lib/free-play";
 import type { GameType } from "@/games/core";
 import { ModelIcon } from "@/components/model-icon";
 import { ErrorBanner } from "@/components/error-banner";
@@ -18,16 +13,11 @@ import { Toggle } from "@/components/toggle";
 import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import type { MatchSlopIdentity } from "@/games/matchslop/identities";
-import { QUIZSLOP_FIXED_VERIFIER_MODEL_ID } from "@/games/quizslop/content-source/content-config";
 import { useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
-import { persistRoomSessionResult } from "@/lib/convex-room-client";
-import {
-  QuizSlopContentSourceField,
-  QuizSlopGeneratorPicker,
-  type QuizSlopContentSource,
-} from "./quizslop-content-settings";
+import { isMobileDevice } from "@/lib/mobile-device";
+import { roomPath, saveRoomSession } from "@/room/session";
 import { HumanPlayerGuidance, PlayerCountHint } from "./host-player-guidance";
 import { getCostTier, MATCHSLOP_IDENTITY_OPTIONS } from "./host-model-options";
 import {
@@ -35,7 +25,7 @@ import {
   HostGameModePicker,
   type HostParticipation,
 } from "./host-game-mode-picker";
-import { HostNarratorSettings } from "./host-narrator-settings";
+import { HostNarratorSettings, type TtsMode } from "./host-narrator-settings";
 import { AiModelRow } from "./ai-model-row";
 import {
   FreePlayRoster,
@@ -88,9 +78,6 @@ export default function HostPage() {
   const [personaIdentity, setPersonaIdentity] = useState<MatchSlopIdentity>("WOMAN");
   const [personaModelId, setPersonaModelId] = useState<string | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [quizSlopContentSource, setQuizSlopContentSource] =
-    useState<QuizSlopContentSource>("CATALOG");
-  const [quizSlopGeneratorModelId, setQuizSlopGeneratorModelId] = useState(AI_MODELS[0]?.id ?? "");
   const [timersDisabled, setTimersDisabled] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
   const [ttsVoice, setTtsVoice] = useState("RANDOM");
@@ -112,17 +99,31 @@ export default function HostPage() {
       : (chosenAccess ?? storedAccess ?? "FREE");
   const freePlay = access === "FREE";
   const freeBotLimit = getFreePlayAiPlayerLimit(gameType);
+  // Mode-specific constraints are applied here rather than written back to
+  // state, so switching to a mode and back restores the host's prior choices.
+  // MatchSlop always hosts from a shared display.
+  const effectiveParticipation: HostParticipation = isMatchSlop
+    ? "DISPLAY_ONLY"
+    : hostParticipation;
+  // MatchSlop always has a persona; it starts on the first model until picked.
+  const pickedPersonaModelId = personaModelId ?? AI_MODELS[0]?.id ?? null;
   // Free Play pins every model server-side; the UI mirrors those pins.
-  const effectivePersonaModelId = freePlay ? FREE_PLAY_WRITER_MODEL_ID : personaModelId;
-  const effectiveGeneratorModelId = freePlay ? FREE_PLAY_WRITER_MODEL_ID : quizSlopGeneratorModelId;
+  const effectivePersonaModelId = freePlay ? FREE_PLAY_WRITER_MODEL_ID : pickedPersonaModelId;
   const selectedPersonaModel = effectivePersonaModelId
     ? getModelByModelId(effectivePersonaModelId)
     : undefined;
-  const quizSlopVerifier = freePlay
-    ? JEV_MODEL
-    : getModelByModelId(QUIZSLOP_FIXED_VERIFIER_MODEL_ID);
+  const personaPickerShown = personaModelPickerOpen && isMatchSlop && !freePlay;
   const narratorAvailable = selectedGameType.supportsNarrator && !freePlay;
-  const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
+  const effectiveTtsMode: TtsMode = selectedGameType.supportsNarrator ? ttsMode : "OFF";
+  const voicePickerShown = voicePickerOpen && narratorAvailable;
+  // MatchSlop honours timersDisabled but never shows the toggle, so a value set
+  // on another mode must not follow the host across the picker unseen.
+  const effectiveTimersDisabled = selectedGameType.timerToggle === null ? false : timersDisabled;
+  const maxAiPlayers = selectedGameType.maxPlayers - (effectiveParticipation === "PLAYER" ? 1 : 0);
+  // The persona model cannot also be an AI teammate.
+  const effectiveModels = selectedModels
+    .filter((id) => !(isMatchSlop && id === pickedPersonaModelId))
+    .slice(0, maxAiPlayers);
   // Modes without AI players keep any prior selection in state (so switching
   // back restores it) but must never count or submit it. Each access tier
   // keeps its own selection for the same reason.
@@ -131,7 +132,7 @@ export default function HostPage() {
     ? []
     : freePlay
       ? freePlayAiModels
-      : selectedModels;
+      : effectiveModels;
 
   function setAccess(next: HostAccess) {
     setChosenAccess(next);
@@ -149,63 +150,27 @@ export default function HostPage() {
     focusPasswordRef.current = false;
     passwordInputRef.current?.focus();
   }, [access]);
-  const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + activeAiModels.length;
+  const activePlayerCount = (effectiveParticipation === "PLAYER" ? 1 : 0) + activeAiModels.length;
 
+  // A toggle commits the visible lineup, dropping models the current mode hides.
   function toggleModel(modelId: string) {
     const targetModel = getModelByModelId(modelId);
     if (!targetModel) return;
-    if (gameType === "MATCHSLOP" && modelId === personaModelId) return;
+    if (isMatchSlop && modelId === pickedPersonaModelId) return;
 
-    setSelectedModels((prev) => {
-      if (prev.includes(modelId)) {
-        return prev.filter((id) => id !== modelId);
-      }
+    if (effectiveModels.includes(modelId)) {
+      setSelectedModels(effectiveModels.filter((id) => id !== modelId));
+      return;
+    }
 
-      const withoutSameProvider = prev.filter((id) => {
-        const model = getModelByModelId(id);
-        return model?.provider !== targetModel.provider;
-      });
-
-      if (withoutSameProvider.length >= maxAiPlayers) {
-        return prev;
-      }
-      return [...withoutSameProvider, modelId];
+    const withoutSameProvider = effectiveModels.filter((id) => {
+      const model = getModelByModelId(id);
+      return model?.provider !== targetModel.provider;
     });
+
+    if (withoutSameProvider.length >= maxAiPlayers) return;
+    setSelectedModels([...withoutSameProvider, modelId]);
   }
-
-  useEffect(() => {
-    setSelectedModels((prev) => (prev.length <= maxAiPlayers ? prev : prev.slice(0, maxAiPlayers)));
-  }, [maxAiPlayers]);
-
-  useEffect(() => {
-    if (!isMatchSlop) return;
-    setHostParticipation("DISPLAY_ONLY");
-    setPersonaModelId((prev) => prev ?? AI_MODELS[0]?.id ?? null);
-  }, [isMatchSlop]);
-
-  useEffect(() => {
-    if (!isMatchSlop || !personaModelId) return;
-    setSelectedModels((prev) => prev.filter((id) => id !== personaModelId));
-  }, [isMatchSlop, personaModelId]);
-
-  useEffect(() => {
-    if (!narratorAvailable) setVoicePickerOpen(false);
-    if (!selectedGameType.supportsNarrator) setTtsMode("OFF");
-  }, [narratorAvailable, selectedGameType.supportsNarrator]);
-
-  // MatchSlop honours timersDisabled but never shows the toggle, so a value set
-  // on another mode would otherwise follow the host across the picker unseen.
-  useEffect(() => {
-    if (selectedGameType.timerToggle === null) {
-      setTimersDisabled(false);
-    }
-  }, [selectedGameType.timerToggle]);
-
-  useEffect(() => {
-    if (!isMatchSlop || freePlay) {
-      setPersonaModelPickerOpen(false);
-    }
-  }, [freePlay, isMatchSlop]);
 
   async function createGame() {
     if (creatingRef.current) return;
@@ -217,7 +182,7 @@ export default function HostPage() {
       setError("Enter the host password");
       return;
     }
-    if (hostParticipation === "PLAYER" && !hostName.trim()) {
+    if (effectiveParticipation === "PLAYER" && !hostName.trim()) {
       setError("Enter your name");
       return;
     }
@@ -227,34 +192,28 @@ export default function HostPage() {
 
     try {
       const room = await createRoom({
-        aiModelIds: activeAiModels,
         gameType,
-        hostName: hostName.trim() || undefined,
-        hostParticipation,
         // No password makes this a Free Play room.
         hostSecret: freePlay ? undefined : hostSecret.trim(),
-        personaIdentity: isMatchSlop ? personaIdentity : undefined,
-        personaModelId: isMatchSlop ? (effectivePersonaModelId ?? undefined) : undefined,
-        quizSlopContentSource: isQuizSlop ? quizSlopContentSource : undefined,
-        quizSlopGeneratorModelId:
-          isQuizSlop && quizSlopContentSource === "AI"
-            ? effectiveGeneratorModelId || undefined
+        // No name hosts from this screen as a shared display.
+        hostName: effectiveParticipation === "PLAYER" ? hostName.trim() : undefined,
+        aiModelIds: activeAiModels,
+        timersDisabled: effectiveTimersDisabled,
+        ttsMode: narratorAvailable ? effectiveTtsMode : undefined,
+        ttsVoice: narratorAvailable && effectiveTtsMode === "ON" ? ttsVoice : undefined,
+        settings:
+          isMatchSlop && effectivePersonaModelId
+            ? {
+                matchslop: {
+                  seekerIdentity,
+                  personaIdentity,
+                  personaModelId: effectivePersonaModelId,
+                },
+              }
             : undefined,
-        seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
-        timersDisabled,
-        ttsMode: narratorAvailable ? ttsMode : undefined,
-        ttsVoice: narratorAvailable && ttsMode === "ON" ? ttsVoice : undefined,
       });
-      persistRoomSessionResult(room);
-      // A QuizSlop playing host answers on a private controller and opens the
-      // shared stage separately; a display-only host goes straight to stage.
-      router.push(
-        room.playerId === null
-          ? `/stage/${room.roomCode}`
-          : isQuizSlop
-            ? `/controller/${room.roomCode}`
-            : `/game/${room.roomCode}`,
-      );
+      saveRoomSession(room);
+      router.push(roomPath(room, isMobileDevice()));
     } catch (error) {
       setError(getConvexErrorMessage(error, "Failed to create game"));
     } finally {
@@ -397,7 +356,7 @@ export default function HostPage() {
             )}
 
             <div className="mb-6">
-              {hostParticipation === "PLAYER" ? (
+              {effectiveParticipation === "PLAYER" ? (
                 <>
                   <label
                     htmlFor="host-player-name"
@@ -439,9 +398,9 @@ export default function HostPage() {
                   <motion.button
                     type="button"
                     disabled={freePlay}
-                    onClick={() => setPersonaModelPickerOpen((open) => !open)}
+                    onClick={() => setPersonaModelPickerOpen(!personaPickerShown)}
                     className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer disabled:cursor-default ${
-                      personaModelPickerOpen
+                      personaPickerShown
                         ? "border-punch bg-punch/10 text-punch"
                         : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
                     }`}
@@ -458,7 +417,7 @@ export default function HostPage() {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
                           <span
-                            className={`truncate text-sm font-semibold ${personaModelPickerOpen ? "text-punch" : "text-ink"}`}
+                            className={`truncate text-sm font-semibold ${personaPickerShown ? "text-punch" : "text-ink"}`}
                           >
                             {selectedPersonaModel?.name ?? "Pick model"}
                           </span>
@@ -469,7 +428,7 @@ export default function HostPage() {
                           )}
                         </span>
                         <span
-                          className={`mt-0.5 block text-xs ${personaModelPickerOpen ? "text-punch/70" : "text-ink-dim/70"}`}
+                          className={`mt-0.5 block text-xs ${personaPickerShown ? "text-punch/70" : "text-ink-dim/70"}`}
                         >
                           {freePlay
                             ? "Free Play personas run on Claude Haiku."
@@ -488,7 +447,7 @@ export default function HostPage() {
                           strokeLinejoin="round"
                           className="shrink-0 transition-transform duration-200"
                           style={{
-                            transform: personaModelPickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+                            transform: personaPickerShown ? "rotate(180deg)" : "rotate(0deg)",
                           }}
                         >
                           <polyline points="6 9 12 15 18 9" />
@@ -498,7 +457,7 @@ export default function HostPage() {
                   </motion.button>
 
                   <AnimatePresence>
-                    {personaModelPickerOpen && (
+                    {personaPickerShown && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: "auto", opacity: 1 }}
@@ -508,15 +467,17 @@ export default function HostPage() {
                       >
                         <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border-2 border-edge bg-surface">
                           {AI_MODELS.map((model) => {
-                            const selected = personaModelId === model.id;
-                            const teammateSelected = selectedModels.includes(model.id);
+                            const selected = pickedPersonaModelId === model.id;
+                            const teammateSelected = effectiveModels.includes(model.id);
                             return (
                               <button
                                 key={model.id}
                                 type="button"
                                 onClick={() => {
                                   setPersonaModelId(model.id);
-                                  setSelectedModels((prev) => prev.filter((id) => id !== model.id));
+                                  setSelectedModels(
+                                    effectiveModels.filter((id) => id !== model.id),
+                                  );
                                   setPersonaModelPickerOpen(false);
                                 }}
                                 className={`w-full border-b border-edge/40 px-3 py-2.5 text-left transition-colors last:border-b-0 ${
@@ -582,18 +543,10 @@ export default function HostPage() {
               </div>
             )}
 
-            {isQuizSlop && (
-              <QuizSlopContentSourceField
-                contentSource={quizSlopContentSource}
-                verifier={quizSlopVerifier}
-                onChange={setQuizSlopContentSource}
-              />
-            )}
-
             {selectedGameType.timerToggle && (
               <div className="mb-6">
                 <Toggle
-                  checked={timersDisabled}
+                  checked={effectiveTimersDisabled}
                   onChange={setTimersDisabled}
                   label={selectedGameType.timerToggle.label}
                   description={selectedGameType.timerToggle.description}
@@ -604,10 +557,10 @@ export default function HostPage() {
             {!isMatchSlop && (
               <div className="mb-6">
                 <Toggle
-                  checked={hostParticipation === "PLAYER"}
+                  checked={effectiveParticipation === "PLAYER"}
                   onChange={(v) => setHostParticipation(v ? "PLAYER" : "DISPLAY_ONLY")}
                   label="Host Plays Too"
-                  description={selectedGameType.hostPlaysDescription[hostParticipation]}
+                  description={selectedGameType.hostPlaysDescription[effectiveParticipation]}
                 />
               </div>
             )}
@@ -622,8 +575,8 @@ export default function HostPage() {
 
             {narratorAvailable && (
               <HostNarratorSettings
-                mode={ttsMode}
-                pickerOpen={voicePickerOpen}
+                mode={effectiveTtsMode}
+                pickerOpen={voicePickerShown}
                 voice={ttsVoice}
                 onModeChange={setTtsMode}
                 onPickerOpenChange={setVoicePickerOpen}
@@ -694,14 +647,6 @@ export default function HostPage() {
                   maxPlayers={selectedGameType.maxPlayers}
                   quizSlop={isQuizSlop}
                 />
-
-                {isQuizSlop && quizSlopContentSource === "AI" && (
-                  <QuizSlopGeneratorPicker
-                    models={freePlay ? [FREE_PLAY_WRITER_MODEL] : AI_MODELS}
-                    selectedModelId={effectiveGeneratorModelId}
-                    onChange={setQuizSlopGeneratorModelId}
-                  />
-                )}
               </div>
             ) : freePlay ? (
               <FreePlayRoster
@@ -714,15 +659,15 @@ export default function HostPage() {
             ) : (
               <div className="grid grid-cols-1 gap-2">
                 {AI_MODELS.map((model) => {
-                  const selected = selectedModels.includes(model.id);
+                  const selected = effectiveModels.includes(model.id);
                   const replacesSameProvider =
                     !selected &&
-                    selectedModels.some((id) => {
+                    effectiveModels.some((id) => {
                       const selectedModel = getModelByModelId(id);
                       return selectedModel?.provider === model.provider;
                     });
                   const atLimit =
-                    selectedModels.length >= maxAiPlayers && !selected && !replacesSameProvider;
+                    effectiveModels.length >= maxAiPlayers && !selected && !replacesSameProvider;
 
                   return (
                     <AiModelRow

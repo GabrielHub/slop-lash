@@ -1,25 +1,18 @@
 "use client";
 
 import { motion, AnimatePresence } from "motion/react";
-import { GamePlayer } from "@/lib/types";
+import type { RoomPlayer } from "@/room/context";
 import { getModelByModelId } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { getPlayerColor } from "@/lib/player-colors";
 import { staggerContainer, fadeInUp, popIn } from "@/lib/animations";
 import { HumorBadge } from "@/components/humor-badge";
 
-function TypeBadge({
-  label,
-  variant,
-}: {
-  label: string;
-  variant: "ai" | "spectator" | "afk" | "disconnected";
-}) {
+function TypeBadge({ label, variant }: { label: string; variant: "ai" | "host" | "offline" }) {
   const styles = {
     ai: "bg-ai-soft text-ai",
-    spectator: "bg-surface text-ink-dim",
-    afk: "bg-fail-soft text-fail",
-    disconnected: "bg-surface text-ink-dim",
+    host: "bg-gold/15 text-gold",
+    offline: "bg-surface text-ink-dim",
   };
   return (
     <span
@@ -36,10 +29,10 @@ export function PlayerList({
   onKick,
   hostPlayerId,
 }: {
-  players: GamePlayer[];
+  players: RoomPlayer[];
   showScores?: boolean;
-  onKick?: (playerId: string) => void;
-  hostPlayerId?: string;
+  onKick?: (player: RoomPlayer) => void;
+  hostPlayerId?: string | null;
 }) {
   return (
     <motion.div
@@ -51,13 +44,12 @@ export function PlayerList({
       <AnimatePresence mode="popLayout">
         {players.map((player) => {
           const model = player.modelId ? getModelByModelId(player.modelId) : null;
-          const isAfk = player.idleRounds >= 1 && player.type === "HUMAN";
-          const isDisconnected = player.participationStatus === "DISCONNECTED";
+          const offline = !player.online;
 
           return (
             <motion.div
               key={player.id}
-              className={`flex items-center justify-between p-3 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge${isDisconnected ? " opacity-50" : ""}`}
+              className={`flex items-center justify-between p-3 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge${offline ? " opacity-60" : ""}`}
               style={{ boxShadow: "var(--shadow-card)" }}
               variants={fadeInUp}
               layout
@@ -78,15 +70,14 @@ export function PlayerList({
                   </span>
                 )}
                 <span
-                  className={`font-semibold text-base truncate${isDisconnected ? " text-ink-dim line-through" : " text-ink"}`}
+                  className={`font-semibold text-base truncate ${offline ? "text-ink-dim" : "text-ink"}`}
                 >
                   {player.name}
                 </span>
-                {isDisconnected && <TypeBadge label="LEFT" variant="disconnected" />}
-                {player.type === "AI" && !isDisconnected && <TypeBadge label="AI" variant="ai" />}
-                {player.type === "SPECTATOR" && <TypeBadge label="SPECTATOR" variant="spectator" />}
-                {isAfk && !isDisconnected && <TypeBadge label="AFK" variant="afk" />}
-                {!isDisconnected && <HumorBadge humorRating={player.humorRating} />}
+                {player.id === hostPlayerId && <TypeBadge label="HOST" variant="host" />}
+                {player.type === "AI" && <TypeBadge label="AI" variant="ai" />}
+                {offline && <TypeBadge label="AWAY" variant="offline" />}
+                <HumorBadge humorRating={player.humorRating} />
               </div>
               <div className="flex items-center gap-2">
                 {showScores && (
@@ -100,11 +91,11 @@ export function PlayerList({
                     {player.score}
                   </motion.span>
                 )}
-                {onKick && player.id !== hostPlayerId && !isDisconnected && (
+                {onKick && player.id !== hostPlayerId && (
                   <button
                     type="button"
                     aria-label={`Kick ${player.name}`}
-                    onClick={() => onKick(player.id)}
+                    onClick={() => onKick(player)}
                     className="text-xs text-ink-dim hover:text-fail transition-colors cursor-pointer px-1.5 py-0.5 rounded"
                     title="Kick player"
                   >

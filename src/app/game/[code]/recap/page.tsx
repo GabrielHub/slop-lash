@@ -5,11 +5,7 @@ export const metadata: Metadata = {
   title: "Game Recap",
 };
 
-export default async function RecapPage({
-  params,
-}: {
-  params: Promise<{ code: string }>;
-}) {
+export default async function RecapPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
 
   return <RecapShell code={code} />;

@@ -1,6 +1,5 @@
 "use client";
 
-import { GameModelUsage } from "@/lib/types";
 import { getModelInfo } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 
@@ -8,19 +7,18 @@ function formatCost(cost: number): string {
   return cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2);
 }
 
-interface AiUsageBreakdownProps {
-  modelUsages: GameModelUsage[];
-  totalInput: number;
-  totalOutput: number;
-  totalCost: number;
-}
+type ModelUsage = { modelId: string; inputTokens: number; outputTokens: number; costUsd: number };
 
-export function AiUsageBreakdown({
-  modelUsages,
-  totalInput,
-  totalOutput,
-  totalCost,
-}: AiUsageBreakdownProps) {
+/** A finished room's AI spend, as `views.room` reports it. */
+export type RoomUsage = ModelUsage & { byModel: ModelUsage[] };
+
+export function AiUsageBreakdown({ usage }: { usage: Omit<RoomUsage, "modelId"> }) {
+  const {
+    byModel: modelUsages,
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+    costUsd: totalCost,
+  } = usage;
   const totalTokens = totalInput + totalOutput;
 
   if (modelUsages.length === 0) {

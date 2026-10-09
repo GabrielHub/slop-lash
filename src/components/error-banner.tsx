@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { collapseExpand } from "@/lib/animations";
 
 interface ErrorBannerProps {
-  error: string;
+  error: string | null;
   className?: string;
 }
 

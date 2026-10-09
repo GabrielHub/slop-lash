@@ -1,6 +1,7 @@
-import type { GamePrompt, GameState } from "@/lib/types";
-import { filterCastVotes } from "@/lib/types";
-import { isPromptVotable } from "@/games/core/votability";
+import type { RoomInfo, RoomPlayer } from "@/room/context";
+import { sortPlayersByScore } from "@/games/core/player-rankings";
+import type { SloplashPrompt, SloplashView } from "../../../convex/sloplash/view";
+import { roundMultiplier } from "./scoring";
 
 const NARRATION_EVENT_TYPES = [
   "game_start",
@@ -65,42 +66,26 @@ function endSentence(text: string): string {
   return /[.!?\u2026]$/.test(text) ? text : `${text}.`;
 }
 
-/** Derive the sorted votable prompts from the current round. */
-export function getVotablePrompts(game: GameState): GamePrompt[] {
-  const currentRound = game.rounds[0];
-  if (!currentRound) return [];
-  return [...currentRound.prompts]
-    .filter((prompt) => isPromptVotable(game.gameType, prompt.responses))
-    .sort((a, b) => a.id.localeCompare(b.id));
-}
-
-export function buildGameStartNarration(game: GameState): NarrationCue {
-  const fallbackText = `Welcome to Slop-Lash. Round one of ${game.totalRounds} starts now. Write your funniest answers.`;
-  const competitorCount = game.players.filter((player) => player.type !== "SPECTATOR").length;
-  return generatedCue("game_start", fallbackText, {
-    round: 1,
-    totalRounds: game.totalRounds,
-    competitorCount,
-  });
+export function buildGameStartNarration(
+  totalRounds: number,
+  competitorCount: number,
+): NarrationCue {
+  const fallbackText = `Welcome to Slop-Lash. Round one of ${totalRounds} starts now. Write your funniest answers.`;
+  return generatedCue("game_start", fallbackText, { round: 1, totalRounds, competitorCount });
 }
 
 export function buildHurryUpNarration(secondsLeft: number): NarrationCue {
   return verbatimCue("hurry_up", `${secondsLeft} seconds left. Finish the joke.`);
 }
 
-export function buildVotingStartNarration(game: GameState): NarrationCue {
-  const matchupCount = getVotablePrompts(game).length;
+export function buildVotingStartNarration(matchupCount: number): NarrationCue {
   const label = matchupCount === 1 ? "matchup" : "matchups";
   return verbatimCue("voting_start", `Writing is over. Time to vote on ${matchupCount} ${label}.`);
 }
 
-export function buildMatchupNarration(
-  game: GameState,
-  votablePrompts: GamePrompt[],
-): NarrationCue | null {
-  const prompt = votablePrompts[game.votingPromptIndex];
-  if (!prompt || prompt.responses.length < 2) return null;
-  const [first, second] = prompt.responses;
+export function buildMatchupNarration(prompt: SloplashPrompt): NarrationCue | null {
+  const [first, second] = prompt.answers;
+  if (!first || !second) return null;
   const promptText = normalizeForSpeech(formatBlanksForNarrator(prompt.text));
   return verbatimCue(
     "matchup",
@@ -109,16 +94,15 @@ export function buildMatchupNarration(
 }
 
 export function buildVoteResultNarration(
-  game: GameState,
-  votablePrompts: GamePrompt[],
+  prompt: SloplashPrompt,
+  players: readonly RoomPlayer[],
 ): NarrationCue | null {
-  const prompt = votablePrompts[game.votingPromptIndex];
-  if (!prompt || prompt.responses.length < 2) return null;
-
-  const castVotes = filterCastVotes(prompt.votes);
-  const [first, second] = prompt.responses;
-  const firstVotes = castVotes.filter((vote) => vote.responseId === first.id).length;
-  const secondVotes = castVotes.filter((vote) => vote.responseId === second.id).length;
+  const [first, second] = prompt.answers;
+  if (!first || !second) return null;
+  const tally = (answerId: string) =>
+    prompt.votes.filter((vote) => vote.responseId === answerId).length;
+  const firstVotes = tally(first.id);
+  const secondVotes = tally(second.id);
   if (firstVotes === secondVotes) {
     return generatedCue("vote_result", "It's a tie. Split crowd.", {
       outcome: "tie",
@@ -128,10 +112,9 @@ export function buildVoteResultNarration(
 
   const winner = firstVotes > secondVotes ? first : second;
   const winnerName = boundedFact(
-    game.players.find((player) => player.id === winner.playerId)?.name ?? "The winner",
+    players.find((player) => player.id === winner.playerId)?.name ?? "The winner",
   );
-  const unanimous = Math.min(firstVotes, secondVotes) === 0 && castVotes.length > 0;
-  if (unanimous) {
+  if (Math.min(firstVotes, secondVotes) === 0) {
     return generatedCue("vote_result", `${winnerName} wins unanimously. No debate at all.`, {
       outcome: "winner",
       winnerName,
@@ -147,60 +130,88 @@ export function buildVoteResultNarration(
       : margin === "comfortable"
         ? `${winnerName} wins comfortably.`
         : `${winnerName} wins in a landslide.`;
-  return generatedCue("vote_result", fallbackText, {
-    outcome: "winner",
-    winnerName,
-    margin,
-  });
+  return generatedCue("vote_result", fallbackText, { outcome: "winner", winnerName, margin });
 }
 
-export function buildRoundOverNarration(game: GameState): NarrationCue {
-  const rankedPlayers = [...game.players]
-    .filter((player) => player.type !== "SPECTATOR")
-    .sort((a, b) => b.score - a.score);
-  const leader = rankedPlayers[0];
-  if (!leader) return verbatimCue("round_over", `Round ${game.currentRound} is over.`);
+type NarrationRoom = Pick<RoomInfo, "round" | "totalRounds">;
+
+export function buildRoundOverNarration(
+  room: NarrationRoom,
+  players: readonly RoomPlayer[],
+): NarrationCue {
+  const ranked = sortPlayersByScore(players);
+  const leader = ranked[0];
+  const { round, totalRounds } = room;
+  if (!leader) return verbatimCue("round_over", `Round ${round} is over.`);
 
   const leaderName = boundedFact(leader.name);
-  const isFinal = game.currentRound >= game.totalRounds;
-  if (isFinal) {
+  if (round >= totalRounds) {
     return generatedCue("round_over", `Game over. ${leaderName} wins Slop-Lash.`, {
       final: true,
       winnerName: leaderName,
-      round: game.currentRound,
-      totalRounds: game.totalRounds,
+      round,
+      totalRounds,
     });
   }
 
-  const trailer = rankedPlayers.at(-1);
+  const trailer = ranked.at(-1);
   if (!trailer || trailer.id === leader.id) {
-    return generatedCue("round_over", `Round ${game.currentRound} is over. ${leaderName} leads.`, {
+    return generatedCue("round_over", `Round ${round} is over. ${leaderName} leads.`, {
       final: false,
       leaderName,
-      round: game.currentRound,
-      totalRounds: game.totalRounds,
+      round,
+      totalRounds,
     });
   }
 
   const trailerName = boundedFact(trailer.name);
   return generatedCue(
     "round_over",
-    `Round ${game.currentRound} is over. ${leaderName} leads, while ${trailerName} brings up the rear.`,
-    {
-      final: false,
-      leaderName,
-      trailerName,
-      round: game.currentRound,
-      totalRounds: game.totalRounds,
-    },
+    `Round ${round} is over. ${leaderName} leads, while ${trailerName} brings up the rear.`,
+    { final: false, leaderName, trailerName, round, totalRounds },
   );
 }
 
-export function buildNextRoundNarration(game: GameState): NarrationCue {
-  const multiplier = 2 ** (game.currentRound - 1);
+export function buildNextRoundNarration(room: NarrationRoom): NarrationCue {
+  const multiplier = roundMultiplier(room.round);
   return generatedCue(
     "next_round",
-    `Round ${game.currentRound} starts now. Points are worth ${multiplier} times as much.`,
-    { round: game.currentRound, totalRounds: game.totalRounds, multiplier },
+    `Round ${room.round} starts now. Points are worth ${multiplier} times as much.`,
+    { round: room.round, totalRounds: room.totalRounds, multiplier },
   );
+}
+
+/**
+ * What the narrator says on entering the room's current phase. `previousPhase`
+ * is null when the narrator first tunes in mid-game: it then only greets a
+ * game that is still in its first writing phase.
+ */
+export function phaseNarration(
+  room: Pick<RoomInfo, "phase" | "round" | "totalRounds">,
+  mode: SloplashView,
+  players: readonly RoomPlayer[],
+  previousPhase: string | null,
+): NarrationCue[] {
+  const prompts = mode.round?.prompts ?? [];
+  const current = prompts.find((prompt) => prompt.id === mode.currentPromptId);
+  const cues: (NarrationCue | null)[] = [];
+  switch (room.phase) {
+    case "WRITING":
+      if (room.round === 1) cues.push(buildGameStartNarration(room.totalRounds, players.length));
+      else if (previousPhase !== null) cues.push(buildNextRoundNarration(room));
+      break;
+    case "VOTING":
+      if (previousPhase === "WRITING") {
+        cues.push(buildVotingStartNarration(mode.matchupCount));
+      }
+      if (previousPhase !== null && current) cues.push(buildMatchupNarration(current));
+      break;
+    case "REVEAL":
+      if (previousPhase !== null && current) cues.push(buildVoteResultNarration(current, players));
+      break;
+    case "ROUND_RESULTS":
+      if (previousPhase !== null) cues.push(buildRoundOverNarration(room, players));
+      break;
+  }
+  return cues.filter((cue) => cue !== null);
 }

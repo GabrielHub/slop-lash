@@ -1,10 +1,3 @@
-/**
- * Deterministic voice-line selection. Server code picks the line at a phase
- * transition from a stable hash of game ID, phase generation, and event tag,
- * excludes the immediately prior line when at least two are eligible, and
- * persists the chosen ID. Clients never randomize independently.
- */
-
 /** FNV-1a 32-bit; stable across runtimes for the same seed string. */
 export function stableHash(seed: string): number {
   let hash = 0x811c9dc5;
@@ -15,15 +8,7 @@ export function stableHash(seed: string): number {
   return hash >>> 0;
 }
 
-export function selectVoiceLineId(
-  eligibleLineIds: readonly string[],
-  seed: string,
-  previousLineId: string | null,
-): string | null {
-  const pool =
-    eligibleLineIds.length >= 2 && previousLineId !== null
-      ? eligibleLineIds.filter((id) => id !== previousLineId)
-      : eligibleLineIds;
-  if (pool.length === 0) return null;
-  return pool[stableHash(seed) % pool.length] ?? null;
+/** The same pick on every screen for the same seed, so clients never disagree. */
+export function pickStable<T>(items: readonly T[], seed: string): T | null {
+  return items.length > 0 ? (items[stableHash(seed) % items.length] ?? null) : null;
 }

@@ -16,12 +16,7 @@ interface PlayerAvatarProps {
  * Consolidates the repeated avatar pattern used across scoreboard, carousel,
  * leaderboard, and voting components.
  */
-export function PlayerAvatar({
-  name,
-  modelId,
-  size = 22,
-  className = "",
-}: PlayerAvatarProps) {
+export function PlayerAvatar({ name, modelId, size = 22, className = "" }: PlayerAvatarProps) {
   const model = modelId ? getModelByModelId(modelId) : null;
 
   if (model) {

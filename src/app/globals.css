@@ -575,6 +575,27 @@ body::after {
   --ms-gradient-romance: linear-gradient(135deg, #e91e63, #e65100, #7c4dff);
 }
 
+/* Games restyle the shared shell and parts by remapping the base tokens. */
+[data-game="matchslop"] {
+  --bg: var(--ms-bg);
+  --surface: var(--ms-surface);
+  --raised: var(--ms-raised);
+  --ink: var(--ms-ink);
+  --ink-dim: var(--ms-ink-dim);
+  --punch: var(--ms-rose);
+  --punch-hover: var(--ms-coral);
+  --teal: var(--ms-violet);
+  --teal-hover: var(--ms-violet);
+  --teal-soft: var(--ms-violet-soft);
+  --edge: var(--ms-edge);
+  --edge-strong: var(--ms-edge-strong);
+  --win: var(--ms-mint);
+  --win-soft: var(--ms-mint-soft);
+  --fail: var(--ms-red);
+  --fail-soft: var(--ms-red-soft);
+  --vs-bg: var(--ms-raised);
+}
+
 /* --- MatchSlop Heart Beat --- */
 @keyframes ms-heartbeat {
   0%,

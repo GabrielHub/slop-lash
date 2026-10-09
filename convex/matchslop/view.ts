@@ -1,0 +1,94 @@
+import type { Doc, Id } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
+import { loadPlayers } from "../roster";
+import { isForfeit, loadCurrentRound } from "../rounds";
+import { loadMessages, loadState, openerPromptText, tallyRound, type MatchslopPhase } from "./mode";
+import { pickWinner } from "../../src/games/matchslop/rules";
+
+/**
+ * Everything a MatchSlop screen needs. Who wrote what stays secret until the
+ * room has sent its message; while voting, each player sees only their own.
+ */
+export async function matchslopView(
+  ctx: QueryCtx,
+  game: Doc<"games">,
+  viewerId: Id<"players"> | null,
+) {
+  const [state, messages, bundle, players] = await Promise.all([
+    loadState(ctx, game._id),
+    loadMessages(ctx, game._id),
+    loadCurrentRound(ctx, game),
+    loadPlayers(ctx, game._id),
+  ]);
+  const phase = game.phase as MatchslopPhase | "LOBBY" | "FINAL";
+  const revealed = phase === "SENT" || phase === "REPLY" || phase === "FINAL";
+  const prompt = bundle?.prompts[0];
+
+  let round = null;
+  if (bundle && prompt) {
+    const tally = tallyRound(bundle, players);
+    const winner = revealed ? pickWinner(tally) : null;
+    const mine = bundle.responses.find((response) => response.playerId === viewerId);
+    round = {
+      number: bundle.round.roundNumber,
+      promptId: prompt._id,
+      promptText: prompt.text,
+      /** Assignees who have answered, forfeits included. */
+      answeredPlayerIds: bundle.responses.map((response) => response.playerId),
+      votedPlayerIds: bundle.votes.map((vote) => vote.voterId),
+      myResponseId: mine?._id ?? null,
+      myVoteResponseId: bundle.votes.find((vote) => vote.voterId === viewerId)?.responseId ?? null,
+      answers:
+        phase === "WRITING"
+          ? []
+          : tally
+              .toSorted((left, right) => left.id.localeCompare(right.id))
+              .map((entry) => ({
+                id: entry.response._id,
+                text: entry.response.text,
+                openerPromptText: openerPromptText(state.profile, entry.response.openerPromptId),
+                playerId:
+                  revealed || entry.response.playerId === viewerId ? entry.response.playerId : null,
+                weightedVotes: revealed ? entry.weightedVotes : 0,
+                rawVotes: revealed ? entry.rawVotes : 0,
+                pointsEarned: revealed ? entry.response.pointsEarned : 0,
+              })),
+      forfeitedPlayerIds: bundle.responses.filter(isForfeit).map((response) => response.playerId),
+      winnerResponseId: winner?.response._id ?? null,
+    };
+  }
+
+  return {
+    kind: "MATCHSLOP" as const,
+    persona: {
+      seekerIdentity: state.seekerIdentity,
+      personaIdentity: state.personaIdentity,
+      modelId: state.personaModelId,
+      profile: state.profile ?? null,
+      portraitUrl: state.portrait?.status === "READY" ? (state.portrait.url ?? null) : null,
+      portraitPending: state.portrait?.status === "PENDING",
+    },
+    mood: state.mood,
+    outcome: state.outcome,
+    /** The room is on its one last shot after the persona nearly unmatched. */
+    comeback: game.status === "PLAYING" && state.comebackRound === game.round,
+    signal: state.signal ?? null,
+    messages: messages.map((message) => ({
+      id: message._id,
+      turn: message.turn,
+      speaker: message.speaker,
+      text: message.text,
+      authorName: message.authorName ?? null,
+      openerPromptText: message.openerPromptText ?? null,
+      mood: message.mood ?? null,
+      outcome: message.outcome ?? null,
+    })),
+    round,
+    postMortem:
+      game.status === "FINISHED"
+        ? { pending: state.postMortem === undefined, value: state.postMortem ?? null }
+        : null,
+  };
+}
+
+export type MatchslopView = Awaited<ReturnType<typeof matchslopView>>;

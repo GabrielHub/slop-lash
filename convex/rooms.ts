@@ -1,454 +1,364 @@
 import { ConvexError, v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { action, env, mutation, query } from "./_generated/server";
+import { action, env, internalMutation, mutation, type MutationCtx } from "./_generated/server";
 import {
   constantTimeEqual,
   createCapabilitySecret,
   encodeCapability,
   hashCapabilitySecret,
-  requireCapability,
-  requireHostCapability,
+  requireHost,
 } from "./capabilities";
+import { roomPresence } from "./components";
+import { settle } from "./engine";
+import { claimFreePlaySlot, isFreePlayConfigured } from "./freePlay";
+import { getMode } from "./modes";
 import { createRoomCode, normalizePlayerName, normalizeRoomCode } from "./roomInput";
-import { maxPlayersByGameType } from "./gameLimits";
+import { findGameByCode, insertPlayer, loadActivePlayers, loadPresence } from "./roster";
+import { gameTypeValidator, matchSlopIdentityValidator, ttsModeValidator } from "./validators";
 import type { GameType } from "../src/games/core/types";
+import { FREE_PLAY_WRITER_MODEL_ID, getFreePlayAiPlayersError } from "../src/lib/free-play";
 import { getModelByModelId, selectUniqueModelsByProvider } from "../src/lib/models";
-import {
-  FREE_PLAY_JUDGE_MODEL_ID,
-  FREE_PLAY_WRITER_MODEL_ID,
-  getFreePlayAiPlayersError,
-} from "../src/lib/free-play";
-import { isFreePlayConfigured } from "./freePlay";
-import {
-  resolveQuizSlopContentConfig,
-  type QuizSlopContentConfig,
-} from "../src/games/quizslop/content-source/content-config";
-import {
-  gameStatusValidator,
-  gameTypeValidator,
-  matchSlopIdentityValidator,
-  playerTypeValidator,
-  sessionRoleValidator,
-  ttsModeValidator,
-} from "./validators";
 
 const MAX_ROOM_CODE_ATTEMPTS = 10;
-const MAX_ROOM_SUMMARY_PLAYERS = 16;
+const MAX_SEAT_SESSIONS = 8;
 
-type CreatedRoom = {
-  kind: "CREATED";
-  gameId: Id<"games">;
-  sessionId: Id<"playerSessions">;
-  playerId: Id<"players"> | null;
-};
-
-type CreateRoomResult =
-  | CreatedRoom
-  | { kind: "ROOM_CODE_TAKEN" }
-  | { kind: "FREE_PLAY_LIMIT_REACHED" };
-
-type SessionResult = {
-  gameId: Id<"games">;
-  gameType: GameType;
-  playerId: Id<"players"> | null;
-  playerName: string | null;
-  playerType: "HUMAN" | "AI" | "SPECTATOR" | null;
-  role: "HOST" | "PLAYER" | "SPECTATOR";
-  roomCode: string;
-  sessionId: Id<"playerSessions">;
-};
-
-type JoinRoomMutationResult =
-  | { kind: "JOINED"; session: SessionResult }
-  | { kind: "REJECTED"; reason: string };
-
-const sessionResultValidator = v.object({
-  capability: v.string(),
-  gameId: v.id("games"),
-  gameType: gameTypeValidator,
-  playerId: v.union(v.id("players"), v.null()),
-  playerName: v.union(v.string(), v.null()),
-  playerType: v.union(playerTypeValidator, v.null()),
-  role: sessionRoleValidator,
-  roomCode: v.string(),
-  sessionId: v.id("playerSessions"),
+/** Mode settings chosen on the host screen. */
+export const roomSettingsValidator = v.object({
+  matchslop: v.optional(
+    v.object({
+      seekerIdentity: matchSlopIdentityValidator,
+      personaIdentity: matchSlopIdentityValidator,
+      personaModelId: v.string(),
+    }),
+  ),
 });
 
-async function requireRoomCreationSecret(candidate: string): Promise<void> {
-  const configuredSecret = env.HOST_SECRET;
-  if (!configuredSecret) {
-    throw new ConvexError("Room creation is not configured");
-  }
-  const [configuredHash, candidateHash] = await Promise.all([
-    hashCapabilitySecret(configuredSecret),
+export type RoomSettings = typeof roomSettingsValidator.type;
+
+/** What a browser stores to get back into its room. */
+type RoomSession = {
+  capability: string;
+  roomCode: string;
+  gameType: GameType;
+  playerId: Id<"players"> | null;
+};
+
+async function requireHostPassword(candidate: string): Promise<void> {
+  const configured = env.HOST_SECRET;
+  if (!configured) throw new ConvexError("Room creation is not configured");
+  const [expected, actual] = await Promise.all([
+    hashCapabilitySecret(configured),
     hashCapabilitySecret(candidate),
   ]);
-  if (!constantTimeEqual(configuredHash, candidateHash)) {
-    throw new ConvexError("Invalid host password");
-  }
+  if (!constantTimeEqual(expected, actual)) throw new ConvexError("Invalid host password");
 }
 
-/**
- * Free Play rooms skip the host password, so every model and paid feature is
- * pinned here rather than trusted from the client.
- */
-function requireFreePlaySettings(args: {
-  aiModelIds?: string[];
-  gameType: GameType;
-  personaModelId?: string;
-  quizSlopGeneratorModelId?: string;
-  ttsMode?: "ON" | "OFF";
-  ttsVoice?: string;
-}): void {
+/** Free Play rooms skip the password, so their limits are pinned here. */
+function requireFreePlaySettings(
+  gameType: GameType,
+  aiModelIds: string[],
+  args: {
+    ttsMode?: "ON" | "OFF";
+    settings: RoomSettings;
+  },
+) {
   if (!isFreePlayConfigured()) {
     throw new ConvexError("Free Play is not available right now. Enter the host password.");
   }
-  if (args.ttsMode === "ON" || (args.ttsVoice ?? "").trim().length > 0) {
-    throw new ConvexError("The narrator needs the host password");
-  }
-  const aiPlayersError = getFreePlayAiPlayersError(args.gameType, args.aiModelIds ?? []);
-  if (aiPlayersError) throw new ConvexError(aiPlayersError);
-  if (args.personaModelId !== undefined && args.personaModelId !== FREE_PLAY_WRITER_MODEL_ID) {
+  if (args.ttsMode === "ON") throw new ConvexError("The narrator needs the host password");
+  const aiError = getFreePlayAiPlayersError(gameType, aiModelIds);
+  if (aiError) throw new ConvexError(aiError);
+  const personaModelId = args.settings.matchslop?.personaModelId;
+  if (personaModelId !== undefined && personaModelId !== FREE_PLAY_WRITER_MODEL_ID) {
     throw new ConvexError("Free Play personas use Claude Haiku");
   }
-  if (
-    args.quizSlopGeneratorModelId !== undefined &&
-    args.quizSlopGeneratorModelId !== FREE_PLAY_WRITER_MODEL_ID
-  ) {
-    throw new ConvexError("Free Play question packs are written by Claude Haiku");
-  }
-}
-
-function validateTotalRounds(totalRounds: number): number {
-  if (!Number.isInteger(totalRounds) || totalRounds < 1 || totalRounds > 10) {
-    throw new ConvexError("totalRounds must be an integer between 1 and 10");
-  }
-  return totalRounds;
 }
 
 export const create = action({
   args: {
-    aiModelIds: v.optional(v.array(v.string())),
     gameType: gameTypeValidator,
-    hostName: v.optional(v.string()),
-    hostParticipation: v.optional(v.union(v.literal("PLAYER"), v.literal("DISPLAY_ONLY"))),
     /** Omit for a Free Play room: Claude Haiku writes, Jev judges. */
     hostSecret: v.optional(v.string()),
-    personaIdentity: v.optional(matchSlopIdentityValidator),
-    personaModelId: v.optional(v.string()),
-    quizSlopContentSource: v.optional(v.union(v.literal("CATALOG"), v.literal("AI"))),
-    quizSlopGeneratorModelId: v.optional(v.string()),
-    seekerIdentity: v.optional(matchSlopIdentityValidator),
-    timersDisabled: v.optional(v.boolean()),
+    /** Omit to host from a big screen without playing. */
+    hostName: v.optional(v.string()),
+    aiModelIds: v.optional(v.array(v.string())),
     totalRounds: v.optional(v.number()),
+    timersDisabled: v.optional(v.boolean()),
     ttsMode: v.optional(ttsModeValidator),
     ttsVoice: v.optional(v.string()),
+    settings: v.optional(roomSettingsValidator),
   },
-  returns: sessionResultValidator,
-  handler: async (ctx, args): Promise<SessionResult & { capability: string }> => {
+  handler: async (ctx, args): Promise<RoomSession> => {
+    const settings = args.settings ?? {};
+    const aiModelIds = args.aiModelIds ?? [];
     const freePlay = args.hostSecret === undefined;
-    if (args.hostSecret === undefined) requireFreePlaySettings(args);
-    else await requireRoomCreationSecret(args.hostSecret);
+    if (freePlay) requireFreePlaySettings(args.gameType, aiModelIds, { ...args, settings });
+    else await requireHostPassword(args.hostSecret!);
 
-    if (args.gameType === "MATCHSLOP" && (!args.seekerIdentity || !args.personaIdentity)) {
-      throw new ConvexError("MatchSlop requires seekerIdentity and personaIdentity");
+    if (args.gameType === "MATCHSLOP") {
+      const personaModelId = settings.matchslop?.personaModelId;
+      if (!personaModelId || !getModelByModelId(personaModelId)) {
+        throw new ConvexError("Pick a model to play the MatchSlop persona");
+      }
     }
-    if (args.gameType === "QUIZSLOP") {
-      // QuizSlop is human-only, narrator-free, and derives its round count at
-      // roster freeze. Client hiding is not an authority boundary.
-      if ((args.aiModelIds ?? []).length > 0) {
-        throw new ConvexError("QuizSlop does not support AI players");
-      }
-      if (args.ttsMode === "ON" || (args.ttsVoice ?? "").trim().length > 0) {
-        throw new ConvexError("QuizSlop does not support a narrator");
-      }
-      if (args.totalRounds !== undefined) {
-        throw new ConvexError("QuizSlop derives its round count from the frozen roster");
-      }
-    } else if (
-      args.quizSlopContentSource !== undefined ||
-      args.quizSlopGeneratorModelId !== undefined
+    if (args.gameType === "QUIZSLOP" && aiModelIds.length > 0) {
+      throw new ConvexError("QuizSlop does not have AI players");
+    }
+    if (
+      args.totalRounds !== undefined &&
+      (!Number.isInteger(args.totalRounds) || args.totalRounds < 1 || args.totalRounds > 10)
     ) {
-      throw new ConvexError("QuizSlop content settings are only available for QuizSlop");
-    }
-    const hostParticipation =
-      args.gameType === "MATCHSLOP" ? "DISPLAY_ONLY" : (args.hostParticipation ?? "PLAYER");
-    const host = hostParticipation === "PLAYER" ? normalizePlayerName(args.hostName ?? "") : null;
-    const personaModelId = args.personaModelId?.trim() || null;
-    if (args.gameType === "MATCHSLOP" && (!personaModelId || !getModelByModelId(personaModelId))) {
-      throw new ConvexError("Persona model is required for MatchSlop");
-    }
-    let quizSlopContentConfig: QuizSlopContentConfig = resolveQuizSlopContentConfig({
-      mode: "CATALOG",
-    });
-    if (args.gameType === "QUIZSLOP" && (args.quizSlopContentSource ?? "CATALOG") === "AI") {
-      if (!args.quizSlopGeneratorModelId?.trim()) {
-        throw new ConvexError("Choose a question generator for Fresh AI Pack");
-      }
-      try {
-        quizSlopContentConfig = resolveQuizSlopContentConfig({
-          mode: "AI",
-          generatorModelId: args.quizSlopGeneratorModelId,
-          verifierModelId: freePlay ? FREE_PLAY_JUDGE_MODEL_ID : undefined,
-        });
-      } catch (error) {
-        throw new ConvexError(error instanceof Error ? error.message : "Invalid QuizSlop model");
-      }
-    } else if (args.gameType === "QUIZSLOP" && args.quizSlopGeneratorModelId !== undefined) {
-      throw new ConvexError("A question generator can only be set for Fresh AI Pack");
+      throw new ConvexError("Rounds must be between 1 and 10");
     }
 
-    const capabilitySecret = createCapabilitySecret();
-    const capabilityHash = await hashCapabilitySecret(capabilitySecret);
-    // `totalRounds === 0` is the QuizSlop unset sentinel; roster freeze
-    // atomically replaces it before the game leaves the lobby.
-    const totalRounds =
-      args.gameType === "QUIZSLOP"
-        ? 0
-        : validateTotalRounds(args.totalRounds ?? (args.gameType === "MATCHSLOP" ? 5 : 3));
+    const host = args.hostName?.trim() ? normalizePlayerName(args.hostName) : null;
+    const maxPlayers = getMode(args.gameType).maxPlayers;
+    const personaModelId = settings.matchslop?.personaModelId;
+    const aiPlayers = selectUniqueModelsByProvider(aiModelIds)
+      // The MatchSlop persona never plays against itself.
+      .filter((model) => model.id !== personaModelId)
+      .slice(0, maxPlayers - (host ? 1 : 0))
+      .map((model) => ({ modelId: model.id, ...normalizePlayerName(model.shortName) }));
+    if (host && aiPlayers.some((ai) => ai.normalizedName === host.normalizedName)) {
+      throw new ConvexError("Your name matches an AI player; pick another");
+    }
+
+    const secret = createCapabilitySecret();
+    const capabilityHash = await hashCapabilitySecret(secret);
     const ttsMode = args.gameType === "SLOPLASH" ? (args.ttsMode ?? "OFF") : "OFF";
-    const aiPlayers =
-      args.gameType === "QUIZSLOP"
-        ? []
-        : selectUniqueModelsByProvider(args.aiModelIds ?? [])
-            .filter((model) => args.gameType !== "MATCHSLOP" || model.id !== personaModelId)
-            .slice(
-              0,
-              maxPlayersByGameType[args.gameType] - (hostParticipation === "PLAYER" ? 1 : 0),
-            )
-            .map((model) => ({
-              modelId: model.id,
-              name: model.shortName,
-              normalizedName: model.shortName.toLocaleLowerCase("en-US"),
-            }));
-    if (host && aiPlayers.some((player) => player.normalizedName === host.normalizedName)) {
-      throw new ConvexError("Host name conflicts with a selected AI player");
-    }
-
     for (let attempt = 0; attempt < MAX_ROOM_CODE_ATTEMPTS; attempt += 1) {
       const roomCode = createRoomCode();
-      const result: CreateRoomResult = await ctx.runMutation(internal.roomsInternal.createRoom, {
-        aiPlayers,
-        capabilityHash,
-        freePlay,
-        gameType: args.gameType,
-        hostName: host?.name ?? null,
-        hostNormalizedName: host?.normalizedName ?? null,
-        hostParticipation,
-        personaIdentity: args.personaIdentity ?? "OTHER",
-        personaModelId,
-        quizSlopContentSource: quizSlopContentConfig.mode,
-        quizSlopGeneratorModelId:
-          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.generatorModelId : null,
-        quizSlopPromptVersion:
-          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.promptVersion : null,
-        quizSlopSchemaVersion:
-          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.schemaVersion : null,
-        quizSlopVerifierModelId:
-          quizSlopContentConfig.mode === "AI" ? quizSlopContentConfig.verifierModelId : null,
+      const result:
+        | { gameId: Id<"games">; sessionId: Id<"playerSessions">; playerId: Id<"players"> | null }
+        | "TAKEN"
+        | "FREE_PLAY_LIMIT" = await ctx.runMutation(internal.rooms.insertRoom, {
         roomCode,
-        seekerIdentity: args.seekerIdentity ?? "OTHER",
+        gameType: args.gameType,
+        freePlay,
+        capabilityHash,
+        host,
+        aiPlayers,
+        totalRounds: args.totalRounds ?? (args.gameType === "MATCHSLOP" ? 5 : 3),
         timersDisabled: args.timersDisabled ?? false,
-        totalRounds,
         ttsMode,
         ttsVoice: ttsMode === "ON" ? args.ttsVoice?.trim() || "RANDOM" : "RANDOM",
+        settings,
       });
-      if (result.kind === "ROOM_CODE_TAKEN") continue;
-      if (result.kind === "FREE_PLAY_LIMIT_REACHED") {
+      if (result === "TAKEN") continue;
+      if (result === "FREE_PLAY_LIMIT") {
         throw new ConvexError(
           "Free Play is out of games for today. Try again tomorrow or use the host password.",
         );
       }
-
-      if (quizSlopContentConfig.mode === "AI") {
-        const packArgs = {
-          gameId: result.gameId,
-          generatorModelId: quizSlopContentConfig.generatorModelId,
-        };
-        try {
-          await ctx.runMutation(internal.quizslopPackJobs.queueFreshPack, packArgs);
-        } catch {
-          // Room creation has already committed. Recover to a complete catalog
-          // pack instead of orphaning the room or returning an action error.
-          try {
-            await ctx.runMutation(internal.quizslopPackJobs.recoverFreshPack, packArgs);
-          } catch {
-            try {
-              await ctx.runMutation(internal.quizslopPackJobs.markFreshPackFailed, packArgs);
-            } catch {
-              // `roomsInternal.createRoom` transactionally scheduled the same
-              // idempotent queue operation. Never hide a successfully created
-              // room merely because this eager preflight path was interrupted.
-            }
-          }
-        }
-      }
-
       return {
-        capability: encodeCapability(result.sessionId, capabilitySecret),
-        gameId: result.gameId,
+        capability: encodeCapability(result.sessionId, secret),
+        roomCode,
         gameType: args.gameType,
         playerId: result.playerId,
-        playerName: host?.name ?? null,
-        playerType: result.playerId ? "HUMAN" : null,
-        role: "HOST",
-        roomCode,
-        sessionId: result.sessionId,
       };
     }
+    throw new ConvexError("Could not find a free room code, please try again");
+  },
+});
 
-    throw new ConvexError("Failed to allocate a room code, please try again");
+const nameValidator = v.object({ name: v.string(), normalizedName: v.string() });
+
+export const insertRoom = internalMutation({
+  args: {
+    roomCode: v.string(),
+    gameType: gameTypeValidator,
+    freePlay: v.boolean(),
+    capabilityHash: v.string(),
+    host: v.union(nameValidator, v.null()),
+    aiPlayers: v.array(
+      v.object({ modelId: v.string(), name: v.string(), normalizedName: v.string() }),
+    ),
+    totalRounds: v.number(),
+    timersDisabled: v.boolean(),
+    ttsMode: ttsModeValidator,
+    ttsVoice: v.string(),
+    settings: roomSettingsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (await findGameByCode(ctx, args.roomCode)) return "TAKEN" as const;
+    const now = Date.now();
+    if (args.freePlay && !(await claimFreePlaySlot(ctx, now))) return "FREE_PLAY_LIMIT" as const;
+
+    const gameId = await ctx.db.insert("games", {
+      roomCode: args.roomCode,
+      gameType: args.gameType,
+      status: "LOBBY",
+      phase: "LOBBY",
+      step: 0,
+      round: 0,
+      totalRounds: args.totalRounds,
+      displayHost: args.host === null,
+      phaseGeneration: 0,
+      phaseStartedAt: now,
+      freePlay: args.freePlay,
+      timersDisabled: args.timersDisabled,
+      ttsMode: args.ttsMode,
+      ttsVoice: args.ttsVoice,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const playerId = args.host
+      ? await insertPlayer(ctx, gameId, { ...args.host, type: "HUMAN" }, now)
+      : null;
+    for (const ai of args.aiPlayers) await insertPlayer(ctx, gameId, { ...ai, type: "AI" }, now);
+    const sessionId = await ctx.db.insert("playerSessions", {
+      gameId,
+      ...(playerId ? { playerId } : {}),
+      capabilityHash: args.capabilityHash,
+      createdAt: now,
+    });
+    await ctx.db.patch("games", gameId, {
+      hostSessionId: sessionId,
+      ...(playerId ? { hostPlayerId: playerId } : {}),
+    });
+    const game = (await ctx.db.get("games", gameId))!;
+    await getMode(args.gameType).createRoom?.(ctx, game, args.settings);
+    return { gameId, sessionId, playerId };
   },
 });
 
 export const join = action({
-  args: { name: v.string(), roomCode: v.string() },
-  returns: sessionResultValidator,
-  handler: async (ctx, args): Promise<SessionResult & { capability: string }> => {
+  args: { roomCode: v.string(), name: v.string() },
+  handler: async (ctx, args): Promise<RoomSession> => {
     const roomCode = normalizeRoomCode(args.roomCode);
-    const player = normalizePlayerName(args.name);
-    const capabilitySecret = createCapabilitySecret();
-    const capabilityHash = await hashCapabilitySecret(capabilitySecret);
-    const result: JoinRoomMutationResult = await ctx.runMutation(internal.roomsInternal.joinRoom, {
-      capabilityHash,
-      name: player.name,
-      normalizedName: player.normalizedName,
+    const name = normalizePlayerName(args.name);
+    const secret = createCapabilitySecret();
+    const result: { sessionId: Id<"playerSessions">; playerId: Id<"players">; gameType: GameType } =
+      await ctx.runMutation(internal.rooms.takeSeat, {
+        roomCode,
+        ...name,
+        capabilityHash: await hashCapabilitySecret(secret),
+      });
+    return {
+      capability: encodeCapability(result.sessionId, secret),
       roomCode,
-    });
-    if (result.kind === "REJECTED") throw new ConvexError(result.reason);
-    return {
-      ...result.session,
-      capability: encodeCapability(result.session.sessionId, capabilitySecret),
+      gameType: result.gameType,
+      playerId: result.playerId,
     };
   },
 });
 
-export const rejoin = mutation({
-  args: { capability: v.string(), roomCode: v.string() },
-  returns: sessionResultValidator,
-  handler: async (ctx, args): Promise<SessionResult & { capability: string }> => {
-    const roomCode = normalizeRoomCode(args.roomCode);
-    const authorized = await requireCapability(ctx, args.capability);
-    if (authorized.game.roomCode !== roomCode) {
-      throw new ConvexError("Invalid room capability");
+async function deleteSeatSessions(ctx: MutationCtx, game: Doc<"games">, playerId: Id<"players">) {
+  const sessions = await ctx.db
+    .query("playerSessions")
+    .withIndex("by_playerId", (index) => index.eq("playerId", playerId))
+    .take(MAX_SEAT_SESSIONS);
+  for (const session of sessions) {
+    if (game.hostSessionId === session._id) {
+      await ctx.db.patch("games", game._id, { hostSessionId: undefined });
     }
+    await ctx.db.delete("playerSessions", session._id);
+  }
+}
 
-    const now = Date.now();
-    await ctx.db.patch("playerSessions", authorized.session._id, { lastSeenAt: now });
-    if (authorized.player?.participationStatus === "DISCONNECTED") {
-      await ctx.db.patch("players", authorized.player._id, { participationStatus: "ACTIVE" });
-    }
-
-    return {
-      capability: args.capability,
-      gameId: authorized.game._id,
-      gameType: authorized.game.gameType,
-      playerId: authorized.player?._id ?? null,
-      playerName: authorized.player?.name ?? null,
-      playerType: authorized.player?.type ?? null,
-      role: authorized.session.role,
-      roomCode: authorized.game.roomCode,
-      sessionId: authorized.session._id,
-    };
-  },
-});
-
-export const summary = query({
-  args: { capability: v.string() },
-  returns: v.object({
-    game: v.object({
-      _id: v.id("games"),
-      currentRound: v.number(),
-      gameType: gameTypeValidator,
-      hostPlayerId: v.union(v.id("players"), v.null()),
-      maxPlayers: v.number(),
-      phaseDeadline: v.union(v.number(), v.null()),
-      playerCount: v.number(),
-      roomCode: v.string(),
-      status: gameStatusValidator,
-      timersDisabled: v.boolean(),
-      totalRounds: v.number(),
-    }),
-    me: v.object({
-      isHost: v.boolean(),
-      playerId: v.union(v.id("players"), v.null()),
-      role: sessionRoleValidator,
-      sessionId: v.id("playerSessions"),
-    }),
-    players: v.array(
-      v.object({
-        _id: v.id("players"),
-        humorRating: v.number(),
-        idleRounds: v.number(),
-        modelId: v.union(v.string(), v.null()),
-        name: v.string(),
-        participationStatus: v.union(v.literal("ACTIVE"), v.literal("DISCONNECTED")),
-        score: v.number(),
-        type: playerTypeValidator,
-        winStreak: v.number(),
-      }),
-    ),
-  }),
-  handler: async (ctx, args) => {
-    const authorized = await requireCapability(ctx, args.capability);
-    const players = await ctx.db
-      .query("players")
-      .withIndex("by_gameId", (index) => index.eq("gameId", authorized.game._id))
-      .take(MAX_ROOM_SUMMARY_PLAYERS);
-
-    return {
-      game: {
-        _id: authorized.game._id,
-        currentRound: authorized.game.currentRound,
-        gameType: authorized.game.gameType,
-        hostPlayerId: authorized.game.hostPlayerId ?? null,
-        maxPlayers: authorized.game.maxPlayers,
-        phaseDeadline: authorized.game.phaseDeadline ?? null,
-        playerCount: authorized.game.playerCount,
-        roomCode: authorized.game.roomCode,
-        status: authorized.game.status,
-        timersDisabled: authorized.game.timersDisabled,
-        totalRounds: authorized.game.totalRounds,
-      },
-      me: {
-        isHost:
-          authorized.session.role === "HOST" &&
-          authorized.game.hostSessionId === authorized.session._id,
-        playerId: authorized.player?._id ?? null,
-        role: authorized.session.role,
-        sessionId: authorized.session._id,
-      },
-      players: players.map((player) => ({
-        _id: player._id,
-        humorRating: player.humorRating,
-        idleRounds: player.idleRounds,
-        modelId: player.modelId ?? null,
-        name: player.name,
-        participationStatus: player.participationStatus,
-        score: player.score,
-        type: player.type,
-        winStreak: player.winStreak,
-      })),
-    };
-  },
-});
-
-export const hostAuthority = query({
-  args: { capability: v.string() },
-  returns: v.object({
-    gameId: v.id("games"),
-    playerId: v.union(v.id("players"), v.null()),
+/**
+ * Joins a lobby, or reclaims a seat by name. A seat can be reclaimed as soon
+ * as no tab is holding it, which is how a player gets back in after losing
+ * their tab, switching phones, or clearing the browser.
+ */
+export const takeSeat = internalMutation({
+  args: {
     roomCode: v.string(),
-    sessionId: v.id("playerSessions"),
-  }),
+    name: v.string(),
+    normalizedName: v.string(),
+    capabilityHash: v.string(),
+  },
   handler: async (ctx, args) => {
-    const authorized = await requireHostCapability(ctx, args.capability);
-    return {
-      gameId: authorized.game._id,
-      playerId: authorized.player?._id ?? null,
-      roomCode: authorized.game.roomCode,
-      sessionId: authorized.session._id,
-    };
+    const game = await findGameByCode(ctx, args.roomCode);
+    if (!game) throw new ConvexError("Room not found. Check the code and try again.");
+    const now = Date.now();
+
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_gameId_and_normalizedName", (index) =>
+        index.eq("gameId", game._id).eq("normalizedName", args.normalizedName),
+      )
+      .unique();
+    if (existing) {
+      if (existing.type !== "HUMAN") throw new ConvexError("That name belongs to an AI player");
+      if (existing.kickedAt !== undefined)
+        throw new ConvexError("That player was removed from this room");
+      // Only a tab that is live right now holds the seat; a closed or
+      // crashed one lets its owner straight back in from another device.
+      const presence = await loadPresence(ctx, game._id);
+      if (presence.get(existing._id)?.online) {
+        throw new ConvexError(
+          `${existing.name} is already in the room. If that's you, close the other tab and try again in a few seconds.`,
+        );
+      }
+      await deleteSeatSessions(ctx, game, existing._id);
+      const sessionId = await ctx.db.insert("playerSessions", {
+        gameId: game._id,
+        playerId: existing._id,
+        capabilityHash: args.capabilityHash,
+        createdAt: now,
+      });
+      return { sessionId, playerId: existing._id, gameType: game.gameType };
+    }
+
+    if (game.status !== "LOBBY") {
+      throw new ConvexError(
+        "This game already started. To rejoin, enter the exact name you played with.",
+      );
+    }
+    const players = await loadActivePlayers(ctx, game._id);
+    const { maxPlayers } = getMode(game.gameType);
+    if (players.length >= maxPlayers) {
+      throw new ConvexError(`The room is full (${maxPlayers} players)`);
+    }
+    const playerId = await insertPlayer(
+      ctx,
+      game._id,
+      { name: args.name, normalizedName: args.normalizedName, type: "HUMAN" },
+      now,
+    );
+    const sessionId = await ctx.db.insert("playerSessions", {
+      gameId: game._id,
+      playerId,
+      capabilityHash: args.capabilityHash,
+      createdAt: now,
+    });
+    await ctx.db.patch("games", game._id, { updatedAt: now });
+    return { sessionId, playerId, gameType: game.gameType };
+  },
+});
+
+/**
+ * Removes a player. In the lobby the seat disappears; mid-game it is retired
+ * so the history stays intact and the round stops waiting on them.
+ */
+export const kick = mutation({
+  args: { capability: v.string(), playerId: v.id("players") },
+  handler: async (ctx, args) => {
+    const { game, player: me } = await requireHost(ctx, args.capability);
+    const target = await ctx.db.get("players", args.playerId);
+    if (!target || target.gameId !== game._id || target.kickedAt !== undefined) return;
+    if (target._id === me?._id) throw new ConvexError("You can't remove yourself");
+    if (target.type === "AI" && game.status !== "LOBBY") {
+      throw new ConvexError("AI players can only be removed in the lobby");
+    }
+    if (game.status === "PLAYING" && (await loadActivePlayers(ctx, game._id)).length <= 2) {
+      throw new ConvexError("A game needs at least two players");
+    }
+
+    await deleteSeatSessions(ctx, game, target._id);
+    await roomPresence.removeRoomUser(ctx, game._id, target._id);
+    await getMode(game.gameType).onPlayerRemoved?.(ctx, game, target);
+    if (game.status === "LOBBY") {
+      await ctx.db.delete("players", target._id);
+    } else {
+      await ctx.db.patch("players", target._id, { kickedAt: Date.now() });
+    }
+    if (game.hostPlayerId === target._id) {
+      await ctx.db.patch("games", game._id, { hostPlayerId: undefined });
+    }
+    await ctx.db.patch("games", game._id, { updatedAt: Date.now() });
+    if (game.status === "PLAYING") await settle(ctx, game._id);
   },
 });

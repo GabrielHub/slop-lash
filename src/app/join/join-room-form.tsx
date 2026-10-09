@@ -10,7 +10,7 @@ import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import { useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
-import { persistRoomSessionResult } from "@/lib/convex-room-client";
+import { roomPath, saveRoomSession, useStoredRoomSession } from "@/room/session";
 import { isMobileDevice } from "@/lib/mobile-device";
 import { isRoomInviteCode, normalizeRoomInviteCode, ROOM_CODE_LENGTH } from "@/lib/room-invite";
 
@@ -25,6 +25,7 @@ export function JoinRoomForm({ initialRoomCode = "" }: { initialRoomCode?: strin
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const joiningRef = useRef(false);
+  const existing = useStoredRoomSession(roomCode);
 
   async function joinGame() {
     if (joiningRef.current) return;
@@ -46,20 +47,12 @@ export function JoinRoomForm({ initialRoomCode = "" }: { initialRoomCode?: strin
     setError("");
 
     try {
-      const code = normalizeRoomInviteCode(roomCode);
-      const usePhoneController = isMobileDevice();
       const room = await joinRoom({
         name: name.trim(),
-        roomCode: code,
+        roomCode: normalizeRoomInviteCode(roomCode),
       });
-      persistRoomSessionResult(room);
-      // Shared-stage modes require a private controller on every device. Other
-      // modes use one automatically only when the join happens on mobile.
-      const targetRoute =
-        usePhoneController || room.gameType === "MATCHSLOP" || room.gameType === "QUIZSLOP"
-          ? `/controller/${room.roomCode}`
-          : `/game/${room.roomCode}`;
-      router.push(targetRoute);
+      saveRoomSession(room);
+      router.push(roomPath(room, isMobileDevice()));
     } catch (cause) {
       setError(getConvexErrorMessage(cause, "Failed to join"));
     } finally {
@@ -104,6 +97,15 @@ export function JoinRoomForm({ initialRoomCode = "" }: { initialRoomCode?: strin
             "Join a Game"
           )}
         </h1>
+
+        {existing && (
+          <Link
+            href={roomPath(existing, isMobileDevice())}
+            className="mb-8 block rounded-xl border-2 border-teal/50 bg-teal/10 px-4 py-3 text-sm font-semibold text-ink hover:border-teal transition-colors"
+          >
+            You&apos;re already in this room. Go back to it →
+          </Link>
+        )}
 
         <form
           onSubmit={(event) => {

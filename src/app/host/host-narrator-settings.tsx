@@ -2,7 +2,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { Toggle } from "@/components/toggle";
 import { getNarratorVoice, NARRATOR_VOICES } from "@/games/sloplash/voices";
 import { buttonTap } from "@/lib/animations";
-import type { TtsMode } from "@/lib/types";
+
+export type TtsMode = "ON" | "OFF";
 
 interface HostNarratorSettingsProps {
   mode: TtsMode;

@@ -9,6 +9,24 @@
 >
 > Internal game type: **QUIZSLOP**
 
+> **What shipped (October 2026).** The engine rewrite cut this spec down to
+> the core game. The code is authoritative where the two disagree.
+>
+> - Questions come only from the static, human-reviewed catalog
+>   (`src/games/quizslop/config/`). There are no AI-generated packs, no custom
+>   topics, and no disputes; every ruling is final.
+> - Each player picks a catalog Home Topic in the lobby. A player who doesn't
+>   pick gets a random one at the start.
+> - The rounds run TOPIC, then CALL (skipped when nobody has tokens), ANSWER,
+>   REVEAL (one question per step), and ROUND_RESULTS, with a HOUSE_VOTE before
+>   the finale. They run on the shared engine (`convex/quizslop/mode.ts`), with
+>   the same deadlines, host controls, and host failover as every other mode.
+> - The rejoin and continuity rules below are replaced by the shared
+>   rejoin-by-name flow.
+>
+> The sections on packs, disputes, verification, and continuity grace are kept
+> as history and future direction.
+
 ## Decision Summary
 
 QuizSlop is human party trivia that quietly adapts each player's questions as
@@ -177,7 +195,7 @@ information.
 - Favor evergreen humor. Avoid memes, scandals, slang, or topical references
   likely to age before the pack is retired.
 - Avoid generic AI-comedy sludge: `chaos`, `unhinged`, `plot twist`, `because of
-course`, therapy-speak, and self-aware robot jokes are not substitutes for a
+  course`, therapy-speak, and self-aware robot jokes are not substitutes for a
   specific observation.
 - Keep the party-safe rating. Light edge is welcome; cruelty, sexual content,
   hate, and shock without structure are not.

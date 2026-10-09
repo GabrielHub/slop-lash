@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import { z } from "zod";
 import { getLanguageModel, type AiProviderKeys } from "@/lib/ai-gateway";
-import { getGameplayReasoningSettings } from "@/lib/ai-reasoning";
+import { MINIMAL_REASONING } from "@/lib/ai-reasoning";
 import { calculateCostUsd } from "@/lib/models";
 
 export interface AiUsage {
@@ -271,7 +271,7 @@ export async function aiVoteNWay(
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
       abortSignal: options.abortSignal,
       timeout: options.timeout,
-      ...getGameplayReasoningSettings(modelId),
+      ...MINIMAL_REASONING,
     });
 
     const elapsed = Date.now() - t0;

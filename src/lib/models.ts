@@ -15,13 +15,9 @@ export interface ModelInfo {
 }
 
 export interface AIModel extends ModelInfo {
-  /** Gameplay reasoning policy. Enforced when the provider exposes a control. */
-  reasoningLevel: ReasoningLevel;
   /** Set when the model is served by the Anthropic API instead of the AI Gateway. */
   anthropicModelId?: string;
 }
-
-export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "max";
 
 export const AI_MODELS: AIModel[] = [
   {
@@ -32,7 +28,6 @@ export const AI_MODELS: AIModel[] = [
     icon: "/icons/gemini-color.svg",
     inputPer1M: 0.3,
     outputPer1M: 2.5,
-    reasoningLevel: "high",
   },
   {
     id: "zai/glm-5.3-flash",
@@ -43,7 +38,6 @@ export const AI_MODELS: AIModel[] = [
     iconDark: "/icons/zai-dark.svg",
     inputPer1M: 0.15,
     outputPer1M: 0.5,
-    reasoningLevel: "low",
   },
   {
     id: "deepseek/deepseek-v4.1-flash",
@@ -53,7 +47,6 @@ export const AI_MODELS: AIModel[] = [
     icon: "/icons/deepseek-color.svg",
     inputPer1M: 0.3,
     outputPer1M: 1.2,
-    reasoningLevel: "max",
   },
   {
     id: "openai/gpt-6.1-sol",
@@ -64,7 +57,6 @@ export const AI_MODELS: AIModel[] = [
     iconDark: "/icons/openai-dark.svg",
     inputPer1M: 2.0,
     outputPer1M: 10.0,
-    reasoningLevel: "low",
   },
   {
     id: "xiaomi/mimo-v2.6-flash",
@@ -75,7 +67,6 @@ export const AI_MODELS: AIModel[] = [
     iconDark: "/icons/xiaomimimo-dark.svg",
     inputPer1M: 0.14,
     outputPer1M: 0.28,
-    reasoningLevel: "high",
   },
   {
     id: "anthropic/claude-haiku-5.5",
@@ -85,7 +76,6 @@ export const AI_MODELS: AIModel[] = [
     icon: "/icons/claude-color.svg",
     inputPer1M: 0.1,
     outputPer1M: 0.5,
-    reasoningLevel: "low",
     anthropicModelId: "claude-haiku-5-5",
   },
 ];

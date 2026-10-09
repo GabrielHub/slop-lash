@@ -148,7 +148,9 @@ export function validateQuestionContent(
     checkBoundedText(issues, id, `choices[${index}]`, choice, MAX_CHOICE_LENGTH);
     // Match against the normalized form so trailing punctuation ("All of the
     // above.") or hyphenation cannot slip a banned meta-choice past the anchor.
-    if (BANNED_CHOICE_PATTERNS.some((pattern) => pattern.test(normalizeForDuplicateCheck(choice)))) {
+    if (
+      BANNED_CHOICE_PATTERNS.some((pattern) => pattern.test(normalizeForDuplicateCheck(choice)))
+    ) {
       issues.push(issue(id, `choices[${index}]`, "all/none of the above is not allowed"));
     }
   }

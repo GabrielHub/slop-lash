@@ -1,16 +1,15 @@
 /**
  * Comedy Heat scoring engine — pure, deterministic domain functions.
- * Shared by the Convex state machine and client-side result previews.
+ * Shared by the Convex state machine and the achievements replay.
  */
 
-import type { PlayerType } from "@/lib/types";
+export type PlayerType = "HUMAN" | "AI";
 
 // --------------- Constants ---------------
 
 const BASE_COEFF = 50;
 const HUMAN_VOTE_MULT = 1.5;
 const AI_VOTE_MULT = 1.0;
-const SPECTATOR_VOTE_MULT = 0.5;
 const HR_WIN_DELTA = 0.2;
 const HR_LOSE_DELTA = -0.1;
 const HR_FLOOR = 0.5;
@@ -37,14 +36,7 @@ export function streakMultiplier(streak: number): number {
 }
 
 function voteMultiplier(type: PlayerType): number {
-  switch (type) {
-    case "HUMAN":
-      return HUMAN_VOTE_MULT;
-    case "SPECTATOR":
-      return SPECTATOR_VOTE_MULT;
-    case "AI":
-      return AI_VOTE_MULT;
-  }
+  return type === "HUMAN" ? HUMAN_VOTE_MULT : AI_VOTE_MULT;
 }
 
 // --------------- Types ---------------
@@ -82,7 +74,7 @@ export interface ScorePromptResult {
 
 /**
  * Apply a ScorePromptResult's deltas to mutable player states.
- * Used by the Convex state machine, achievements, and client-side voting previews.
+ * Used by the Convex state machine and achievements.
  */
 export function applyScoreResult(
   result: ScorePromptResult,

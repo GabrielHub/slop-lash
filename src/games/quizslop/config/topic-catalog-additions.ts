@@ -150,14 +150,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-human-body-q1",
         tier: "EASY",
-        neutralQuestion:
-          "What is the largest organ of the human body?",
+        neutralQuestion: "What is the largest organ of the human body?",
         displayPrompt:
           "Which sprawling, waterproof organ is technically the largest one you own, and you wear it on the outside?",
         choices: ["The skin", "The liver", "The heart", "The brain"],
         correctIndex: 0,
-        canonicalFact:
-          "The skin is the largest organ of the human body.",
+        canonicalFact: "The skin is the largest organ of the human body.",
         explanation:
           "The skin is the body's largest organ, roughly two square metres in an adult. The only organ you can accidentally leave in the sun too long.",
         comedyDevices: ["DRY_ASIDE"],
@@ -177,14 +175,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-human-body-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "How many bones are there in a typical adult human skeleton?",
+        neutralQuestion: "How many bones are there in a typical adult human skeleton?",
         displayPrompt:
           "A typical adult human skeleton is assembled from roughly how many separate bones?",
         choices: ["206", "150", "312", "98"],
         correctIndex: 0,
-        canonicalFact:
-          "A typical adult human skeleton has 206 bones.",
+        canonicalFact: "A typical adult human skeleton has 206 bones.",
         explanation:
           "The adult human skeleton has 206 bones. Babies start with a good many more, but plenty quietly fuse together during growth, trimming the parts list.",
         comedyDevices: ["UNDERSTATEMENT"],
@@ -204,14 +200,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-human-body-q3",
         tier: "HARD",
-        neutralQuestion:
-          "What is the smallest bone in the human body, located in the middle ear?",
+        neutralQuestion: "What is the smallest bone in the human body, located in the middle ear?",
         displayPrompt:
           "Which is the smallest bone in the whole human body, tucked away doing quiet work in your middle ear?",
         choices: ["The stapes", "The femur", "The patella", "The clavicle"],
         correctIndex: 0,
-        canonicalFact:
-          "The stapes, in the middle ear, is the smallest bone in the human body.",
+        canonicalFact: "The stapes, in the middle ear, is the smallest bone in the human body.",
         explanation:
           "The stapes, a stirrup-shaped bone in the middle ear, is the smallest in the body at a few millimetres. It helps you hear and would sit comfortably on a grain of rice.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
@@ -278,14 +272,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-famous-paintings-q1",
         tier: "EASY",
-        neutralQuestion:
-          "Which artist painted the Mona Lisa?",
+        neutralQuestion: "Which artist painted the Mona Lisa?",
         displayPrompt:
           "Which Renaissance polymath painted the Mona Lisa, the small portrait now guarded behind a crowd and a lot of glass?",
         choices: ["Leonardo da Vinci", "Michelangelo", "Raphael", "Botticelli"],
         correctIndex: 0,
-        canonicalFact:
-          "Leonardo da Vinci painted the Mona Lisa.",
+        canonicalFact: "Leonardo da Vinci painted the Mona Lisa.",
         explanation:
           "Leonardo da Vinci painted the Mona Lisa in the early 1500s. It is surprisingly small, a fact every first-time Louvre visitor discovers with visible disappointment.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
@@ -305,14 +297,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-famous-paintings-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "Which Dutch post-Impressionist painter created 'The Starry Night'?",
+        neutralQuestion: "Which Dutch post-Impressionist painter created 'The Starry Night'?",
         displayPrompt:
           "Which Dutch post-Impressionist swirled 'The Starry Night' into being during an 1889 stay at an asylum?",
         choices: ["Vincent van Gogh", "Claude Monet", "Paul Cézanne", "Edvard Munch"],
         correctIndex: 0,
-        canonicalFact:
-          "Vincent van Gogh painted 'The Starry Night' in 1889.",
+        canonicalFact: "Vincent van Gogh painted 'The Starry Night' in 1889.",
         explanation:
           "Vincent van Gogh painted 'The Starry Night' in 1889 from a room at the Saint-Rémy asylum, largely from memory. He sold almost nothing alive and now anchors gift shops worldwide.",
         comedyDevices: ["DRY_ASIDE"],
@@ -365,8 +355,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "Which Dutch Golden Age master painted the enormous militia group portrait now known as 'The Night Watch'?",
         choices: ["Rembrandt", "Johannes Vermeer", "Frans Hals", "Jan Steen"],
         correctIndex: 0,
-        canonicalFact:
-          "Rembrandt painted 'The Night Watch' in 1642.",
+        canonicalFact: "Rembrandt painted 'The Night Watch' in 1642.",
         explanation:
           "Rembrandt finished 'The Night Watch' in 1642. It is not really a night scene; centuries of grime darkened the varnish until people assumed the militia worked the late shift.",
         comedyDevices: ["INCONGRUITY", "DRY_ASIDE"],
@@ -412,8 +401,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "Peking duck, that lacquered, crispy-skinned classic, is named after the older Western spelling of which city?",
         choices: ["Beijing", "Shanghai", "Hong Kong", "Guangzhou"],
         correctIndex: 0,
-        canonicalFact:
-          "Peking duck is named after Peking, the older Western spelling of Beijing.",
+        canonicalFact: "Peking duck is named after Peking, the older Western spelling of Beijing.",
         explanation:
           "Peking duck is named after Peking, the older romanisation of Beijing. The dish kept the vintage spelling long after the maps quietly updated.",
         comedyDevices: ["WORDPLAY"],
@@ -619,7 +607,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "The name of the 1957 programming language FORTRAN is a contraction of which two words?",
         displayPrompt:
           "FORTRAN, the pioneering 1957 language for scientific computing, took its name as a contraction of which two words?",
-        choices: ["Formula Translation", "Formal Transmission", "Forward Transfer", "Formatted Transistor"],
+        choices: [
+          "Formula Translation",
+          "Formal Transmission",
+          "Forward Transfer",
+          "Formatted Transistor",
+        ],
         correctIndex: 0,
         canonicalFact:
           "FORTRAN, released by IBM in 1957, is a contraction of 'Formula Translation'.",
@@ -668,8 +661,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "How many players from a single team are on the court at one time in an NBA game?",
         choices: ["Five", "Six", "Seven", "Four"],
         correctIndex: 0,
-        canonicalFact:
-          "Each NBA team has five players on the court at a time.",
+        canonicalFact: "Each NBA team has five players on the court at a time.",
         explanation:
           "Each NBA team fields five players at once. It is a small enough number that one cold shooting night is impossible to hide from the box score.",
         comedyDevices: ["DRY_ASIDE"],
@@ -691,8 +683,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
         tier: "MEDIUM",
         neutralQuestion:
           "With which team did Michael Jordan win six NBA championships in the 1990s?",
-        displayPrompt:
-          "Michael Jordan won six NBA championships during the 1990s with which team?",
+        displayPrompt: "Michael Jordan won six NBA championships during the 1990s with which team?",
         choices: ["Chicago Bulls", "Los Angeles Lakers", "Boston Celtics", "Detroit Pistons"],
         correctIndex: 0,
         canonicalFact:
@@ -790,14 +781,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-music-general-q1",
         tier: "EASY",
-        neutralQuestion:
-          "How many strings does a standard guitar have?",
-        displayPrompt:
-          "A standard guitar is strung with how many strings?",
+        neutralQuestion: "How many strings does a standard guitar have?",
+        displayPrompt: "A standard guitar is strung with how many strings?",
         choices: ["Six", "Four", "Eight", "Twelve"],
         correctIndex: 0,
-        canonicalFact:
-          "A standard guitar has six strings.",
+        canonicalFact: "A standard guitar has six strings.",
         explanation:
           "A standard guitar has six strings. Twelve-string guitars exist for anyone who felt six was not quite enough to tune before every gig.",
         comedyDevices: ["DRY_ASIDE"],
@@ -817,14 +805,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-music-general-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "How many keys are there on a standard full-size piano?",
-        displayPrompt:
-          "A standard full-size piano has how many keys, black and white combined?",
+        neutralQuestion: "How many keys are there on a standard full-size piano?",
+        displayPrompt: "A standard full-size piano has how many keys, black and white combined?",
         choices: ["88", "61", "100", "76"],
         correctIndex: 0,
-        canonicalFact:
-          "A standard full-size piano has 88 keys.",
+        canonicalFact: "A standard full-size piano has 88 keys.",
         explanation:
           "A standard piano has 88 keys, 52 white and 36 black. A very specific number that generations of students have counted while avoiding actual practice.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
@@ -844,14 +829,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-music-general-q3",
         tier: "HARD",
-        neutralQuestion:
-          "Which Italian musical term means to play very loudly?",
-        displayPrompt:
-          "Which Italian musical term instructs a performer to play very loudly?",
+        neutralQuestion: "Which Italian musical term means to play very loudly?",
+        displayPrompt: "Which Italian musical term instructs a performer to play very loudly?",
         choices: ["Fortissimo", "Pianissimo", "Allegro", "Legato"],
         correctIndex: 0,
-        canonicalFact:
-          "In music, 'fortissimo' means to play very loudly.",
+        canonicalFact: "In music, 'fortissimo' means to play very loudly.",
         explanation:
           "Fortissimo, marked ff, tells a musician to play very loudly. Its opposite, pianissimo, politely requests the reverse, and orchestras negotiate the gap nightly.",
         comedyDevices: ["UNDERSTATEMENT"],
@@ -877,8 +859,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "Orchestras usually tune to the note A, fixed by international standard at how many hertz?",
         choices: ["440 hertz", "261 hertz", "400 hertz", "512 hertz"],
         correctIndex: 0,
-        canonicalFact:
-          "The standard tuning pitch A above middle C is set at 440 hertz.",
+        canonicalFact: "The standard tuning pitch A above middle C is set at 440 hertz.",
         explanation:
           "Concert pitch fixes the A above middle C at 440 hertz, the note oboes play so everyone else can tune to it. A whole orchestra agreeing on one number, briefly.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY", "DRY_ASIDE"],
@@ -947,8 +928,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
         tier: "MEDIUM",
         neutralQuestion:
           "What was the first feature-length animated film released by Walt Disney, in 1937?",
-        displayPrompt:
-          "Which 1937 film was Walt Disney's first feature-length animated movie?",
+        displayPrompt: "Which 1937 film was Walt Disney's first feature-length animated movie?",
         choices: ["Snow White and the Seven Dwarfs", "Pinocchio", "Cinderella", "Bambi"],
         correctIndex: 0,
         canonicalFact:
@@ -1046,14 +1026,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-dinosaurs-q1",
         tier: "EASY",
-        neutralQuestion:
-          "Which large carnivorous dinosaur's name means 'tyrant lizard king'?",
+        neutralQuestion: "Which large carnivorous dinosaur's name means 'tyrant lizard king'?",
         displayPrompt:
           "Which fearsome carnivore's scientific name translates as 'tyrant lizard king'?",
         choices: ["Tyrannosaurus rex", "Velociraptor", "Stegosaurus", "Triceratops"],
         correctIndex: 0,
-        canonicalFact:
-          "The name Tyrannosaurus rex means 'tyrant lizard king'.",
+        canonicalFact: "The name Tyrannosaurus rex means 'tyrant lizard king'.",
         explanation:
           "Tyrannosaurus rex means 'tyrant lizard king', which is a lot of branding for one animal. Its tiny arms, famously, did not get the same confident treatment.",
         comedyDevices: ["WORDPLAY"],
@@ -1079,8 +1057,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "Which plant-eater carried a double row of bony plates along its back and spikes on its tail?",
         choices: ["Stegosaurus", "Triceratops", "Brachiosaurus", "Ankylosaurus"],
         correctIndex: 0,
-        canonicalFact:
-          "Stegosaurus had bony plates along its back and spikes on its tail.",
+        canonicalFact: "Stegosaurus had bony plates along its back and spikes on its tail.",
         explanation:
           "Stegosaurus wore bony plates along its back and tail spikes now nicknamed the 'thagomizer'. Its brain, for the record, was roughly the size of a walnut.",
         comedyDevices: ["DRY_ASIDE"],
@@ -1174,14 +1151,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-hot-peppers-q1",
         tier: "EASY",
-        neutralQuestion:
-          "Which chemical compound gives chili peppers their spicy heat?",
+        neutralQuestion: "Which chemical compound gives chili peppers their spicy heat?",
         displayPrompt:
           "Which chemical compound is responsible for the burning heat of chili peppers?",
         choices: ["Capsaicin", "Caffeine", "Menthol", "Fructose"],
         correctIndex: 0,
-        canonicalFact:
-          "Capsaicin is the compound that gives chili peppers their heat.",
+        canonicalFact: "Capsaicin is the compound that gives chili peppers their heat.",
         explanation:
           "Capsaicin gives chili peppers their heat by triggering the same nerve receptors that sense real burning. Your mouth is essentially filing a false alarm.",
         comedyDevices: ["DRY_ASIDE"],
@@ -1201,10 +1176,8 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-hot-peppers-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "The heat of a chili pepper is measured in units on which named scale?",
-        displayPrompt:
-          "A chili pepper's heat is measured in units on which named scale?",
+        neutralQuestion: "The heat of a chili pepper is measured in units on which named scale?",
+        displayPrompt: "A chili pepper's heat is measured in units on which named scale?",
         choices: ["The Scoville scale", "The Richter scale", "The Mohs scale", "The Kelvin scale"],
         correctIndex: 0,
         canonicalFact:
@@ -1304,12 +1277,10 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
         tier: "EASY",
         neutralQuestion:
           "Roughly how many hours a day does the average domestic cat spend sleeping?",
-        displayPrompt:
-          "Roughly how many hours a day does the average domestic cat spend asleep?",
+        displayPrompt: "Roughly how many hours a day does the average domestic cat spend asleep?",
         choices: ["About 12 to 16 hours", "About 4 hours", "About 20 hours", "About 8 hours"],
         correctIndex: 0,
-        canonicalFact:
-          "The average domestic cat sleeps roughly 12 to 16 hours a day.",
+        canonicalFact: "The average domestic cat sleeps roughly 12 to 16 hours a day.",
         explanation:
           "The average cat sleeps 12 to 16 hours a day. It has built an entire reputation for mystery around what is mostly an ambitious nap schedule.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
@@ -1335,8 +1306,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "A cat's rough tongue is covered in tiny backward-facing spines made of which material, the same one in nails?",
         choices: ["Keratin", "Cartilage", "Enamel", "Chitin"],
         correctIndex: 0,
-        canonicalFact:
-          "The backward-facing spines on a cat's tongue are made of keratin.",
+        canonicalFact: "The backward-facing spines on a cat's tongue are made of keratin.",
         explanation:
           "A cat's tongue is lined with backward-facing keratin spines, the same protein as your fingernails. They comb the fur, so grooming doubles as light exfoliation.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
@@ -1356,14 +1326,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-cats-q3",
         tier: "HARD",
-        neutralQuestion:
-          "What is the collective noun for a group of cats?",
-        displayPrompt:
-          "What is the traditional collective noun for a group of cats?",
+        neutralQuestion: "What is the collective noun for a group of cats?",
+        displayPrompt: "What is the traditional collective noun for a group of cats?",
         choices: ["A clowder", "A pride", "A gaggle", "A pod"],
         correctIndex: 0,
-        canonicalFact:
-          "A group of cats is traditionally called a clowder.",
+        canonicalFact: "A group of cats is traditionally called a clowder.",
         explanation:
           "A group of cats is a clowder. Given how reluctantly cats cooperate, it is a word most people will never have cause to use correctly.",
         comedyDevices: ["WORDPLAY"],
@@ -1383,8 +1350,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-cats-q4",
         tier: "INSANE",
-        neutralQuestion:
-          "Domestic cats have lost the ability to taste which basic flavour?",
+        neutralQuestion: "Domestic cats have lost the ability to taste which basic flavour?",
         displayPrompt:
           "Domestic cats have lost the ability to taste which basic flavour, unlike most other mammals?",
         choices: ["Sweetness", "Saltiness", "Bitterness", "Sourness"],
@@ -1436,8 +1402,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "Which yellow, electric-type creature is the most recognisable mascot of the Pokémon franchise?",
         choices: ["Pikachu", "Charizard", "Bulbasaur", "Jigglypuff"],
         correctIndex: 0,
-        canonicalFact:
-          "Pikachu, a yellow electric-type, is the mascot of the Pokémon franchise.",
+        canonicalFact: "Pikachu, a yellow electric-type, is the mascot of the Pokémon franchise.",
         explanation:
           "Pikachu, a yellow electric-type mouse, is the face of Pokémon. It became the mascot despite not being a starter that anyone actually picks first.",
         comedyDevices: ["AFFECTIONATE_ROAST"],
@@ -1463,8 +1428,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "In the games, the in-world device that logs data on every species caught is called the what?",
         choices: ["Pokédex", "Poké Ball", "Poké Center", "PokéGear"],
         correctIndex: 0,
-        canonicalFact:
-          "In Pokémon, the device that catalogues species is called the Pokédex.",
+        canonicalFact: "In Pokémon, the device that catalogues species is called the Pokédex.",
         explanation:
           "The Pokédex is the in-game encyclopedia that logs every species you catch. The stated goal is to 'catch them all', which is a lot of homework for a child.",
         comedyDevices: ["DRY_ASIDE"],
@@ -1484,8 +1448,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-pokemon-q3",
         tier: "HARD",
-        neutralQuestion:
-          "How many Pokémon appeared in the original 1996 Generation I games?",
+        neutralQuestion: "How many Pokémon appeared in the original 1996 Generation I games?",
         displayPrompt:
           "How many different Pokémon appeared in the original 1996 Generation I games?",
         choices: ["151", "100", "251", "386"],
@@ -1511,10 +1474,8 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-pokemon-q4",
         tier: "INSANE",
-        neutralQuestion:
-          "The name 'Pokémon' is a contraction of which two English words?",
-        displayPrompt:
-          "The name 'Pokémon' is a shortened blend of which two English words?",
+        neutralQuestion: "The name 'Pokémon' is a contraction of which two English words?",
+        displayPrompt: "The name 'Pokémon' is a shortened blend of which two English words?",
         choices: ["Pocket Monsters", "Power Monsters", "Popular Monsters", "Portable Monsters"],
         correctIndex: 0,
         canonicalFact:
@@ -1558,14 +1519,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-space-exploration-q1",
         tier: "EASY",
-        neutralQuestion:
-          "Who was the first person to walk on the Moon, in 1969?",
-        displayPrompt:
-          "Who became the first person to walk on the Moon, back in 1969?",
+        neutralQuestion: "Who was the first person to walk on the Moon, in 1969?",
+        displayPrompt: "Who became the first person to walk on the Moon, back in 1969?",
         choices: ["Neil Armstrong", "Buzz Aldrin", "Yuri Gagarin", "John Glenn"],
         correctIndex: 0,
-        canonicalFact:
-          "Neil Armstrong was the first person to walk on the Moon, in 1969.",
+        canonicalFact: "Neil Armstrong was the first person to walk on the Moon, in 1969.",
         explanation:
           "Neil Armstrong stepped onto the Moon in July 1969. Buzz Aldrin followed minutes later, forever cast as history's most famous runner-up.",
         comedyDevices: ["UNDERSTATEMENT"],
@@ -1585,11 +1543,14 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-space-exploration-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "Which NASA program landed the first humans on the Moon?",
-        displayPrompt:
-          "Which NASA program put the first humans on the Moon?",
-        choices: ["The Apollo program", "The Gemini program", "The Mercury program", "The Artemis program"],
+        neutralQuestion: "Which NASA program landed the first humans on the Moon?",
+        displayPrompt: "Which NASA program put the first humans on the Moon?",
+        choices: [
+          "The Apollo program",
+          "The Gemini program",
+          "The Mercury program",
+          "The Artemis program",
+        ],
         correctIndex: 0,
         canonicalFact:
           "NASA's Apollo program landed the first humans on the Moon, with Apollo 11 in 1969.",
@@ -1612,14 +1573,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-space-exploration-q3",
         tier: "HARD",
-        neutralQuestion:
-          "Who became the first human to travel into space, in 1961?",
-        displayPrompt:
-          "Who, in 1961, became the first human to travel into space?",
+        neutralQuestion: "Who became the first human to travel into space, in 1961?",
+        displayPrompt: "Who, in 1961, became the first human to travel into space?",
         choices: ["Yuri Gagarin", "Alan Shepard", "Neil Armstrong", "Valentina Tereshkova"],
         correctIndex: 0,
-        canonicalFact:
-          "Soviet cosmonaut Yuri Gagarin became the first human in space in 1961.",
+        canonicalFact: "Soviet cosmonaut Yuri Gagarin became the first human in space in 1961.",
         explanation:
           "Soviet cosmonaut Yuri Gagarin orbited Earth in 1961, the first human in space. The whole flight lasted under two hours, most of it fully automated.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
@@ -1686,10 +1644,8 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-coffee-q1",
         tier: "EASY",
-        neutralQuestion:
-          "Which natural stimulant in coffee makes it a popular morning drink?",
-        displayPrompt:
-          "Which natural stimulant in coffee makes it such a popular morning drink?",
+        neutralQuestion: "Which natural stimulant in coffee makes it a popular morning drink?",
+        displayPrompt: "Which natural stimulant in coffee makes it such a popular morning drink?",
         choices: ["Caffeine", "Nicotine", "Fructose", "Melatonin"],
         correctIndex: 0,
         canonicalFact:
@@ -1713,14 +1669,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-coffee-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "The two most widely grown species of coffee are Arabica and which other?",
+        neutralQuestion: "The two most widely grown species of coffee are Arabica and which other?",
         displayPrompt:
           "Most of the world's coffee comes from Arabica and which other widely grown species?",
         choices: ["Robusta", "Liberica", "Excelsa", "Maragogipe"],
         correctIndex: 0,
-        canonicalFact:
-          "The two most widely grown coffee species are Arabica and Robusta.",
+        canonicalFact: "The two most widely grown coffee species are Arabica and Robusta.",
         explanation:
           "Most coffee is either Arabica, prized for flavour, or Robusta, prized for strength and caffeine. The bag rarely says which, which is part of the charm.",
         comedyDevices: ["UNEXPECTED_SPECIFICITY"],
@@ -1744,7 +1698,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "A traditional cappuccino combines espresso and steamed milk with which topping?",
         displayPrompt:
           "A traditional cappuccino tops espresso and steamed milk with which finishing layer?",
-        choices: ["A layer of milk foam", "A scoop of ice cream", "Whipped cream and cinnamon", "A shot of liqueur"],
+        choices: [
+          "A layer of milk foam",
+          "A scoop of ice cream",
+          "Whipped cream and cinnamon",
+          "A shot of liqueur",
+        ],
         correctIndex: 0,
         canonicalFact:
           "A traditional cappuccino is espresso and steamed milk topped with a layer of milk foam.",
@@ -1771,7 +1730,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "According to a popular legend, coffee's energising effect was discovered by an Ethiopian goat herder who noticed what about his goats?",
         displayPrompt:
           "By popular legend, coffee's kick was discovered by an Ethiopian goat herder after he noticed what about his goats?",
-        choices: ["They grew lively after eating the berries", "They fell asleep in the field", "They refused to move", "They changed colour"],
+        choices: [
+          "They grew lively after eating the berries",
+          "They fell asleep in the field",
+          "They refused to move",
+          "They changed colour",
+        ],
         correctIndex: 0,
         canonicalFact:
           "A popular legend credits the discovery of coffee to the Ethiopian goat herder Kaldi, who noticed his goats grew lively after eating coffee berries.",
@@ -1814,14 +1778,11 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-volcanoes-q1",
         tier: "EASY",
-        neutralQuestion:
-          "What is molten rock that has erupted onto the Earth's surface called?",
-        displayPrompt:
-          "Molten rock that has erupted onto the Earth's surface goes by which name?",
+        neutralQuestion: "What is molten rock that has erupted onto the Earth's surface called?",
+        displayPrompt: "Molten rock that has erupted onto the Earth's surface goes by which name?",
         choices: ["Lava", "Magma", "Granite", "Ash"],
         correctIndex: 0,
-        canonicalFact:
-          "Molten rock that has erupted onto the Earth's surface is called lava.",
+        canonicalFact: "Molten rock that has erupted onto the Earth's surface is called lava.",
         explanation:
           "Once molten rock reaches the surface it is called lava; underground, the very same stuff is magma. It changes its name the moment it goes public.",
         comedyDevices: ["DRY_ASIDE"],
@@ -1841,14 +1802,12 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
       {
         id: "cat-volcanoes-q2",
         tier: "MEDIUM",
-        neutralQuestion:
-          "Which Italian volcano buried the Roman city of Pompeii in 79 AD?",
+        neutralQuestion: "Which Italian volcano buried the Roman city of Pompeii in 79 AD?",
         displayPrompt:
           "Which Italian volcano famously buried the Roman city of Pompeii under ash in 79 AD?",
         choices: ["Mount Vesuvius", "Mount Etna", "Mount Fuji", "Krakatoa"],
         correctIndex: 0,
-        canonicalFact:
-          "Mount Vesuvius buried the Roman city of Pompeii in 79 AD.",
+        canonicalFact: "Mount Vesuvius buried the Roman city of Pompeii in 79 AD.",
         explanation:
           "Mount Vesuvius buried Pompeii under ash in 79 AD, preserving the city in eerie detail. It remains one of the few volcanoes with a modern city at its feet.",
         comedyDevices: ["UNDERSTATEMENT"],
@@ -1901,8 +1860,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "A volcano judged very unlikely to ever erupt again is described using which term?",
         choices: ["Extinct", "Dormant", "Active", "Latent"],
         correctIndex: 0,
-        canonicalFact:
-          "A volcano considered very unlikely to erupt again is described as extinct.",
+        canonicalFact: "A volcano considered very unlikely to erupt again is described as extinct.",
         explanation:
           "An 'extinct' volcano is one not expected to erupt again, unlike a merely 'dormant' one that is only resting. Volcanoes have occasionally disputed the label.",
         comedyDevices: ["ANTHROPOMORPHISM"],
@@ -1948,8 +1906,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
           "A word that reads the same forwards and backwards, like 'racecar', is called what?",
         choices: ["A palindrome", "An anagram", "A homonym", "A synonym"],
         correctIndex: 0,
-        canonicalFact:
-          "A word that reads the same forwards and backwards is called a palindrome.",
+        canonicalFact: "A word that reads the same forwards and backwards is called a palindrome.",
         explanation:
           "A palindrome reads identically in both directions, like 'racecar' or 'level'. The word 'palindrome' itself, rather cruelly, is not one.",
         comedyDevices: ["WORDPLAY"],
@@ -2025,8 +1982,7 @@ export const QUIZSLOP_ADDITIONS_TOPICS: readonly QuizslopCatalogTopic[] = [
         tier: "INSANE",
         neutralQuestion:
           "According to a popular but unproven legend, the word 'quiz' was invented to win what?",
-        displayPrompt:
-          "By a popular but unproven legend, the word 'quiz' was coined to win what?",
+        displayPrompt: "By a popular but unproven legend, the word 'quiz' was coined to win what?",
         choices: ["A bet", "A spelling contest", "A royal prize", "A card game"],
         correctIndex: 0,
         canonicalFact:

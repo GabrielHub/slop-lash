@@ -12,8 +12,6 @@ export function sortPlayersByScore<T extends ScoredPlayer>(players: readonly T[]
   return [...players].sort(comparePlayersByScore);
 }
 
-export function pickTopScoringPlayer<T extends ScoredPlayer>(
-  players: readonly T[],
-): T | null {
+export function pickTopScoringPlayer<T extends ScoredPlayer>(players: readonly T[]): T | null {
   return sortPlayersByScore(players)[0] ?? null;
 }

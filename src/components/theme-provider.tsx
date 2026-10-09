@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
 type Theme = "light" | "dark";
@@ -53,16 +47,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("theme", theme);
   }, [theme, mounted]);
 
-  const toggle = useCallback(
-    () => setTheme((t) => (t === "dark" ? "light" : "dark")),
-    []
-  );
+  const toggle = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), []);
 
-  return (
-    <ThemeContext value={{ theme, toggle, mounted }}>
-      {children}
-    </ThemeContext>
-  );
+  return <ThemeContext value={{ theme, toggle, mounted }}>{children}</ThemeContext>;
 }
 
 export function ThemeToggle() {
@@ -79,9 +66,7 @@ export function ThemeToggle() {
     <motion.button
       onClick={toggle}
       className="fixed top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-40 w-10 h-10 flex items-center justify-center rounded-full bg-surface border-2 border-edge hover:border-edge-strong transition-colors cursor-pointer"
-      aria-label={
-        theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
-      }
+      aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.9, rotate: 15 }}
       transition={{ type: "spring", stiffness: 400, damping: 20 }}

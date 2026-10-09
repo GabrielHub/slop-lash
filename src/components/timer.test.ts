@@ -2,11 +2,11 @@ import { describe, expect, test } from "vite-plus/test";
 import { computeRemainingSeconds, computeTimerPercentage, getTimerUrgency } from "./timer";
 
 describe("timer math", () => {
-  test("rounds remaining time up and clamps expired or malformed deadlines", () => {
-    const deadline = "2026-07-16T00:00:10.000Z";
+  test("rounds remaining time up and clamps expired or missing deadlines", () => {
+    const deadline = Date.parse("2026-07-16T00:00:10.000Z");
     expect(computeRemainingSeconds(deadline, Date.parse("2026-07-16T00:00:00.001Z"))).toBe(10);
     expect(computeRemainingSeconds(deadline, Date.parse("2026-07-16T00:00:10.001Z"))).toBe(0);
-    expect(computeRemainingSeconds("not-a-date", Date.now())).toBe(0);
+    expect(computeRemainingSeconds(Number.NaN, Date.now())).toBe(0);
     expect(computeRemainingSeconds(null, Date.now())).toBe(0);
   });
 
@@ -17,7 +17,7 @@ describe("timer math", () => {
     expect(computeTimerPercentage(10, 0)).toBe(0);
   });
 
-  test("shows absolute urgency after a late reconnect even when the derived bar is full", () => {
+  test("shows absolute urgency after a late reconnect even when the bar is full", () => {
     expect(getTimerUrgency(100, 5)).toBe("urgent");
     expect(getTimerUrgency(100, 10)).toBe("warning");
     expect(getTimerUrgency(100, 20)).toBe("normal");

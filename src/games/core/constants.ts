@@ -1,3 +1,6 @@
+/** The longest answer or chat message a player (or AI) can submit. */
+export const MAX_ANSWER_LENGTH = 200;
+
 /** Sentinel response text indicating a player forfeited (did not submit in time). */
 export const FORFEIT_MARKER = "[forfeit]";
 

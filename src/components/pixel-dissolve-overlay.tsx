@@ -69,8 +69,16 @@ function runDissolve(container: HTMLElement, request: DissolveRequest) {
     el.animate(
       [
         { transform: "translate(0, 0) scale(1)", opacity: 1 },
-        { transform: `translate(${(endX - startX) * 0.3}px, ${(endY - startY) * 0.25}px) scale(0.9)`, opacity: 0.9, offset: 0.25 },
-        { transform: `translate(${(endX - startX) * 0.7}px, ${(endY - startY) * 0.6}px) scale(0.6)`, opacity: 0.5, offset: 0.6 },
+        {
+          transform: `translate(${(endX - startX) * 0.3}px, ${(endY - startY) * 0.25}px) scale(0.9)`,
+          opacity: 0.9,
+          offset: 0.25,
+        },
+        {
+          transform: `translate(${(endX - startX) * 0.7}px, ${(endY - startY) * 0.6}px) scale(0.6)`,
+          opacity: 0.5,
+          offset: 0.6,
+        },
         {
           transform: `translate(${endX - startX}px, ${endY - startY}px) scale(0.2)`,
           opacity: 0,
@@ -81,7 +89,7 @@ function runDissolve(container: HTMLElement, request: DissolveRequest) {
         delay: i * staggerDelay,
         easing: "cubic-bezier(0.1, 0.6, 0.3, 1)",
         fill: "forwards",
-      }
+      },
     );
   }
 
@@ -109,10 +117,6 @@ export function PixelDissolveOverlay() {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 pointer-events-none z-20"
-      aria-hidden="true"
-    />
+    <div ref={containerRef} className="fixed inset-0 pointer-events-none z-20" aria-hidden="true" />
   );
 }

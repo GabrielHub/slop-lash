@@ -213,7 +213,6 @@ const PROMPT_BANK: string[] = [
   "I would replace wheelchair-accessible ramps with ______",
   "The last place you'd expect to find Cambodian land mines",
 
-
   // ==========================================================================
   // NAMING & CREATING — name a product, band, word, slogan, etc.
   // The "come up with a name" format consistently produces the funniest answers.
@@ -301,7 +300,6 @@ const PROMPT_BANK: string[] = [
   "The 13th animal in the Chinese Zodiac",
   "Name a restaurant from the mind of the Papa John's guy",
 
-
   // ==========================================================================
   // HIDDEN TRUTHS & SECRET LIVES — what X really thinks, does, or is hiding.
   // Conspiracy-style absurdism and anthropomorphic humor.
@@ -377,7 +375,6 @@ const PROMPT_BANK: string[] = [
   "What your dog was thinking when you took him to the vet for 'a quick visit'",
   "The real secret ingredient Colonel Sanders has been hiding",
   "The last place you found your mother's bath salts",
-
 
   // ==========================================================================
   // CORPORATE HELL & MODERN LIFE — workplace nightmares, tech horror,
@@ -504,7 +501,6 @@ const PROMPT_BANK: string[] = [
   "What you're actually doing at 9:30 AM every workday",
   "Your favorite podcaster's favorite podcast",
 
-
   // ==========================================================================
   // HISTORY, POP CULTURE & CELEBRITIES — rewrites of famous events,
   // movie/TV references, and famous people in absurd contexts.
@@ -616,7 +612,6 @@ const PROMPT_BANK: string[] = [
   "The Shakespeare line that goes the hardest in a rap battle",
   "A Bible verse that goes inexplicably hard",
 
-
   // ==========================================================================
   // KIDS, ANIMALS & FOOD CRIMES — childhood nightmares, fairy tales gone
   // wrong, animal absurdity, and culinary atrocities.
@@ -665,7 +660,6 @@ const PROMPT_BANK: string[] = [
   "The look on a cat's face when it realizes you got a second cat",
   "Can't believe the chef just served ______ at a Michelin-star omakase",
   "The best excuse you've heard for cannibalism",
-
 
   // ==========================================================================
   // EXISTENTIAL, ABSURD & HYPOTHETICAL — 3 AM realizations, what-ifs,
@@ -762,7 +756,6 @@ const PROMPT_BANK: string[] = [
   "______ invented the ______ in 1984",
   "The monument you'd build to your own ego",
 
-
   // ==========================================================================
   // CONFESSIONS & SELF-ROASTS — first-person admissions and personal reveals.
   // ==========================================================================
@@ -804,7 +797,6 @@ const PROMPT_BANK: string[] = [
   "The insane reason your partner left you",
   "The primary ingredient in your homemade baldness remedy",
   "The real reason your partner hates jazz",
-
 
   // ==========================================================================
   // FILL-IN-THE-BLANK — complete the sentence. The "madlib" format:
@@ -980,7 +972,6 @@ const PROMPT_BANK: string[] = [
   "The last thing Optimus Prime says before he slimes your ass",
   "A pornstar name that would make even the industry blush",
 
-
   // Voiced setups — comedian mid-thought energy, the premise is half the joke
   "I don't believe in hypnosis, but I'll do anything for ______",
   "I hate to apply the male gaze, but ______",
@@ -1034,7 +1025,6 @@ const PROMPT_BANK: string[] = [
   "I just ______ in high heels — what's your excuse?",
   "We can't just ______ — think of the electric bill",
 
-
   // Authority & formality bombs — serious frame + absurd fill
   "The FDA just approved ______ as a food group",
   "TSA now requires all passengers to ______ before boarding",
@@ -1058,7 +1048,6 @@ const PROMPT_BANK: string[] = [
   "The Geneva Convention was recently updated to include ______ as a form of torture",
   "Scientists just discovered ______ has human traits",
   "DANGER! ______ has escaped containment",
-
 
   // Cultural subversion — famous phrases with a blank
   "Maybe she's born with it. Maybe it's ______",
@@ -1087,7 +1076,6 @@ const PROMPT_BANK: string[] = [
   "I don't know anyone who's finished watching The Summer I Turned ______",
   "Moooooom, Phineas and Ferb just built a ______",
   "To a ______ everything looks like a ______",
-
 
   // ==========================================================================
   // MEMES & INTERNET CULTURE — classic meme formats and 2025-2026 references.
@@ -1207,7 +1195,6 @@ const PROMPT_BANK: string[] = [
   "______ is NOT beating the ______ allegations",
   "______ has negative aura and everyone in the room can feel it",
 
-
   // ==========================================================================
   // NBA MEMES — basketball-specific prompts for the true hoopers.
   // ==========================================================================
@@ -1284,21 +1271,20 @@ const PROMPT_BANK: string[] = [
   "A Pokemon move that's actually just a war crime",
   "The Pokemon that is definitely going through something right now",
 
-
   // ==========================================================================
   // FOREIGN LANGUAGE EASTER EGGS — surprise multilingual prompts.
   // ==========================================================================
-  "你绝对不应该在第一次约会时说的话",          // The thing you should never say on a first date (Chinese)
+  "你绝对不应该在第一次约会时说的话", // The thing you should never say on a first date (Chinese)
   "Lo peor que puedes gritar en un elevador lleno de gente", // The worst thing to yell in a crowded elevator (Spanish)
-  "おばあちゃんの秘密の材料は実は______",        // Grandma's secret ingredient is actually ______ (Japanese)
+  "おばあちゃんの秘密の材料は実は______", // Grandma's secret ingredient is actually ______ (Japanese)
   "La pire excuse pour arriver en retard à son propre mariage", // The worst excuse for being late to your own wedding (French)
   "Das Schlimmste, was man bei einer Beerdigung laut sagen könnte", // The worst thing to say out loud at a funeral (German)
-  "지구에 대한 외계인의 Yelp 리뷰",              // An alien's Yelp review of Earth (Korean)
+  "지구에 대한 외계인의 Yelp 리뷰", // An alien's Yelp review of Earth (Korean)
   "La peor cosa da scrivere su una torta di compleanno", // The worst thing to write on a birthday cake (Italian)
   "Самое худшее, что можно шепнуть незнакомцу в автобусе", // The worst thing to whisper to a stranger on a bus (Russian)
-  "أسوأ شيء تصرخ به في مصعد مزدحم",                    // The worst thing to shout in a crowded elevator (Arabic)
-  "สิ่งที่ไม่ควรพูดกับแม่ยายในมื้อแรก",                        // What you shouldn't say to your mother-in-law at the first meal (Thai)
-  "Điều tệ nhất để viết lên bánh cưới",                  // The worst thing to write on a wedding cake (Vietnamese)
+  "أسوأ شيء تصرخ به في مصعد مزدحم", // The worst thing to shout in a crowded elevator (Arabic)
+  "สิ่งที่ไม่ควรพูดกับแม่ยายในมื้อแรก", // What you shouldn't say to your mother-in-law at the first meal (Thai)
+  "Điều tệ nhất để viết lên bánh cưới", // The worst thing to write on a wedding cake (Vietnamese)
   "O pior conselho para dar a alguém que está prestes a saltar de paraquedas", // The worst advice to give someone about to skydive (Portuguese)
   "Het ergste om per ongeluk te zeggen tijdens een sollicitatiegesprek", // The worst thing to accidentally say during a job interview (Dutch)
   "Det värsta att viska till personen bredvid dig på en begravning", // The worst thing to whisper to the person next to you at a funeral (Swedish)
@@ -1307,15 +1293,14 @@ const PROMPT_BANK: string[] = [
   "Az orvos legrosszabb mondata a műtét közepén: '______'", // The worst thing for a doctor to say mid-surgery: '______' (Hungarian)
   "Ang pinakamasamang bagay na isulat sa isang sympathy card", // The worst thing to write in a sympathy card (Filipino/Tagalog)
   "पायलट ने उड़ान भरने से पहले जो सबसे बुरी बात कही: '______'", // The worst thing a pilot said before takeoff: '______' (Hindi)
-  "Kötü bir süper kahraman ismi: ______",                // A bad superhero name: ______ (Turkish)
+  "Kötü bir süper kahraman ismi: ______", // A bad superhero name: ______ (Turkish)
   "Pahin asia, jonka voi kuulla hammaslääkäriltä: '______'", // The worst thing to hear from your dentist: '______' (Finnish)
-  "Nejhorší věc, kterou říct na prvním rande",            // The worst thing to say on a first date (Czech)
-  "Det verste å rope under en begravelse",               // The worst thing to shout during a funeral (Norwegian)
-  "ရေခဲမုန့်အရသာ အဆိုးဆုံးအမည်: ______",               // The worst ice cream flavor name: ______ (Burmese)
+  "Nejhorší věc, kterou říct na prvním rande", // The worst thing to say on a first date (Czech)
+  "Det verste å rope under en begravelse", // The worst thing to shout during a funeral (Norwegian)
+  "ရေခဲမုန့်အရသာ အဆိုးဆုံးအမည်: ______", // The worst ice cream flavor name: ______ (Burmese)
   "Perkara paling teruk untuk ditulis pada kad hari jadi", // The worst thing to write on a birthday card (Malay)
-  "בדיחה שלעולם לא כדאי לספר בראיון עבודה",              // A joke you should never tell at a job interview (Hebrew)
-  "Το χειρότερο πράγμα να πεις σε κηδεία: '______'",    // The worst thing to say at a funeral: '______' (Greek)
-
+  "בדיחה שלעולם לא כדאי לספר בראיון עבודה", // A joke you should never tell at a job interview (Hebrew)
+  "Το χειρότερο πράγμα να πεις σε κηδεία: '______'", // The worst thing to say at a funeral: '______' (Greek)
 ];
 
 function cryptoRandInt(max: number): number {
@@ -1344,19 +1329,118 @@ function shuffle<T>(array: T[]): T[] {
 }
 
 const SOFT_DEDUPE_STOPWORDS = new Set([
-  "a", "an", "the", "and", "or", "to", "of", "in", "on", "at", "for", "from",
-  "with", "by", "into", "out", "up", "down", "over", "under", "after", "before",
-  "during", "while", "when", "what", "why", "how", "that", "this", "these", "those",
-  "is", "are", "was", "were", "be", "being", "been", "do", "does", "did", "just",
-  "you", "your", "yours", "me", "my", "we", "our", "they", "their", "someone",
-  "something", "somebody", "anyone", "anything", "person", "people",
-  "worst", "best", "most", "least", "real", "really", "actual", "actually",
-  "thing", "things", "way", "reason", "part", "line", "message", "name", "title",
-  "say", "saying", "said", "hear", "hear", "find", "finding", "discover", "discovering",
-  "would", "should", "could", "can", "never", "ever", "always", "again",
-  "get", "gets", "got", "make", "makes", "made", "put", "write", "writes", "wrote",
-  "bad", "terrible", "funny", "unhinged", "alarming", "suspicious", "concerning",
-  "prompt", "prompts",
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "for",
+  "from",
+  "with",
+  "by",
+  "into",
+  "out",
+  "up",
+  "down",
+  "over",
+  "under",
+  "after",
+  "before",
+  "during",
+  "while",
+  "when",
+  "what",
+  "why",
+  "how",
+  "that",
+  "this",
+  "these",
+  "those",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "being",
+  "been",
+  "do",
+  "does",
+  "did",
+  "just",
+  "you",
+  "your",
+  "yours",
+  "me",
+  "my",
+  "we",
+  "our",
+  "they",
+  "their",
+  "someone",
+  "something",
+  "somebody",
+  "anyone",
+  "anything",
+  "person",
+  "people",
+  "worst",
+  "best",
+  "most",
+  "least",
+  "real",
+  "really",
+  "actual",
+  "actually",
+  "thing",
+  "things",
+  "way",
+  "reason",
+  "part",
+  "line",
+  "message",
+  "name",
+  "title",
+  "say",
+  "saying",
+  "said",
+  "hear",
+  "hear",
+  "find",
+  "finding",
+  "discover",
+  "discovering",
+  "would",
+  "should",
+  "could",
+  "can",
+  "never",
+  "ever",
+  "always",
+  "again",
+  "get",
+  "gets",
+  "got",
+  "make",
+  "makes",
+  "made",
+  "put",
+  "write",
+  "writes",
+  "wrote",
+  "bad",
+  "terrible",
+  "funny",
+  "unhinged",
+  "alarming",
+  "suspicious",
+  "concerning",
+  "prompt",
+  "prompts",
 ]);
 
 function promptTokens(prompt: string): Set<string> {
@@ -1393,10 +1477,7 @@ function isSoftDuplicate(candidate: Set<string>, other: Set<string>): boolean {
   return similarity >= 0.5 || (intersection >= 3 && similarity >= 0.34);
 }
 
-export function getRandomPrompts(
-  count: number,
-  exclude: Set<string> = new Set(),
-): string[] {
+export function getRandomPrompts(count: number, exclude: Set<string> = new Set()): string[] {
   if (count <= 0) return [];
 
   const available = PROMPT_BANK.filter((p) => !exclude.has(p));

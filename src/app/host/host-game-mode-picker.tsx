@@ -67,7 +67,7 @@ export const GAME_TYPE_OPTIONS_BY_ID = {
       description: "Explains each beat and waits for the host throughout the game",
     },
     hostPlaysDescription: {
-      PLAYER: "Host answers here and opens the shared stage in a separate tab",
+      PLAYER: "Host answers from this device alongside the shared screen",
       DISPLAY_ONLY: "Host opens the shared stage and does not answer (TV mode)",
     },
     minPlayers: QUIZSLOP_MIN_PLAYERS,

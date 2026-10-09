@@ -1,48 +1,19 @@
-import { notFound } from "next/navigation";
-import { MockGameShell } from "@/dev/game-fixtures/mock-game-shell";
-import { MockMatchSlopGameShell } from "@/dev/game-fixtures/mock-matchslop-game-shell";
-import { MOCK_SCENARIOS, getMockScenario } from "@/dev/game-fixtures/scenarios";
+import { FixtureScreen } from "@/dev/fixture-screen";
+import type { RoomLayout } from "@/room/shell";
 
-export default async function DevUiScenarioPage({
+export const metadata = {
+  title: "Dev UI Fixture",
+};
+
+export default async function DevUiFixturePage({
   params,
   searchParams,
 }: {
   params: Promise<{ scenario: string }>;
-  searchParams: Promise<{ client?: string }>;
+  searchParams: Promise<{ layout?: string }>;
 }) {
-  const { scenario: slug } = await params;
-  const { client } = await searchParams;
-  const scenario = getMockScenario(slug);
-
-  if (!scenario) {
-    notFound();
-  }
-
-  const index = MOCK_SCENARIOS.findIndex((item) => item.slug === slug);
-  const previousSlug = index > 0 ? MOCK_SCENARIOS[index - 1]?.slug : undefined;
-  const nextSlug =
-    index >= 0 && index < MOCK_SCENARIOS.length - 1
-      ? MOCK_SCENARIOS[index + 1]?.slug
-      : undefined;
-
-  if (scenario.game.gameType === "MATCHSLOP") {
-    return (
-      <MockMatchSlopGameShell
-        clientLabel={client}
-        key={slug}
-        scenario={scenario}
-        previousSlug={previousSlug}
-        nextSlug={nextSlug}
-      />
-    );
-  }
-
-  return (
-    <MockGameShell
-      key={slug}
-      scenario={scenario}
-      previousSlug={previousSlug}
-      nextSlug={nextSlug}
-    />
-  );
+  const { scenario } = await params;
+  const { layout } = await searchParams;
+  const resolved: RoomLayout = layout === "controller" || layout === "game" ? layout : "stage";
+  return <FixtureScreen key={`${scenario}:${resolved}`} id={scenario} layout={resolved} />;
 }

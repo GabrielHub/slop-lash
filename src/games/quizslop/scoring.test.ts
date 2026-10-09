@@ -32,7 +32,6 @@ function settle(input: Partial<RoundSettlementInput>): RoundSettlement {
   return settleRound({
     isFinalRound: false,
     assignments: [],
-    rulings: {},
     calls: [],
     ...input,
   });
@@ -64,7 +63,6 @@ describe("settleRound quiz scoring", () => {
   test("a valid correct answer earns 100 points, a CORRECT ladder result, and answeredCorrectly true", () => {
     const result = settle({
       assignments: [assignment("p1", "q1", 2, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
     });
     expect(playerResult(result, "p1")).toEqual({
       playerId: "p1",
@@ -80,7 +78,6 @@ describe("settleRound quiz scoring", () => {
     const result = settle({
       isFinalRound: true,
       assignments: [assignment("p1", "q1", 0, 0)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
     });
     const entry = playerResult(result, "p1");
     expect(entry.quizDelta).toBe(200);
@@ -91,7 +88,6 @@ describe("settleRound quiz scoring", () => {
   test("a wrong answer earns zero points, never subtracts quiz points, and lowers the ladder", () => {
     const result = settle({
       assignments: [assignment("p1", "q1", 1, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
     });
     expect(playerResult(result, "p1")).toEqual({
       playerId: "p1",
@@ -106,7 +102,6 @@ describe("settleRound quiz scoring", () => {
   test("an accountable timeout (null selectedIndex) is incorrect: zero points and an INCORRECT ladder", () => {
     const result = settle({
       assignments: [assignment("p1", "q1", null, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
     });
     expect(playerResult(result, "p1")).toEqual({
       playerId: "p1",
@@ -118,57 +113,14 @@ describe("settleRound quiz scoring", () => {
     });
   });
 
-  test("a challenged question that is UPHELD still scores like an unchallenged valid question", () => {
-    const result = settle({
-      assignments: [assignment("p1", "q1", 3, 3)],
-      rulings: { q1: "UPHELD" },
-    });
-    const entry = playerResult(result, "p1");
-    expect(entry.quizDelta).toBe(100);
-    expect(entry.ladderResult).toBe("CORRECT");
-    expect(entry.answeredCorrectly).toBe(true);
-  });
-
-  test("a PLAYER_VOIDED question awards zero, moves no ladder, and leaves answeredCorrectly null even when the selection matched the key", () => {
-    const result = settle({
-      assignments: [assignment("p1", "q1", 2, 2)],
-      rulings: { q1: "PLAYER_VOIDED" },
-    });
-    expect(playerResult(result, "p1")).toEqual({
-      playerId: "p1",
-      quizDelta: 0,
-      callDelta: 0,
-      tokensRefunded: 0,
-      ladderResult: "NEUTRAL",
-      answeredCorrectly: null,
-    });
-  });
-
-  test("a SYSTEM_VOID question awards zero, moves no ladder, and leaves answeredCorrectly null", () => {
-    const result = settle({
-      assignments: [assignment("p1", "q1", 0, 0)],
-      rulings: { q1: "SYSTEM_VOID" },
-    });
-    expect(playerResult(result, "p1")).toEqual({
-      playerId: "p1",
-      quizDelta: 0,
-      callDelta: 0,
-      tokensRefunded: 0,
-      ladderResult: "NEUTRAL",
-      answeredCorrectly: null,
-    });
-  });
-
   test("a player with no assignment (pre-answer exemption) appears in the settlement only if they made a call", () => {
     const withoutCall = settle({
       assignments: [assignment("p1", "q1", 0, 0)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
     });
     expect(withoutCall.players.map((entry) => entry.playerId)).toEqual(["p1"]);
 
     const withCall = settle({
       assignments: [assignment("p1", "q1", 0, 0)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
       calls: [call("exempt-caller", "p1")],
     });
     expect(withCall.players.map((entry) => entry.playerId).toSorted()).toEqual([
@@ -180,22 +132,12 @@ describe("settleRound quiz scoring", () => {
     expect(exemptCaller.ladderResult).toBe("NEUTRAL");
     expect(exemptCaller.answeredCorrectly).toBeNull();
   });
-
-  test("a missing ruling for an assigned question throws instead of settling silently", () => {
-    expect(() =>
-      settle({
-        assignments: [assignment("p1", "q-unruled", 0, 0)],
-        rulings: {},
-      }),
-    ).toThrow(/missing a ruling for question q-unruled/u);
-  });
 });
 
 describe("settleRound Call Slop", () => {
   test("target answers correctly: the caller loses 150 points (outcome LOST)", () => {
     const result = settle({
       assignments: [assignment("target", "q1", 2, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
       calls: [call("caller", "target")],
     });
     expect(callResult(result, "caller")).toEqual({
@@ -211,7 +153,6 @@ describe("settleRound Call Slop", () => {
   test("target answers incorrectly: the caller gains 150 points (outcome WON)", () => {
     const result = settle({
       assignments: [assignment("target", "q1", 1, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
       calls: [call("caller", "target")],
     });
     expect(callResult(result, "caller")).toEqual({
@@ -224,10 +165,9 @@ describe("settleRound Call Slop", () => {
     expect(playerResult(result, "caller").callDelta).toBe(150);
   });
 
-  test("target times out after being answer-eligible (null selection, valid ruling): the caller WON", () => {
+  test("target times out after being answer-eligible (null selection): the caller WON", () => {
     const result = settle({
       assignments: [assignment("target", "q1", null, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
       calls: [call("caller", "target")],
     });
     const settled = callResult(result, "caller");
@@ -252,25 +192,9 @@ describe("settleRound Call Slop", () => {
     expect(caller.tokensRefunded).toBe(1);
   });
 
-  test("a call on a target whose question was voided is REFUNDED for both PLAYER_VOIDED and SYSTEM_VOID", () => {
-    for (const ruling of ["PLAYER_VOIDED", "SYSTEM_VOID"] as const) {
-      const result = settle({
-        assignments: [assignment("target", "q1", 1, 2)],
-        rulings: { q1: ruling },
-        calls: [call("caller", "target")],
-      });
-      const settled = callResult(result, "caller");
-      expect(settled.outcome).toBe("REFUNDED");
-      expect(settled.callDelta).toBe(0);
-      expect(settled.tokenRefunded).toBe(true);
-      expect(playerResult(result, "caller").tokensRefunded).toBe(1);
-    }
-  });
-
   test("multiple callers on one target all settle independently", () => {
     const result = settle({
       assignments: [assignment("target", "q1", 0, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
       calls: [call("c1", "target"), call("c2", "target"), call("c3", "target")],
     });
     expect(result.calls).toHaveLength(3);
@@ -283,7 +207,6 @@ describe("settleRound Call Slop", () => {
   test("a caller who is also a target settles both roles in one round", () => {
     const result = settle({
       assignments: [assignment("p1", "q1", 2, 2), assignment("p2", "q2", 0, 3)],
-      rulings: { q1: "UNCHALLENGED_VALID", q2: "UNCHALLENGED_VALID" },
       calls: [call("p1", "p2"), call("p2", "p1")],
     });
     // p1 answered correctly and called the incorrect p2: quiz +100, call +150.
@@ -311,7 +234,6 @@ describe("settleRound Call Slop", () => {
   test("being called never changes the target's own score", () => {
     const result = settle({
       assignments: [assignment("target", "q1", 2, 2)],
-      rulings: { q1: "UNCHALLENGED_VALID" },
       calls: [call("c1", "target"), call("c2", "target")],
     });
     const target = playerResult(result, "target");
@@ -323,7 +245,6 @@ describe("settleRound Call Slop", () => {
   test("total round delta can go below zero via a lost call: quizDelta + callDelta is negative", () => {
     const result = settle({
       assignments: [assignment("p1", "q1", 0, 2), assignment("p2", "q2", 1, 1)],
-      rulings: { q1: "UNCHALLENGED_VALID", q2: "UNCHALLENGED_VALID" },
       calls: [call("p1", "p2")],
     });
     const p1 = playerResult(result, "p1");
@@ -414,14 +335,13 @@ describe("rankFinalStandings", () => {
 });
 
 function awardStats(
-  name: string,
+  playerId: string,
   overrides: Partial<
     Pick<AwardStats, "successfulCalls" | "incorrectCalls" | "correctAnswers">
   > = {},
 ): AwardStats {
   return {
-    playerId: `id-${name.toLowerCase()}`,
-    name,
+    playerId,
     successfulCalls: 0,
     incorrectCalls: 0,
     correctAnswers: 0,

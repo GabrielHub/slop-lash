@@ -28,16 +28,13 @@ export function PixelRain() {
       delay: Math.random() * 12,
       color: RAIN_COLORS[Math.floor(Math.random() * RAIN_COLORS.length)],
       opacity: 0.15 + Math.random() * 0.35,
-    }))
+    })),
   );
 
   if (!mounted) return null;
 
   return (
-    <div
-      className="fixed inset-0 overflow-hidden pointer-events-none z-0"
-      aria-hidden="true"
-    >
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-0" aria-hidden="true">
       {particles.map((p) => (
         <div
           key={p.id}

@@ -2,10 +2,10 @@
 
 import { generateSpeech as synthesizeSpeech, generateText } from "ai";
 import { ConvexError, v } from "convex/values";
-import { makeFunctionReference } from "convex/server";
+import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import { getGatewaySpeechModel, getLanguageModel } from "../src/lib/ai-gateway";
-import { getReasoningSettings } from "../src/lib/ai-reasoning";
+import { MINIMAL_REASONING } from "../src/lib/ai-reasoning";
 import {
   NARRATOR_SCRIPT_INSTRUCTIONS,
   NARRATOR_SCRIPT_MODEL,
@@ -31,12 +31,6 @@ const narrationEventType = v.union(
   v.literal("round_over"),
   v.literal("next_round"),
 );
-
-const authorizeSpeech = makeFunctionReference<
-  "query",
-  { capability: string },
-  { gameId: string; voice: string }
->("narratorData:authorizeSpeech");
 
 function resolveVoice(voice: string, gameId: string): string {
   if (voice === "RANDOM" || !VOICE_IDS.includes(voice)) return pickVoiceForSeed(gameId);
@@ -82,9 +76,7 @@ async function writeHostScript(
       maxOutputTokens: 64,
       maxRetries: 0,
       timeout: 3_000,
-      // The catalog rates this model for gameplay; the narrator races a 3s
-      // timeout, so it opts out of thinking regardless of that policy.
-      ...getReasoningSettings(NARRATOR_SCRIPT_MODEL, "minimal"),
+      ...MINIMAL_REASONING,
     });
     return normalizeGeneratedScript(result.text) || fallbackText;
   } catch (error) {
@@ -105,7 +97,7 @@ export const generate = action({
   },
   returns: v.object({ audioBase64: v.string() }),
   handler: async (ctx, args) => {
-    const { gameId, voice } = await ctx.runQuery(authorizeSpeech, {
+    const { gameId, voice } = await ctx.runQuery(internal.narratorData.authorizeSpeech, {
       capability: args.capability,
     });
     const fallbackText = validateText(

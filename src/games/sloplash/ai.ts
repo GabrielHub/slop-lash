@@ -1,7 +1,7 @@
-import { experimental_decide as decide, generateText, streamText } from "ai";
+import { experimental_decide as decide, generateText } from "ai";
 import { z } from "zod";
 import { getDecisionModel, getLanguageModel, type AiProviderKeys } from "@/lib/ai-gateway";
-import { getGameplayReasoningSettings } from "@/lib/ai-reasoning";
+import { MINIMAL_REASONING } from "@/lib/ai-reasoning";
 import { calculateCostUsd } from "@/lib/models";
 import {
   REACTION_EMOJIS,
@@ -59,6 +59,9 @@ const ABSTAIN_RESULT: Omit<AiVoteResult, "usage" | "failReason"> = {
   reactionsA: [],
   reactionsB: [],
 };
+
+/** No gameplay call may hold a phase open longer than this. */
+export const AI_CALL_TIMEOUT_MS = 30_000;
 
 const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
@@ -120,12 +123,12 @@ export async function generateJoke(
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const t0 = Date.now();
   try {
-    const reasoningSettings = getGameplayReasoningSettings(modelId);
     const result = await generateText({
       model: getLanguageModel(modelId, keys),
       instructions: JOKE_SYSTEM_PROMPT,
       prompt: buildJokePrompt(promptText, history),
-      ...reasoningSettings,
+      abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
+      ...MINIMAL_REASONING,
     });
     const elapsed = Date.now() - t0;
     const text = result.text.trim().replace(/^["']|["']$/g, "");
@@ -240,15 +243,14 @@ export async function aiVote(
     const first = showAFirst ? responseA : responseB;
     const second = showAFirst ? responseB : responseA;
 
-    const reasoningSettings = getGameplayReasoningSettings(modelId);
-
     // Plain text generation — no Output.object() or structured output mode.
     // Every model that can write jokes can output simple JSON in plain text.
     const result = await generateText({
       model: getLanguageModel(modelId, keys),
       instructions: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
-      ...reasoningSettings,
+      abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
+      ...MINIMAL_REASONING,
     });
 
     const elapsed = Date.now() - t0;
@@ -322,6 +324,7 @@ export async function judgeVote(
     const showAFirst = Math.random() > 0.5;
     const result = await decide({
       model: getDecisionModel(judgeModelId, keys),
+      abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
       state: {
         prompt: promptText,
         answerA: showAFirst ? responseA : responseB,
@@ -378,22 +381,26 @@ const TAGLINE_SYSTEM_PROMPT = `<role>You are an AI comedian who just won a round
 - No quotes
 </rules>` as const;
 
-export function generateWinnerTagline(
+export async function generateWinnerTagline(
   modelId: string,
   playerName: string,
   isFinal: boolean,
   context: string,
-  onUsage: (usage: AiUsage) => void | Promise<void>,
   keys: AiProviderKeys,
-) {
-  const reasoningSettings = getGameplayReasoningSettings(modelId);
-  return streamText({
+): Promise<{ output: { text: string }; usage: AiUsage[] }> {
+  const result = await generateText({
     model: getLanguageModel(modelId, keys),
     instructions: TAGLINE_SYSTEM_PROMPT,
-    prompt: `<winner>${escapeXml(playerName)}</winner>\n<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>\n<context>\n${escapeXml(context)}\n</context>`,
-    ...reasoningSettings,
-    onEnd: async ({ usage }) => {
-      await onUsage(extractUsage(modelId, usage));
-    },
+    prompt: `<winner>${escapeXml(playerName)}</winner>
+<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>
+<context>
+${escapeXml(context)}
+</context>`,
+    abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
+    ...MINIMAL_REASONING,
   });
+  return {
+    output: { text: result.text.trim().replace(/^["']|["']$/g, "") },
+    usage: [extractUsage(modelId, result.usage)],
+  };
 }

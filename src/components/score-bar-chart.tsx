@@ -1,13 +1,22 @@
 "use client";
 
 import { motion } from "motion/react";
-import { GameState } from "@/lib/types";
+import { sortPlayersByScore } from "@/games/core/player-rankings";
 import { springGentle } from "@/lib/animations";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { HumorBadge } from "@/components/humor-badge";
 
-export function ScoreBarChart({ game }: { game: GameState }) {
-  const sorted = [...game.players].sort((a, b) => b.score - a.score);
+type ChartPlayer = {
+  id: string;
+  name: string;
+  modelId: string | null;
+  score: number;
+  humorRating: number;
+};
+
+/** Final standings as bars, the leader in gold. */
+export function ScoreBarChart({ players }: { players: readonly ChartPlayer[] }) {
+  const sorted = sortPlayersByScore(players);
   const maxScore = sorted[0]?.score || 1;
 
   return (
@@ -67,11 +76,14 @@ export function ScoreBarChart({ game }: { game: GameState }) {
                 style={
                   isWinner
                     ? {
-                        background: "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 70%, var(--punch) 30%) 100%)",
-                        boxShadow: "0 0 14px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 20%, transparent) inset",
+                        background:
+                          "linear-gradient(90deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 70%, var(--punch) 30%) 100%)",
+                        boxShadow:
+                          "0 0 14px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 4px color-mix(in srgb, var(--gold) 20%, transparent) inset",
                       }
                     : {
-                        background: "linear-gradient(90deg, var(--teal) 30%, color-mix(in srgb, var(--teal) 50%, transparent) 100%)",
+                        background:
+                          "linear-gradient(90deg, var(--teal) 30%, color-mix(in srgb, var(--teal) 50%, transparent) 100%)",
                         opacity: 0.45,
                       }
                 }

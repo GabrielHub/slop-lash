@@ -1,18 +1,12 @@
-import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, query } from "./_generated/server";
 import { getModelByModelId } from "../src/lib/models";
+import { loadPlayers } from "./roster";
+import { isForfeit, loadAllRounds, responsesFor } from "./rounds";
 
 const LEADERBOARD_GAME_TYPE = "SLOPLASH" as const;
-const MAX_CATCH_UP_GAMES = 32;
-const PROJECTION_RETRY_MS = 10 * 60 * 1_000;
-const MAX_PLAYERS = 16;
-const MAX_ROUNDS = 10;
-const MAX_PROMPTS_PER_ROUND = 32;
-const MAX_RESPONSES_PER_ROUND = 256;
-const MAX_VOTES_PER_ROUND = 1_024;
 const MAX_MODEL_USAGES = 64;
 const MAX_LEADERBOARD_ENTRIES = 64;
 const MAX_HEAD_TO_HEAD_ROWS = 128;
@@ -116,17 +110,13 @@ const statsValidator = v.object({
   totalCost: v.number(),
 });
 
-const projectFinalGameReference = makeFunctionReference<
-  "mutation",
-  { gameId: Id<"games"> },
-  { status: "PROJECTED" | "ALREADY_PROCESSED" | "DEFERRED" | "IGNORED" }
->("leaderboards:projectFinalGame");
-
+/** Catalog names; a model since dropped from the catalog keeps its id. */
 function modelNames(modelId: string): { displayName: string; shortName: string } {
   const model = getModelByModelId(modelId);
-  return model
-    ? { displayName: model.name, shortName: model.shortName }
-    : { displayName: "Legacy Model", shortName: "Legacy" };
+  return {
+    displayName: model?.name ?? modelId,
+    shortName: model?.shortName ?? modelId,
+  };
 }
 
 function competitorIdentity(player: Doc<"players">): {
@@ -186,14 +176,8 @@ function getHeadToHead(rows: Map<string, HeadToHeadDelta>, modelId: string): Hea
 
 async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<GameProjection> {
   const [players, rounds, modelUsages] = await Promise.all([
-    ctx.db
-      .query("players")
-      .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
-      .take(MAX_PLAYERS),
-    ctx.db
-      .query("rounds")
-      .withIndex("by_gameId_and_roundNumber", (index) => index.eq("gameId", game._id))
-      .take(MAX_ROUNDS),
+    loadPlayers(ctx, game._id),
+    loadAllRounds(ctx, game._id),
     ctx.db
       .query("gameModelUsage")
       .withIndex("by_gameId_and_modelId", (index) => index.eq("gameId", game._id))
@@ -206,38 +190,20 @@ async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<Ga
   let totalPrompts = 0;
   let totalVotes = 0;
 
-  for (const round of rounds) {
-    const [prompts, responses, votes] = await Promise.all([
-      ctx.db
-        .query("prompts")
-        .withIndex("by_gameId_and_roundId", (index) =>
-          index.eq("gameId", game._id).eq("roundId", round._id),
-        )
-        .take(MAX_PROMPTS_PER_ROUND),
-      ctx.db
-        .query("responses")
-        .withIndex("by_gameId_and_roundId", (index) =>
-          index.eq("gameId", game._id).eq("roundId", round._id),
-        )
-        .take(MAX_RESPONSES_PER_ROUND),
-      ctx.db
-        .query("votes")
-        .withIndex("by_gameId_and_roundId", (index) =>
-          index.eq("gameId", game._id).eq("roundId", round._id),
-        )
-        .take(MAX_VOTES_PER_ROUND),
-    ]);
+  for (const bundle of rounds) {
+    if (bundle.round.scoredAt === undefined) continue;
+    const { prompts } = bundle;
     totalPrompts += prompts.length;
     const voteCounts = new Map<Id<"responses">, number>();
-    for (const vote of votes) {
+    for (const vote of bundle.votes) {
       if (!vote.responseId) continue;
       voteCounts.set(vote.responseId, (voteCounts.get(vote.responseId) ?? 0) + 1);
       totalVotes += 1;
     }
 
     for (const prompt of prompts) {
-      const promptResponses = responses
-        .filter((response) => response.promptId === prompt._id)
+      const promptResponses = responsesFor(bundle, prompt._id)
+        .filter((response) => !isForfeit(response))
         .toSorted((left, right) => left._id.localeCompare(right._id));
       for (const response of promptResponses) {
         const player = playersById.get(response.playerId);
@@ -309,7 +275,7 @@ async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<Ga
     headToHead,
     bestResponses,
     modelUsages: recognizedUsages,
-    totalPlayers: players.filter((player) => player.type !== "SPECTATOR").length,
+    totalPlayers: players.length,
     totalPrompts,
     totalVotes,
     totalTokens: recognizedUsages.reduce(
@@ -454,7 +420,6 @@ async function applyProjection(
     await ctx.db.insert("leaderboardStats", {
       gameType: LEADERBOARD_GAME_TYPE,
       completedGames: 1,
-      abandonedGames: 0,
       totalPlayers: projection.totalPlayers,
       totalPrompts: projection.totalPrompts,
       totalVotes: projection.totalVotes,
@@ -465,104 +430,23 @@ async function applyProjection(
   }
 }
 
-export const projectFinalGame = internalMutation({
+/** Folds a finished SlopLash game into the all-time tables, once. */
+export const projectGame = internalMutation({
   args: { gameId: v.id("games") },
-  returns: v.object({
-    status: v.union(
-      v.literal("PROJECTED"),
-      v.literal("ALREADY_PROCESSED"),
-      v.literal("DEFERRED"),
-      v.literal("IGNORED"),
-    ),
-  }),
   handler: async (ctx, args) => {
-    const [processed, game] = await Promise.all([
-      ctx.db
-        .query("leaderboardProcessedGames")
-        .withIndex("by_gameId", (index) => index.eq("gameId", args.gameId))
-        .unique(),
-      ctx.db.get("games", args.gameId),
-    ]);
-    if (processed) {
-      if (game && game.leaderboardProjectionStatus !== "PROJECTED") {
-        await ctx.db.patch("games", game._id, {
-          leaderboardProjectionStatus: "PROJECTED",
-          leaderboardProjectionScheduledAt: undefined,
-        });
-      }
-      return { status: "ALREADY_PROCESSED" as const };
+    const game = await ctx.db.get("games", args.gameId);
+    if (
+      !game ||
+      game.gameType !== LEADERBOARD_GAME_TYPE ||
+      game.status !== "FINISHED" ||
+      game.leaderboardProjected
+    ) {
+      return;
     }
-    if (!game || game.gameType !== LEADERBOARD_GAME_TYPE || game.status !== "FINAL_RESULTS") {
-      return { status: "IGNORED" as const };
-    }
-
-    const [queuedTagline, runningTagline] = await Promise.all([
-      ctx.db
-        .query("generationJobs")
-        .withIndex("by_gameId_and_kind_and_status", (index) =>
-          index.eq("gameId", game._id).eq("kind", "WINNER_TAGLINE").eq("status", "QUEUED"),
-        )
-        .first(),
-      ctx.db
-        .query("generationJobs")
-        .withIndex("by_gameId_and_kind_and_status", (index) =>
-          index.eq("gameId", game._id).eq("kind", "WINNER_TAGLINE").eq("status", "RUNNING"),
-        )
-        .first(),
-    ]);
-    if (queuedTagline || runningTagline) {
-      return { status: "DEFERRED" as const };
-    }
-
+    await ctx.db.patch("games", game._id, { leaderboardProjected: true });
     const projection = await buildProjection(ctx, game);
+    if (projection.totalPrompts === 0) return;
     await applyProjection(ctx, game, projection);
-    await ctx.db.insert("leaderboardProcessedGames", {
-      gameId: game._id,
-      processedAt: Date.now(),
-    });
-    await ctx.db.patch("games", game._id, {
-      leaderboardProjectionStatus: "PROJECTED",
-      leaderboardProjectionScheduledAt: undefined,
-    });
-    return { status: "PROJECTED" as const };
-  },
-});
-
-export const catchUpFinalGames = internalMutation({
-  args: {},
-  returns: v.object({ scheduled: v.number(), skipped: v.number() }),
-  handler: async (ctx) => {
-    const now = Date.now();
-    const retryCutoff = now - PROJECTION_RETRY_MS;
-    const [pending, staleScheduled] = await Promise.all([
-      ctx.db
-        .query("games")
-        .withIndex("by_projection_pending", (index) =>
-          index
-            .eq("gameType", LEADERBOARD_GAME_TYPE)
-            .eq("status", "FINAL_RESULTS")
-            .eq("leaderboardProjectionStatus", "PENDING"),
-        )
-        .take(MAX_CATCH_UP_GAMES),
-      ctx.db
-        .query("games")
-        .withIndex("by_projection_retry", (index) =>
-          index
-            .eq("gameType", LEADERBOARD_GAME_TYPE)
-            .eq("leaderboardProjectionStatus", "SCHEDULED")
-            .lte("leaderboardProjectionScheduledAt", retryCutoff),
-        )
-        .take(MAX_CATCH_UP_GAMES),
-    ]);
-    const candidates = [...pending, ...staleScheduled];
-    for (const game of candidates) {
-      await ctx.db.patch("games", game._id, {
-        leaderboardProjectionStatus: "SCHEDULED",
-        leaderboardProjectionScheduledAt: now,
-      });
-      await ctx.scheduler.runAfter(0, projectFinalGameReference, { gameId: game._id });
-    }
-    return { scheduled: candidates.length, skipped: 0 };
   },
 });
 

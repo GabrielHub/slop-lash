@@ -45,9 +45,7 @@ export function HumorBadge({ humorRating }: HumorBadgeProps) {
         aria-haspopup="true"
         onClick={() => setOpen((v) => !v)}
         className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md cursor-pointer select-none ${
-          isHot
-            ? "bg-punch/15 text-punch animate-heat-pulse"
-            : "bg-human-soft text-human"
+          isHot ? "bg-punch/15 text-punch animate-heat-pulse" : "bg-human-soft text-human"
         }`}
       >
         {emoji} {label}
@@ -66,7 +64,8 @@ export function HumorBadge({ humorRating }: HumorBadgeProps) {
               {emoji} {isHot ? "On Fire!" : "Ice Cold"}
             </p>
             <p className="text-xs text-ink-dim leading-relaxed">
-              Humor Rating: <span className="font-mono font-bold text-ink">{humorRating.toFixed(1)}</span>
+              Humor Rating:{" "}
+              <span className="font-mono font-bold text-ink">{humorRating.toFixed(1)}</span>
             </p>
             <p className="text-xs text-ink-dim/80 leading-relaxed mt-1">
               {isHot
