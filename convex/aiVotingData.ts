@@ -1,6 +1,7 @@
 import { vOnCompleteArgs } from "@convex-dev/workpool";
 import { v } from "convex/values";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
+import { FREE_PLAY_JUDGE_MODEL_ID } from "../src/lib/free-play";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { DatabaseReader, MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./_generated/server";
@@ -54,6 +55,7 @@ const voteContextValidator = v.union(
     kind: v.literal("ready"),
     gameType: v.literal("SLOPLASH"),
     modelId: v.string(),
+    judgeModelId: v.union(v.string(), v.null()),
     playerId: v.id("players"),
     promptText: v.string(),
     candidates: v.array(
@@ -73,6 +75,11 @@ const voteContextValidator = v.union(
 type VotingGame = Doc<"games"> & {
   gameType: "SLOPLASH";
 };
+
+/** Free Play AI players write with their own model but vote through the judge. */
+function getVoteJudgeModelId(game: Doc<"games">): string | null {
+  return game.freePlay ? FREE_PLAY_JUDGE_MODEL_ID : null;
+}
 
 interface VotingBundle {
   prompts: Doc<"prompts">[];
@@ -508,6 +515,7 @@ export const loadVoteContext = internalQuery({
       kind: "ready" as const,
       gameType: game.gameType,
       modelId: player.modelId,
+      judgeModelId: getVoteJudgeModelId(game),
       playerId: player._id,
       promptText: prompt.text,
       candidates: candidates.map((response) => ({
@@ -560,8 +568,9 @@ export const persistVote = internalMutation({
     if (args.responseId !== null && !candidateIds.has(args.responseId)) {
       return { status: "STALE" as const, reason: "Selected response is not an eligible peer" };
     }
+    const usageModelId = getVoteJudgeModelId(game) ?? player.modelId;
     if (
-      args.usage.modelId !== player.modelId ||
+      args.usage.modelId !== usageModelId ||
       !Number.isFinite(args.usage.inputTokens) ||
       !Number.isFinite(args.usage.outputTokens) ||
       !Number.isFinite(args.usage.costUsd) ||
@@ -621,7 +630,7 @@ export const persistVote = internalMutation({
     const modelUsage = await ctx.db
       .query("gameModelUsage")
       .withIndex("by_gameId_and_modelId", (index) =>
-        index.eq("gameId", game._id).eq("modelId", player.modelId),
+        index.eq("gameId", game._id).eq("modelId", usageModelId),
       )
       .unique();
     if (modelUsage) {
@@ -633,7 +642,7 @@ export const persistVote = internalMutation({
     } else {
       await ctx.db.insert("gameModelUsage", {
         gameId: game._id,
-        modelId: player.modelId,
+        modelId: usageModelId,
         inputTokens: args.usage.inputTokens,
         outputTokens: args.usage.outputTokens,
         costUsd: args.usage.costUsd,

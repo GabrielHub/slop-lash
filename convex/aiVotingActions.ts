@@ -1,9 +1,9 @@
 "use node";
 
 import { v } from "convex/values";
-import { aiVote as generateSloplashVote } from "../src/games/sloplash/ai";
+import { aiVote as generateSloplashVote, judgeVote } from "../src/games/sloplash/ai";
 import { internalAction } from "./_generated/server";
-import { requireAiGatewayApiKey } from "./aiGateway";
+import { getAiProviderKeys } from "./aiGateway";
 import {
   cancelVoteJobRef,
   claimVoteJobRef,
@@ -54,16 +54,17 @@ export const generateVote = internalAction({
       return { status: finished.status, persistedVote: false, duplicateVote: true };
     }
 
-    const apiKey = requireAiGatewayApiKey();
+    const keys = getAiProviderKeys();
 
     const [responseA, responseB] = context.candidates;
     if (!responseA || !responseB) throw new Error("Slop-Lash vote requires two responses");
-    const generated = await generateSloplashVote(
-      context.modelId,
+    const vote = context.judgeModelId ? judgeVote : generateSloplashVote;
+    const generated = await vote(
+      context.judgeModelId ?? context.modelId,
       context.promptText,
       responseA.text,
       responseB.text,
-      apiKey,
+      keys,
     );
     const responseId =
       generated.choice === "A"

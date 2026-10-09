@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import { ModelIcon } from "@/components/model-icon";
 import { Toggle } from "@/components/toggle";
 import { buttonTap } from "@/lib/animations";
-import { AI_MODELS, type AIModel } from "@/lib/models";
+import type { AIModel, ModelInfo } from "@/lib/models";
 
 export type QuizSlopContentSource = "CATALOG" | "AI";
 
@@ -14,7 +14,7 @@ export function QuizSlopContentSourceField({
   onChange,
 }: {
   contentSource: QuizSlopContentSource;
-  verifier: AIModel | undefined;
+  verifier: ModelInfo | undefined;
   onChange: (source: QuizSlopContentSource) => void;
 }) {
   return (
@@ -46,9 +46,11 @@ export function QuizSlopContentSourceField({
 }
 
 export function QuizSlopGeneratorPicker({
+  models,
   selectedModelId,
   onChange,
 }: {
+  models: readonly AIModel[];
   selectedModelId: string;
   onChange: (modelId: string) => void;
 }) {
@@ -61,7 +63,7 @@ export function QuizSlopGeneratorPicker({
         <span className="text-xs text-ink-dim/70">one model, no AI players</span>
       </div>
       <div className="grid grid-cols-1 gap-2">
-        {AI_MODELS.map((model) => {
+        {models.map((model) => {
           const selected = selectedModelId === model.id;
           return (
             <motion.button

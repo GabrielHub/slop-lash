@@ -78,6 +78,7 @@ function requestForState(
     const config = resolveQuizSlopContentConfig({
       mode: "AI",
       generatorModelId: state.generatorModelId,
+      verifierModelId: state.verifierModelId,
     });
     if (
       state.verifierModelId !== config.verifierModelId ||

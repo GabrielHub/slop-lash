@@ -30,9 +30,13 @@ take precedence over this file.
 - Presence owns ephemeral online/offline state, Workpool owns bounded concurrent
   jobs, and Workflow owns durable multi-step orchestration. Durable game state
   stays in application tables.
-- AI calls go through AI SDK via the Vercel AI Gateway. Secrets
-  (`AI_GATEWAY_API_KEY`, `HOST_SECRET`, `FAL_KEY`) live in Convex; the browser
-  only receives `NEXT_PUBLIC_CONVEX_URL`.
+- AI calls go through AI SDK via the Vercel AI Gateway, except Claude models,
+  which call the Anthropic API directly (`src/lib/ai-gateway.ts`). Secrets
+  (`AI_GATEWAY_API_KEY`, `ANTHROPIC_API_KEY`, `HOST_SECRET`, `FAL_KEY`) live in
+  Convex; the browser only receives `NEXT_PUBLIC_CONVEX_URL`.
+- Free Play rooms skip the host password, so their limits (Haiku writer, Jev
+  judge, AI player cap, no narrator or portraits, daily cap) are enforced on the
+  server. Never trust the client for them.
 - Before changing `convex/`, read `convex/_generated/ai/guidelines.md`. Do not
   hand-edit `convex/_generated/`; regenerate it with `vp run convex:codegen`.
 

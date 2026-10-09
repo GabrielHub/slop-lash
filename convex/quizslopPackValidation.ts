@@ -12,7 +12,6 @@ import {
 import {
   QUIZSLOP_AI_PROMPT_VERSION,
   QUIZSLOP_AI_SCHEMA_VERSION,
-  QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
 } from "../src/games/quizslop/content-source/content-config";
 import { assertFrozenPackMatchesRequest } from "../src/games/quizslop/content-source/pack-materialization";
 
@@ -37,7 +36,7 @@ function isFiniteUsage(usage: QuizSlopModelUsage): boolean {
 /** Complete fail-closed validation at the workflow-to-database boundary. */
 export function packValidationError(
   pack: QuizSlopFrozenPack,
-  state: { generatorModelId: string },
+  state: { generatorModelId: string; verifierModelId?: string },
   expectedPackId: string,
   request?: QuizSlopFreshPackRequest,
 ): string | null {
@@ -56,7 +55,7 @@ export function packValidationError(
   if (
     pack.source === "AI" &&
     (pack.generatorModelId !== state.generatorModelId ||
-      pack.verifierModelId !== QUIZSLOP_FIXED_VERIFIER_MODEL_ID ||
+      pack.verifierModelId !== state.verifierModelId ||
       pack.review.humanApproved ||
       !pack.review.automatedVerifierApproved)
   ) {
@@ -83,17 +82,17 @@ export function packValidationError(
     pack.usage.some(
       (usage) =>
         usage.requestedModelId !== state.generatorModelId &&
-        usage.requestedModelId !== QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
+        usage.requestedModelId !== state.verifierModelId,
     )
   ) {
     return "The frozen pack contained impossible model usage provenance";
   }
-  if (state.generatorModelId !== QUIZSLOP_FIXED_VERIFIER_MODEL_ID) {
+  if (state.generatorModelId !== state.verifierModelId) {
     const generatorCalls = pack.usage.filter(
       (usage) => usage.requestedModelId === state.generatorModelId,
     ).length;
     const verifierCalls = pack.usage.filter(
-      (usage) => usage.requestedModelId === QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
+      (usage) => usage.requestedModelId === state.verifierModelId,
     ).length;
     if (
       generatorCalls > batchCount ||

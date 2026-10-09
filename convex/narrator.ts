@@ -4,7 +4,7 @@ import { generateSpeech as synthesizeSpeech, generateText } from "ai";
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { action } from "./_generated/server";
-import { getGatewayModel, getGatewaySpeechModel } from "../src/lib/ai-gateway";
+import { getGatewaySpeechModel, getLanguageModel } from "../src/lib/ai-gateway";
 import { getReasoningSettings } from "../src/lib/ai-reasoning";
 import {
   NARRATOR_SCRIPT_INSTRUCTIONS,
@@ -76,7 +76,7 @@ async function writeHostScript(
 
   try {
     const result = await generateText({
-      model: getGatewayModel(NARRATOR_SCRIPT_MODEL, apiKey),
+      model: getLanguageModel(NARRATOR_SCRIPT_MODEL, { gateway: apiKey }),
       instructions: NARRATOR_SCRIPT_INSTRUCTIONS,
       prompt: `Event type: ${eventType}\nEvent facts: ${context}`,
       maxOutputTokens: 64,

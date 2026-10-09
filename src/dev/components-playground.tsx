@@ -9,6 +9,13 @@ import { PulsingDot } from "@/components/pulsing-dot";
 import { Timer } from "@/components/timer";
 import { NarratorIndicator } from "@/components/narrator-indicator";
 import {
+  FreePlayRoster,
+  HostAccessPicker,
+  LockedFeature,
+  type FreePlayStatus,
+  type HostAccess,
+} from "@/app/host/host-access-picker";
+import {
   SOUND_NAMES,
   type SoundName,
   getDefaultSoundGainMultiplier,
@@ -272,6 +279,64 @@ function NarratorIndicatorDemo(): React.ReactNode {
   );
 }
 
+const FREE_PLAY_STATUS_FIXTURES: Record<string, FreePlayStatus | undefined> = {
+  loading: undefined,
+  available: { configured: true, gamesLeftToday: 37 },
+  "sold out": { configured: true, gamesLeftToday: 0 },
+  "not set up": { configured: false, gamesLeftToday: 50 },
+};
+
+function HostAccessDemo(): React.ReactNode {
+  const [fixture, setFixture] = useState("available");
+  const [access, setAccess] = useState<HostAccess>("FREE");
+  const [botSelected, setBotSelected] = useState(true);
+  const [personaMode, setPersonaMode] = useState(false);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {Object.keys(FREE_PLAY_STATUS_FIXTURES).map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => setFixture(name)}
+            className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+              fixture === name
+                ? "border-teal/40 bg-teal/10 text-teal"
+                : "border-edge text-ink-dim hover:text-ink"
+            }`}
+          >
+            {name}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setPersonaMode((value) => !value)}
+          className="cursor-pointer rounded-md border border-edge px-2.5 py-1 text-xs font-medium text-ink-dim hover:text-ink"
+        >
+          {personaMode ? "MatchSlop roster" : "Slop-Lash roster"}
+        </button>
+      </div>
+      <HostAccessPicker
+        access={access}
+        freePlayStatus={FREE_PLAY_STATUS_FIXTURES[fixture]}
+        onAccessChange={setAccess}
+      />
+      <FreePlayRoster
+        botSelected={botSelected}
+        botLimit={personaMode ? 0 : 1}
+        personaMode={personaMode}
+        onBotToggle={() => setBotSelected((value) => !value)}
+        onUnlock={() => setAccess("HOST")}
+      />
+      <LockedFeature
+        label="Game Narrator"
+        description="A voiced game-show host. Needs the host password."
+        onUnlock={() => setAccess("HOST")}
+      />
+    </div>
+  );
+}
+
 export function DevComponentsPlayground() {
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -337,6 +402,16 @@ export function DevComponentsPlayground() {
               <Timer deadline={TIMER_DEMO_SHORT_DEADLINE} total={45} />
               <Timer deadline={null} disabled />
             </div>
+          </div>
+        </section>
+
+        <section className="mb-10 grid gap-5 lg:grid-cols-2">
+          <div
+            className="rounded-xl border-2 border-edge bg-surface/80 p-4"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <h2 className="mb-3 font-display text-lg font-bold text-ink">Host Access</h2>
+            <HostAccessDemo />
           </div>
         </section>
 

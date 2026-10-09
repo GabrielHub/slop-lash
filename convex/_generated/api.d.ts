@@ -19,6 +19,7 @@ import type * as capabilities from "../capabilities.js";
 import type * as cleanup from "../cleanup.js";
 import type * as components_ from "../components.js";
 import type * as crons from "../crons.js";
+import type * as freePlay from "../freePlay.js";
 import type * as gameLimits from "../gameLimits.js";
 import type * as gamePhase from "../gamePhase.js";
 import type * as gameViewData from "../gameViewData.js";
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   cleanup: typeof cleanup;
   components: typeof components_;
   crons: typeof crons;
+  freePlay: typeof freePlay;
   gameLimits: typeof gameLimits;
   gamePhase: typeof gamePhase;
   gameViewData: typeof gameViewData;

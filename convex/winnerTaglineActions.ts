@@ -3,8 +3,9 @@
 import { v } from "convex/values";
 import { generateWinnerTagline } from "../src/games/sloplash/ai";
 import { calculateCostUsd } from "../src/lib/models";
+import type { AiProviderKeys } from "../src/lib/ai-gateway";
 import { internalAction } from "./_generated/server";
-import { requireAiGatewayApiKey } from "./aiGateway";
+import { getAiProviderKeys } from "./aiGateway";
 import {
   claimWinnerTaglineJobRef,
   persistWinnerTaglineRef,
@@ -36,7 +37,7 @@ function buildWinnerContext(context: WinnerTaglineGenerationContext): string {
 
 export async function generateWinnerTaglineForContext(
   context: WinnerTaglineGenerationContext,
-  apiKey: string,
+  keys: AiProviderKeys,
 ): Promise<{ text: string; usage: WinnerTaglineUsage }> {
   const generation = generateWinnerTagline(
     context.modelId,
@@ -44,7 +45,7 @@ export async function generateWinnerTaglineForContext(
     context.isFinal,
     buildWinnerContext(context),
     () => undefined,
-    apiKey,
+    keys,
   );
   const [text, rawUsage] = await Promise.all([generation.text, generation.usage]);
   const inputTokens = rawUsage.inputTokens ?? 0;
@@ -80,10 +81,7 @@ export const executeWinnerTagline = internalAction({
       };
     }
 
-    const generated = await generateWinnerTaglineForContext(
-      claim.context,
-      requireAiGatewayApiKey(),
-    );
+    const generated = await generateWinnerTaglineForContext(claim.context, getAiProviderKeys());
     const persisted = await ctx.runMutation(persistWinnerTaglineRef, {
       ...args,
       text: generated.text,

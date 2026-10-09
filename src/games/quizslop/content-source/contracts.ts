@@ -8,7 +8,7 @@ import {
 import {
   QUIZSLOP_AI_PROMPT_VERSION,
   QUIZSLOP_AI_SCHEMA_VERSION,
-  QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
+  QUIZSLOP_VERIFIER_MODEL_IDS,
 } from "./content-config";
 
 export const QUIZSLOP_FRESH_PACK_MIN_TOPIC_BANKS = 24;
@@ -70,7 +70,7 @@ const REQUIRED_TIERS: readonly QuizslopTier[] = ["EASY", "MEDIUM", "HARD", "INSA
 const quizSlopAiConfigSchema = z.object({
   mode: z.literal("AI"),
   generatorModelId: z.string().trim().min(1).max(160),
-  verifierModelId: z.literal(QUIZSLOP_FIXED_VERIFIER_MODEL_ID),
+  verifierModelId: z.enum(QUIZSLOP_VERIFIER_MODEL_IDS),
   promptVersion: z.literal(QUIZSLOP_AI_PROMPT_VERSION),
   schemaVersion: z.literal(QUIZSLOP_AI_SCHEMA_VERSION),
 });
@@ -241,7 +241,7 @@ export const quizSlopFrozenPackSchema = z.object({
   promptVersion: z.literal(QUIZSLOP_AI_PROMPT_VERSION),
   schemaVersion: z.literal(QUIZSLOP_AI_SCHEMA_VERSION),
   generatorModelId: z.string().trim().min(1).max(160).nullable(),
-  verifierModelId: z.literal(QUIZSLOP_FIXED_VERIFIER_MODEL_ID).nullable(),
+  verifierModelId: z.enum(QUIZSLOP_VERIFIER_MODEL_IDS).nullable(),
   banks: z
     .array(quizSlopFrozenTopicBankSchema)
     .min(QUIZSLOP_FRESH_PACK_MIN_TOPIC_BANKS)

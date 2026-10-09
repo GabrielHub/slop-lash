@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { z } from "zod";
-import { getGatewayModel } from "@/lib/ai-gateway";
+import { getLanguageModel, type AiProviderKeys } from "@/lib/ai-gateway";
 import { getGameplayReasoningSettings } from "@/lib/ai-reasoning";
 import { calculateCostUsd } from "@/lib/models";
 
@@ -211,7 +211,7 @@ export interface AiNWayVoteResult {
 }
 
 export type AiCallOptions = {
-  apiKey: string;
+  keys: AiProviderKeys;
   abortSignal?: AbortSignal;
   timeout?: number;
 };
@@ -266,7 +266,7 @@ export async function aiVoteNWay(
       .join("\n");
 
     const result = await generateText({
-      model: getGatewayModel(modelId, options.apiKey),
+      model: getLanguageModel(modelId, options.keys),
       instructions: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n${answersBlock}\n</matchup>`,
       abortSignal: options.abortSignal,

@@ -1,4 +1,5 @@
-export interface AIModel {
+/** Display and pricing metadata shared by player models and judge-only models. */
+export interface ModelInfo {
   id: string;
   name: string;
   shortName: string;
@@ -9,8 +10,15 @@ export interface AIModel {
   inputPer1M: number;
   /** Cost per 1M output tokens in USD */
   outputPer1M: number;
+  /** Decision models answer fixed-choice questions instead of writing text. */
+  decision?: true;
+}
+
+export interface AIModel extends ModelInfo {
   /** Gameplay reasoning policy. Enforced when the provider exposes a control. */
   reasoningLevel: ReasoningLevel;
+  /** Set when the model is served by the Anthropic API instead of the AI Gateway. */
+  anthropicModelId?: string;
 }
 
 export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "max";
@@ -81,13 +89,38 @@ export const AI_MODELS: AIModel[] = [
     inputPer1M: 0.1,
     outputPer1M: 0.5,
     reasoningLevel: "low",
+    anthropicModelId: "claude-haiku-5-5",
   },
 ];
 
+/**
+ * TypeSafe AI's decision model. It answers typed questions instead of writing
+ * text, so it judges but never plays. Output tokens are free.
+ */
+export const JEV_MODEL = {
+  id: "typesafe-ai/jev",
+  name: "Jev",
+  shortName: "Jev",
+  provider: "TypeSafe AI",
+  icon: "/icons/jev-color.svg",
+  inputPer1M: 0.042,
+  outputPer1M: 0,
+  decision: true,
+} as const satisfies ModelInfo;
+
 const AI_MODELS_BY_ID = new Map(AI_MODELS.map((m) => [m.id, m]));
+const MODEL_INFO_BY_ID = new Map<string, ModelInfo>([
+  ...AI_MODELS_BY_ID,
+  [JEV_MODEL.id, JEV_MODEL],
+]);
 
 export function getModelByModelId(modelId: string): AIModel | undefined {
   return AI_MODELS_BY_ID.get(modelId);
+}
+
+/** Looks up any priced model, including judge-only models that cannot play. */
+export function getModelInfo(modelId: string): ModelInfo | undefined {
+  return MODEL_INFO_BY_ID.get(modelId);
 }
 
 export function selectUniqueModelsByProvider(modelIds: readonly string[]): AIModel[] {
@@ -132,7 +165,7 @@ export function calculateCostUsd(
   inputTokens: number,
   outputTokens: number,
 ): number {
-  const model = getModelByModelId(modelId);
+  const model = getModelInfo(modelId);
   if (!model) return 0;
   return (
     (inputTokens / 1_000_000) * model.inputPer1M + (outputTokens / 1_000_000) * model.outputPer1M
@@ -149,6 +182,6 @@ export function getCostTier(model: AIModel): string {
   return "$$$";
 }
 
-export function getModelIconForTheme(model: AIModel, theme: "light" | "dark"): string {
+export function getModelIconForTheme(model: ModelInfo, theme: "light" | "dark"): string {
   return theme === "light" && model.iconDark ? model.iconDark : model.icon;
 }

@@ -38,7 +38,7 @@ describe("aiVoteNWay", () => {
         { id: "resp-b", label: "B", text: "B joke" },
       ],
       1,
-      { abortSignal: controller.signal, apiKey: "test-api-key" },
+      { abortSignal: controller.signal, keys: { gateway: "test-api-key" } },
     );
 
     expect(result).toEqual({

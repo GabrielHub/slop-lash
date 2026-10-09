@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { generateJoke as generateSloplashJoke } from "../src/games/sloplash/ai";
 import { internalAction } from "./_generated/server";
-import { requireAiGatewayApiKey } from "./aiGateway";
+import { getAiProviderKeys } from "./aiGateway";
 import {
   cancelResponseJobRef,
   claimResponseJobRef,
@@ -49,14 +49,14 @@ export const generateResponse = internalAction({
       return { status: "CANCELED" as const, persistedResponses: 0, duplicateResponses: 0 };
     }
 
-    const apiKey = requireAiGatewayApiKey();
+    const keys = getAiProviderKeys();
     let persistedResponses = 0;
     let duplicateResponses = 0;
     for (const prompt of context.prompts) {
       const generated = await generateSloplashJoke(
         context.modelId,
         prompt.text,
-        apiKey,
+        keys,
         context.history,
       );
       const persisted = await ctx.runMutation(persistResponseRef, {

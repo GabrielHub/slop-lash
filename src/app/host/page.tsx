@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import { AI_MODELS, getModelByModelId } from "@/lib/models";
+import { AI_MODELS, getModelByModelId, JEV_MODEL } from "@/lib/models";
+import {
+  FREE_PLAY_WRITER_MODEL,
+  FREE_PLAY_WRITER_MODEL_ID,
+  getFreePlayAiPlayerLimit,
+} from "@/lib/free-play";
 import type { TtsMode } from "@/lib/types";
 import type { GameType } from "@/games/core";
 import { ModelIcon } from "@/components/model-icon";
@@ -14,7 +19,7 @@ import { fadeInUp, buttonTap, buttonTapPrimary } from "@/lib/animations";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
 import type { MatchSlopIdentity } from "@/games/matchslop/identities";
 import { QUIZSLOP_FIXED_VERIFIER_MODEL_ID } from "@/games/quizslop/content-source/content-config";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { persistRoomSessionResult } from "@/lib/convex-room-client";
@@ -31,15 +36,52 @@ import {
   type HostParticipation,
 } from "./host-game-mode-picker";
 import { HostNarratorSettings } from "./host-narrator-settings";
+import { AiModelRow } from "./ai-model-row";
+import {
+  FreePlayRoster,
+  HostAccessPicker,
+  isFreePlayAvailable,
+  LockedFeature,
+  type HostAccess,
+} from "./host-access-picker";
 
 const NAME_MAX_LENGTH = 20;
+const ACCESS_STORAGE_KEY = "slop-lash:host-access";
+
+function readStoredAccess(): HostAccess | null {
+  try {
+    const stored = localStorage.getItem(ACCESS_STORAGE_KEY);
+    return stored === "FREE" || stored === "HOST" ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+// The stored choice only changes through this page, which also holds it in state.
+function subscribeStoredAccess(): () => void {
+  return () => {};
+}
+
+function storeAccess(access: HostAccess): void {
+  try {
+    localStorage.setItem(ACCESS_STORAGE_KEY, access);
+  } catch {
+    // Remembering the choice is a convenience; private windows may block it.
+  }
+}
 
 export default function HostPage() {
   const router = useRouter();
   const createRoom = useAction(api.rooms.create);
+  const freePlayStatus = useQuery(api.freePlay.status);
   const { triggerElement } = usePixelDissolve();
   const [gameType, setGameType] = useState<GameType>("SLOPLASH");
+  const storedAccess = useSyncExternalStore(subscribeStoredAccess, readStoredAccess, () => null);
+  const [chosenAccess, setChosenAccess] = useState<HostAccess | null>(null);
+  const [freeBotSelected, setFreeBotSelected] = useState(true);
   const [hostSecret, setHostSecret] = useState("");
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+  const focusPasswordRef = useRef(false);
   const [hostName, setHostName] = useState("");
   const [hostParticipation, setHostParticipation] = useState<HostParticipation>("PLAYER");
   const [seekerIdentity, setSeekerIdentity] = useState<MatchSlopIdentity>("MAN");
@@ -62,12 +104,51 @@ export default function HostPage() {
   const selectedGameType = GAME_TYPE_OPTIONS_BY_ID[gameType];
   const isMatchSlop = gameType === "MATCHSLOP";
   const isQuizSlop = gameType === "QUIZSLOP";
-  const selectedPersonaModel = personaModelId ? getModelByModelId(personaModelId) : undefined;
-  const quizSlopVerifier = getModelByModelId(QUIZSLOP_FIXED_VERIFIER_MODEL_ID);
+  const freePlayAvailable = isFreePlayAvailable(freePlayStatus);
+  // Fall back to the password tier when Free Play is off or spent for today.
+  const access: HostAccess =
+    freePlayStatus !== undefined && !freePlayAvailable
+      ? "HOST"
+      : (chosenAccess ?? storedAccess ?? "FREE");
+  const freePlay = access === "FREE";
+  const freeBotLimit = getFreePlayAiPlayerLimit(gameType);
+  // Free Play pins every model server-side; the UI mirrors those pins.
+  const effectivePersonaModelId = freePlay ? FREE_PLAY_WRITER_MODEL_ID : personaModelId;
+  const effectiveGeneratorModelId = freePlay ? FREE_PLAY_WRITER_MODEL_ID : quizSlopGeneratorModelId;
+  const selectedPersonaModel = effectivePersonaModelId
+    ? getModelByModelId(effectivePersonaModelId)
+    : undefined;
+  const quizSlopVerifier = freePlay
+    ? JEV_MODEL
+    : getModelByModelId(QUIZSLOP_FIXED_VERIFIER_MODEL_ID);
+  const narratorAvailable = selectedGameType.supportsNarrator && !freePlay;
   const maxAiPlayers = selectedGameType.maxPlayers - (hostParticipation === "PLAYER" ? 1 : 0);
   // Modes without AI players keep any prior selection in state (so switching
-  // back restores it) but must never count or submit it.
-  const activeAiModels = selectedGameType.supportsAiPlayers ? selectedModels : [];
+  // back restores it) but must never count or submit it. Each access tier
+  // keeps its own selection for the same reason.
+  const freePlayAiModels = freeBotSelected && freeBotLimit > 0 ? [FREE_PLAY_WRITER_MODEL_ID] : [];
+  const activeAiModels = !selectedGameType.supportsAiPlayers
+    ? []
+    : freePlay
+      ? freePlayAiModels
+      : selectedModels;
+
+  function setAccess(next: HostAccess) {
+    setChosenAccess(next);
+    storeAccess(next);
+    setError("");
+  }
+
+  function unlockWithPassword() {
+    focusPasswordRef.current = true;
+    setAccess("HOST");
+  }
+
+  useEffect(() => {
+    if (access !== "HOST" || !focusPasswordRef.current) return;
+    focusPasswordRef.current = false;
+    passwordInputRef.current?.focus();
+  }, [access]);
   const activePlayerCount = (hostParticipation === "PLAYER" ? 1 : 0) + activeAiModels.length;
 
   function toggleModel(modelId: string) {
@@ -108,11 +189,9 @@ export default function HostPage() {
   }, [isMatchSlop, personaModelId]);
 
   useEffect(() => {
-    if (!selectedGameType.supportsNarrator) {
-      setTtsMode("OFF");
-      setVoicePickerOpen(false);
-    }
-  }, [selectedGameType.supportsNarrator]);
+    if (!narratorAvailable) setVoicePickerOpen(false);
+    if (!selectedGameType.supportsNarrator) setTtsMode("OFF");
+  }, [narratorAvailable, selectedGameType.supportsNarrator]);
 
   // MatchSlop honours timersDisabled but never shows the toggle, so a value set
   // on another mode would otherwise follow the host across the picker unseen.
@@ -123,14 +202,18 @@ export default function HostPage() {
   }, [selectedGameType.timerToggle]);
 
   useEffect(() => {
-    if (!isMatchSlop) {
+    if (!isMatchSlop || freePlay) {
       setPersonaModelPickerOpen(false);
     }
-  }, [isMatchSlop]);
+  }, [freePlay, isMatchSlop]);
 
   async function createGame() {
     if (creatingRef.current) return;
-    if (!hostSecret.trim()) {
+    if (freePlay && !freePlayAvailable) {
+      setError("Free Play is unavailable right now. Use the host password.");
+      return;
+    }
+    if (!freePlay && !hostSecret.trim()) {
       setError("Enter the host password");
       return;
     }
@@ -148,18 +231,19 @@ export default function HostPage() {
         gameType,
         hostName: hostName.trim() || undefined,
         hostParticipation,
-        hostSecret: hostSecret.trim(),
+        // No password makes this a Free Play room.
+        hostSecret: freePlay ? undefined : hostSecret.trim(),
         personaIdentity: isMatchSlop ? personaIdentity : undefined,
-        personaModelId: isMatchSlop ? (personaModelId ?? undefined) : undefined,
+        personaModelId: isMatchSlop ? (effectivePersonaModelId ?? undefined) : undefined,
         quizSlopContentSource: isQuizSlop ? quizSlopContentSource : undefined,
         quizSlopGeneratorModelId:
           isQuizSlop && quizSlopContentSource === "AI"
-            ? quizSlopGeneratorModelId || undefined
+            ? effectiveGeneratorModelId || undefined
             : undefined,
         seekerIdentity: isMatchSlop ? seekerIdentity : undefined,
         timersDisabled,
-        ttsMode: isQuizSlop ? undefined : ttsMode,
-        ttsVoice: !isQuizSlop && ttsMode === "ON" ? ttsVoice : undefined,
+        ttsMode: narratorAvailable ? ttsMode : undefined,
+        ttsVoice: narratorAvailable && ttsMode === "ON" ? ttsVoice : undefined,
       });
       persistRoomSessionResult(room);
       // A QuizSlop playing host answers on a private controller and opens the
@@ -216,6 +300,12 @@ export default function HostPage() {
           className="flex flex-col lg:flex-row lg:gap-x-12 lg:items-start"
         >
           <div className="flex-1 min-w-0">
+            <HostAccessPicker
+              access={access}
+              freePlayStatus={freePlayStatus}
+              onAccessChange={setAccess}
+            />
+
             <HostGameModePicker
               gameType={gameType}
               open={gameModePickerOpen}
@@ -284,21 +374,27 @@ export default function HostPage() {
               </div>
             )}
 
-            <div className="mb-6">
-              <label htmlFor="host-secret" className="block text-sm font-medium text-ink-dim mb-2">
-                Host Password
-              </label>
-              <input
-                id="host-secret"
-                type="password"
-                value={hostSecret}
-                onChange={(e) => setHostSecret(e.target.value)}
-                placeholder="Enter host password"
-                className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
-                autoComplete="current-password"
-                enterKeyHint="next"
-              />
-            </div>
+            {!freePlay && (
+              <div className="mb-6">
+                <label
+                  htmlFor="host-secret"
+                  className="block text-sm font-medium text-ink-dim mb-2"
+                >
+                  Host Password
+                </label>
+                <input
+                  ref={passwordInputRef}
+                  id="host-secret"
+                  type="password"
+                  value={hostSecret}
+                  onChange={(e) => setHostSecret(e.target.value)}
+                  placeholder="Enter host password"
+                  className="w-full py-3 px-4 rounded-xl bg-surface/80 backdrop-blur-sm border-2 border-edge text-ink placeholder:text-ink-dim/40 focus:outline-none focus:border-punch transition-colors"
+                  autoComplete="current-password"
+                  enterKeyHint="next"
+                />
+              </div>
+            )}
 
             <div className="mb-6">
               {hostParticipation === "PLAYER" ? (
@@ -342,8 +438,9 @@ export default function HostPage() {
                 <div>
                   <motion.button
                     type="button"
+                    disabled={freePlay}
                     onClick={() => setPersonaModelPickerOpen((open) => !open)}
-                    className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer ${
+                    className={`w-full rounded-xl border-2 px-4 py-3 text-left transition-colors cursor-pointer disabled:cursor-default ${
                       personaModelPickerOpen
                         ? "border-punch bg-punch/10 text-punch"
                         : "border-edge bg-surface/80 text-ink-dim hover:border-edge-strong hover:text-ink"
@@ -374,25 +471,29 @@ export default function HostPage() {
                         <span
                           className={`mt-0.5 block text-xs ${personaModelPickerOpen ? "text-punch/70" : "text-ink-dim/70"}`}
                         >
-                          Persona runs on this model. AI teammates stay in the list on the right.
+                          {freePlay
+                            ? "Free Play personas run on Claude Haiku."
+                            : "Persona runs on this model. AI teammates stay in the list on the right."}
                         </span>
                       </span>
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="shrink-0 transition-transform duration-200"
-                        style={{
-                          transform: personaModelPickerOpen ? "rotate(180deg)" : "rotate(0deg)",
-                        }}
-                      >
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
+                      {!freePlay && (
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="shrink-0 transition-transform duration-200"
+                          style={{
+                            transform: personaModelPickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+                          }}
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      )}
                     </span>
                   </motion.button>
 
@@ -511,7 +612,15 @@ export default function HostPage() {
               </div>
             )}
 
-            {selectedGameType.supportsNarrator && (
+            {selectedGameType.supportsNarrator && freePlay && (
+              <LockedFeature
+                label="Game Narrator"
+                description="A voiced game-show host. Needs the host password."
+                onUnlock={unlockWithPassword}
+              />
+            )}
+
+            {narratorAvailable && (
               <HostNarratorSettings
                 mode={ttsMode}
                 pickerOpen={voicePickerOpen}
@@ -550,6 +659,8 @@ export default function HostPage() {
                   </svg>
                   Creating...
                 </span>
+              ) : freePlay ? (
+                "Create Free Game"
               ) : (
                 "Create Game"
               )}
@@ -586,11 +697,20 @@ export default function HostPage() {
 
                 {isQuizSlop && quizSlopContentSource === "AI" && (
                   <QuizSlopGeneratorPicker
-                    selectedModelId={quizSlopGeneratorModelId}
+                    models={freePlay ? [FREE_PLAY_WRITER_MODEL] : AI_MODELS}
+                    selectedModelId={effectiveGeneratorModelId}
                     onChange={setQuizSlopGeneratorModelId}
                   />
                 )}
               </div>
+            ) : freePlay ? (
+              <FreePlayRoster
+                botSelected={freeBotSelected}
+                botLimit={freeBotLimit}
+                personaMode={isMatchSlop}
+                onBotToggle={() => setFreeBotSelected((selected) => !selected)}
+                onUnlock={unlockWithPassword}
+              />
             ) : (
               <div className="grid grid-cols-1 gap-2">
                 {AI_MODELS.map((model) => {
@@ -604,52 +724,15 @@ export default function HostPage() {
                   const atLimit =
                     selectedModels.length >= maxAiPlayers && !selected && !replacesSameProvider;
 
-                  let stateClass: string;
-                  if (selected) {
-                    stateClass = "bg-ai-soft/80 backdrop-blur-sm border-ai text-ink";
-                  } else if (atLimit) {
-                    stateClass = "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim/30";
-                  } else {
-                    stateClass =
-                      "bg-surface/80 backdrop-blur-sm border-edge text-ink-dim hover:border-edge-strong hover:text-ink";
-                  }
-
                   return (
-                    <motion.button
-                      type="button"
+                    <AiModelRow
                       key={model.id}
-                      onClick={() => toggleModel(model.id)}
+                      model={model}
+                      selected={selected}
                       disabled={atLimit}
-                      className={`p-3 rounded-xl border-2 text-left transition-colors flex items-center gap-3 cursor-pointer disabled:cursor-not-allowed ${stateClass}`}
-                      layout
-                      {...buttonTap}
-                    >
-                      <ModelIcon model={model} size={24} className="shrink-0" />
-                      <div className="min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-semibold text-sm truncate">{model.name}</span>
-                          <span className="text-xs text-ink-dim/60 shrink-0">{model.provider}</span>
-                        </div>
-                        <span className="text-[11px] text-ink-dim/50 font-mono">
-                          {getCostTier(model)}
-                        </span>
-                      </div>
-                      {selected && (
-                        <svg
-                          className="ml-auto shrink-0 text-ai"
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </motion.button>
+                      detail={<span className="font-mono">{getCostTier(model)}</span>}
+                      onClick={() => toggleModel(model.id)}
+                    />
                   );
                 })}
               </div>

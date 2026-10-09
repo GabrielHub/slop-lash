@@ -15,9 +15,9 @@ import { FORFEIT_MARKER } from "../src/games/core/constants";
 import { getGameplayReasoningSettings } from "../src/lib/ai-reasoning";
 import type { MatchSlopPersonaSeed } from "../src/games/matchslop/config/persona-examples";
 import type { MatchSlopIdentity, MatchSlopProfile } from "../src/games/matchslop/types";
-import { getGatewayModel } from "../src/lib/ai-gateway";
+import { getLanguageModel } from "../src/lib/ai-gateway";
 import { env, internalAction } from "./_generated/server";
-import { requireAiGatewayApiKey } from "./aiGateway";
+import { getAiProviderKeys } from "./aiGateway";
 import {
   matchSlopImageReadyContextValidator,
   matchSlopPostMortemReadyContextValidator,
@@ -146,7 +146,7 @@ export const generateProfile = internalAction({
     const context = parseContext(profileContextSchema, args.context);
     const seedNames = context.personaExamples.map((seed) => seed.name).join(" | ");
     const result = await generateText({
-      model: getGatewayModel(context.modelId, requireAiGatewayApiKey()),
+      model: getLanguageModel(context.modelId, getAiProviderKeys()),
       instructions: `You create realistic dating-app personas for MatchSlop, a comedy party game. The persona is a ${identityLabel(context.personaIdentity)} and the players roleplay as a ${identityLabel(context.seekerIdentity)}. The persona is grounded and believable; the players create the absurdity. Invent a new first name, age 20-30, a concrete appearance, realistic backstory with a distinct texting style, concise bio, exactly three profile prompts, and job, height, and at least one language. Do not copy seed facts, names, or settings. No sexual or hateful content.`,
       prompt: `<avoid-names>${escapeXml(seedNames)}</avoid-names><calibration>${buildPersonaSeedsXml(context.personaExamples)}</calibration>`,
       output: Output.object({
@@ -203,7 +203,7 @@ export const generateImage = internalAction({
       .map((seed) => `<seed>${escapeXml(seed.imagePrompt)}</seed>`)
       .join("");
     const promptResult = await generateText({
-      model: getGatewayModel(context.modelId, requireAiGatewayApiKey()),
+      model: getLanguageModel(context.modelId, getAiProviderKeys()),
       instructions:
         "Write a photorealistic dating-app portrait prompt. Treat the profile appearance as the source of truth, preserve concrete traits, and use a candid phone-photo composition with natural ambient lighting. One fully clothed adult, no text, no watermark, no collage, no extra people.",
       prompt: `<identity>${escapeXml(identityLabel(context.personaIdentity))}</identity><portrait-seeds>${portraitSeeds}</portrait-seeds>${buildProfileXml(context.profile)}`,
@@ -249,7 +249,7 @@ export const generateResponse = internalAction({
       )
       .join("");
     const result = await generateText({
-      model: getGatewayModel(context.modelId, requireAiGatewayApiKey()),
+      model: getLanguageModel(context.modelId, getAiProviderKeys()),
       instructions: opener
         ? "You are an AI competitor in MatchSlop. Pick one provided profile prompt and write one funny dating-app opener under 300 characters. Be specific, absurd, and grounded in the profile. No sincere flirting or generic pickup lines. Return JSON with selectedPromptId and line."
         : "You are an AI competitor in MatchSlop. Write one funny dating-app follow-up under 300 characters that escalates the existing bit. Be specific and absurd, not mean. Return JSON with line.",
@@ -314,7 +314,7 @@ export const generateVote = internalAction({
       })),
       simpleHash(context.seedKey),
       {
-        apiKey: requireAiGatewayApiKey(),
+        keys: getAiProviderKeys(),
         ...(context.timeoutMs ? { timeout: context.timeoutMs } : {}),
       },
     );
@@ -364,7 +364,7 @@ export const generateReply = internalAction({
       })
       .join("\n");
     const result = await generateText({
-      model: getGatewayModel(context.modelId, requireAiGatewayApiKey()),
+      model: getLanguageModel(context.modelId, getAiProviderKeys()),
       instructions: `You are the ${identityLabel(context.personaIdentity)} in a realistic dating-app chat with a ${identityLabel(context.seekerIdentity)}. Follow the profile's texting style. Write 1-3 short natural sentences, then assess a moodDelta from -50 to 50. ${context.forceContinue ? "This is the opening exchange, so outcome MUST be CONTINUE." : "Choose CONTINUE, DATE_SEALED, or UNMATCHED based on whether the line earned it."} Also return a 2-4 word signalCategory, a short sideComment, and concise nextSignal guidance.`,
       prompt: `${buildProfileXml(context.profile)}<current-mood>${context.currentMood}</current-mood><transcript>${transcript}</transcript>`,
       output: Output.object({ schema: personaReplySchema, name: "matchslop_persona_reply" }),
@@ -414,7 +414,7 @@ export const generatePostMortem = internalAction({
       )
       .join("\n");
     const result = await generateText({
-      model: getGatewayModel(context.modelId, requireAiGatewayApiKey()),
+      model: getLanguageModel(context.modelId, getAiProviderKeys()),
       instructions: `You are ${context.profile.displayName}, the ${identityLabel(context.personaIdentity)} who just finished this MatchSlop dating chat. Deliver a concise in-character postmortem: an opening reaction, an honest callout for each player using actual lines, the favorite moment, and a final parting shot. Match the profile's texting style and avoid generic commentary.`,
       prompt: `<outcome>${escapeXml(context.outcome)}</outcome><players>${context.playerNames.map((name) => `<player>${escapeXml(name)}</player>`).join("")}</players>${buildProfileXml(context.profile)}<transcript>${transcript}</transcript>`,
       output: Output.object({ schema: postMortemSchema, name: "matchslop_post_mortem" }),

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { AIModel, getModelIconForTheme } from "@/lib/models";
+import { getModelIconForTheme, type ModelInfo } from "@/lib/models";
 import { useTheme } from "@/components/theme-provider";
 
 export function ModelIcon({
@@ -9,7 +9,7 @@ export function ModelIcon({
   size = 22,
   className = "",
 }: {
-  model: AIModel;
+  model: ModelInfo;
   size?: number;
   className?: string;
 }) {
@@ -22,11 +22,7 @@ export function ModelIcon({
       width={size}
       height={size}
       className={`rounded-sm ${className}`}
-      style={
-        model.iconDark && theme === "dark"
-          ? { filter: "invert(1)" }
-          : undefined
-      }
+      style={model.iconDark && theme === "dark" ? { filter: "invert(1)" } : undefined}
     />
   );
 }

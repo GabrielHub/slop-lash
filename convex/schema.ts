@@ -56,6 +56,8 @@ export default defineSchema({
     playerCount: v.number(),
     hostPlayerId: v.optional(v.id("players")),
     hostSessionId: v.optional(v.id("playerSessions")),
+    /** Created without the host password: Haiku writes, Jev judges. */
+    freePlay: v.optional(v.boolean()),
     personaModelId: v.optional(v.string()),
     phaseDeadline: v.optional(v.number()),
     phaseGeneration: v.number(),
@@ -93,6 +95,12 @@ export default defineSchema({
       "leaderboardProjectionStatus",
       "leaderboardProjectionScheduledAt",
     ]),
+
+  /** Free Play rooms created per UTC day, for the daily cap. */
+  freePlayUsage: defineTable({
+    day: v.string(),
+    gamesCreated: v.number(),
+  }).index("by_day", ["day"]),
 
   playerSessions: defineTable({
     gameId: v.id("games"),

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { FREE_PLAY_JUDGE_MODEL_ID, FREE_PLAY_WRITER_MODEL_ID } from "../../../lib/free-play";
 import { AI_MODELS } from "../../../lib/models";
 import {
   QUIZSLOP_AI_PROMPT_VERSION,
@@ -22,6 +23,26 @@ describe("QuizSlop content configuration", () => {
         schemaVersion: QUIZSLOP_AI_SCHEMA_VERSION,
       });
     }
+  });
+
+  it("accepts the Free Play verifier and rejects any verifier off the server list", () => {
+    expect(
+      resolveQuizSlopContentConfig({
+        mode: "AI",
+        generatorModelId: FREE_PLAY_WRITER_MODEL_ID,
+        verifierModelId: FREE_PLAY_JUDGE_MODEL_ID,
+      }),
+    ).toMatchObject({
+      generatorModelId: FREE_PLAY_WRITER_MODEL_ID,
+      verifierModelId: "typesafe-ai/jev",
+    });
+    expect(() =>
+      resolveQuizSlopContentConfig({
+        mode: "AI",
+        generatorModelId: FREE_PLAY_WRITER_MODEL_ID,
+        verifierModelId: "google/gemini-3.5-flash-lite",
+      }),
+    ).toThrow("Unsupported QuizSlop verifier model");
   });
 
   it("rejects unknown generator IDs", () => {

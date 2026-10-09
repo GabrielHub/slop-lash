@@ -2,13 +2,17 @@ import { v } from "convex/values";
 import {
   QUIZSLOP_AI_PROMPT_VERSION,
   QUIZSLOP_AI_SCHEMA_VERSION,
-  QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
+  QUIZSLOP_VERIFIER_MODEL_IDS,
 } from "../src/games/quizslop/content-source/content-config";
 import {
   quizslopCategoryValidator,
   quizslopComedyDeviceValidator,
   quizslopTierValidator,
 } from "./quizslopValidators";
+
+const quizSlopVerifierModelIdValidator = v.union(
+  ...QUIZSLOP_VERIFIER_MODEL_IDS.map((modelId) => v.literal(modelId)),
+);
 
 const quizSlopSourceSnapshotValidator = v.object({
   url: v.string(),
@@ -43,7 +47,7 @@ const quizSlopSafeEvidenceFactValidator = v.object({
 const quizSlopAiContentConfigValidator = v.object({
   mode: v.literal("AI"),
   generatorModelId: v.string(),
-  verifierModelId: v.literal(QUIZSLOP_FIXED_VERIFIER_MODEL_ID),
+  verifierModelId: quizSlopVerifierModelIdValidator,
   promptVersion: v.literal(QUIZSLOP_AI_PROMPT_VERSION),
   schemaVersion: v.literal(QUIZSLOP_AI_SCHEMA_VERSION),
 });
@@ -167,7 +171,7 @@ const quizSlopFrozenPackValidator = v.object({
   promptVersion: v.literal(QUIZSLOP_AI_PROMPT_VERSION),
   schemaVersion: v.literal(QUIZSLOP_AI_SCHEMA_VERSION),
   generatorModelId: v.union(v.string(), v.null()),
-  verifierModelId: v.union(v.literal(QUIZSLOP_FIXED_VERIFIER_MODEL_ID), v.null()),
+  verifierModelId: v.union(quizSlopVerifierModelIdValidator, v.null()),
   banks: v.array(quizSlopFrozenTopicBankValidator),
   review: v.object({
     humanApproved: v.boolean(),

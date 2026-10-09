@@ -15,6 +15,12 @@ import { maxPlayersByGameType } from "./gameLimits";
 import type { GameType } from "../src/games/core/types";
 import { getAiModel, selectUniqueModelsByProvider } from "./modelCatalog";
 import {
+  FREE_PLAY_JUDGE_MODEL_ID,
+  FREE_PLAY_WRITER_MODEL_ID,
+  getFreePlayAiPlayersError,
+} from "../src/lib/free-play";
+import { isFreePlayConfigured } from "./freePlay";
+import {
   resolveQuizSlopContentConfig,
   type QuizSlopContentConfig,
 } from "../src/games/quizslop/content-source/content-config";
@@ -37,7 +43,10 @@ type CreatedRoom = {
   playerId: Id<"players"> | null;
 };
 
-type CreateRoomResult = CreatedRoom | { kind: "ROOM_CODE_TAKEN" };
+type CreateRoomResult =
+  | CreatedRoom
+  | { kind: "ROOM_CODE_TAKEN" }
+  | { kind: "FREE_PLAY_LIMIT_REACHED" };
 
 type SessionResult = {
   gameId: Id<"games">;
@@ -80,6 +89,37 @@ async function requireRoomCreationSecret(candidate: string): Promise<void> {
   }
 }
 
+/**
+ * Free Play rooms skip the host password, so every model and paid feature is
+ * pinned here rather than trusted from the client.
+ */
+function requireFreePlaySettings(args: {
+  aiModelIds?: string[];
+  gameType: GameType;
+  personaModelId?: string;
+  quizSlopGeneratorModelId?: string;
+  ttsMode?: "ON" | "OFF";
+  ttsVoice?: string;
+}): void {
+  if (!isFreePlayConfigured()) {
+    throw new ConvexError("Free Play is not available right now. Enter the host password.");
+  }
+  if (args.ttsMode === "ON" || (args.ttsVoice ?? "").trim().length > 0) {
+    throw new ConvexError("The narrator needs the host password");
+  }
+  const aiPlayersError = getFreePlayAiPlayersError(args.gameType, args.aiModelIds ?? []);
+  if (aiPlayersError) throw new ConvexError(aiPlayersError);
+  if (args.personaModelId !== undefined && args.personaModelId !== FREE_PLAY_WRITER_MODEL_ID) {
+    throw new ConvexError("Free Play personas use Claude Haiku");
+  }
+  if (
+    args.quizSlopGeneratorModelId !== undefined &&
+    args.quizSlopGeneratorModelId !== FREE_PLAY_WRITER_MODEL_ID
+  ) {
+    throw new ConvexError("Free Play question packs are written by Claude Haiku");
+  }
+}
+
 function validateTotalRounds(totalRounds: number): number {
   if (!Number.isInteger(totalRounds) || totalRounds < 1 || totalRounds > 10) {
     throw new ConvexError("totalRounds must be an integer between 1 and 10");
@@ -93,7 +133,8 @@ export const create = action({
     gameType: gameTypeValidator,
     hostName: v.optional(v.string()),
     hostParticipation: v.optional(v.union(v.literal("PLAYER"), v.literal("DISPLAY_ONLY"))),
-    hostSecret: v.string(),
+    /** Omit for a Free Play room: Claude Haiku writes, Jev judges. */
+    hostSecret: v.optional(v.string()),
     personaIdentity: v.optional(matchSlopIdentityValidator),
     personaModelId: v.optional(v.string()),
     quizSlopContentSource: v.optional(v.union(v.literal("CATALOG"), v.literal("AI"))),
@@ -106,7 +147,9 @@ export const create = action({
   },
   returns: sessionResultValidator,
   handler: async (ctx, args): Promise<SessionResult & { capability: string }> => {
-    await requireRoomCreationSecret(args.hostSecret);
+    const freePlay = args.hostSecret === undefined;
+    if (args.hostSecret === undefined) requireFreePlaySettings(args);
+    else await requireRoomCreationSecret(args.hostSecret);
 
     if (args.gameType === "MATCHSLOP" && (!args.seekerIdentity || !args.personaIdentity)) {
       throw new ConvexError("MatchSlop requires seekerIdentity and personaIdentity");
@@ -147,6 +190,7 @@ export const create = action({
         quizSlopContentConfig = resolveQuizSlopContentConfig({
           mode: "AI",
           generatorModelId: args.quizSlopGeneratorModelId,
+          verifierModelId: freePlay ? FREE_PLAY_JUDGE_MODEL_ID : undefined,
         });
       } catch (error) {
         throw new ConvexError(error instanceof Error ? error.message : "Invalid QuizSlop model");
@@ -187,6 +231,7 @@ export const create = action({
       const result: CreateRoomResult = await ctx.runMutation(internal.roomsInternal.createRoom, {
         aiPlayers,
         capabilityHash,
+        freePlay,
         gameType: args.gameType,
         hostName: host?.name ?? null,
         hostNormalizedName: host?.normalizedName ?? null,
@@ -210,6 +255,11 @@ export const create = action({
         ttsVoice: ttsMode === "ON" ? args.ttsVoice?.trim() || "RANDOM" : "RANDOM",
       });
       if (result.kind === "ROOM_CODE_TAKEN") continue;
+      if (result.kind === "FREE_PLAY_LIMIT_REACHED") {
+        throw new ConvexError(
+          "Free Play is out of games for today. Try again tomorrow or use the host password.",
+        );
+      }
 
       if (quizSlopContentConfig.mode === "AI") {
         const packArgs = {

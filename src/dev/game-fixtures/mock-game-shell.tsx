@@ -102,30 +102,6 @@ export function MockGameShell({ scenario, previousSlug, nextSlug }: MockGameShel
 
   const mutations = useMemo<NonNullable<GameRuntime["mutations"]>>(
     () => ({
-      lobbyAddAiPlayer: async ({ modelId }) => {
-        await delay(180);
-        logAction(`add AI (${modelId})`);
-        const newPlayerId = `fixture-ai-${Date.now()}`;
-        updateGame((current) => {
-          const next = cloneGame(current);
-          const template = next.players.find((entry) => entry.type === "AI") ?? next.players[0];
-          if (!template) return current;
-          next.players.push({
-            ...template,
-            id: newPlayerId,
-            modelId,
-            name: modelId.split("/").at(-1) ?? "AI Player",
-            score: 0,
-            type: "AI",
-          });
-          next.version += 1;
-          return next;
-        });
-        return {
-          playerId: newPlayerId as Id<"players">,
-          replacedPlayerId: null,
-        };
-      },
       lobbyKickHuman: async ({ targetPlayerId }) => {
         await delay(180);
         logAction(`kick (${targetPlayerId})`);
@@ -143,17 +119,6 @@ export function MockGameShell({ scenario, previousSlug, nextSlug }: MockGameShel
               );
             }
           }
-          next.version += 1;
-          return next;
-        });
-        return { success: true };
-      },
-      lobbyRemoveAiPlayer: async ({ targetPlayerId }) => {
-        await delay(180);
-        logAction(`remove AI (${targetPlayerId})`);
-        updateGame((current) => {
-          const next = cloneGame(current);
-          next.players = next.players.filter((entry) => entry.id !== targetPlayerId);
           next.version += 1;
           return next;
         });
@@ -456,9 +421,7 @@ export function MockGameShell({ scenario, previousSlug, nextSlug }: MockGameShel
               animate="visible"
               exit="exit"
             >
-              {game.status === "LOBBY" && (
-                <Lobby game={game} isHost={isHost} code={mockCode} />
-              )}
+              {game.status === "LOBBY" && <Lobby game={game} isHost={isHost} code={mockCode} />}
               {game.status === "WRITING" && (
                 <Writing game={game} playerId={playerId} code={mockCode} isHost={isHost} />
               )}

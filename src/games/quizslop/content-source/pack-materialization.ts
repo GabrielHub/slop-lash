@@ -1,10 +1,6 @@
 import { validatePackStructure, validateQuestionContent } from "../content-validation";
 import type { QuizslopQuestionContent } from "../types";
-import {
-  QUIZSLOP_AI_PROMPT_VERSION,
-  QUIZSLOP_AI_SCHEMA_VERSION,
-  QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
-} from "./content-config";
+import { QUIZSLOP_AI_PROMPT_VERSION, QUIZSLOP_AI_SCHEMA_VERSION } from "./content-config";
 import {
   quizSlopFreshPackBatchSchema,
   quizSlopFreshPackRequestSchema,
@@ -329,7 +325,7 @@ export function materializeGeneratedPack(
     promptVersion: request.config.promptVersion,
     schemaVersion: request.config.schemaVersion,
     generatorModelId: request.config.generatorModelId,
-    verifierModelId: QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
+    verifierModelId: request.config.verifierModelId,
     banks,
     review: { humanApproved: false, automatedVerifierApproved: true },
     usage: [...usage],

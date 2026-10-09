@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
+import { claimFreePlaySlot } from "./freePlay";
 import { maxPlayersByGameType } from "./gameLimits";
 import { QUIZSLOP_PACK_RECOVERY_DELAY_MS } from "./quizslopPackContracts";
 import {
@@ -13,6 +14,7 @@ import {
 
 const createResultValidator = v.union(
   v.object({ kind: v.literal("ROOM_CODE_TAKEN") }),
+  v.object({ kind: v.literal("FREE_PLAY_LIMIT_REACHED") }),
   v.object({
     kind: v.literal("CREATED"),
     gameId: v.id("games"),
@@ -50,6 +52,7 @@ export const createRoom = internalMutation({
       }),
     ),
     capabilityHash: v.string(),
+    freePlay: v.boolean(),
     gameType: gameTypeValidator,
     hostName: v.union(v.string(), v.null()),
     hostNormalizedName: v.union(v.string(), v.null()),
@@ -77,6 +80,9 @@ export const createRoom = internalMutation({
     if (existing) return { kind: "ROOM_CODE_TAKEN" as const };
 
     const now = Date.now();
+    if (args.freePlay && !(await claimFreePlaySlot(ctx, now))) {
+      return { kind: "FREE_PLAY_LIMIT_REACHED" as const };
+    }
     const gameId = await ctx.db.insert("games", {
       roomCode: args.roomCode,
       gameType: args.gameType,
@@ -84,6 +90,7 @@ export const createRoom = internalMutation({
       currentRound: 0,
       totalRounds: args.totalRounds,
       maxPlayers: maxPlayersByGameType[args.gameType],
+      ...(args.freePlay ? { freePlay: true } : {}),
       playerCount: (args.hostParticipation === "PLAYER" ? 1 : 0) + args.aiPlayers.length,
       ...(args.personaModelId ? { personaModelId: args.personaModelId } : {}),
       phaseGeneration: 0,

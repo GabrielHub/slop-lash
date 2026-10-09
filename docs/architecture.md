@@ -62,10 +62,22 @@ earlier durable output.
 ## AI Boundary
 
 AI SDK 7 provides generation and streaming primitives. Models are selected
-through the Vercel AI Gateway rather than hand-written provider transports.
-Gateway, Fal, and host secrets live in the Convex deployment environment and
-are available only to backend functions. Text and speech generation both use
-the Gateway boundary.
+through the Vercel AI Gateway rather than hand-written provider transports. A
+catalog model with an `anthropicModelId` is the one exception: it runs through
+`@ai-sdk/anthropic` against the Anthropic API, so Claude Haiku bills the
+owner's Claude Console credits. `src/lib/ai-gateway.ts` makes that choice in
+one place. Decision models such as Jev use the Gateway's decision API
+(`experimental_decide`) and answer fixed-choice questions instead of writing
+text. Gateway, Anthropic, Fal, and host secrets live in the Convex deployment
+environment and are available only to backend functions. Speech generation
+stays on the Gateway.
+
+Free Play rooms (`games.freePlay`) are created without the host password.
+`rooms.create` and `lobby.addAiPlayer` pin them to Claude Haiku for writing
+and Jev for judging. They also refuse the narrator and extra AI players, and
+`persistProfile` skips MatchSlop portraits. A transactional `freePlayUsage`
+counter enforces the daily cap inside room creation. Free Play AI votes and
+QuizSlop pack verification record their usage under the Jev model ID.
 
 Slop-Lash narration is a hybrid pipeline: deterministic cues preserve prompts
 and jokes verbatim, while selected transitions use a short bounded text-model

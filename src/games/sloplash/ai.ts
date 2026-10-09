@@ -1,9 +1,14 @@
-import { generateText, streamText } from "ai";
+import { experimental_decide as decide, generateText, streamText } from "ai";
 import { z } from "zod";
-import { getGatewayModel } from "@/lib/ai-gateway";
+import { getDecisionModel, getLanguageModel, type AiProviderKeys } from "@/lib/ai-gateway";
 import { getGameplayReasoningSettings } from "@/lib/ai-reasoning";
 import { calculateCostUsd } from "@/lib/models";
-import { REACTION_EMOJIS, REACTION_EMOJI_KEYS, type ReactionEmoji } from "@/lib/reactions";
+import {
+  REACTION_EMOJIS,
+  REACTION_EMOJI_KEYS,
+  isValidReactionEmoji,
+  type ReactionEmoji,
+} from "@/lib/reactions";
 import { FORFEIT_MARKER } from "./scoring";
 
 export interface AiUsage {
@@ -112,14 +117,14 @@ function buildJokePrompt(promptText: string, history: RoundHistoryEntry[]): stri
 export async function generateJoke(
   modelId: string,
   promptText: string,
-  apiKey: string,
+  keys: AiProviderKeys,
   history: RoundHistoryEntry[] = [],
 ): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
   const t0 = Date.now();
   try {
     const reasoningSettings = getGameplayReasoningSettings(modelId);
     const result = await generateText({
-      model: getGatewayModel(modelId, apiKey),
+      model: getLanguageModel(modelId, keys),
       instructions: JOKE_SYSTEM_PROMPT,
       prompt: buildJokePrompt(promptText, history),
       ...reasoningSettings,
@@ -207,12 +212,28 @@ export interface AiVoteResult {
   failReason: string | null;
 }
 
+/** Maps a vote cast on randomized answer order back to the original A/B positions. */
+function unswapVote(
+  showAFirst: boolean,
+  vote: "A" | "B",
+  firstReactions: ReactionEmoji[],
+  secondReactions: ReactionEmoji[],
+): Pick<AiVoteResult, "reactionsA" | "reactionsB"> & { choice: "A" | "B" } {
+  return showAFirst
+    ? { choice: vote, reactionsA: firstReactions, reactionsB: secondReactions }
+    : {
+        choice: vote === "A" ? "B" : "A",
+        reactionsA: secondReactions,
+        reactionsB: firstReactions,
+      };
+}
+
 export async function aiVote(
   modelId: string,
   promptText: string,
   responseA: string,
   responseB: string,
-  apiKey: string,
+  keys: AiProviderKeys,
 ): Promise<AiVoteResult> {
   const t0 = Date.now();
   try {
@@ -226,7 +247,7 @@ export async function aiVote(
     // Plain text generation — no Output.object() or structured output mode.
     // Every model that can write jokes can output simple JSON in plain text.
     const result = await generateText({
-      model: getGatewayModel(modelId, apiKey),
+      model: getLanguageModel(modelId, keys),
       instructions: VOTE_SYSTEM_PROMPT,
       prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
       ...reasoningSettings,
@@ -243,11 +264,12 @@ export async function aiVote(
       return { ...ABSTAIN_RESULT, usage: extractUsage(modelId, result.usage), failReason: "parse" };
     }
 
-    // Map vote and reactions back to original A/B positions when order was swapped
-    const flipped = output.vote === "A" ? "B" : "A";
-    const choice: "A" | "B" = showAFirst ? output.vote : flipped;
-    const reactionsA = showAFirst ? output.reactions_a : output.reactions_b;
-    const reactionsB = showAFirst ? output.reactions_b : output.reactions_a;
+    const { choice, reactionsA, reactionsB } = unswapVote(
+      showAFirst,
+      output.vote,
+      output.reactions_a,
+      output.reactions_b,
+    );
 
     console.log(
       `[aiVote] ${modelId} chose ${choice} in ${elapsed}ms (reactions: A=${reactionsA.join(",")}, B=${reactionsB.join(",")})`,
@@ -265,6 +287,92 @@ export async function aiVote(
   }
 }
 
+/** What each reaction means, so a decision model can pick one from its key. */
+const JUDGE_REACTION_CRITERIA: Record<ReactionEmoji | "none", string> = {
+  none: "No reaction stands out",
+  laugh: "Genuinely made the audience laugh",
+  fire: "A bold, spicy take",
+  skull: "So dark or brutal it kills",
+  clap: "Clever craft or wordplay",
+  puke: "Gross or cringe in a funny way",
+  sleep: "Boring or predictable",
+  eyes: "Suspicious, unhinged, or oddly specific",
+  hundred: "A perfect answer",
+  target: "Nails the prompt exactly",
+  clown: "Tries too hard or misses the point",
+};
+
+function reactionFromChoice(choice: string): ReactionEmoji[] {
+  return isValidReactionEmoji(choice) ? [choice] : [];
+}
+
+/**
+ * Votes with a decision model instead of the player's own model. The judge
+ * returns typed choices, so there is no JSON to parse and nothing to abstain on
+ * except a failed call.
+ */
+export async function judgeVote(
+  judgeModelId: string,
+  promptText: string,
+  responseA: string,
+  responseB: string,
+  keys: AiProviderKeys,
+): Promise<AiVoteResult> {
+  const t0 = Date.now();
+  try {
+    // Randomize order to prevent position bias
+    const showAFirst = Math.random() > 0.5;
+    const result = await decide({
+      model: getDecisionModel(judgeModelId, keys),
+      state: {
+        prompt: promptText,
+        answerA: showAFirst ? responseA : responseB,
+        answerB: showAFirst ? responseB : responseA,
+      },
+      questions: {
+        vote: {
+          type: "choice",
+          instructions:
+            "You judge Quiplash. Which answer to `prompt` is funnier? Reward unexpected twists, specificity, and wordplay over safe, generic, or prompt-restating answers.",
+          criteria: { A: "`answerA` is funnier", B: "`answerB` is funnier" },
+        },
+        reactionA: {
+          type: "choice",
+          instructions: "Which audience reaction best fits `answerA`?",
+          criteria: JUDGE_REACTION_CRITERIA,
+        },
+        reactionB: {
+          type: "choice",
+          instructions: "Which audience reaction best fits `answerB`?",
+          criteria: JUDGE_REACTION_CRITERIA,
+        },
+      },
+    });
+    const { vote, reactionA, reactionB } = result.answers;
+    const unswapped = unswapVote(
+      showAFirst,
+      vote.choice,
+      reactionFromChoice(reactionA.choice),
+      reactionFromChoice(reactionB.choice),
+    );
+    console.log(`[judgeVote] ${judgeModelId} chose ${unswapped.choice} in ${Date.now() - t0}ms`);
+    return {
+      ...unswapped,
+      usage: extractUsage(judgeModelId, result.usage),
+      failReason: null,
+    };
+  } catch (err) {
+    console.error(
+      `[judgeVote] ${judgeModelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`,
+    );
+    return {
+      ...ABSTAIN_RESULT,
+      usage: { ...ZERO_USAGE, modelId: judgeModelId },
+      failReason: "error",
+    };
+  }
+}
+
 const TAGLINE_SYSTEM_PROMPT = `<role>You are an AI comedian who just won a round of Quiplash.</role>
 <task>Write a short, snarky victory tagline (1-2 sentences max). You can roast the losing players by name. Be savage but funny.</task>
 <rules>
@@ -278,11 +386,11 @@ export function generateWinnerTagline(
   isFinal: boolean,
   context: string,
   onUsage: (usage: AiUsage) => void | Promise<void>,
-  apiKey: string,
+  keys: AiProviderKeys,
 ) {
   const reasoningSettings = getGameplayReasoningSettings(modelId);
   return streamText({
-    model: getGatewayModel(modelId, apiKey),
+    model: getLanguageModel(modelId, keys),
     instructions: TAGLINE_SYSTEM_PROMPT,
     prompt: `<winner>${escapeXml(playerName)}</winner>\n<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>\n<context>\n${escapeXml(context)}\n</context>`,
     ...reasoningSettings,

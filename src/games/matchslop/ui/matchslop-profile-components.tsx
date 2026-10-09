@@ -95,7 +95,9 @@ export function ProfileCard({
                   ? "Generating portrait..."
                   : isProfileStreaming
                     ? "Building persona first..."
-                    : "Awaiting portrait"}
+                    : profile && imageStatus === "NOT_REQUESTED"
+                      ? "Mysterious type. No photos."
+                      : "Awaiting portrait"}
               </p>
             </div>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { GameModelUsage } from "@/lib/types";
-import { getModelByModelId } from "@/lib/models";
+import { getModelInfo } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 
 function formatCost(cost: number): string {
@@ -60,12 +60,9 @@ export function AiUsageBreakdown({
     <div className="p-4 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge">
       <div className="space-y-2">
         {modelUsages.map((mu) => {
-          const model = getModelByModelId(mu.modelId);
+          const model = getModelInfo(mu.modelId);
           return (
-            <div
-              key={mu.modelId}
-              className="flex items-center gap-3 py-1.5 text-sm"
-            >
+            <div key={mu.modelId} className="flex items-center gap-3 py-1.5 text-sm">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 {model ? (
                   <ModelIcon model={model} size={18} />

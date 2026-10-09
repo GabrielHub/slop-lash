@@ -15,3 +15,23 @@ export function SlopIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
+/** Stroke checkmark for selected states. */
+export function CheckIcon({ size = 18, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}

@@ -35,6 +35,7 @@ export type VoteGenerationContext =
       kind: "ready";
       gameType: "SLOPLASH";
       modelId: string;
+      judgeModelId: string | null;
       playerId: Id<"players">;
       promptText: string;
       candidates: RedactedVoteCandidate[];

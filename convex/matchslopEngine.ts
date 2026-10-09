@@ -174,8 +174,9 @@ export const persistProfile = internalMutation({
         updatedAt: new Date(now).toISOString(),
         generationId: job._id,
       },
+      // Portraits bill Fal, which Free Play rooms do not get.
       personaImage: {
-        status: "PENDING",
+        status: game.freePlay ? "NOT_REQUESTED" : "PENDING",
         imageUrl: null,
         updatedAt: new Date(now).toISOString(),
       },
@@ -194,14 +195,16 @@ export const persistProfile = internalMutation({
     }
     await addMatchSlopUsage(ctx, game, args.usage);
     await finishMatchSlopJob(ctx, job, "SUCCEEDED");
-    await queueMatchSlopWorkflow(ctx, {
-      gameId: game._id,
-      generationKey: `matchslop:image:${job._id}`,
-      kind: "MATCHSLOP_IMAGE",
-      stage: "IMAGE",
-      targetId: job._id,
-      workflow: imagePipelineRef,
-    });
+    if (!game.freePlay) {
+      await queueMatchSlopWorkflow(ctx, {
+        gameId: game._id,
+        generationKey: `matchslop:image:${job._id}`,
+        kind: "MATCHSLOP_IMAGE",
+        stage: "IMAGE",
+        targetId: job._id,
+        workflow: imagePipelineRef,
+      });
+    }
     const refreshedGame = await ctx.db.get("games", game._id);
     if (refreshedGame?.status === "WRITING") await queueAiResponseWorkflows(ctx, refreshedGame);
     return { status: "SUCCEEDED" };

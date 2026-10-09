@@ -34,6 +34,13 @@ vi.mock("../src/games/sloplash/ai", () => ({
     usage: { modelId, inputTokens: 5, outputTokens: 3, costUsd: 0.001 },
     failReason: null,
   }),
+  judgeVote: async (judgeModelId: string) => ({
+    choice: "B" as const,
+    reactionsA: [] as const,
+    reactionsB: ["clap"] as const,
+    usage: { modelId: judgeModelId, inputTokens: 40, outputTokens: 0, costUsd: 0.000002 },
+    failReason: null,
+  }),
 }));
 
 const modules = import.meta.glob("./**/*.ts");
@@ -400,6 +407,48 @@ describe("AI vote generation jobs", () => {
     });
     const unchanged = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
     expect(unchanged).toMatchObject({ aiInputTokens: 5, aiOutputTokens: 3 });
+  });
+
+  test("routes Free Play AI votes through the Jev judge and bills the judge", async () => {
+    const { backend, host, started } = await createVotingGame();
+    await backend.run(async (ctx) => {
+      await ctx.db.patch("games", host.gameId, { freePlay: true });
+    });
+    await backend.mutation(enqueueQueuedVoteJobsRef, { gameId: host.gameId });
+    const snapshot = await loadVotingSnapshot(backend, host.gameId, started.roundId);
+    const job = snapshot.voteJobs.find(
+      (candidate) =>
+        candidate.workId !== undefined &&
+        candidate.generationKey.includes(`:${snapshot.currentPrompt._id}:`),
+    );
+    if (!job) throw new Error("Expected a current Slop-Lash vote job");
+    const args = workArgs(job, snapshot.game, snapshot.round, snapshot.currentPrompt._id);
+
+    await expect(backend.action(generateVoteRef, args)).resolves.toMatchObject({
+      status: "SUCCEEDED",
+      persistedVote: true,
+    });
+    const persisted = await backend.run(async (ctx) => ({
+      reactions: await ctx.db
+        .query("reactions")
+        .withIndex("by_gameId_and_createdAt", (index) => index.eq("gameId", host.gameId))
+        .take(8),
+      usage: await ctx.db
+        .query("gameModelUsage")
+        .withIndex("by_gameId_and_modelId", (index) => index.eq("gameId", host.gameId))
+        .take(8),
+      vote: await ctx.db
+        .query("votes")
+        .withIndex("by_promptId_and_voterId", (index) =>
+          index.eq("promptId", args.promptId).eq("voterId", voterId(job)),
+        )
+        .unique(),
+    }));
+    expect(persisted.vote?.responseId).toBeDefined();
+    expect(persisted.reactions.map((reaction) => reaction.emoji)).toEqual(["clap"]);
+    expect(persisted.usage).toEqual([
+      expect.objectContaining({ modelId: "typesafe-ai/jev", inputTokens: 40, outputTokens: 0 }),
+    ]);
   });
 
   test("deduplicates vote, reaction, and usage writes by prompt and voter", async () => {

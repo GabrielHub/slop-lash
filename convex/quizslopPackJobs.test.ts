@@ -129,6 +129,7 @@ describe("QuizSlop fresh-pack persistence", () => {
     const created = await backend.mutation(internal.roomsInternal.createRoom, {
       aiPlayers: [],
       capabilityHash: "test-capability-hash",
+      freePlay: false,
       gameType: "QUIZSLOP",
       hostName: "Registrar",
       hostNormalizedName: "registrar",

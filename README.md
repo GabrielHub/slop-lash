@@ -56,16 +56,18 @@ authoritative game state.
 ## AI Models
 
 AI players run through the Vercel AI Gateway, with at most one selected model
-per provider. Gameplay uses the following reasoning budget policy:
+per provider. Claude Haiku is the exception: it calls the Anthropic API directly
+with `ANTHROPIC_API_KEY`, so it bills the owner's Claude Console credits.
+Gameplay uses the following reasoning budget policy:
 
-| Gateway model                    | Reasoning |
-| -------------------------------- | --------- |
-| `google/gemini-3.5-flash-lite`     | High      |
-| `zai/glm-5.3-flash`               | Low       |
-| `deepseek/deepseek-v4.1-flash`     | Max       |
-| `openai/gpt-6.1-sol`              | Low       |
-| `xiaomi/mimo-v2.6-flash`           | High      |
-| `anthropic/claude-haiku-5.5`       | Low       |
+| Gateway model                  | Reasoning |
+| ------------------------------ | --------- |
+| `google/gemini-3.5-flash-lite` | High      |
+| `zai/glm-5.3-flash`            | Low       |
+| `deepseek/deepseek-v4.1-flash` | Max       |
+| `openai/gpt-6.1-sol`           | Low       |
+| `xiaomi/mimo-v2.6-flash`       | High      |
+| `anthropic/claude-haiku-5.5`   | Low       |
 
 The table describes AI-player reasoning. Narrator script generation overrides
 Gemini to minimal reasoning because latency matters more than depth for a
@@ -74,6 +76,22 @@ Gemini to minimal reasoning because latency matters more than depth for a
 QuizSlop verifies generated packs with `openai/gpt-6.1-sol`. MatchSlop generates
 portrait images through Fal's `recraft/v4.1/flash/text-to-image` endpoint.
 
+### Free Play
+
+Anyone can host without the host password. Free Play rooms are pinned on the
+server, whatever the client sends:
+
+- Claude Haiku writes every line: the Slop-Lash bot's answers, the MatchSlop
+  persona, and fresh QuizSlop packs.
+- `typesafe-ai/jev`, a Vercel AI Gateway decision model, does the judging.
+  It casts the Haiku bot's votes and reactions in Slop-Lash and verifies fresh
+  QuizSlop packs. It fails closed unless it passes a question with at least 50%
+  probability.
+- Slop-Lash allows one AI player. MatchSlop has no AI teammates and no
+  portraits. The narrator needs the host password.
+- `FREE_PLAY_DAILY_GAME_LIMIT` caps free rooms per UTC day (default 50; `0`
+  turns Free Play off). Free Play is also off until `ANTHROPIC_API_KEY` is set.
+
 ## Architecture
 
 | Layer             | Technology and responsibility                                                         |
@@ -81,7 +99,7 @@ portrait images through Fal's `recraft/v4.1/flash/text-to-image` endpoint.
 | Web               | Next.js 16.4, React 19, TypeScript, Tailwind CSS 4                                    |
 | Client data       | Convex React hooks for reactive reads and writes                                      |
 | Backend           | A fresh Convex deployment containing room, game, recap, and leaderboard state         |
-| AI                | AI SDK 7 through the Vercel AI Gateway                                                |
+| AI                | AI SDK 7 through the Vercel AI Gateway; Claude direct through the Anthropic API       |
 | Async work        | Convex Workpool for bounded AI jobs and Workflow for durable multi-step orchestration |
 | Realtime presence | Convex Presence for ephemeral online/offline room state                               |
 | Toolchain         | Vite Plus for package installation, runtime selection, tasks, checks, lint, and tests |
@@ -104,7 +122,8 @@ restarts. See [Architecture](docs/architecture.md) for the full boundary map.
 
 - Vite Plus (`vp`)
 - Access to the linked Convex project
-- A Vercel AI Gateway key for AI generation and narration
+- A Vercel AI Gateway key for AI generation, judging, and narration
+- A Claude Console API key for Claude Haiku and Free Play
 - An optional Fal key for MatchSlop image generation
 
 The repository pins Node 24 through `devEngines` and pnpm 12 through
@@ -133,6 +152,7 @@ Omitting the value prompts securely and avoids saving secrets in shell history:
 
 ```bash
 vp exec convex env set AI_GATEWAY_API_KEY
+vp exec convex env set ANTHROPIC_API_KEY
 vp exec convex env set HOST_SECRET
 vp exec convex env set FAL_KEY
 ```
@@ -160,11 +180,13 @@ The Next.js browser bundle receives only the public Convex URL:
 
 These server-side values are configured with `convex env set`:
 
-| Convex variable      | Purpose                                   |
-| -------------------- | ----------------------------------------- |
-| `AI_GATEWAY_API_KEY` | AI SDK 7 access through Vercel AI Gateway |
-| `HOST_SECRET`        | Host room-creation authorization          |
-| `FAL_KEY`            | Optional MatchSlop image generation       |
+| Convex variable              | Purpose                                                  |
+| ---------------------------- | -------------------------------------------------------- |
+| `AI_GATEWAY_API_KEY`         | AI SDK 7 access through Vercel AI Gateway                |
+| `ANTHROPIC_API_KEY`          | Direct Claude API access for Haiku; enables Free Play    |
+| `HOST_SECRET`                | Host room-creation authorization for full rooms          |
+| `FREE_PLAY_DAILY_GAME_LIMIT` | Optional free rooms per UTC day (default 50, `0` is off) |
+| `FAL_KEY`                    | Optional MatchSlop image generation                      |
 
 Do not prefix secrets with `NEXT_PUBLIC_` or put them in client code.
 

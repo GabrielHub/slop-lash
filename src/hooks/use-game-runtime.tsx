@@ -15,9 +15,7 @@ export type GameRuntimeMutation<Reference extends PublicMutation> = (
 ) => Promise<FunctionReturnType<Reference>>;
 
 export interface GameRuntimeMutations {
-  lobbyAddAiPlayer?: GameRuntimeMutation<typeof api.lobby.addAiPlayer>;
   lobbyKickHuman?: GameRuntimeMutation<typeof api.lobby.kickHuman>;
-  lobbyRemoveAiPlayer?: GameRuntimeMutation<typeof api.lobby.removeAiPlayer>;
   lobbyStart?: GameRuntimeMutation<typeof api.lobby.start>;
   reactionsToggle?: GameRuntimeMutation<typeof api.reactions.toggle>;
   sloplashAdvance?: GameRuntimeMutation<typeof api.sloplash.advance>;
@@ -53,21 +51,9 @@ export function useGameRuntime(roomCode?: string): GameRuntime | null {
   return runtime.roomCode.trim().toUpperCase() === roomCode.trim().toUpperCase() ? runtime : null;
 }
 
-export function useLobbyAddAiPlayerMutation(): GameRuntimeMutation<typeof api.lobby.addAiPlayer> {
-  const live = useMutation(api.lobby.addAiPlayer);
-  return useGameRuntime()?.mutations?.lobbyAddAiPlayer ?? live;
-}
-
 export function useLobbyKickHumanMutation(): GameRuntimeMutation<typeof api.lobby.kickHuman> {
   const live = useMutation(api.lobby.kickHuman);
   return useGameRuntime()?.mutations?.lobbyKickHuman ?? live;
-}
-
-export function useLobbyRemoveAiPlayerMutation(): GameRuntimeMutation<
-  typeof api.lobby.removeAiPlayer
-> {
-  const live = useMutation(api.lobby.removeAiPlayer);
-  return useGameRuntime()?.mutations?.lobbyRemoveAiPlayer ?? live;
 }
 
 export function useLobbyStartMutation(): GameRuntimeMutation<typeof api.lobby.start> {

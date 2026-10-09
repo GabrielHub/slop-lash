@@ -31,7 +31,9 @@ type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
   readonly AI_GATEWAY_API_KEY: string | undefined;
+  readonly ANTHROPIC_API_KEY: string | undefined;
   readonly FAL_KEY: string | undefined;
+  readonly FREE_PLAY_DAILY_GAME_LIMIT: string | undefined;
   readonly HOST_SECRET: string | undefined;
 };
 

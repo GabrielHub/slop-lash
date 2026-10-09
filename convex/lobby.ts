@@ -14,6 +14,7 @@ import { MATCHSLOP_PLAYER_EXAMPLES } from "../src/games/matchslop/config/player-
 import { MATCHSLOP_WRITING_SECONDS } from "../src/games/matchslop/config/game-config";
 import { WRITING_DURATION_SECONDS } from "../src/games/sloplash/game-constants";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
+import { getFreePlayAiPlayersError } from "../src/lib/free-play";
 import { minPlayersByGameType } from "./gameLimits";
 import { requireContinuingPlayers } from "./gamePhase";
 import { loadQuizslopState, loadQuizslopTopicForOwner } from "./quizslopData";
@@ -174,6 +175,14 @@ export const addAiPlayer = mutation({
     });
     if (activePlayers.length >= authorized.game.maxPlayers && !existingProviderPlayer) {
       throw new ConvexError("Game is full");
+    }
+    if (authorized.game.freePlay) {
+      const nextAiModelIds = activePlayers
+        .filter((player) => player.type === "AI" && player._id !== existingProviderPlayer?._id)
+        .map((player) => player.modelId ?? "")
+        .concat(model.id);
+      const aiPlayersError = getFreePlayAiPlayersError(authorized.game.gameType, nextAiModelIds);
+      if (aiPlayersError) throw new ConvexError(aiPlayersError);
     }
 
     const normalizedName = model.shortName.toLocaleLowerCase("en-US");
