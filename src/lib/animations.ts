@@ -109,9 +109,3 @@ export const buttonTapPrimary = {
   whileTap: { scale: 0.97 },
   transition: springDefault,
 } as const;
-
-export const voteCardTap = {
-  whileHover: { scale: 1.015, y: -2 },
-  whileTap: { scale: 0.985 },
-  transition: springDefault,
-} as const;

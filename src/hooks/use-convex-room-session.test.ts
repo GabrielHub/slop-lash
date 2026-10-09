@@ -10,6 +10,6 @@ function SessionProbe({ roomCode }: { roomCode: string }) {
 
 describe("useConvexRoomSession", () => {
   it("uses a stable null snapshot during server rendering", () => {
-    expect(renderToString(createElement(SessionProbe, { roomCode: "ABCD" }))).toContain(">none<");
+    expect(renderToString(createElement(SessionProbe, { roomCode: "ABCDEF" }))).toContain(">none<");
   });
 });

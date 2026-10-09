@@ -2,10 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { mutation } from "./_generated/server";
 import { requireHostCapability } from "./capabilities";
 import { roomPresence } from "./components";
-import { AI_MODELS, getAiModel } from "./modelCatalog";
 import { scheduleSloplashDeadline } from "./sloplashEngine";
 import { gameTypeValidator } from "./validators";
 import { getRandomPrompts } from "../src/games/core/prompts";
@@ -14,7 +13,6 @@ import { MATCHSLOP_PLAYER_EXAMPLES } from "../src/games/matchslop/config/player-
 import { MATCHSLOP_WRITING_SECONDS } from "../src/games/matchslop/config/game-config";
 import { WRITING_DURATION_SECONDS } from "../src/games/sloplash/game-constants";
 import { isActiveCompetitor } from "../src/games/core/game-rules";
-import { getFreePlayAiPlayersError } from "../src/lib/free-play";
 import { minPlayersByGameType } from "./gameLimits";
 import { requireContinuingPlayers } from "./gamePhase";
 import { loadQuizslopState, loadQuizslopTopicForOwner } from "./quizslopData";
@@ -136,122 +134,6 @@ function sampleItems<T>(items: readonly T[], count: number): T[] {
   }
   return selected;
 }
-
-export const models = query({
-  args: {},
-  returns: v.array(
-    v.object({
-      id: v.string(),
-      name: v.string(),
-      provider: v.string(),
-      shortName: v.string(),
-    }),
-  ),
-  handler: async () => [...AI_MODELS],
-});
-
-export const addAiPlayer = mutation({
-  args: { capability: v.string(), modelId: v.string() },
-  returns: v.object({
-    playerId: v.id("players"),
-    replacedPlayerId: v.union(v.id("players"), v.null()),
-  }),
-  handler: async (ctx, args) => {
-    const authorized = await requireHostCapability(ctx, args.capability);
-    if (authorized.game.status !== "LOBBY") {
-      throw new ConvexError("Can only manage AI players during lobby");
-    }
-    if (authorized.game.gameType === "QUIZSLOP") {
-      throw new ConvexError("QuizSlop does not support AI players");
-    }
-    const model = getAiModel(args.modelId);
-    if (!model) throw new ConvexError("Unknown model");
-
-    const players = await listPlayers(ctx, authorized.game._id);
-    const activePlayers = players.filter(isActiveCompetitor);
-    const existingProviderPlayer = activePlayers.find((player) => {
-      if (player.type !== "AI" || !player.modelId) return false;
-      return getAiModel(player.modelId)?.provider === model.provider;
-    });
-    if (activePlayers.length >= authorized.game.maxPlayers && !existingProviderPlayer) {
-      throw new ConvexError("Game is full");
-    }
-    if (authorized.game.freePlay) {
-      const nextAiModelIds = activePlayers
-        .filter((player) => player.type === "AI" && player._id !== existingProviderPlayer?._id)
-        .map((player) => player.modelId ?? "")
-        .concat(model.id);
-      const aiPlayersError = getFreePlayAiPlayersError(authorized.game.gameType, nextAiModelIds);
-      if (aiPlayersError) throw new ConvexError(aiPlayersError);
-    }
-
-    const normalizedName = model.shortName.toLocaleLowerCase("en-US");
-    const conflictingPlayer = players.find(
-      (player) =>
-        player.normalizedName === normalizedName && player._id !== existingProviderPlayer?._id,
-    );
-    if (conflictingPlayer) {
-      throw new ConvexError("That AI player's name is already taken");
-    }
-    if (existingProviderPlayer?.modelId === model.id) {
-      return { playerId: existingProviderPlayer._id, replacedPlayerId: null };
-    }
-
-    if (existingProviderPlayer) {
-      await ctx.db.delete("players", existingProviderPlayer._id);
-    }
-    const now = Date.now();
-    const playerId = await ctx.db.insert("players", {
-      gameId: authorized.game._id,
-      name: model.shortName,
-      normalizedName,
-      type: "AI",
-      modelId: model.id,
-      idleRounds: 0,
-      score: 0,
-      humorRating: 1,
-      winStreak: 0,
-      participationStatus: "ACTIVE",
-      joinedAt: now,
-    });
-    await ctx.db.patch("games", authorized.game._id, {
-      playerCount: activePlayers.length + (existingProviderPlayer ? 0 : 1),
-      updatedAt: now,
-    });
-    return {
-      playerId,
-      replacedPlayerId: existingProviderPlayer?._id ?? null,
-    };
-  },
-});
-
-export const removeAiPlayer = mutation({
-  args: { capability: v.string(), targetPlayerId: v.id("players") },
-  returns: v.object({ success: v.literal(true) }),
-  handler: async (ctx, args) => {
-    const authorized = await requireHostCapability(ctx, args.capability);
-    if (authorized.game.status !== "LOBBY") {
-      throw new ConvexError("Can only manage AI players during lobby");
-    }
-    const target = await ctx.db.get("players", args.targetPlayerId);
-    if (!target || target.gameId !== authorized.game._id) {
-      throw new ConvexError("Player not in this game");
-    }
-    if (target.type !== "AI") {
-      throw new ConvexError("Can only remove AI players with this mutation");
-    }
-
-    const players = await listPlayers(ctx, authorized.game._id);
-    await ctx.db.delete("players", target._id);
-    await ctx.db.patch("games", authorized.game._id, {
-      playerCount: players.filter(
-        (player) => player._id !== target._id && isActiveCompetitor(player),
-      ).length,
-      updatedAt: Date.now(),
-    });
-    return { success: true as const };
-  },
-});
 
 export const kickHuman = mutation({
   args: { capability: v.string(), targetPlayerId: v.id("players") },

@@ -10,7 +10,7 @@ import {
   quizslopTierValidator,
 } from "./quizslopValidators";
 
-const quizSlopVerifierModelIdValidator = v.union(
+export const quizSlopVerifierModelIdValidator = v.union(
   ...QUIZSLOP_VERIFIER_MODEL_IDS.map((modelId) => v.literal(modelId)),
 );
 

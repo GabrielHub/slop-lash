@@ -6,7 +6,6 @@ import {
   castHumanVote,
   endMatchSlop,
   forceAdvanceMatchSlop,
-  settleMatchSlopQuorum,
   submitHumanResponse,
 } from "./matchslopRoundEngine";
 import { requireExpectedPhaseGeneration } from "./gamePhase";
@@ -71,10 +70,7 @@ export const advance = mutation({
   handler: async (ctx, args) => {
     const authorized = await requireHostCapability(ctx, args.capability);
     requireMatchSlop(authorized.game.gameType);
-    requireExpectedPhaseGeneration(
-      authorized.game.phaseGeneration,
-      args.expectedPhaseGeneration,
-    );
+    requireExpectedPhaseGeneration(authorized.game.phaseGeneration, args.expectedPhaseGeneration);
     const phase = await forceAdvanceMatchSlop(ctx, authorized.game, Date.now());
     if (!phase) throw new ConvexError("Cannot advance from current phase");
     return { phase };
@@ -109,16 +105,6 @@ export const managePersona = mutation({
 });
 
 /** Called after a durable AI competitor step persists. */
-export const settleQuorum = internalMutation({
-  args: { gameId: v.id("games") },
-  returns: v.object({ phase: phaseValidator }),
-  handler: async (ctx, args) => {
-    const game = await ctx.db.get("games", args.gameId);
-    if (!game || game.gameType !== "MATCHSLOP") return { phase: null };
-    return { phase: await settleMatchSlopQuorum(ctx, game, Date.now()) };
-  },
-});
-
 export const enforceDeadline = internalMutation({
   args: {
     gameId: v.id("games"),

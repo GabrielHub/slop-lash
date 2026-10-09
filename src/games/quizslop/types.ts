@@ -81,21 +81,6 @@ export type QuizslopPhase =
   | "CONTINUITY_GRACE"
   | "FINAL_RESULTS"
   | "ABANDONED";
-export const QUIZSLOP_PHASES: readonly QuizslopPhase[] = [
-  "LOBBY_SETUP",
-  "HOUSE_VOTE",
-  "HOUSE_VOTE_REVEAL",
-  "TOPIC_REVEAL",
-  "SLOP_CALL",
-  "SLOP_CALL_REVEAL",
-  "ANSWER",
-  "QUESTION_REVEAL",
-  "DISPUTE_VOTE",
-  "ROUND_RESULTS",
-  "CONTINUITY_GRACE",
-  "FINAL_RESULTS",
-  "ABANDONED",
-];
 
 /** Coarse shared `games.status` mirrored at phase boundaries. */
 export type QuizslopSharedStatus =
@@ -134,17 +119,6 @@ export type QuizslopTopicSetupState =
   | "NEEDS_REVISION"
   | "NEEDS_FALLBACK";
 
-export type QuizslopTopicSourceType = "CUSTOM" | "CATALOG";
-
-/** Content lifecycle for questions and packs. */
-export type QuizslopContentLifecycle =
-  | "DRAFT"
-  | "CANDIDATE"
-  | "ACCEPTED"
-  | "REJECTED"
-  | "FROZEN"
-  | "RETIRED";
-
 /** Round ruling persisted per revealed question after disputes close. */
 export type QuizslopQuestionRuling =
   | "UNCHALLENGED_VALID"
@@ -166,9 +140,6 @@ export type QuizslopDisputeVoteChoice = "UPHOLD" | "VOID";
 
 /** Non-scoring deterministic final awards based only on visible facts. */
 export type QuizslopAwardKind = "CALLED_IT" | "FALSE_ALARM_DEPARTMENT" | "SUSPICIOUSLY_WELL_READ";
-
-/** Terminal outcome for the mode-state record. */
-export type QuizslopOutcome = "IN_PROGRESS" | "COMPLETED" | "ABANDONED";
 
 /** Result of one settled question for the hidden difficulty ladder. */
 export type QuizslopLadderResult = "CORRECT" | "INCORRECT" | "NEUTRAL";

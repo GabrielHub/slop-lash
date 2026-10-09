@@ -158,10 +158,12 @@ describe("shared audio runtime", () => {
     release();
   });
 
-  test("migrates legacy preferences into versioned storage", async () => {
+  test("restores and persists versioned audio preferences", async () => {
     const { storage } = installBrowser();
-    storage.setItem("soundsMuted", "true");
-    storage.setItem("soundsVolume", "0.2");
+    storage.setItem(
+      "audioPreferences:v1",
+      JSON.stringify({ muted: true, version: 1, volume: 0.2 }),
+    );
     const { getVolume, isMuted, toggleMute } = await import("./sounds");
 
     expect(isMuted()).toBe(true);

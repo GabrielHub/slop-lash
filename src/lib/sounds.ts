@@ -34,8 +34,6 @@ interface AudioPreferencesV1 {
 }
 
 const AUDIO_PREFERENCES_STORAGE_KEY = "audioPreferences:v1";
-const LEGACY_MUTED_STORAGE_KEY = "soundsMuted";
-const LEGACY_VOLUME_STORAGE_KEY = "soundsVolume";
 const DEFAULT_VOLUME = 0.5;
 
 /** Fade-in duration in seconds to soften aggressive starts. */
@@ -177,16 +175,10 @@ function readAudioPreferences(): AudioPreferencesV1 {
         return { version: 1, muted: parsed.muted, volume: clampVolume(parsed.volume) };
       }
     }
-
-    const legacyVolume = Number.parseFloat(localStorage.getItem(LEGACY_VOLUME_STORAGE_KEY) ?? "");
-    return {
-      version: 1,
-      muted: localStorage.getItem(LEGACY_MUTED_STORAGE_KEY) === "true",
-      volume: Number.isFinite(legacyVolume) ? clampVolume(legacyVolume) : DEFAULT_VOLUME,
-    };
   } catch {
-    return { version: 1, muted: false, volume: DEFAULT_VOLUME };
+    // Unavailable or corrupt storage falls back to the defaults below.
   }
+  return { version: 1, muted: false, volume: DEFAULT_VOLUME };
 }
 
 const initialAudioPreferences = readAudioPreferences();
@@ -618,13 +610,7 @@ export function listenForAudioUnlock(): () => void {
 
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
-    if (
-      event.key !== AUDIO_PREFERENCES_STORAGE_KEY &&
-      event.key !== LEGACY_MUTED_STORAGE_KEY &&
-      event.key !== LEGACY_VOLUME_STORAGE_KEY
-    ) {
-      return;
-    }
+    if (event.key !== AUDIO_PREFERENCES_STORAGE_KEY) return;
     const preferences = readAudioPreferences();
     if (preferences.muted === muted && preferences.volume === volume) return;
     muted = preferences.muted;

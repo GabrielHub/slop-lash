@@ -44,6 +44,7 @@ import {
   quizslopTopicSetupStateValidator,
   quizslopTopicSourceTypeValidator,
 } from "./quizslopValidators";
+import { quizSlopVerifierModelIdValidator } from "./quizslopPackValidators";
 
 export default defineSchema({
   games: defineTable({
@@ -57,7 +58,7 @@ export default defineSchema({
     hostPlayerId: v.optional(v.id("players")),
     hostSessionId: v.optional(v.id("playerSessions")),
     /** Created without the host password: Haiku writes, Jev judges. */
-    freePlay: v.optional(v.boolean()),
+    freePlay: v.boolean(),
     personaModelId: v.optional(v.string()),
     phaseDeadline: v.optional(v.number()),
     phaseGeneration: v.number(),
@@ -80,9 +81,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_roomCode", ["roomCode"])
-    .index("by_status_and_createdAt", ["status", "createdAt"])
     .index("by_status_and_updatedAt", ["status", "updatedAt"])
-    .index("by_gameType_and_status_and_createdAt", ["gameType", "status", "createdAt"])
     .index("by_gameType_and_status_and_finalizedAt", ["gameType", "status", "finalizedAt"])
     .index("by_projection_pending", [
       "gameType",
@@ -151,8 +150,7 @@ export default defineSchema({
     joinedAt: v.number(),
   })
     .index("by_gameId", ["gameId"])
-    .index("by_gameId_and_normalizedName", ["gameId", "normalizedName"])
-    .index("by_gameId_and_type", ["gameId", "type"]),
+    .index("by_gameId_and_normalizedName", ["gameId", "normalizedName"]),
 
   rounds: defineTable({
     gameId: v.id("games"),
@@ -205,7 +203,6 @@ export default defineSchema({
     castAt: v.number(),
   })
     .index("by_promptId_and_voterId", ["promptId", "voterId"])
-    .index("by_responseId", ["responseId"])
     .index("by_gameId_and_roundId", ["gameId", "roundId"]),
 
   reactions: defineTable({
@@ -216,7 +213,6 @@ export default defineSchema({
     emoji: v.string(),
     createdAt: v.number(),
   })
-    .index("by_responseId", ["responseId"])
     .index("by_responseId_and_playerId_and_emoji", ["responseId", "playerId", "emoji"])
     .index("by_gameId_and_roundId", ["gameId", "roundId"])
     .index("by_gameId_and_createdAt", ["gameId", "createdAt"]),
@@ -280,7 +276,7 @@ export default defineSchema({
     /** Frozen question source and generation provenance for this room. */
     contentSource: quizslopContentSourceValidator,
     generatorModelId: v.optional(v.string()),
-    verifierModelId: v.optional(v.string()),
+    verifierModelId: v.optional(quizSlopVerifierModelIdValidator),
     promptVersion: v.optional(v.string()),
     schemaVersion: v.optional(v.string()),
     packStatus: quizslopPackStatusValidator,
@@ -339,8 +335,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_gameId", ["gameId"])
-    .index("by_gameId_and_ownerPlayerId", ["gameId", "ownerPlayerId"])
-    .index("by_gameId_and_canonicalKey", ["gameId", "canonicalKey"]),
+    .index("by_gameId_and_ownerPlayerId", ["gameId", "ownerPlayerId"]),
 
   quizSlopQuestions: defineTable({
     gameId: v.id("games"),
@@ -504,8 +499,6 @@ export default defineSchema({
     kind: generationKindValidator,
     generationKey: v.string(),
     targetId: v.optional(v.string()),
-    responderId: v.optional(v.id("players")),
-    reservedUntil: v.optional(v.number()),
     status: generationStatusValidator,
     attempt: v.number(),
     workId: v.optional(v.string()),
@@ -518,12 +511,6 @@ export default defineSchema({
   })
     .index("by_gameId_and_generationKey", ["gameId", "generationKey"])
     .index("by_gameId_and_kind_and_status", ["gameId", "kind", "status"])
-    .index("by_gameId_and_kind_and_responderId_and_createdAt", [
-      "gameId",
-      "kind",
-      "responderId",
-      "createdAt",
-    ])
     .index("by_gameId_and_status", ["gameId", "status"])
     .index("by_gameId_and_status_and_updatedAt", ["gameId", "status", "updatedAt"])
     .index("by_status_and_updatedAt", ["status", "updatedAt"]),
@@ -573,10 +560,7 @@ export default defineSchema({
     voteCount: v.number(),
     totalVotes: v.number(),
     createdAt: v.number(),
-  })
-    .index("by_gameType_and_votePct_and_voteCount", ["gameType", "votePct", "voteCount"])
-    .index("by_competitorKey_and_votePct", ["competitorKey", "votePct"])
-    .index("by_responseId", ["responseId"]),
+  }).index("by_gameType_and_votePct_and_voteCount", ["gameType", "votePct", "voteCount"]),
 
   leaderboardModelUsage: defineTable({
     modelId: v.string(),

@@ -29,7 +29,7 @@ describe("Convex room client session mapping", () => {
       playerName: "Host",
       playerType: "HUMAN",
       role: "HOST",
-      roomCode: "ABCD",
+      roomCode: "ABCDEF",
       sessionId: "session" as Id<"playerSessions">,
     });
 
@@ -50,7 +50,7 @@ describe("Convex room client session mapping", () => {
       playerName: null,
       playerType: null,
       role: "HOST",
-      roomCode: "ABCD",
+      roomCode: "ABCDEF",
       sessionId: "session" as Id<"playerSessions">,
     });
 
@@ -70,7 +70,7 @@ describe("Convex room client session mapping", () => {
       playerName: "Guest",
       playerType: "HUMAN",
       role: "PLAYER",
-      roomCode: "ABCD",
+      roomCode: "ABCDEF",
       sessionId: "session" as Id<"playerSessions">,
     });
 

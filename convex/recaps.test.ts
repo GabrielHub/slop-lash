@@ -24,6 +24,7 @@ async function seedRecapGame(status: "VOTING" | "FINAL_RESULTS" = "FINAL_RESULTS
       totalRounds: 1,
       maxPlayers: 8,
       playerCount: 2,
+      freePlay: false,
       phaseGeneration: 7,
       timersDisabled: true,
       ttsMode: "OFF",

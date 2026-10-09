@@ -155,19 +155,13 @@ describe("QuizSlop room and mode guards", () => {
     expect(playingGame).toMatchObject({ totalRounds: 0, playerCount: 1, status: "LOBBY" });
   });
 
-  test("rejects generic lobby start, AI players, reactions, and the generic recap", async () => {
+  test("rejects generic lobby start, reactions, and the generic recap", async () => {
     const backend = createTestBackend();
     const room = await createQuizslopRoom(backend, { joinerNames: ["Bea"] });
 
     await expect(
       backend.mutation(api.lobby.start, { capability: room.host.capability }),
     ).rejects.toThrow("QuizSlop games start from the QuizSlop lobby");
-    await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
-        capability: room.host.capability,
-        modelId: "google/gemini-3.5-flash-lite",
-      }),
-    ).rejects.toThrow("QuizSlop does not support AI players");
 
     const hostPlayerId = playerIdOf(room.host);
     const responseId = await backend.run(async (ctx) => {

@@ -10,7 +10,6 @@ import {
   MAX_DISPUTE_VOTES_PER_ROUND,
   MAX_FROZEN_PLAYERS,
   MAX_FROZEN_TOPICS,
-  MAX_ROUNDS_CAP,
   MAX_SOURCES_PER_QUESTION,
   QUESTIONS_PER_PACK,
 } from "../src/games/quizslop/game-constants";
@@ -123,17 +122,6 @@ export async function loadQuizslopRoundByOrdinal(
       index.eq("gameId", gameId).eq("deckOrdinal", deckOrdinal),
     )
     .unique();
-}
-
-export async function listQuizslopRounds(
-  ctx: QuizslopDatabaseCtx,
-  gameId: Id<"games">,
-): Promise<Doc<"quizSlopRounds">[]> {
-  const rows = await ctx.db
-    .query("quizSlopRounds")
-    .withIndex("by_gameId_and_deckOrdinal", (index) => index.eq("gameId", gameId))
-    .take(MAX_ROUNDS_CAP + 1);
-  return requireCap(rows, MAX_ROUNDS_CAP, "rounds");
 }
 
 export async function listQuestionsForTopic(

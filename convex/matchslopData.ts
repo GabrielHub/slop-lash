@@ -107,13 +107,6 @@ export function requireCurrentMatchSlopRound(
   }
 }
 
-export function getCurrentMatchSlopRound(
-  ctx: MatchSlopDatabaseCtx,
-  game: Doc<"games">,
-): Promise<MatchSlopRoundBundle | null> {
-  return loadMatchSlopRound(ctx, game._id, game.currentRound);
-}
-
 export async function getMatchSlopState(
   ctx: MatchSlopDatabaseCtx,
   gameId: Id<"games">,

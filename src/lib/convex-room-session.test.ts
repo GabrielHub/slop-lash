@@ -69,12 +69,11 @@ describe("Convex room sessions", () => {
   it("normalizes room codes and round-trips a player session", () => {
     const storage = new MemoryStorage();
 
-    expect(normalizeConvexRoomCode(" abcd ")).toBe("ABCD");
     expect(normalizeConvexRoomCode(" abc234 ")).toBe("ABC234");
-    expect(setConvexRoomSession(playerSession(" abcd "), storage)).toBe(true);
-    expect(getConvexRoomSession("ABCD", storage)).toEqual({
+    expect(setConvexRoomSession(playerSession(" abcdef "), storage)).toBe(true);
+    expect(getConvexRoomSession("ABCDEF", storage)).toEqual({
       version: CONVEX_ROOM_SESSION_VERSION,
-      roomCode: "ABCD",
+      roomCode: "ABCDEF",
       gameId: "game-id",
       gameType: "SLOPLASH",
       playerCapability: "player-capability",
@@ -96,53 +95,53 @@ describe("Convex room sessions", () => {
 
   it("isolates sessions by room and clears only the requested room", () => {
     const storage = new MemoryStorage();
-    setConvexRoomSession(playerSession("ABCD"), storage);
+    setConvexRoomSession(playerSession("ABCDEF"), storage);
     setConvexRoomSession(
       {
-        ...playerSession("WXYZ"),
+        ...playerSession("WXYZ23"),
         playerCapability: "second-capability",
         playerId: "second-player",
       },
       storage,
     );
 
-    expect(clearConvexRoomSession("abcd", storage)).toBe(true);
-    expect(getConvexRoomSession("ABCD", storage)).toBeNull();
-    expect(getConvexRoomSession("WXYZ", storage)?.playerId).toBe("second-player");
+    expect(clearConvexRoomSession("abcdef", storage)).toBe(true);
+    expect(getConvexRoomSession("ABCDEF", storage)).toBeNull();
+    expect(getConvexRoomSession("WXYZ23", storage)?.playerId).toBe("second-player");
   });
 
   it("returns the same snapshot object while serialized state is unchanged", () => {
     const storage = new MemoryStorage();
-    expect(setConvexRoomSession(playerSession("ABCD"), storage)).toBe(true);
+    expect(setConvexRoomSession(playerSession("ABCDEF"), storage)).toBe(true);
 
-    const firstSnapshot = getConvexRoomSessionSnapshot("ABCD", storage);
-    expect(getConvexRoomSessionSnapshot("ABCD", storage)).toBe(firstSnapshot);
+    const firstSnapshot = getConvexRoomSessionSnapshot("ABCDEF", storage);
+    expect(getConvexRoomSessionSnapshot("ABCDEF", storage)).toBe(firstSnapshot);
 
-    expect(setConvexRoomSession(playerSession("ABCD"), storage)).toBe(true);
-    expect(getConvexRoomSessionSnapshot("ABCD", storage)).toBe(firstSnapshot);
+    expect(setConvexRoomSession(playerSession("ABCDEF"), storage)).toBe(true);
+    expect(getConvexRoomSessionSnapshot("ABCDEF", storage)).toBe(firstSnapshot);
 
-    expect(setConvexRoomSession({ ...playerSession("ABCD"), playerName: "Morgan" }, storage)).toBe(
-      true,
-    );
-    expect(getConvexRoomSessionSnapshot("ABCD", storage)).not.toBe(firstSnapshot);
+    expect(
+      setConvexRoomSession({ ...playerSession("ABCDEF"), playerName: "Morgan" }, storage),
+    ).toBe(true);
+    expect(getConvexRoomSessionSnapshot("ABCDEF", storage)).not.toBe(firstSnapshot);
   });
 
   it("notifies only same-room subscribers after successful same-tab changes", () => {
     const storage = new MemoryStorage();
     let notifications = 0;
-    const unsubscribe = subscribeConvexRoomSession(" abcd ", () => {
+    const unsubscribe = subscribeConvexRoomSession(" abcdef ", () => {
       notifications += 1;
     });
 
-    expect(setConvexRoomSession(playerSession("WXYZ"), storage)).toBe(true);
+    expect(setConvexRoomSession(playerSession("WXYZ23"), storage)).toBe(true);
     expect(notifications).toBe(0);
-    expect(setConvexRoomSession(playerSession("ABCD"), storage)).toBe(true);
+    expect(setConvexRoomSession(playerSession("ABCDEF"), storage)).toBe(true);
     expect(notifications).toBe(1);
-    expect(clearConvexRoomSession("ABCD", storage)).toBe(true);
+    expect(clearConvexRoomSession("ABCDEF", storage)).toBe(true);
     expect(notifications).toBe(2);
 
     unsubscribe();
-    expect(setConvexRoomSession(playerSession("ABCD"), storage)).toBe(true);
+    expect(setConvexRoomSession(playerSession("ABCDEF"), storage)).toBe(true);
     expect(notifications).toBe(2);
   });
 
@@ -155,14 +154,14 @@ describe("Convex room sessions", () => {
     let unsubscribeSecond: () => void = () => undefined;
 
     try {
-      unsubscribeFirst = subscribeConvexRoomSession("ABCD", () => {
+      unsubscribeFirst = subscribeConvexRoomSession("ABCDEF", () => {
         firstRoomNotifications += 1;
       });
-      unsubscribeSecond = subscribeConvexRoomSession("WXYZ", () => {
+      unsubscribeSecond = subscribeConvexRoomSession("WXYZ23", () => {
         secondRoomNotifications += 1;
       });
 
-      const firstRoomKey = getConvexRoomSessionStorageKey("ABCD");
+      const firstRoomKey = getConvexRoomSessionStorageKey("ABCDEF");
       if (!firstRoomKey) throw new Error("Expected a valid room storage key");
       testWindow.dispatchEvent(new CrossTabStorageEvent(firstRoomKey));
       expect(firstRoomNotifications).toBe(1);
@@ -188,7 +187,7 @@ describe("Convex room sessions", () => {
     expect(
       setConvexRoomSession(
         {
-          roomCode: "JKLM",
+          roomCode: "JKLMNP",
           gameId: "match-game-id",
           gameType: "MATCHSLOP",
           playerCapability: null,
@@ -200,7 +199,7 @@ describe("Convex room sessions", () => {
         storage,
       ),
     ).toBe(true);
-    expect(getConvexRoomSession("JKLM", storage)).toMatchObject({
+    expect(getConvexRoomSession("JKLMNP", storage)).toMatchObject({
       playerCapability: null,
       hostCapability: "host-capability",
       playerId: null,
@@ -258,7 +257,7 @@ describe("Convex room sessions", () => {
       parseConvexRoomSession(
         JSON.stringify({
           version: 2,
-          roomCode: "ABCD",
+          roomCode: "ABCDEF",
         }),
       ),
     ).toBeNull();
@@ -266,7 +265,7 @@ describe("Convex room sessions", () => {
       parseConvexRoomSession(
         JSON.stringify({
           version: CONVEX_ROOM_SESSION_VERSION,
-          roomCode: "ABCD",
+          roomCode: "ABCDEF",
           gameId: "game-id",
           gameType: "SLOPLASH",
           playerCapability: "capability",
@@ -280,7 +279,7 @@ describe("Convex room sessions", () => {
 
     const valid = JSON.stringify({
       version: CONVEX_ROOM_SESSION_VERSION,
-      roomCode: "ABCD",
+      roomCode: "ABCDEF",
       gameId: "game-id",
       gameType: "SLOPLASH",
       playerCapability: "capability",
@@ -289,66 +288,21 @@ describe("Convex room sessions", () => {
       playerName: "Riley",
       playerType: "HUMAN",
     });
-    expect(parseConvexRoomSession(valid, "WXYZ")).toBeNull();
-  });
-
-  it("does not guess a room for legacy global keys", () => {
-    const storage = new MemoryStorage();
-    storage.setItem("playerId", "legacy-player");
-    storage.setItem("playerName", "Legacy Riley");
-    storage.setItem("playerType", "HUMAN");
-    storage.setItem("rejoinToken", "legacy-player-token");
-    storage.setItem("hostControlToken", "legacy-host-token");
-
-    expect(getConvexRoomSession("ABCD", storage)).toBeNull();
-    expect(storage.getItem("rejoinToken")).toBe("legacy-player-token");
-    expect(storage.getItem("hostControlToken")).toBe("legacy-host-token");
-  });
-
-  it("cleans legacy keys only after an authoritative scoped write succeeds", () => {
-    const storage = new MemoryStorage();
-    storage.setItem("playerId", "legacy-player");
-    storage.setItem("playerName", "Legacy Riley");
-    storage.setItem("playerType", "HUMAN");
-    storage.setItem("rejoinToken", "legacy-player-token");
-    storage.setItem("hostControlToken", "legacy-host-token");
-    storage.setItem("theme", "dark");
-
-    expect(setConvexRoomSession(playerSession("ABCD"), storage)).toBe(true);
-    for (const key of ["playerId", "playerName", "playerType", "rejoinToken", "hostControlToken"]) {
-      expect(storage.getItem(key)).toBeNull();
-    }
-    expect(storage.getItem("theme")).toBe("dark");
-  });
-
-  it("preserves legacy keys when the scoped write fails", () => {
-    const values = new Map<string, string>([["rejoinToken", "legacy-player-token"]]);
-    const storage: RoomSessionStorage = {
-      getItem: (key) => values.get(key) ?? null,
-      setItem: () => {
-        throw new Error("Storage is unavailable");
-      },
-      removeItem: (key) => {
-        values.delete(key);
-      },
-    };
-
-    expect(setConvexRoomSession(playerSession("ABCD"), storage)).toBe(false);
-    expect(storage.getItem("rejoinToken")).toBe("legacy-player-token");
+    expect(parseConvexRoomSession(valid, "WXYZ23")).toBeNull();
   });
 
   it("is safe when rendered without a browser storage implementation", () => {
-    expect(getConvexRoomSession("ABCD")).toBeNull();
-    expect(setConvexRoomSession(playerSession("ABCD"))).toBe(false);
-    expect(clearConvexRoomSession("ABCD")).toBe(false);
+    expect(getConvexRoomSession("ABCDEF")).toBeNull();
+    expect(setConvexRoomSession(playerSession("ABCDEF"))).toBe(false);
+    expect(clearConvexRoomSession("ABCDEF")).toBe(false);
   });
 
   it("rejects invalid room codes before touching storage", () => {
     const storage = new MemoryStorage();
 
-    expect(getConvexRoomSessionStorageKey("I000")).toBeNull();
-    expect(setConvexRoomSession(playerSession("I000"), storage)).toBe(false);
-    expect(getConvexRoomSession("I000", storage)).toBeNull();
-    expect(parseConvexRoomSession(JSON.stringify(playerSession("ABCD")), "")).toBeNull();
+    expect(getConvexRoomSessionStorageKey("I00000")).toBeNull();
+    expect(setConvexRoomSession(playerSession("I00000"), storage)).toBe(false);
+    expect(getConvexRoomSession("I00000", storage)).toBeNull();
+    expect(parseConvexRoomSession(JSON.stringify(playerSession("ABCDEF")), "")).toBeNull();
   });
 });

@@ -12,24 +12,6 @@
  */
 import type { QuizslopVoiceEventTag, QuizslopVoiceLine } from "../types";
 
-/** Canonical ordered list of voice event tags (types.ts declares only the type). */
-export const QUIZSLOP_VOICE_EVENT_TAGS: readonly QuizslopVoiceEventTag[] = [
-  "LOBBY_SETUP",
-  "HOUSE_VOTE",
-  "HOUSE_VOTE_REVEAL",
-  "TOPIC_REVEAL_WARM_UP",
-  "TOPIC_REVEAL_HOME_TURF",
-  "TOPIC_REVEAL_HOUSE_CHOICE",
-  "SLOP_CALL",
-  "SLOP_CALL_REVEAL",
-  "ANSWER",
-  "QUESTION_REVEAL",
-  "DISPUTE_VOTE",
-  "ROUND_RESULTS",
-  "CONTINUITY_GRACE",
-  "FINAL_RESULTS",
-];
-
 const APPROVED_REVIEW = {
   approved: true,
   reviewer: "Gabriel Ong",

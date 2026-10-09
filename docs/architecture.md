@@ -73,9 +73,9 @@ environment and are available only to backend functions. Speech generation
 stays on the Gateway.
 
 Free Play rooms (`games.freePlay`) are created without the host password.
-`rooms.create` and `lobby.addAiPlayer` pin them to Claude Haiku for writing
-and Jev for judging. They also refuse the narrator and extra AI players, and
-`persistProfile` skips MatchSlop portraits. A transactional `freePlayUsage`
+`rooms.create` pins them to Claude Haiku for writing and Jev for judging. It
+also refuses the narrator and extra AI players, and `persistProfile` skips
+MatchSlop portraits. A transactional `freePlayUsage`
 counter enforces the daily cap inside room creation. Free Play AI votes and
 QuizSlop pack verification record their usage under the Jev model ID.
 

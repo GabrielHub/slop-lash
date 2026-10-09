@@ -54,8 +54,6 @@ You may also react to each answer with emoji keys: laugh, fire, skull, clap, puk
 Respond with ONLY this JSON (no other text):
 {"vote":"A or B","reactions_a":[],"reactions_b":[]}` as const;
 
-export { FORFEIT_MARKER as FORFEIT_TEXT } from "./scoring";
-
 const ABSTAIN_RESULT: Omit<AiVoteResult, "usage" | "failReason"> = {
   choice: "ABSTAIN",
   reactionsA: [],

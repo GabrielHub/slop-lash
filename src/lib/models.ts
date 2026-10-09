@@ -23,9 +23,6 @@ export interface AIModel extends ModelInfo {
 
 export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "max";
 
-export const LEGACY_MODEL_NAME = "Legacy Model";
-export const LEGACY_MODEL_SHORT_NAME = "Legacy";
-
 export const AI_MODELS: AIModel[] = [
   {
     id: "google/gemini-3.5-flash-lite",
@@ -141,22 +138,6 @@ export function selectUniqueModelsByProvider(modelIds: readonly string[]): AIMod
   }
 
   return selected;
-}
-
-export function getLeaderboardModelNames(modelId: string): {
-  name: string;
-  shortName: string;
-  isLegacy: boolean;
-} {
-  const model = getModelByModelId(modelId);
-  if (model) {
-    return { name: model.name, shortName: model.shortName, isLegacy: false };
-  }
-  return {
-    name: LEGACY_MODEL_NAME,
-    shortName: LEGACY_MODEL_SHORT_NAME,
-    isLegacy: true,
-  };
 }
 
 /** Calculate USD cost from token counts for a given model. */

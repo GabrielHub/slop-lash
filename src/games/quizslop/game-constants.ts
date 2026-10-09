@@ -10,17 +10,11 @@ export const MAX_SPECTATORS = 0;
 
 /** Standard length: one warm-up + one Home Turf per frozen player + one finale. */
 export const EXTRA_ROUNDS_BEYOND_HOME_TURF = 2;
-export const MIN_TOTAL_ROUNDS = MIN_PLAYERS + EXTRA_ROUNDS_BEYOND_HOME_TURF;
-export const MAX_TOTAL_ROUNDS = MAX_PLAYERS + EXTRA_ROUNDS_BEYOND_HOME_TURF;
-
-/** `games.totalRounds` sentinel while a QuizSlop game is still in the lobby. */
-export const TOTAL_ROUNDS_UNSET = 0;
 
 export const QUIZ_CORRECT_POINTS = 100;
 export const FINAL_QUIZ_CORRECT_POINTS = 200;
 export const CALL_SLOP_POINTS = 150;
 export const CALL_SLOP_TOKENS_PER_GAME = 2;
-export const DISPUTES_PER_PLAYER_PER_GAME = 1;
 
 /** Phase timer defaults, in seconds. */
 export const HOUSE_VOTE_SECONDS = 30;
@@ -43,10 +37,8 @@ export const PACK_BUILD_DEADLINE_SECONDS = 60;
 
 /** Structural query caps for an eight-player game. Read cap + 1 and fail closed. */
 export const MAX_FROZEN_PLAYERS = MAX_PLAYERS;
-export const MAX_ROUNDS_CAP = MAX_TOTAL_ROUNDS;
 /** Every fresh pack freezes the complete 25-bank reviewed preflight. */
 export const MAX_FROZEN_TOPICS = 25;
-export const MAX_QUESTION_GROUPS_PER_ROUND = 4;
 export const MAX_ASSIGNMENTS_PER_ROUND = MAX_PLAYERS;
 export const MAX_CALLS_PER_ROUND = MAX_PLAYERS;
 export const MAX_BALLOTS_PER_ROUND = 4;

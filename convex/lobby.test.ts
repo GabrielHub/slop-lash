@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe("Convex lobby controls", () => {
-  test("seeds configured AI players and protects add, remove, and kick with host capability", async () => {
+  test("seeds configured AI players and protects kick with host capability", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");
     const backend = createTestBackend();
     const host = await backend.action(api.rooms.create, {
@@ -55,28 +55,11 @@ describe("Convex lobby controls", () => {
     ]);
 
     await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
+      backend.mutation(api.lobby.kickHuman, {
         capability: guest.capability,
-        modelId: "anthropic/claude-haiku-5.5",
+        targetPlayerId: host.playerId!,
       }),
     ).rejects.toThrow("Host capability required");
-
-    const added = await backend.mutation(api.lobby.addAiPlayer, {
-      capability: host.capability,
-      modelId: "anthropic/claude-haiku-5.5",
-    });
-    expect(added.replacedPlayerId).toBeNull();
-    await backend.mutation(api.lobby.removeAiPlayer, {
-      capability: host.capability,
-      targetPlayerId: added.playerId,
-    });
-
-    await expect(
-      backend.mutation(api.lobby.removeAiPlayer, {
-        capability: host.capability,
-        targetPlayerId: guest.playerId!,
-      }),
-    ).rejects.toThrow("Can only remove AI players");
     await expect(
       backend.mutation(api.lobby.kickHuman, {
         capability: host.capability,
@@ -95,36 +78,6 @@ describe("Convex lobby controls", () => {
       capability: host.capability,
     });
     expect(summary.game.playerCount).toBe(3);
-  });
-
-  test("keeps AI additions idempotent and rejects duplicate human names", async () => {
-    vi.stubEnv("HOST_SECRET", "host-secret");
-    const backend = createTestBackend();
-    const host = await backend.action(api.rooms.create, {
-      gameType: "SLOPLASH",
-      hostName: "Gemini",
-      hostSecret: "host-secret",
-    });
-
-    await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
-        capability: host.capability,
-        modelId: "google/gemini-3.5-flash-lite",
-      }),
-    ).rejects.toThrow("That AI player's name is already taken");
-
-    const added = await backend.mutation(api.lobby.addAiPlayer, {
-      capability: host.capability,
-      modelId: "openai/gpt-6.1-sol",
-    });
-    await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
-        capability: host.capability,
-        modelId: "openai/gpt-6.1-sol",
-      }),
-    ).resolves.toEqual({ playerId: added.playerId, replacedPlayerId: null });
-    const game = await backend.run(async (ctx) => ctx.db.get("games", host.gameId));
-    expect(game?.playerCount).toBe(2);
   });
 
   test("lets a QuizSlop host remove lobby players but preserves the roster after start", async () => {
@@ -226,12 +179,6 @@ describe("Convex lobby controls", () => {
       capability: host.capability,
     });
     expect(retried.started).toBe(false);
-    await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
-        capability: host.capability,
-        modelId: "anthropic/claude-haiku-5.5",
-      }),
-    ).rejects.toThrow("during lobby");
   });
 
   test("kicks between rounds without deleting historical player identity", async () => {
@@ -319,7 +266,6 @@ describe("Convex lobby controls", () => {
       nextRound.assignments.every((assignment) => assignment.playerId !== kicked.playerId),
     ).toBe(true);
   });
-
 
   test("starts MatchSlop with display host, sampled context, and a profile job", async () => {
     vi.stubEnv("HOST_SECRET", "host-secret");

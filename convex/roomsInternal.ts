@@ -5,6 +5,7 @@ import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { claimFreePlaySlot } from "./freePlay";
 import { maxPlayersByGameType } from "./gameLimits";
 import { QUIZSLOP_PACK_RECOVERY_DELAY_MS } from "./quizslopPackContracts";
+import { quizSlopVerifierModelIdValidator } from "./quizslopPackValidators";
 import {
   gameTypeValidator,
   matchSlopIdentityValidator,
@@ -63,7 +64,7 @@ export const createRoom = internalMutation({
     quizSlopGeneratorModelId: v.union(v.string(), v.null()),
     quizSlopPromptVersion: v.union(v.string(), v.null()),
     quizSlopSchemaVersion: v.union(v.string(), v.null()),
-    quizSlopVerifierModelId: v.union(v.string(), v.null()),
+    quizSlopVerifierModelId: v.union(quizSlopVerifierModelIdValidator, v.null()),
     roomCode: v.string(),
     seekerIdentity: matchSlopIdentityValidator,
     timersDisabled: v.boolean(),
@@ -90,7 +91,7 @@ export const createRoom = internalMutation({
       currentRound: 0,
       totalRounds: args.totalRounds,
       maxPlayers: maxPlayersByGameType[args.gameType],
-      ...(args.freePlay ? { freePlay: true } : {}),
+      freePlay: args.freePlay,
       playerCount: (args.hostParticipation === "PLAYER" ? 1 : 0) + args.aiPlayers.length,
       ...(args.personaModelId ? { personaModelId: args.personaModelId } : {}),
       phaseGeneration: 0,

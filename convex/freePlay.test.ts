@@ -190,44 +190,7 @@ describe("Free Play rooms", () => {
       hostSecret: "host-secret",
     });
     const { game } = await loadGame(backend, paid.gameId);
-    expect(game?.freePlay).toBeUndefined();
+    expect(game?.freePlay).toBe(false);
     expect((await freePlayDays(backend)).map((day) => day.gamesCreated)).toEqual([2]);
-  });
-
-  test("keeps lobby AI additions inside the Free Play limits", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
-    const backend = createTestBackend();
-    const sloplash = await backend.action(api.rooms.create, {
-      gameType: "SLOPLASH",
-      hostName: "Host",
-    });
-
-    await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
-        capability: sloplash.capability,
-        modelId: "google/gemini-3.5-flash-lite",
-      }),
-    ).rejects.toThrow("Free Play AI players use Claude Haiku");
-    await backend.mutation(api.lobby.addAiPlayer, {
-      capability: sloplash.capability,
-      modelId: HAIKU,
-    });
-    const { players } = await loadGame(backend, sloplash.gameId);
-    expect(
-      players.filter((player) => player.type === "AI").map((player) => player.modelId),
-    ).toEqual([HAIKU]);
-
-    const matchSlop = await backend.action(api.rooms.create, {
-      gameType: "MATCHSLOP",
-      personaIdentity: "WOMAN",
-      personaModelId: HAIKU,
-      seekerIdentity: "MAN",
-    });
-    await expect(
-      backend.mutation(api.lobby.addAiPlayer, {
-        capability: matchSlop.capability,
-        modelId: HAIKU,
-      }),
-    ).rejects.toThrow("Free Play has no AI players in this mode");
   });
 });

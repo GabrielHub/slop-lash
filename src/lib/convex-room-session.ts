@@ -4,14 +4,6 @@ export const CONVEX_ROOM_SESSION_VERSION = 1 as const;
 
 const ROOM_SESSION_KEY_PREFIX = "sloplash:convex-room-session:v1:";
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/u;
-const LEGACY_ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{4}$/u;
-const LEGACY_SESSION_KEYS = [
-  "playerId",
-  "playerName",
-  "playerType",
-  "rejoinToken",
-  "hostControlToken",
-] as const;
 
 export type ConvexRoomGameType = GameType;
 
@@ -80,7 +72,7 @@ function isPlayerType(value: unknown): value is ConvexRoomPlayerType {
 }
 
 function isSupportedRoomCode(value: string): boolean {
-  return ROOM_CODE_PATTERN.test(value) || LEGACY_ROOM_CODE_PATTERN.test(value);
+  return ROOM_CODE_PATTERN.test(value);
 }
 
 function hasValidPlayerIdentity(value: Record<string, unknown>): boolean {
@@ -230,18 +222,6 @@ function removeStorageEventListenerWhenIdle(): void {
   }
 }
 
-function clearLegacySessionKeys(storage: RoomSessionStorage): void {
-  for (const key of LEGACY_SESSION_KEYS) {
-    try {
-      storage.removeItem(key);
-    } catch {
-      // The room-scoped record is already authoritative. Legacy cleanup is
-      // best-effort so a storage implementation cannot turn a successful write
-      // into an apparent failure.
-    }
-  }
-}
-
 export function normalizeConvexRoomCode(roomCode: string): string {
   return roomCode.trim().toUpperCase();
 }
@@ -360,10 +340,6 @@ export function setConvexRoomSession(
     return false;
   }
 
-  // The global legacy record has no room code, and its tokens are not Convex
-  // capabilities. Never infer a migration while reading. Once an authoritative
-  // Convex room session is stored, removing those superseded keys is unambiguous.
-  clearLegacySessionKeys(targetStorage);
   notifyRoomSessionListeners(key);
   return true;
 }
