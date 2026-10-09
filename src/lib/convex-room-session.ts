@@ -1,10 +1,9 @@
 import { GAME_TYPES, type GameType } from "@/games/core";
+import { isRoomCode, normalizeRoomCodeValue } from "./room-code";
 
 export const CONVEX_ROOM_SESSION_VERSION = 1 as const;
 
 const ROOM_SESSION_KEY_PREFIX = "sloplash:convex-room-session:v1:";
-const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/u;
-
 export type ConvexRoomGameType = GameType;
 
 export type ConvexRoomPlayerType = "HUMAN" | "AI" | "SPECTATOR";
@@ -71,10 +70,6 @@ function isPlayerType(value: unknown): value is ConvexRoomPlayerType {
   return value === "HUMAN" || value === "AI" || value === "SPECTATOR";
 }
 
-function isSupportedRoomCode(value: string): boolean {
-  return ROOM_CODE_PATTERN.test(value);
-}
-
 function hasValidPlayerIdentity(value: Record<string, unknown>): boolean {
   const hasCapability = isNonEmptyString(value.playerCapability);
   const hasId = isNonEmptyString(value.playerId);
@@ -91,7 +86,7 @@ function validateRoomSession(value: unknown, expectedRoomCode?: string): ConvexR
   if (!isRecord(value)) return null;
   if (value.version !== CONVEX_ROOM_SESSION_VERSION) return null;
   if (typeof value.roomCode !== "string") return null;
-  if (!isSupportedRoomCode(value.roomCode)) return null;
+  if (!isRoomCode(value.roomCode)) return null;
   if (expectedRoomCode && value.roomCode !== expectedRoomCode) return null;
   if (!isNonEmptyString(value.gameId)) return null;
   if (!isGameType(value.gameType)) return null;
@@ -223,12 +218,12 @@ function removeStorageEventListenerWhenIdle(): void {
 }
 
 export function normalizeConvexRoomCode(roomCode: string): string {
-  return roomCode.trim().toUpperCase();
+  return normalizeRoomCodeValue(roomCode);
 }
 
 export function getConvexRoomSessionStorageKey(roomCode: string): string | null {
   const normalizedRoomCode = normalizeConvexRoomCode(roomCode);
-  if (!isSupportedRoomCode(normalizedRoomCode)) return null;
+  if (!isRoomCode(normalizedRoomCode)) return null;
   return `${ROOM_SESSION_KEY_PREFIX}${normalizedRoomCode}`;
 }
 
@@ -239,10 +234,7 @@ export function parseConvexRoomSession(
   const normalizedExpectedRoomCode =
     expectedRoomCode === undefined ? undefined : normalizeConvexRoomCode(expectedRoomCode);
 
-  if (
-    normalizedExpectedRoomCode !== undefined &&
-    !isSupportedRoomCode(normalizedExpectedRoomCode)
-  ) {
+  if (normalizedExpectedRoomCode !== undefined && !isRoomCode(normalizedExpectedRoomCode)) {
     return null;
   }
 

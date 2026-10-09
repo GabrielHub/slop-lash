@@ -6,7 +6,6 @@
 
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 8;
-export const MAX_SPECTATORS = 0;
 
 /** Standard length: one warm-up + one Home Turf per frozen player + one finale. */
 export const EXTRA_ROUNDS_BEYOND_HOME_TURF = 2;

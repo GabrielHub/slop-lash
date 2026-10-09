@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { QUIZSLOP_VERIFIER_MODEL_IDS } from "../src/games/quizslop/content-source/content-config";
 
 /**
  * QuizSlop mode-local Convex validators. These mirror the closed unions in
@@ -127,12 +128,16 @@ export const quizslopPackStatusValidator = v.union(
   v.literal("FAILED"),
 );
 
+export const quizSlopVerifierModelIdValidator = v.union(
+  ...QUIZSLOP_VERIFIER_MODEL_IDS.map((modelId) => v.literal(modelId)),
+);
+
 /** Provenance for a frozen game-owned question. */
 export const quizslopProvenanceValidator = v.object({
   catalogTopicId: v.union(v.string(), v.null()),
   packVersion: v.number(),
   generatorModelId: v.union(v.string(), v.null()),
-  verifierModelId: v.union(v.string(), v.null()),
+  verifierModelId: v.union(quizSlopVerifierModelIdValidator, v.null()),
   promptVersion: v.union(v.string(), v.null()),
   generatedAt: v.union(v.string(), v.null()),
 });

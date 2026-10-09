@@ -75,9 +75,9 @@ stays on the Gateway.
 Free Play rooms (`games.freePlay`) are created without the host password.
 `rooms.create` pins them to Claude Haiku for writing and Jev for judging. It
 also refuses the narrator and extra AI players, and `persistProfile` skips
-MatchSlop portraits. A transactional `freePlayUsage`
-counter enforces the daily cap inside room creation. Free Play AI votes and
-QuizSlop pack verification record their usage under the Jev model ID.
+MatchSlop portraits. A transactional `freePlayUsage` counter enforces the daily
+cap inside room creation. Free Play AI votes and QuizSlop pack verification
+record their usage under the Jev model ID.
 
 Slop-Lash narration is a hybrid pipeline: deterministic cues preserve prompts
 and jokes verbatim, while selected transitions use a short bounded text-model

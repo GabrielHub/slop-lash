@@ -5,7 +5,7 @@ import { isActiveCompetitor } from "../src/games/core/game-rules";
 import { claimFreePlaySlot } from "./freePlay";
 import { maxPlayersByGameType } from "./gameLimits";
 import { QUIZSLOP_PACK_RECOVERY_DELAY_MS } from "./quizslopPackContracts";
-import { quizSlopVerifierModelIdValidator } from "./quizslopPackValidators";
+import { quizSlopVerifierModelIdValidator } from "./quizslopValidators";
 import {
   gameTypeValidator,
   matchSlopIdentityValidator,

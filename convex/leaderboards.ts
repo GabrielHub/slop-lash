@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, query } from "./_generated/server";
-import { getAiModel } from "./modelCatalog";
+import { getModelByModelId } from "../src/lib/models";
 
 const LEADERBOARD_GAME_TYPE = "SLOPLASH" as const;
 const MAX_CATCH_UP_GAMES = 32;
@@ -123,7 +123,7 @@ const projectFinalGameReference = makeFunctionReference<
 >("leaderboards:projectFinalGame");
 
 function modelNames(modelId: string): { displayName: string; shortName: string } {
-  const model = getAiModel(modelId);
+  const model = getModelByModelId(modelId);
   return model
     ? { displayName: model.name, shortName: model.shortName }
     : { displayName: "Legacy Model", shortName: "Legacy" };
@@ -272,7 +272,7 @@ async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<Ga
           : rightPlayer.type === "AI" && leftPlayer.type !== "AI"
             ? { aiPlayer: rightPlayer, aiVotes: rightVotes, humanVotes: leftVotes }
             : null;
-      if (humanAndAi?.aiPlayer.modelId && getAiModel(humanAndAi.aiPlayer.modelId)) {
+      if (humanAndAi?.aiPlayer.modelId && getModelByModelId(humanAndAi.aiPlayer.modelId)) {
         const row = getHeadToHead(headToHead, humanAndAi.aiPlayer.modelId);
         if (humanAndAi.humanVotes > humanAndAi.aiVotes) row.humanWins += 1;
         else if (humanAndAi.aiVotes > humanAndAi.humanVotes) row.aiWins += 1;
@@ -303,7 +303,7 @@ async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<Ga
     }
   }
 
-  const recognizedUsages = modelUsages.filter((usage) => getAiModel(usage.modelId));
+  const recognizedUsages = modelUsages.filter((usage) => getModelByModelId(usage.modelId));
   return {
     competitors,
     headToHead,
@@ -627,7 +627,7 @@ export const get = query({
       })),
       headToHead: headToHeadRows
         .flatMap((row) => {
-          const model = getAiModel(row.rightCompetitorKey);
+          const model = getModelByModelId(row.rightCompetitorKey);
           if (!model || row.leftCompetitorKey !== "HUMAN") return [];
           return [
             {
@@ -653,7 +653,7 @@ export const get = query({
         totalVotes: response.totalVotes,
       })),
       modelUsage: usageRows.flatMap((usage) => {
-        const model = getAiModel(usage.modelId);
+        const model = getModelByModelId(usage.modelId);
         return model
           ? [
               {

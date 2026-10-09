@@ -12,6 +12,7 @@ import {
 import {
   QUIZSLOP_AI_PROMPT_VERSION,
   QUIZSLOP_AI_SCHEMA_VERSION,
+  type QuizSlopVerifierModelId,
 } from "../src/games/quizslop/content-source/content-config";
 import { assertFrozenPackMatchesRequest } from "../src/games/quizslop/content-source/pack-materialization";
 
@@ -36,7 +37,7 @@ function isFiniteUsage(usage: QuizSlopModelUsage): boolean {
 /** Complete fail-closed validation at the workflow-to-database boundary. */
 export function packValidationError(
   pack: QuizSlopFrozenPack,
-  state: { generatorModelId: string; verifierModelId?: string },
+  state: { generatorModelId: string; verifierModelId?: QuizSlopVerifierModelId },
   expectedPackId: string,
   request?: QuizSlopFreshPackRequest,
 ): string | null {

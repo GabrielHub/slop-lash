@@ -4,7 +4,6 @@ export const WRITING_DURATION_SECONDS = 90;
 export const VOTE_PER_PROMPT_SECONDS = 30;
 export const REVEAL_SECONDS = 10;
 export const ROUND_RESULTS_SECONDS = 12;
-export const HOST_STALE_MS = 15_000;
 
 /** Humor Rating badge thresholds. */
 export const HR_HOT_THRESHOLD = 1.3;

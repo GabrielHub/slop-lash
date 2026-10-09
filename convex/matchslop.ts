@@ -104,7 +104,6 @@ export const managePersona = mutation({
   },
 });
 
-/** Called after a durable AI competitor step persists. */
 export const enforceDeadline = internalMutation({
   args: {
     gameId: v.id("games"),

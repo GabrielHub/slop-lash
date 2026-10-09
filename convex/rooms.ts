@@ -13,7 +13,7 @@ import {
 import { createRoomCode, normalizePlayerName, normalizeRoomCode } from "./roomInput";
 import { maxPlayersByGameType } from "./gameLimits";
 import type { GameType } from "../src/games/core/types";
-import { getAiModel, selectUniqueModelsByProvider } from "./modelCatalog";
+import { getModelByModelId, selectUniqueModelsByProvider } from "../src/lib/models";
 import {
   FREE_PLAY_JUDGE_MODEL_ID,
   FREE_PLAY_WRITER_MODEL_ID,
@@ -176,7 +176,7 @@ export const create = action({
       args.gameType === "MATCHSLOP" ? "DISPLAY_ONLY" : (args.hostParticipation ?? "PLAYER");
     const host = hostParticipation === "PLAYER" ? normalizePlayerName(args.hostName ?? "") : null;
     const personaModelId = args.personaModelId?.trim() || null;
-    if (args.gameType === "MATCHSLOP" && (!personaModelId || !getAiModel(personaModelId))) {
+    if (args.gameType === "MATCHSLOP" && (!personaModelId || !getModelByModelId(personaModelId))) {
       throw new ConvexError("Persona model is required for MatchSlop");
     }
     let quizSlopContentConfig: QuizSlopContentConfig = resolveQuizSlopContentConfig({

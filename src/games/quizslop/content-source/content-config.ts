@@ -11,7 +11,7 @@ export const QUIZSLOP_VERIFIER_MODEL_IDS = [
   QUIZSLOP_FIXED_VERIFIER_MODEL_ID,
   FREE_PLAY_JUDGE_MODEL_ID,
 ] as const;
-type QuizSlopVerifierModelId = (typeof QUIZSLOP_VERIFIER_MODEL_IDS)[number];
+export type QuizSlopVerifierModelId = (typeof QUIZSLOP_VERIFIER_MODEL_IDS)[number];
 
 function isQuizSlopVerifierModelId(modelId: string): modelId is QuizSlopVerifierModelId {
   return (QUIZSLOP_VERIFIER_MODEL_IDS as readonly string[]).includes(modelId);

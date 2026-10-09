@@ -37,7 +37,6 @@ import type * as matchslopRoundEngine from "../matchslopRoundEngine.js";
 import type * as matchslopState from "../matchslopState.js";
 import type * as matchslopValidators from "../matchslopValidators.js";
 import type * as matchslopWorkflow from "../matchslopWorkflow.js";
-import type * as modelCatalog from "../modelCatalog.js";
 import type * as narrator from "../narrator.js";
 import type * as narratorData from "../narratorData.js";
 import type * as presence from "../presence.js";
@@ -110,7 +109,6 @@ declare const fullApi: ApiFromModules<{
   matchslopState: typeof matchslopState;
   matchslopValidators: typeof matchslopValidators;
   matchslopWorkflow: typeof matchslopWorkflow;
-  modelCatalog: typeof modelCatalog;
   narrator: typeof narrator;
   narratorData: typeof narratorData;
   presence: typeof presence;

@@ -43,8 +43,8 @@ import {
   quizslopTierValidator,
   quizslopTopicSetupStateValidator,
   quizslopTopicSourceTypeValidator,
+  quizSlopVerifierModelIdValidator,
 } from "./quizslopValidators";
-import { quizSlopVerifierModelIdValidator } from "./quizslopPackValidators";
 
 export default defineSchema({
   games: defineTable({

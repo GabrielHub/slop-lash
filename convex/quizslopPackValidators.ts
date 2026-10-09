@@ -2,17 +2,13 @@ import { v } from "convex/values";
 import {
   QUIZSLOP_AI_PROMPT_VERSION,
   QUIZSLOP_AI_SCHEMA_VERSION,
-  QUIZSLOP_VERIFIER_MODEL_IDS,
 } from "../src/games/quizslop/content-source/content-config";
 import {
   quizslopCategoryValidator,
   quizslopComedyDeviceValidator,
   quizslopTierValidator,
+  quizSlopVerifierModelIdValidator,
 } from "./quizslopValidators";
-
-export const quizSlopVerifierModelIdValidator = v.union(
-  ...QUIZSLOP_VERIFIER_MODEL_IDS.map((modelId) => v.literal(modelId)),
-);
 
 const quizSlopSourceSnapshotValidator = v.object({
   url: v.string(),
