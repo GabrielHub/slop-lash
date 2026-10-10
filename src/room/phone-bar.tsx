@@ -7,6 +7,7 @@ import {
   usePhaseCountdown,
   usePhaseDrain,
 } from "./timer";
+import { gameUi } from "@/games/ui-registry";
 import { Avatar } from "./avatar";
 import { useRoom } from "./context";
 import { MenuButton } from "./menu-sheet";
@@ -48,7 +49,8 @@ function TimeLine() {
  * menu on the right; a draining time line underneath. No game name, room
  * code or phase label: the screen below already says what to do. In the
  * lobby the hero already shows who you are, so only the ⋯ floats in the
- * corner and the bar takes no space.
+ * corner and the bar takes no space; the same goes for a view whose game
+ * hides the bar (`GameUi.chrome`).
  */
 export function PhoneBar() {
   const { view } = useRoom();
@@ -56,8 +58,9 @@ export function PhoneBar() {
   const player = players.find((candidate) => candidate.id === me?.playerId);
   const lobby = room.status === "LOBBY";
   const playing = room.status === "PLAYING";
+  const hidden = gameUi(room.gameType).chrome?.(view).phoneBar === false;
 
-  if (lobby) {
+  if (lobby || hidden) {
     return (
       <div className="pointer-events-none absolute right-1 top-[max(0.25rem,env(safe-area-inset-top))] z-30">
         <MenuButton className="pointer-events-auto" />

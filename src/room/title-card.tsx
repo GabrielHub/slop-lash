@@ -49,8 +49,8 @@ export function useTitleCardShowing() {
 
 /**
  * Runs once per live stage change: picks the title card to show (on LOBBY ->
- * PLAYING the game's own card if it has one, else a short "Round 1" opener;
- * otherwise `ui.titleCard`), pulses the background, and plays the one phase
+ * PLAYING the game's own card if it has one, else a short "Round 1" opener,
+ * which a game that owns its lobby goes without; otherwise `ui.titleCard`), pulses the background, and plays the one phase
  * cue for the room. A step inside the same phase (the next question of a
  * reveal) stays quiet; per-step cues belong to the game. A recap, a reload or a
  * late open shows no card and plays nothing.
@@ -108,14 +108,17 @@ export function useStageTransitions(sceneId: string) {
       }
     } else if (before.status === "LOBBY" && status === "PLAYING") {
       // The lobby showed the game's name for minutes; open on something new.
+      // A game that draws its own lobby opens in its own scene, without the shell's card.
       const { totalRounds } = view.room;
-      next = current ?? {
-        id: "game-start",
-        kicker: totalRounds > 1 ? `${ui.name} · ${totalRounds} rounds` : ui.name,
-        title: totalRounds > 1 ? "Round 1" : "Here we go",
-        tone: "punch",
-        hold: GAME_START_HOLD_S,
-      };
+      next = ui.ownsLobby
+        ? current
+        : (current ?? {
+            id: "game-start",
+            kicker: totalRounds > 1 ? `${ui.name} · ${totalRounds} rounds` : ui.name,
+            title: totalRounds > 1 ? "Round 1" : "Here we go",
+            tone: "punch",
+            hold: GAME_START_HOLD_S,
+          });
       sound = "game-start";
     } else if (current && !seen.current.has(current.id) && fresh) {
       next = current;

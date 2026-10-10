@@ -211,6 +211,8 @@ export const ACCENT = {
   matchslop: { stampTilt: -8, cardTilt: 3, shake: "soft" },
   /** A broadcast: clean wipes and precise stamps that settle without wobble. */
   quizslop: { stampTilt: -1.5, cardTilt: 0, shake: "none" },
+  /** A toy brawl: chunky slams that overshoot and settle. */
+  slopfight: { stampTilt: -4, cardTilt: 2, shake: "hard" },
 } as const;
 
 /** The OS reduced-motion setting, read now (false during server rendering). */

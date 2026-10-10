@@ -14,7 +14,7 @@ export function playerRangeLabel(option: { minPlayers: number; maxPlayers: numbe
   return `${option.minPlayers}–${option.maxPlayers} players`;
 }
 
-/** Three game cards, each tinted with its own game's palette once picked. */
+/** One card per game, each tinted with its own game's palette once picked. */
 export function HostGamePicker({
   gameType,
   onGameTypeChange,
@@ -27,7 +27,7 @@ export function HostGamePicker({
       <legend className="mb-3">
         <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink">Pick a game</h1>
       </legend>
-      <div className="grid gap-2.5 sm:grid-cols-3 sm:gap-3">
+      <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
         {GAME_TYPES.map((id) => {
           const option = GAME_META[id];
           const selected = gameType === id;

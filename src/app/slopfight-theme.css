@@ -1,0 +1,77 @@
+/* ============================================
+   SLOPFIGHT THEME: "DUSK ARENA"
+   Toy brawls under a sunset stage light.
+   Tangerine + dusk teal + trophy gold on warm aubergine.
+   ============================================ */
+
+[data-game="slopfight"] {
+  --sf-bg: #150e12;
+  --sf-surface: #20161b;
+  --sf-raised: #2c1f25;
+  --sf-ink: #fbefe4;
+  --sf-ink-dim: #c2aba3;
+  --sf-accent-ink: #1a0f0c;
+  --sf-tangerine: #ff7a3d;
+  --sf-tangerine-hover: #ff9361;
+  --sf-dusk: #4fc9b8;
+  --sf-dusk-soft: #4fc9b81c;
+  --sf-trophy: #ffc94a;
+  --sf-trophy-soft: #ffc94a1f;
+  --sf-win: #7ddc8e;
+  --sf-win-soft: #7ddc8e1f;
+  --sf-fail: #ff5f57;
+  --sf-fail-soft: #ff5f5722;
+  --sf-edge: #3a2a31;
+  --sf-edge-strong: #604852;
+}
+
+[data-theme="light"][data-game="slopfight"],
+[data-theme="light"] [data-game="slopfight"],
+:root:not([data-theme="dark"])[data-game="slopfight"],
+:root:not([data-theme="dark"]) [data-game="slopfight"] {
+  --sf-bg: #fff5ea;
+  --sf-surface: #ffffff;
+  --sf-raised: #fbe9d9;
+  --sf-ink: #2a1a1f;
+  /* Dark enough for small labels on the cream canvas. */
+  --sf-ink-dim: #765b56;
+  --sf-accent-ink: #ffffff;
+  --sf-tangerine: #d9501a;
+  --sf-tangerine-hover: #bf4413;
+  --sf-dusk: #0b766d;
+  --sf-dusk-soft: #0f8f841a;
+  --sf-trophy: #8f5d00;
+  --sf-trophy-soft: #d48f001f;
+  --sf-win: #13773a;
+  --sf-win-soft: #13773a1a;
+  --sf-fail: #c62828;
+  --sf-fail-soft: #c628281c;
+  --sf-edge: #ecd8c6;
+  --sf-edge-strong: #d0b39d;
+}
+
+/* Games restyle the shared shell and parts by remapping the base tokens. */
+[data-game="slopfight"] {
+  --bg: var(--sf-bg);
+  --surface: var(--sf-surface);
+  --raised: var(--sf-raised);
+  --ink: var(--sf-ink);
+  --ink-dim: var(--sf-ink-dim);
+  --accent-ink: var(--sf-accent-ink);
+  --punch: var(--sf-tangerine);
+  --punch-hover: var(--sf-tangerine-hover);
+  --teal: var(--sf-dusk);
+  --teal-hover: var(--sf-dusk);
+  --teal-soft: var(--sf-dusk-soft);
+  --teal-ink: var(--sf-dusk);
+  --gold: var(--sf-trophy);
+  --gold-soft: var(--sf-trophy-soft);
+  --gold-ink: var(--sf-trophy);
+  --edge: var(--sf-edge);
+  --edge-strong: var(--sf-edge-strong);
+  --win: var(--sf-win);
+  --win-soft: var(--sf-win-soft);
+  --fail: var(--sf-fail);
+  --fail-soft: var(--sf-fail-soft);
+  --vs-bg: var(--sf-raised);
+}

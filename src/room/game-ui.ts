@@ -15,6 +15,14 @@ export interface TitleCardSpec {
   hold?: number;
 }
 
+/** Which pieces of the shell's own chrome show for a view. */
+export interface ShellChrome {
+  /** The TV's top rail (wordmark, round, join chip, countdown ring). */
+  stageRail: boolean;
+  /** The phone's top bar (name, countdown pill, time line). */
+  phoneBar: boolean;
+}
+
 /**
  * How a game draws itself. The shared shell owns the frame (header, timer,
  * lobby, host controls, reconnects, transitions, background); a game fills in
@@ -34,7 +42,7 @@ export interface GameUi extends Pick<GameMeta, "name" | "tagline"> {
   howTo: readonly [string, string, string];
   /** The ambient background field for this game. */
   ambient: AmbientScene;
-  /** Shown after the lobby, through to the final results. */
+  /** Shown after the lobby, through to the final results (from the lobby on, with `ownsLobby`). */
   Stage: ComponentType;
   Controller: ComponentType;
   /** Extra lobby content, e.g. a persona strip or a topic picker. */
@@ -42,6 +50,23 @@ export interface GameUi extends Pick<GameMeta, "name" | "tagline"> {
   ControllerLobby?: ComponentType;
   /** Runs for as long as a stage is open, e.g. narration or sound cues. */
   StageEffects?: ComponentType;
+  /**
+   * The game draws its own lobby: the shell renders `Stage` and `Controller`
+   * in LOBBY too (instead of its lobby), keeps one stage scene from LOBBY
+   * into play (so a canvas never remounts; `sceneKey` still wins if given),
+   * and opens the game without its "Round 1" title card. The game then owns
+   * the join code, the player list and the host's Start: see `useLobby` and
+   * the lobby parts exported from `src/room/lobby.tsx`.
+   */
+  ownsLobby?: boolean;
+  /**
+   * Which shell chrome shows for this view; both by default. A hidden rail or
+   * phone bar takes its countdown with it, while the host dock, mute and the
+   * ⋯ menu stay reachable from a small corner button.
+   */
+  chrome?(view: RoomView): ShellChrome;
+  /** Extra host rows in the phone's ⋯ sheet, e.g. a retry for failed AI work. Style rows with `MENU_ROW`. */
+  HostExtras?: ComponentType<{ onDone: () => void }>;
   /** A short name for the current phase, e.g. "Voting 3/5". */
   phaseLabel(view: RoomView): string;
   /** What the host's skip control says in the current phase: where it goes, not what it ends. */

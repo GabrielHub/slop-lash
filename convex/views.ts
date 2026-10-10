@@ -6,6 +6,7 @@ import { getMode } from "./modes";
 import { findGameByCode, findGameByNumber, loadPlayers, loadPresence } from "./roster";
 import { matchslopView } from "./matchslop/view";
 import { quizslopView } from "./quizslop/view";
+import { slopfightView } from "./slopfight/view";
 import { sloplashView } from "./sloplash/view";
 
 const MAX_MODEL_USAGES = 32;
@@ -24,6 +25,8 @@ async function modeView(
       return matchslopView(ctx, game, viewerId);
     case "QUIZSLOP":
       return quizslopView(ctx, game, viewerId, players);
+    case "SLOPFIGHT":
+      return slopfightView(ctx, game, viewerId);
   }
 }
 

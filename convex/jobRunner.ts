@@ -5,11 +5,13 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import type { JobResult } from "./jobs";
 import { matchslopRunners } from "./matchslop/runners";
+import { slopfightRunners } from "./slopfight/runners";
 import { sloplashRunners } from "./sloplash/runners";
 
 const runners: Record<string, (input: never) => Promise<JobResult<unknown>>> = {
   ...sloplashRunners,
   ...matchslopRunners,
+  ...slopfightRunners,
 };
 
 /** Runs one AI job: load its input, make the call, hand the result back. */

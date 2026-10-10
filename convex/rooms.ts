@@ -110,6 +110,10 @@ export const create = action({
     if (args.gameType === "QUIZSLOP" && aiModelIds.length > 0) {
       throw new ConvexError("QuizSlop does not have AI players");
     }
+    // SlopFight's house champions are fighters the mode creates, not seats.
+    if (args.gameType === "SLOPFIGHT" && aiModelIds.length > 0) {
+      throw new ConvexError("SlopFight does not have AI players");
+    }
     if (
       args.totalRounds !== undefined &&
       (!Number.isInteger(args.totalRounds) || args.totalRounds < 1 || args.totalRounds > 10)
@@ -131,7 +135,8 @@ export const create = action({
 
     const secret = createCapabilitySecret();
     const capabilityHash = await hashCapabilitySecret(secret);
-    const ttsMode = args.gameType === "SLOPLASH" ? (args.ttsMode ?? "OFF") : "OFF";
+    const narrated = args.gameType === "SLOPLASH" || args.gameType === "SLOPFIGHT";
+    const ttsMode = narrated ? (args.ttsMode ?? "OFF") : "OFF";
     for (let attempt = 0; attempt < MAX_ROOM_CODE_ATTEMPTS; attempt += 1) {
       const roomCode = createRoomCode();
       const result:

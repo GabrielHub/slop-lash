@@ -19,7 +19,7 @@ import { useStageKey } from "./host-dock";
 import { StageSoundButton, useSiteHost, useSiteOrigin } from "./stage-rail";
 
 /** The join sound and the leave sound, for the screen the room is watching. */
-function usePlayerSounds(players: RoomPlayer[]) {
+export function usePlayerSounds(players: RoomPlayer[]) {
   const { live } = useRoom();
   const previous = useRef(new Set(players.map((player) => player.id)));
   useEffect(() => {
@@ -52,7 +52,7 @@ function PendingDot() {
   );
 }
 
-function WaitingForHost({ className = "" }: { className?: string }) {
+export function WaitingForHost({ className = "" }: { className?: string }) {
   const { view } = useRoom();
   const name = hostName(view);
   return (
@@ -159,7 +159,7 @@ function EmptySeat() {
 }
 
 /** Who's in: a token per player, then dashed seats up to the room's limit. */
-function PlayerTokens() {
+export function PlayerTokens() {
   const { view } = useRoom();
   const { room, me, players } = view;
   const { kick, error } = useHostActions();
@@ -238,7 +238,7 @@ function StartButton({
 }
 
 /** The host's Start on the stage: Enter starts too, unless a field or control has focus. */
-function StageStart({ keys }: { keys: boolean }) {
+export function StageStart({ keys }: { keys: boolean }) {
   const { start, pending, error } = useHostActions();
   const needed = useNeeded();
   // A held Enter never gets here, so it can't start the game and then skip its first phase too.
@@ -258,6 +258,41 @@ function StageStart({ keys }: { keys: boolean }) {
       />
     </div>
   );
+}
+
+/**
+ * Everything a game that owns its lobby (`GameUi.ownsLobby`) needs to draw
+ * one as data, e.g. in a 3D scene: how to join, who's in, and the host's
+ * Start. `start` warms the sound cache first, like the shell's Start. Pair it
+ * with `usePlayerSounds` on the screen the room watches.
+ */
+export function useLobby() {
+  const { view } = useRoom();
+  const { room, me, players } = view;
+  const siteHost = useSiteHost();
+  const origin = useSiteOrigin();
+  const { start, pending, error } = useHostActions();
+  const needed = useNeeded();
+  const isHost = me?.isHost === true;
+  return {
+    code: room.code,
+    /** Empty during server rendering. */
+    joinUrl: origin ? `${origin}/join/${room.code}` : "",
+    siteHost,
+    players,
+    minPlayers: room.minPlayers,
+    maxPlayers: room.maxPlayers,
+    /** Seats still needed before the host can start. */
+    needed,
+    isHost,
+    canStart: isHost && needed === 0 && !pending,
+    start: () => {
+      preloadSounds();
+      return start();
+    },
+    pending,
+    error,
+  };
 }
 
 /**
@@ -285,7 +320,7 @@ function useOverflowing<E extends HTMLElement>() {
  * address, then the code in tiles that shrink with the stage on a narrow
  * screen, so nothing ever pushes into the player column.
  */
-function JoinPanel() {
+export function JoinPanel() {
   const { room } = useRoom().view;
   const host = useSiteHost();
   const origin = useSiteOrigin();
@@ -411,7 +446,7 @@ export function StageLobby({ docked = false }: { docked?: boolean }) {
 }
 
 /** The host's sticky bar on a phone: the player count (opens the list) and Start. */
-function HostStartBar() {
+export function HostStartBar() {
   const { view } = useRoom();
   const { room, players } = view;
   const { start, kick, pending, error } = useHostActions();

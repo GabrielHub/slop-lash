@@ -127,6 +127,9 @@ const ROW_TONE = {
   danger: "text-fail hover:bg-fail-soft",
   armed: "bg-fail text-accent-ink",
 } as const;
+/** The sheet's row styles, for a game's `HostExtras`. */
+export const MENU_ROW = ROW;
+export const MENU_ROW_TONE = ROW_TONE;
 
 function Switch({ on }: { on: boolean }) {
   return (
@@ -207,7 +210,10 @@ function SettingsRows() {
   );
 }
 
-/** The host's rows: skip ahead, manage players, end the game. Every destructive one takes two taps. */
+/**
+ * The host's rows: skip ahead, the game's own extras, manage players, end the
+ * game. Every destructive one takes two taps.
+ */
 function HostRows({ onDone }: { onDone: () => void }) {
   const { view } = useRoom();
   const { room, players } = view;
@@ -217,6 +223,7 @@ function HostRows({ onDone }: { onDone: () => void }) {
   const { armed, press } = useTwoTap({ resetOn: room.phaseGeneration });
   const [showPlayers, setShowPlayers] = useState(false);
   const playing = room.status === "PLAYING";
+  const Extras = ui.HostExtras;
 
   return (
     <>
@@ -237,6 +244,7 @@ function HostRows({ onDone }: { onDone: () => void }) {
           {armed === "skip" ? "Tap again to skip" : ui.advanceLabel(view)}
         </button>
       )}
+      {Extras && <Extras onDone={onDone} />}
       <button
         type="button"
         aria-expanded={showPlayers}

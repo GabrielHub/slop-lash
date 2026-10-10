@@ -10,6 +10,7 @@ import {
 } from "./validators";
 import { matchslopTables } from "./matchslop/tables";
 import { quizslopTables } from "./quizslop/tables";
+import { slopfightTables } from "./slopfight/tables";
 import { sloplashTables } from "./sloplash/tables";
 
 export default defineSchema({
@@ -275,5 +276,6 @@ export default defineSchema({
 
   ...matchslopTables,
   ...quizslopTables,
+  ...slopfightTables,
   ...sloplashTables,
 });

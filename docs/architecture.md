@@ -126,6 +126,17 @@ three routes:
 - `/controller/CODE` shows the controller only.
 - `/game/CODE` docks the controller beside the stage for players on a desktop.
 
+A game can take over parts of that frame. With `ownsLobby`, the shell renders
+the game's `Stage` and `Controller` in the lobby too, keeps one stage scene
+from the lobby into play (so a 3D canvas never remounts), and skips its
+"Round 1" opener; the game then draws the join code, players and Start itself,
+from `useLobby` and the parts exported by `src/room/lobby.tsx`. `chrome(view)`
+hides the TV rail (with its countdown ring) or the phone bar for a view; mute
+and the ⋯ menu stay reachable from a corner button, and the host dock is
+unaffected. `HostExtras` adds game rows to the host section of the phone's ⋯
+sheet. SlopFight uses all three; its 3D stage is the one `next/dynamic` import
+in its `GameUi`, so `/controller` never loads three.js.
+
 The recap page renders the same stage, read-only, for a finished game, through
 `StaticRoomProvider`. Recaps are not `live`, so sounds, confetti, and narration
 stay quiet there. Dev fixtures (`src/dev/fixtures/`) render static room views

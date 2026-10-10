@@ -20,6 +20,7 @@ describe("Free Play", () => {
     expect(getFreePlayAiPlayerLimit("SLOPLASH")).toBe(1);
     expect(getFreePlayAiPlayerLimit("MATCHSLOP")).toBe(0);
     expect(getFreePlayAiPlayerLimit("QUIZSLOP")).toBe(0);
+    expect(getFreePlayAiPlayerLimit("SLOPFIGHT")).toBe(0);
   });
 
   it("counts rooms against the UTC day", () => {

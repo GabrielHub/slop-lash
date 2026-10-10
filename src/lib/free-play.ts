@@ -23,7 +23,10 @@ export const FREE_PLAY_JUDGE_MODEL_ID = JEV_MODEL.id;
 /** Default rooms per UTC day, overridable with `FREE_PLAY_DAILY_GAME_LIMIT`. */
 export const DEFAULT_FREE_PLAY_DAILY_GAME_LIMIT = 50;
 
-/** SlopLash allows one Haiku bot; MatchSlop's Haiku persona is its only bot. */
+/**
+ * SlopLash allows one Haiku bot; MatchSlop's Haiku persona is its only bot.
+ * QuizSlop and SlopFight have no AI seats (SlopFight's house champions are fighters, not seats).
+ */
 export function getFreePlayAiPlayerLimit(gameType: GameType): number {
   return gameType === "SLOPLASH" ? 1 : 0;
 }

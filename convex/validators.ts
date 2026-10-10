@@ -4,6 +4,7 @@ export const gameTypeValidator = v.union(
   v.literal("SLOPLASH"),
   v.literal("MATCHSLOP"),
   v.literal("QUIZSLOP"),
+  v.literal("SLOPFIGHT"),
 );
 
 /** Coarse room lifecycle. The mode-specific step lives in `games.phase`. */

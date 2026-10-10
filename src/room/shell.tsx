@@ -39,6 +39,10 @@ function useHtmlAttribute(name: string, value: string | null) {
  * The shared screen: the rail, then the current scene (or the lobby) with
  * title cards over it. Owns the room's phase sounds, since only a screen
  * with a stage should make them. On the TV, M mutes.
+ *
+ * A game that owns its lobby gets its Stage in LOBBY too, under one scene
+ * from LOBBY into play. A game that hides the rail for a view keeps the
+ * rail's mute (or menu) as a small button in the corner.
  */
 function StageColumn({
   variant,
@@ -50,18 +54,32 @@ function StageColumn({
   const { view, live } = useRoom();
   const ui = gameUi(view.room.gameType);
   const lobby = view.room.status === "LOBBY";
-  const sceneId = lobby ? "lobby" : (ui.sceneKey?.(view) ?? phaseKey(view));
+  const ownsLobby = ui.ownsLobby === true;
+  const shellLobby = lobby && !ownsLobby;
+  const sceneId = shellLobby
+    ? "lobby"
+    : (ui.sceneKey?.(view) ?? (ownsLobby ? "game" : phaseKey(view)));
   const { card, dismiss } = useStageTransitions(sceneId);
   const Effects = live ? ui.StageEffects : undefined;
   const docked = variant === "docked";
+  const showRail = (!lobby || docked) && ui.chrome?.(view).stageRail !== false;
+  // The shell's own lobby carries a mute button; anywhere else without the rail gets the corner one.
+  const cornerMenu = !showRail && !shellLobby;
   useMuteKey(variant === "stage");
+  const menu = docked ? (
+    <MenuButton hostRows={false} className="hidden lg:grid" />
+  ) : variant === "recap" ? (
+    <ThemeToggle />
+  ) : (
+    <StageSoundButton />
+  );
 
   return (
     <SurfaceProvider value="stage">
       {live && <StageClockCues />}
       {/* The rail fades in as the game leaves the lobby; a reload shows it at once. */}
       <AnimatePresence initial={false}>
-        {(!lobby || docked) && (
+        {showRail && (
           <motion.div
             key="rail"
             className="shrink-0"
@@ -69,19 +87,7 @@ function StageColumn({
             initial="hidden"
             animate="visible"
           >
-            <StageRail
-              variant={variant}
-              sceneId={sceneId}
-              menu={
-                docked ? (
-                  <MenuButton hostRows={false} className="hidden lg:grid" />
-                ) : variant === "recap" ? (
-                  <ThemeToggle />
-                ) : (
-                  <StageSoundButton />
-                )
-              }
-            />
+            <StageRail variant={variant} sceneId={sceneId} menu={menu} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -89,8 +95,11 @@ function StageColumn({
         {/* Inside the provider, so the game's stage-wide moments can shake and flash. */}
         {Effects && <Effects />}
         <Scene id={sceneId} surface="stage" enterFirst={enterFirstScene}>
-          {lobby ? <StageLobby docked={docked} /> : <ui.Stage />}
+          {shellLobby ? <StageLobby docked={docked} /> : <ui.Stage />}
         </Scene>
+        {cornerMenu && (
+          <div className="absolute right-[1rem] top-[1rem] z-40 flex items-center">{menu}</div>
+        )}
         <TitleCard card={card} onDone={dismiss} />
       </StageFxProvider>
     </SurfaceProvider>
@@ -110,7 +119,7 @@ function ControllerColumn({ variant }: { variant: "phone" | "docked" }) {
       {phone && <PhoneBar />}
       <div className="relative flex flex-1 flex-col">
         <Scene id={lobby ? "lobby" : phaseKey(view)} surface="phone">
-          {lobby ? <ControllerLobby /> : <ui.Controller />}
+          {lobby && !ui.ownsLobby ? <ControllerLobby /> : <ui.Controller />}
         </Scene>
         {status === "FINISHED" && live && <PhoneFinishedBar />}
         {/* Docked, the host dock carries Continue from lg up. */}
