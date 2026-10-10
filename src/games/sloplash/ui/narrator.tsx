@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useAction } from "convex/react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { api } from "../../../../convex/_generated/api";
 import { NarratorPlaybackQueue } from "@/games/sloplash/narrator-audio";
 import {
@@ -18,9 +18,13 @@ import {
   type NarrationCue,
 } from "@/games/sloplash/narrator-events";
 import { BoundedSerialQueue } from "@/games/sloplash/narrator-request-queue";
-import { getAudioStatus, setNarratorDucking, subscribeAudio } from "@/lib/sounds";
+import {
+  activateAudio,
+  getAudioStatus,
+  setNarratorDucking,
+  subscribeAudio,
+} from "@/lib/sounds";
 import { useModeView, useRoom } from "@/room/context";
-import { useCue } from "@/room/effects";
 
 const MAX_PENDING_NARRATIONS = 4;
 const HURRY_UP_SECONDS = 15;
@@ -141,42 +145,50 @@ function useNarrator(capability: string | null, enabled: boolean, canSpeak: bool
 const STATUS_LABELS: Record<Exclude<NarratorStatus, "off">, string> = {
   blocked: "Enable audio",
   error: "Narrator error",
-  generating: "Generating",
-  ready: "Armed",
-  speaking: "Speaking",
+  generating: "Narrator writing",
+  ready: "Narrator ready",
+  speaking: "Narrator speaking",
 };
 
 const BAR_HEIGHTS = [0.55, 0.9, 0.65, 0.8];
 const BAR_DELAYS = [0, 0.12, 0.06, 0.18];
 
+/**
+ * A small round icon in the bottom-left corner: bars that move while the
+ * narrator speaks, red on an error. Its words live in the tooltip and for
+ * screen readers only. When the browser blocks audio it becomes the one
+ * thing to tap.
+ */
 function NarratorIndicator({ status, detail }: { status: NarratorStatus; detail: string | null }) {
   if (status === "off") return null;
   const label = STATUS_LABELS[status];
-  const tone = status === "blocked" ? "text-gold" : status === "error" ? "text-fail" : "text-teal";
+  if (status === "blocked") {
+    return (
+      <button
+        type="button"
+        onClick={() => void activateAudio()}
+        className="fixed bottom-4 left-4 z-40 cursor-pointer rounded-full border border-edge bg-surface px-3 py-1.5 text-sm font-bold text-gold-ink"
+      >
+        Tap to enable narrator
+      </button>
+    );
+  }
+  const tone = status === "error" ? "text-fail" : "text-teal";
   return (
-    <div className="fixed bottom-4 left-4 z-40 rounded-full border border-edge bg-surface/90 backdrop-blur-sm px-3 py-1.5">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={status}
-          className={`flex items-center gap-1.5 ${tone}`}
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.8 }}
-          transition={{ duration: 0.2 }}
-          title={detail ?? label}
-        >
-          <output
-            className="flex items-end gap-[2px]"
-            style={{ height: 14, width: 16 }}
-            aria-label={`Narrator: ${label}`}
-          >
-            {status === "speaking" ? (
-              BAR_HEIGHTS.map((height, index) => (
-                <motion.div
-                  key={index}
-                  className="w-[3px] rounded-full bg-current"
-                  initial={{ height: "20%" }}
-                  animate={{
+    <output
+      className={`fixed bottom-4 left-4 z-40 grid size-[2.5rem] place-items-center rounded-full border border-edge bg-surface ${tone}`}
+      title={detail ?? label}
+      aria-label={label}
+    >
+      <span className="flex h-[1rem] w-[1.1rem] items-end justify-between" aria-hidden="true">
+        {BAR_HEIGHTS.map((height, index) => (
+          <motion.span
+            key={index}
+            className="w-[0.18rem] rounded-full bg-current"
+            initial={false}
+            animate={
+              status === "speaking"
+                ? {
                     height: [
                       "20%",
                       `${height * 100}%`,
@@ -184,37 +196,24 @@ function NarratorIndicator({ status, detail }: { status: NarratorStatus; detail:
                       `${BAR_HEIGHTS[(index + 2) % BAR_HEIGHTS.length]! * 100}%`,
                       "20%",
                     ],
-                  }}
-                  transition={{
-                    duration: 0.8,
-                    repeat: Infinity,
-                    delay: BAR_DELAYS[index],
-                    ease: "easeInOut",
-                  }}
-                />
-              ))
-            ) : (
-              <span className="flex items-center justify-center w-full h-full">
-                <motion.span
-                  className="w-[6px] h-[6px] rounded-full bg-current"
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                />
-              </span>
-            )}
-          </output>
-          <span className="select-none text-[10px] font-bold uppercase tracking-wider">
-            {label}
-          </span>
-        </motion.div>
-      </AnimatePresence>
-    </div>
+                  }
+                : { height: `${30 + index * 10}%` }
+            }
+            transition={
+              status === "speaking"
+                ? { duration: 0.8, repeat: Infinity, delay: BAR_DELAYS[index], ease: "easeInOut" }
+                : { duration: 0.3 }
+            }
+          />
+        ))}
+      </span>
+    </output>
   );
 }
 
 /**
- * The stage's side effects: matchup sound cues for everyone watching, and the
- * TTS narrator on the host's screen when the room has it switched on.
+ * The stage's side effects: the TTS narrator on the host's screen when the
+ * room has it switched on. The matchup sounds belong to the moments now.
  */
 export function SloplashStageEffects() {
   const { view, capability, clockOffsetMs } = useRoom();
@@ -230,9 +229,6 @@ export function SloplashStageEffects() {
   );
 
   const key = `${room.status}:${room.phase}:${room.round}:${room.step}`;
-  const playing = room.status === "PLAYING";
-  useCue(key, "vote-reveal", playing && room.phase === "REVEAL");
-  useCue(key, "prompt-advance", playing && room.phase === "VOTING" && room.step > 0);
 
   const heard = useRef<{ key: string; phase: string } | null>(null);
   const announce = useEffectEvent(() => {

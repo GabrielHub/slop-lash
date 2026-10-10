@@ -25,8 +25,6 @@ export function fixturePlayer(
     type: "HUMAN",
     modelId: null,
     score: 0,
-    humorRating: 1,
-    winStreak: 0,
     online: true,
     joinedAt: FIXTURE_NOW - 60_000,
     ...overrides,
@@ -48,7 +46,10 @@ export function fixtureView(
   return {
     room: {
       id: fixtureId("games", "fixture"),
-      code: "SLOP",
+      // A real code: six characters from the room-code alphabet, so fixtures show the true layout.
+      code: "SLPW42",
+      gameNumber: 1,
+      next: null,
       status: "LOBBY",
       phase: "LOBBY",
       step: 0,
@@ -60,6 +61,7 @@ export function fixtureView(
       phaseStartedAt: FIXTURE_NOW - 10_000,
       phaseDeadline: playing ? FIXTURE_NOW + 50_000 : null,
       timersDisabled: false,
+      awaitingAi: false,
       freePlay: false,
       ttsMode: "OFF",
       ttsVoice: "RANDOM",

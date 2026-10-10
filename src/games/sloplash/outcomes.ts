@@ -1,104 +1,47 @@
-import type {
-  SloplashAnswer,
-  SloplashPrompt,
-  SloplashRound,
-  SloplashVote,
-} from "../../../convex/sloplash/view";
-import type { PlayerType } from "./scoring";
+import type { SloplashPrompt } from "../../../convex/sloplash/view";
+import { scoreMatchup, type MatchupScore, type PlayerType } from "./scoring";
 
-export type AnswerResult = {
-  answer: SloplashAnswer;
-  votes: SloplashVote[];
-  pct: number;
-  points: number;
-  isWinner: boolean;
-};
+/**
+ * The stamp a revealed matchup earns. SLOPPED is a unanimous AI sweep of a
+ * human; FLAWLESS any other unanimous win (an AI-vs-AI sweep included).
+ */
+export type StampKind = "slopped" | "flawless" | "tie" | "noVotes";
 
-export type MatchupResult = {
-  answers: AnswerResult[];
-  castVotes: number;
-  isTie: boolean;
-  isUnanimous: boolean;
-  aiBeatsHuman: boolean;
-  /** Every human voter passed or ran out of time, so the pass penalty applied. */
-  allPassed: boolean;
-  passed: SloplashVote[];
-  timedOut: SloplashVote[];
+export type MatchupOutcomeView = {
+  score: MatchupScore;
+  stamp: StampKind | null;
+  winnerAnswerId: string | null;
+  /** The winning answer (a contested win or a walkover) was written by an AI. */
+  aiWon: boolean;
 };
 
 /**
- * How a revealed matchup went, from the points the server scored for it. The
- * winner is whoever earned more.
+ * How a revealed matchup went, from the view's answers and ballots through
+ * the same `scoreMatchup` the server stores points with, so screens and the
+ * scoreboard can't drift. Only meaningful once `prompt.revealed`.
  */
-export function matchupResult(
+export function matchupOutcome(
   prompt: SloplashPrompt,
+  round: number,
   typeOf: (playerId: string) => PlayerType | undefined,
-): MatchupResult {
-  const cast = prompt.votes.filter((vote) => vote.responseId !== null);
-  const scored = prompt.answers.map((answer) => ({
-    answer,
-    points: answer.pointsEarned + answer.penalty,
-  }));
-  const best = Math.max(...scored.map((entry) => entry.points));
-  const leaders = scored.filter((entry) => entry.points === best);
-  const winner = leaders.length === 1 && scored.length > 1 ? leaders[0]!.answer : null;
-  const loser = winner ? prompt.answers.find((answer) => answer.id !== winner.id) : undefined;
-  const humanVotes = prompt.votes.filter((vote) => typeOf(vote.voterId) === "HUMAN");
+): MatchupOutcomeView {
+  const score = scoreMatchup(
+    prompt.answers.map((answer) => ({ id: answer.id, forfeited: answer.forfeited })),
+    prompt.votes.map((vote) => vote.responseId),
+    round,
+  );
+  const winner = prompt.answers.find((answer) => answer.id === score.winnerId);
+  const loser =
+    score.outcome === "win" ? prompt.answers.find((answer) => answer.id !== winner?.id) : undefined;
+  const authorType = (playerId: string | null | undefined) =>
+    playerId ? typeOf(playerId) : undefined;
+  const aiWon = authorType(winner?.playerId) === "AI";
 
-  return {
-    answers: scored.map(({ answer, points }) => {
-      const votes = cast.filter((vote) => vote.responseId === answer.id);
-      return {
-        answer,
-        votes,
-        pct: cast.length > 0 ? Math.round((votes.length / cast.length) * 100) : 0,
-        points,
-        isWinner: answer.id === winner?.id,
-      };
-    }),
-    castVotes: cast.length,
-    isTie: winner === null && cast.length > 0,
-    isUnanimous:
-      winner !== null && cast.length >= 2 && cast.every((vote) => vote.responseId === winner.id),
-    aiBeatsHuman:
-      winner !== null &&
-      typeOf(winner.playerId ?? "") === "AI" &&
-      typeOf(loser?.playerId ?? "") === "HUMAN",
-    allPassed: humanVotes.length > 0 && humanVotes.every((vote) => vote.responseId === null),
-    passed: prompt.votes.filter((vote) => vote.responseId === null && !vote.timedOut),
-    timedOut: prompt.votes.filter((vote) => vote.timedOut),
-  };
-}
+  let stamp: StampKind | null = null;
+  if (score.outcome === "win" && score.unanimous) {
+    stamp = aiWon && authorType(loser?.playerId) === "HUMAN" ? "slopped" : "flawless";
+  } else if (score.outcome === "tie") stamp = "tie";
+  else if (score.outcome === "noVotes") stamp = "noVotes";
 
-export type BestAnswer = {
-  promptText: string;
-  text: string;
-  playerId: string;
-  pct: number;
-  round: number;
-};
-
-/** The game's most decisive winning answers, best first. */
-export function bestAnswers(rounds: readonly SloplashRound[], limit = 5): BestAnswer[] {
-  const best: BestAnswer[] = [];
-  for (const round of rounds) {
-    for (const prompt of round.prompts) {
-      const cast = prompt.votes.filter((vote) => vote.responseId !== null);
-      if (!prompt.votable || cast.length === 0) continue;
-      const tallies = prompt.answers.map((answer) => ({
-        answer,
-        count: cast.filter((vote) => vote.responseId === answer.id).length,
-      }));
-      const top = tallies.reduce((leader, entry) => (entry.count > leader.count ? entry : leader));
-      if (!top.answer.playerId) continue;
-      best.push({
-        promptText: prompt.text,
-        text: top.answer.text,
-        playerId: top.answer.playerId,
-        pct: Math.round((top.count / cast.length) * 100),
-        round: round.number,
-      });
-    }
-  }
-  return best.toSorted((left, right) => right.pct - left.pct).slice(0, limit);
+  return { score, stamp, winnerAnswerId: score.winnerId, aiWon };
 }

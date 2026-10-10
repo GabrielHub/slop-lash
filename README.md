@@ -11,7 +11,8 @@ MatchSlop and QuizSlop modes built on the same room platform.
 2. Players join with a six-character room code, with up to eight participants.
 3. Everyone answers comedy prompts.
 4. Eligible players vote on each matchup.
-5. Scores, streaks, Humor Rating, and achievements update after each round.
+5. Each vote pays points to the answer it names, and scores update after each
+   matchup.
 6. After three rounds by default, the highest score wins and the final recap is
    retained.
 
@@ -20,28 +21,14 @@ human players.
 
 ### Scoring
 
-Points are based on vote power rather than simple vote counts. Each vote is
-weighted by the voter type and Humor Rating (HR):
+Scoring lives in `src/games/sloplash/scoring.ts`:
 
-| Voter type | Weight |
-| ---------- | -----: |
-| Human      |   1.5x |
-| AI         |   1.0x |
-
-**Base points** = `floor(votePower² × 50 × roundMultiplier × streakMultiplier)`
-
-The round multiplier doubles each round (1x → 2x → 4x). Consecutive wins add a
-streak multiplier: 1.0x → 1.3x → 1.7x → 2.0x. Losing resets the streak.
-
-Bonuses include:
-
-- **Flawless** — 25% for a unanimous win.
-- **Upset** — 10% of the score deficit when the underdog wins, capped at 500
-  before the round multiplier.
-
-Winning a matchup raises HR by 0.2; losing lowers it by 0.1, with a floor of
-0.5. Forfeits, deliberate abstentions, and AI failures are tracked separately
-so scoring and recaps can distinguish them.
+- Every vote is worth 100 points times the round multiplier, which doubles each
+  round (×1, ×2, ×4, …). Human and AI votes count the same.
+- A unanimous win (every cast vote, at least two) earns +50%.
+- A walkover (only one answer arrived) pays one vote's worth, the smallest real
+  win. A matchup with no answers is skipped.
+- Ties and matchups with no votes still pay each answer its own votes.
 
 ### Voice Readout
 
@@ -57,8 +44,8 @@ authoritative game state.
 AI players run through the Vercel AI Gateway, with at most one selected model
 per provider. Claude Haiku is the exception: it calls the Anthropic API directly
 with `ANTHROPIC_API_KEY`, so it bills the owner's Claude Console credits.
-Every model call, including the narrator's script writer, reasons at AI SDK's
-portable `minimal` effort: reasoning stays on at each provider's lowest level.
+Each model call sets its own reasoning effort per task in
+`src/lib/ai/tasks.ts`.
 
 MatchSlop generates portrait images through Fal's `recraft/v4.1/flash/text-to-image` endpoint.
 

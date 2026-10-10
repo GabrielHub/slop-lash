@@ -1,3 +1,5 @@
+import type { ReactionEmoji } from "../../lib/reactions";
+
 /**
  * QuizSlop mode constants. Every value below is a locked default from
  * docs/quizslop-game-mode.md; timers and point values are tuning hypotheses
@@ -14,11 +16,11 @@ export const CALL_SLOP_TOKENS_PER_GAME = 2;
 
 /** Phase timer defaults, in seconds. */
 export const HOUSE_VOTE_SECONDS = 30;
-export const TOPIC_REVEAL_SECONDS = 25;
+/** Bets: the TV shows the round's topic while phones bet. */
 export const SLOP_CALL_SECONDS = 30;
-export const ANSWER_SECONDS = 60;
-export const QUESTION_REVEAL_SECONDS_PER_GROUP = 30;
-export const ROUND_RESULTS_SECONDS = 30;
+export const ANSWER_SECONDS = 30;
+export const QUESTION_REVEAL_SECONDS_PER_GROUP = 15;
+export const ROUND_RESULTS_SECONDS = 12;
 
 /** The catalog checks require at least this many live topics. */
 export const MAX_FROZEN_TOPICS = 25;
@@ -52,3 +54,12 @@ export const MAX_NEUTRAL_QUESTION_LENGTH = 220;
 /** A valid four-question pack uses at least this many distinct primary devices. */
 export const MIN_PRIMARY_COMEDY_DEVICES_PER_PACK = 3;
 export const MAX_COMEDY_DEVICES_PER_QUESTION = 2;
+
+/** The reactions anyone can send while a reveal step is on the TV. */
+export const QUIZSLOP_REACTIONS = [
+  "laugh",
+  "skull",
+  "clap",
+  "target",
+  "clown",
+] as const satisfies readonly ReactionEmoji[];

@@ -24,14 +24,16 @@ function sendDisconnectBeacon(convexUrl: string, sessionToken: string) {
 /**
  * Keeps this tab's seat marked as here while it is mounted, and returns how far
  * the server clock is ahead of this device's, so countdowns match deadlines.
+ * `roomId` is the game the capability currently opens: after "Play again" the
+ * same capability opens a new game, and the tab beats into it at once.
  */
-export function useRoomPresence(capability: string | null): number {
+export function useRoomPresence(capability: string | null, roomId: string | null): number {
   const convex = useConvex();
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const bestRoundTrip = useRef(Number.POSITIVE_INFINITY);
 
   useEffect(() => {
-    if (!capability) return;
+    if (!capability || !roomId) return;
     const tabId = crypto.randomUUID();
     let sessionToken: string | null = null;
     let stopped = false;
@@ -81,7 +83,7 @@ export function useRoomPresence(capability: string | null): number {
       window.removeEventListener("pageshow", onVisible);
       if (sessionToken) void convex.mutation(api.presence.disconnect, { sessionToken });
     };
-  }, [capability, convex]);
+  }, [capability, roomId, convex]);
 
   return clockOffsetMs;
 }

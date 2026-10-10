@@ -12,6 +12,14 @@ export function quizPointsForRound(isFinalRound: boolean): number {
   return isFinalRound ? FINAL_QUIZ_CORRECT_POINTS : QUIZ_CORRECT_POINTS;
 }
 
+/**
+ * Whether the bet phase can stop waiting on a player: they placed a bet or
+ * passed this round, or they have no bets left to place (never asked).
+ */
+export function callDecided(hasCall: boolean, callTokens: number): boolean {
+  return hasCall || callTokens <= 0;
+}
+
 /** One immutable answer assignment as seen at settlement time. */
 export interface SettlementAssignment<
   PlayerId extends string = string,
@@ -245,13 +253,13 @@ export function computeAwards<PlayerId extends string>(
       "CALLED_IT",
       stats,
       (entry) => entry.successfulCalls,
-      (max) => `${max} correct call${max === 1 ? "" : "s"}`,
+      (max) => `${max} bet${max === 1 ? "" : "s"} won`,
     ),
     awardFor(
       "FALSE_ALARM_DEPARTMENT",
       stats,
       (entry) => entry.incorrectCalls,
-      (max) => `${max} missed call${max === 1 ? "" : "s"}`,
+      (max) => `${max} bet${max === 1 ? "" : "s"} lost`,
     ),
     awardFor(
       "SUSPICIOUSLY_WELL_READ",

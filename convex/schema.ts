@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  aiCallFields,
   gameStatusValidator,
   gameTypeValidator,
   jobStatusValidator,
@@ -9,6 +10,7 @@ import {
 } from "./validators";
 import { matchslopTables } from "./matchslop/tables";
 import { quizslopTables } from "./quizslop/tables";
+import { sloplashTables } from "./sloplash/tables";
 
 export default defineSchema({
   /**
@@ -17,6 +19,8 @@ export default defineSchema({
    */
   games: defineTable({
     roomCode: v.string(),
+    /** 1 for a new room, +1 for each "Play again" under the same code. The newest is live. */
+    gameNumber: v.number(),
     gameType: gameTypeValidator,
     status: gameStatusValidator,
     /** Mode-specific phase name; "LOBBY" before start and "FINAL" after. */
@@ -47,7 +51,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_roomCode", ["roomCode"])
+    .index("by_roomCode_and_gameNumber", ["roomCode", "gameNumber"])
     .index("by_status_and_updatedAt", ["status", "updatedAt"])
     .index("by_gameType_and_status_and_finishedAt", ["gameType", "status", "finishedAt"]),
 
@@ -74,8 +78,6 @@ export default defineSchema({
     type: playerTypeValidator,
     modelId: v.optional(v.string()),
     score: v.number(),
-    humorRating: v.number(),
-    winStreak: v.number(),
     kickedAt: v.optional(v.number()),
     joinedAt: v.number(),
   })
@@ -163,11 +165,28 @@ export default defineSchema({
     payload: v.optional(v.any()),
     status: jobStatusValidator,
     error: v.optional(v.string()),
+    /**
+     * Why the AI work failed, set with status FAILED: the runner's reason
+     * (e.g. an `AiFailReason`) after `apply` handled it, or "action-error"
+     * when the action itself threw.
+     */
+    failReason: v.optional(v.string()),
+    /** When the runner picked the job up; minus `createdAt` is time spent queued. */
+    startedAt: v.optional(v.number()),
+    /** How long the runner took, every call and retry included. */
+    latencyMs: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_gameId_and_key", ["gameId", "key"])
     .index("by_gameId_and_status", ["gameId", "status"]),
+
+  /** One row per model call made for a game (see docs/ai-calls.md). */
+  aiCalls: defineTable({
+    gameId: v.id("games"),
+    jobId: v.optional(v.id("generationJobs")),
+    ...aiCallFields,
+  }).index("by_gameId", ["gameId"]),
 
   gameModelUsage: defineTable({
     gameId: v.id("games"),
@@ -256,4 +275,5 @@ export default defineSchema({
 
   ...matchslopTables,
   ...quizslopTables,
+  ...sloplashTables,
 });

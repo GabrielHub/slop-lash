@@ -1,25 +1,12 @@
 /// <reference types="vite/client" />
 // @vitest-environment edge-runtime
 
-import presenceTest from "@convex-dev/presence/test";
-import workpoolTest from "@convex-dev/workpool/test";
-import { convexTest } from "convex-test";
 import type { FunctionArgs } from "convex/server";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { api } from "./_generated/api";
-import schema from "./schema";
+import { setup, type Backend } from "./test.harness";
 
-const modules = import.meta.glob("./**/*.ts");
 const HAIKU = "anthropic/claude-haiku-5.5";
-
-function setup() {
-  const t = convexTest(schema, modules);
-  presenceTest.register(t);
-  workpoolTest.register(t, "aiGenerationWorkpool");
-  return t;
-}
-
-type Backend = ReturnType<typeof setup>;
 
 async function games(t: Backend) {
   return t.run((ctx) => ctx.db.query("games").take(8));
@@ -64,6 +51,14 @@ describe("Free Play rooms", () => {
       configured: true,
       gamesLeftToday: 49,
     });
+  });
+
+  test("needs the Claude key; the Gateway key alone is not enough", async () => {
+    vi.stubEnv("AI_GATEWAY_API_KEY", "test-gateway-key");
+    const t = setup();
+    await expect(t.query(api.freePlay.status, {})).resolves.toMatchObject({ configured: false });
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
+    await expect(t.query(api.freePlay.status, {})).resolves.toMatchObject({ configured: true });
   });
 
   test("pins every model and paid feature on the server", async () => {
@@ -121,6 +116,37 @@ describe("Free Play rooms", () => {
     });
     const view = await t.query(api.views.room, { capability: paid.capability });
     expect(view.room.freePlay).toBe(false);
+    expect((await freePlayDays(t)).map((day) => day.gamesCreated)).toEqual([2]);
+  });
+
+  test("Play again counts against the daily cap and says so when it's spent", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
+    vi.stubEnv("FREE_PLAY_DAILY_GAME_LIMIT", "1");
+    const t = setup();
+    const host = await t.action(api.rooms.create, { gameType: "SLOPLASH", hostName: "Host" });
+    for (const name of ["Ana", "Bo"]) {
+      await t.action(api.rooms.join, { roomCode: host.roomCode, name });
+    }
+    await t.mutation(api.engine.start, { capability: host.capability });
+    await t.mutation(api.engine.end, { capability: host.capability });
+    const finished = await t.query(api.views.room, { capability: host.capability });
+    const again = () =>
+      t.mutation(api.rooms.playAgain, { capability: host.capability, gameId: finished.room.id });
+
+    await expect(again()).rejects.toThrow("Free Play is out of games for today");
+    expect(await games(t)).toHaveLength(1);
+    expect((await freePlayDays(t)).map((day) => day.gamesCreated)).toEqual([1]);
+
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("FREE_PLAY_DAILY_GAME_LIMIT", "2");
+    await expect(again()).rejects.toThrow("Free Play is off right now");
+    expect(await games(t)).toHaveLength(1);
+
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
+    await again();
+    const lobby = await t.query(api.views.room, { capability: host.capability });
+    expect(lobby.room).toMatchObject({ gameNumber: 2, status: "LOBBY", freePlay: true });
+    expect(await games(t)).toHaveLength(2);
     expect((await freePlayDays(t)).map((day) => day.gamesCreated)).toEqual([2]);
   });
 });

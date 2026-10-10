@@ -8,9 +8,11 @@ import {
   encodeCapability,
   hashCapabilitySecret,
   requireHost,
+  requirePlayer,
+  requireViewer,
 } from "./capabilities";
 import { roomPresence } from "./components";
-import { settle } from "./engine";
+import { finishedAtOf, settle } from "./engine";
 import { claimFreePlaySlot, isFreePlayConfigured } from "./freePlay";
 import { getMode } from "./modes";
 import { createRoomCode, normalizePlayerName, normalizeRoomCode } from "./roomInput";
@@ -22,6 +24,9 @@ import { getModelByModelId, selectUniqueModelsByProvider } from "../src/lib/mode
 
 const MAX_ROOM_CODE_ATTEMPTS = 10;
 const MAX_SEAT_SESSIONS = 8;
+const MAX_ROOM_SESSIONS = 64;
+/** A phone that dropped this long before the end still counts as at the table. */
+const REMATCH_AWAY_GRACE_MS = 60_000;
 
 /** Mode settings chosen on the host screen. */
 export const roomSettingsValidator = v.object({
@@ -164,6 +169,35 @@ export const create = action({
 
 const nameValidator = v.object({ name: v.string(), normalizedName: v.string() });
 
+/** What a new lobby takes from its room; the rest starts fresh. */
+type LobbyGameFields = Pick<
+  Doc<"games">,
+  | "roomCode"
+  | "gameNumber"
+  | "gameType"
+  | "totalRounds"
+  | "displayHost"
+  | "freePlay"
+  | "timersDisabled"
+  | "ttsMode"
+  | "ttsVoice"
+>;
+
+/** Inserts a room's next game as an empty lobby: a new room, or a "Play again". */
+function insertLobbyGame(ctx: MutationCtx, fields: LobbyGameFields, now: number) {
+  return ctx.db.insert("games", {
+    ...fields,
+    status: "LOBBY",
+    phase: "LOBBY",
+    step: 0,
+    round: 0,
+    phaseGeneration: 0,
+    phaseStartedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 export const insertRoom = internalMutation({
   args: {
     roomCode: v.string(),
@@ -185,24 +219,21 @@ export const insertRoom = internalMutation({
     const now = Date.now();
     if (args.freePlay && !(await claimFreePlaySlot(ctx, now))) return "FREE_PLAY_LIMIT" as const;
 
-    const gameId = await ctx.db.insert("games", {
-      roomCode: args.roomCode,
-      gameType: args.gameType,
-      status: "LOBBY",
-      phase: "LOBBY",
-      step: 0,
-      round: 0,
-      totalRounds: args.totalRounds,
-      displayHost: args.host === null,
-      phaseGeneration: 0,
-      phaseStartedAt: now,
-      freePlay: args.freePlay,
-      timersDisabled: args.timersDisabled,
-      ttsMode: args.ttsMode,
-      ttsVoice: args.ttsVoice,
-      createdAt: now,
-      updatedAt: now,
-    });
+    const gameId = await insertLobbyGame(
+      ctx,
+      {
+        roomCode: args.roomCode,
+        gameNumber: 1,
+        gameType: args.gameType,
+        totalRounds: args.totalRounds,
+        displayHost: args.host === null,
+        freePlay: args.freePlay,
+        timersDisabled: args.timersDisabled,
+        ttsMode: args.ttsMode,
+        ttsVoice: args.ttsVoice,
+      },
+      now,
+    );
     const playerId = args.host
       ? await insertPlayer(ctx, gameId, { ...args.host, type: "HUMAN" }, now)
       : null;
@@ -360,5 +391,147 @@ export const kick = mutation({
     }
     await ctx.db.patch("games", game._id, { updatedAt: Date.now() });
     if (game.status === "PLAYING") await settle(ctx, game._id);
+  },
+});
+
+/**
+ * "Play again": the same code starts a fresh lobby with the same settings and
+ * the players still at the table, scores at 0. The finished game is left as it
+ * is for its recap; every moved session follows on its own, because the
+ * capability strings don't change.
+ */
+export const playAgain = mutation({
+  args: { capability: v.string(), gameId: v.id("games") },
+  handler: async (ctx, args) => {
+    const viewer = await requireViewer(ctx, args.capability);
+    const previous = viewer.game;
+    if (previous._id !== args.gameId) {
+      // An earlier press (the TV and the host's phone both tapped) already moved this session.
+      const asked = await ctx.db.get("games", args.gameId);
+      if (asked && asked.roomCode === previous.roomCode && asked.gameNumber < previous.gameNumber) {
+        return;
+      }
+      throw new ConvexError("This room has moved on");
+    }
+    if (!viewer.isHost) throw new ConvexError("Only the host can do that");
+    if (previous.status !== "FINISHED") throw new ConvexError("Finish this game first");
+    const live = await findGameByCode(ctx, previous.roomCode);
+    if (live?._id !== previous._id) return;
+
+    const now = Date.now();
+    if (previous.freePlay) {
+      // Throwing rolls the whole transaction back, so no slot is spent on a refusal.
+      if (!isFreePlayConfigured()) {
+        throw new ConvexError("Free Play is off right now. Use the host password to keep playing.");
+      }
+      if (!(await claimFreePlaySlot(ctx, now))) {
+        throw new ConvexError(
+          "Free Play is out of games for today. Use the host password to keep playing.",
+        );
+      }
+    }
+
+    const [players, presence, sessions] = await Promise.all([
+      loadActivePlayers(ctx, previous._id),
+      loadPresence(ctx, previous._id),
+      ctx.db
+        .query("playerSessions")
+        .withIndex("by_gameId", (index) => index.eq("gameId", previous._id))
+        .take(MAX_ROOM_SESSIONS),
+    ]);
+    const seated = new Set(sessions.map((session) => session.playerId));
+    const finishedAt = finishedAtOf(previous);
+    const carried = players.filter((player) => {
+      if (player.type === "AI")
+        return player.modelId !== undefined && !!getModelByModelId(player.modelId);
+      if (player._id === viewer.player?._id) return true;
+      // Phones that slept through the results come along; tabs closed mid-game don't.
+      const entry = presence.get(player._id);
+      return (
+        seated.has(player._id) &&
+        entry !== undefined &&
+        (entry.online || entry.lastDisconnected >= finishedAt - REMATCH_AWAY_GRACE_MS)
+      );
+    });
+
+    const nextId = await insertLobbyGame(
+      ctx,
+      {
+        roomCode: previous.roomCode,
+        gameNumber: previous.gameNumber + 1,
+        gameType: previous.gameType,
+        totalRounds: previous.totalRounds,
+        displayHost: previous.displayHost,
+        freePlay: previous.freePlay,
+        timersDisabled: previous.timersDisabled,
+        ttsMode: previous.ttsMode,
+        ttsVoice: previous.ttsVoice,
+      },
+      now,
+    );
+    const seats = new Map<Id<"players">, Id<"players">>();
+    for (const player of carried) {
+      const fields = {
+        name: player.name,
+        normalizedName: player.normalizedName,
+        type: player.type,
+        ...(player.modelId !== undefined ? { modelId: player.modelId } : {}),
+      };
+      seats.set(player._id, await insertPlayer(ctx, nextId, fields, now));
+    }
+
+    let hostSessionMoved = false;
+    for (const session of sessions) {
+      if (session.playerId === undefined) {
+        await ctx.db.patch("playerSessions", session._id, { gameId: nextId });
+      } else {
+        const playerId = seats.get(session.playerId);
+        // A seat that was left behind keeps its session on the finished game.
+        if (playerId === undefined) continue;
+        await ctx.db.patch("playerSessions", session._id, { gameId: nextId, playerId });
+      }
+      if (session._id === previous.hostSessionId) hostSessionMoved = true;
+    }
+    const hostPlayerId =
+      (previous.hostPlayerId && seats.get(previous.hostPlayerId)) ??
+      (viewer.player ? seats.get(viewer.player._id) : undefined);
+    await ctx.db.patch("games", nextId, {
+      ...(hostSessionMoved ? { hostSessionId: previous.hostSessionId } : {}),
+      ...(hostPlayerId ? { hostPlayerId } : {}),
+    });
+
+    // Tabs keep their presence id, and the presence component refuses a tab
+    // that beats into a second room. Clearing the old room frees every tab.
+    await roomPresence.removeRoom(ctx, previous._id);
+    const next = (await ctx.db.get("games", nextId))!;
+    await getMode(previous.gameType).rematch?.(ctx, previous, next);
+  },
+});
+
+/**
+ * "Done" on a finished game: this seat drops out of the room, so a later
+ * "Play again" leaves it behind. The seat stays in the results. If "Play
+ * again" won the race and already carried the seat into the rematch lobby,
+ * the seat is removed from that lobby instead, so it never sits there
+ * ownerless after the phone has forgotten the room.
+ */
+export const leave = mutation({
+  args: { capability: v.string() },
+  handler: async (ctx, args) => {
+    const { game, player } = await requirePlayer(ctx, args.capability);
+    const rematchLobby = game.status === "LOBBY" && game.gameNumber > 1;
+    if (game.status !== "FINISHED" && !rematchLobby) {
+      throw new ConvexError("Finish this game first");
+    }
+    await deleteSeatSessions(ctx, game, player._id);
+    await roomPresence.removeRoomUser(ctx, game._id, player._id);
+    if (rematchLobby) {
+      await getMode(game.gameType).onPlayerRemoved?.(ctx, game, player);
+      await ctx.db.delete("players", player._id);
+      await ctx.db.patch("games", game._id, { updatedAt: Date.now() });
+    }
+    if (game.hostPlayerId === player._id) {
+      await ctx.db.patch("games", game._id, { hostPlayerId: undefined });
+    }
   },
 });

@@ -17,10 +17,23 @@
 >   topics, and no disputes; every ruling is final.
 > - Each player picks a catalog Home Topic in the lobby. A player who doesn't
 >   pick gets a random one at the start.
-> - The rounds run TOPIC, then CALL (skipped when nobody has tokens), ANSWER,
->   REVEAL (one question per step), and ROUND_RESULTS, with a HOUSE_VOTE before
->   the finale. They run on the shared engine (`convex/quizslop/mode.ts`), with
->   the same deadlines, host controls, and host failover as every other mode.
+> - Each round runs CALL (bets; the TV shows the round's topic while phones
+>   bet), ANSWER, REVEAL (one question group per step), and ROUND_RESULTS.
+>   HOUSE_VOTE opens the last round, and the last round's final reveal goes
+>   straight to the final screen with no ROUND_RESULTS. There is no separate
+>   topic phase. A round where no connected player has a bet left opens at
+>   ANSWER. See [Standard Round](#standard-round) and
+>   [Timers](#timers-advancement-and-disconnects).
+> - Rounds run on the shared engine (`convex/quizslop/mode.ts`), with the same
+>   deadlines, host controls, and host failover as every other mode.
+> - Players only ever read **"bet"**. Internal names (`quizSlopCalls`,
+>   `callTokens`, `SLOP_CALL_SECONDS`, the `CALL` phase) keep "call"; screens
+>   never say "Call Slop", "hold", "token", "tier", "Home Turf" or "finale".
+>   A Home Turf round is "{Name}'s topic"; the House Choice is "the last topic".
+> - There are no voice lines: screens use fixed, short copy.
+> - "Play again" keeps the room code and players (scores 0) in a fresh game.
+>   The new game avoids the topics and questions the room saw in the previous
+>   game when the catalog allows.
 > - The rejoin and continuity rules below are replaced by the shared
 >   rejoin-by-name flow.
 >
@@ -74,31 +87,25 @@ These are explicit non-goals for the first version:
 - multilingual question generation;
 - AI narration or open-ended AI banter;
 - a production web admin/content-moderation console;
-- global leaderboard projection or a shareable historical recap;
-- in-place rematches that reuse the same room state.
+- global leaderboard projection or a shareable historical recap.
 
 ## Complexity Budget
 
 The normal round must feel like four beats, not a rules checklist:
 
-**Topic Reveal -> Call Slop -> Private Answer -> Shared Reveal**
+**Bets -> Answer -> Reveal -> Results**
 
-The stage and every controller show this same four-beat loop, with the current
-beat highlighted and the next beat named in plain language. Internal substates
+The stage and every controller follow this same four-beat loop. The screen
+itself says what to do; there is no step counter or help text. Internal substates
 such as the simultaneous call reveal, one-question-at-a-time receipts, and a
 rare factual dispute must not make the player wonder whether a new rule has
 appeared.
 
-The first warm-up bookends the tutorial with two host-paced screens. Its opening
-topic reveal explains all four beats before the first timed action, and its
-shared reveal waits for the host so the room can read a complete result
-together. Controllers repeat the one action players take in each beat. Later
-rounds keep the same visible loop without repeating the full lesson.
-
-Players make only two possible decisions before the reveal: optionally call one
-friend, then answer one question. Hidden adaptation, question assignment,
-scoring, and settlement are server behavior and require no explanation during
-play.
+There is no tutorial round: the round opener on the TV and the phone screens
+carry the rules, and nothing waits for the host to explain them. Players make
+only two decisions before the reveal: optionally bet that one friend misses,
+then answer one question. Hidden adaptation, question assignment, scoring, and
+settlement are server behavior and require no explanation during play.
 
 Comedy comes from question writing, deterministic game-show copy, reveals, and
 the players' reactions. It must not add another input, phase, or scoring rule.
@@ -155,7 +162,11 @@ comedy copy:
 
 - `neutralQuestion`: the plain question used to verify factual equivalence;
 - `displayPrompt`: the concise, witty version shown to players;
-- `choices`: four semantically parallel options in frozen order;
+- `choices`: four semantically parallel options in frozen order. The catalog
+  may store the correct answer first: players never see this order. Each game
+  shows the choices in a stable per-game permutation (`presentChoices` in
+  `src/games/quizslop/shuffle.ts`, seeded by game and question id), and
+  `selectedIndex` / `correctIndex` in views and scoring use that order;
 - `explanation`: the supporting fact first, followed by at most one short
   comedic button;
 - `comedyDevices`: one or two ordered, bounded tags describing the intended
@@ -308,8 +319,8 @@ handoff. The host surface must explain this two-surface requirement before room
 creation. Never render a playing host's private topic or question inside the
 shared stage merely because both capabilities belong to one browser session.
 
-After roster freeze, **boundary-active** means a frozen player whose durable
-`participationStatus` is `ACTIVE` and for whom Presence reports at least one
+After roster freeze, **boundary-active** means a frozen player who has not been kicked
+(no `kickedAt`) and for whom Presence reports at least one
 online, unexpired player session at the exact server transition. Each interactive
 phase snapshots its eligible roster into application tables. Presence changes
 afterward do not add or remove eligibility for that open phase; a reconnecting
@@ -517,13 +528,13 @@ Starting the game is one atomic server transition:
    rank tie by stable topic ID. Never reshuffle after this transition commits.
 8. Persist the complete deck as warm-up, shuffled Home Turf rounds, then final
    House Choice.
-9. Set shared `currentRound` from its lobby value of zero to one, set the
+9. Set the shared game `round` from its lobby value of zero to one, set the
    zero-based mode deck position to zero, move the shared game out of `LOBBY`,
    and open the warm-up topic reveal.
 
 On every later round transition, increment both values together so
-`currentRound === deckPosition + 1`; the final House Choice therefore opens at
-`currentRound === totalRounds`. Never derive one from the number of child rows.
+`round === deckPosition + 1`; the final House Choice therefore opens at
+`round === totalRounds`. Never derive one from the number of child rows.
 
 The warm-up and final slate must be distinct from each other and from every Home
 Topic match. Future Home Topics and the final slate remain server-only until
@@ -595,131 +606,72 @@ quietly adaptive experience feels fair enough for the room.
 
 ## Standard Round
 
-The player-facing loop is:
+The loop is **CALL → ANSWER → REVEAL(step)\* → ROUND_RESULTS**. Players read
+it as bet, answer, reveal, scores. The last round is
+**HOUSE_VOTE → CALL → ANSWER → REVEAL(step)\* → final screen**: there is no
+ROUND_RESULTS after the last round, so nothing spoils the winner before the
+final screen.
 
-**Topic Reveal -> Call Slop -> Private Answer -> Shared Reveal**
+### 1. Bets (CALL)
 
-Server phases may include short reveal and rare ruling substates, but those must not
-create additional unexplained player decisions.
+There is no separate topic phase. The TV shows the round's topic (kicker
+"Warm-up", "{Name}'s topic" or "Last round") while phones bet.
 
-Every stage and controller labels these beats `1 of 4` through `4 of 4`. Copy
-answers three questions at a glance: what is happening now, what the player can
-do, and what happens next. The first warm-up topic and shared reveal are
-host-paced walkthrough screens; the call and answer actions use their normal
-timers unless the host selected Tutorial Mode.
+Each player starts the game with two bets. During CALL a player may bet that
+one other player will miss their question, or pass ("Skip, no bet"). One tap on
+a player places the bet; while CALL is still open the player can take it back
+(`uncall`, which refunds the token). At most one bet per round. Several players
+may bet on the same target. Bets stay secret until CALL closes; anyone who
+didn't decide passes.
 
-### 1. Topic Reveal
+- **Players with no bets left are never asked and never waited on.** They are
+  left out of `calls.eligiblePlayerIds` (and so out of the stage tracker), and
+  CALL closes early once every connected player has bet, passed, or has no bets
+  left (`callDecided` in `scoring.ts`). Their pass row is written when CALL
+  closes.
+- **A round where no connected player has a bet left skips CALL** and opens
+  straight at ANSWER (`openRound` in `mode.ts`).
 
-The stage shows:
+Bet settlement:
 
-- the normalized topic and scope;
-- whether it is the warm-up, Home Turf, or final House Choice;
-- the Home Topic owner when applicable;
-- whether a correct answer is worth 100 or 200 points.
+- target answers correctly: the bettor loses 150;
+- target misses or runs out of time: the bettor wins 150;
+- target had no question (not in the room when answers opened): the bet is
+  refunded with zero points. A target removed during ANSWER or REVEAL still has
+  a question and counts as a timeout, so the bet wins.
 
-Reveal the Home Topic owner before Call Slop. Home Turf is a public spotlight,
-not a score multiplier, difficulty modifier, or private advantage.
+Being bet on never changes the target's own score.
 
-On the first warm-up only, this screen also teaches the complete four-beat loop
-and waits for the host. It must not count down while first-time players are still
-learning what `Call Slop` means.
+### 2. Answer
 
-### 2. Call Slop
+When ANSWER opens, every active player gets one question from the round's topic
+at their hidden tier. Each phone shows only its own question.
 
-Each player begins a standard game with two Call Slop tokens. At call-window
-opening, persist the boundary-active caller/target roster. Every eligible player
-may either:
+**One tap locks.** Tapping a choice locks it; there is no Lock button and an
+answer can never change (`lockAnswer` ignores a second tap). Phones ignore taps
+in the first 400ms so a stray tap can't lock. ANSWER closes early once every
+connected player has locked; an unlocked answer at the deadline is a miss.
 
-- spend one token on one other call-eligible player, predicting that target
-  will miss; or
-- explicitly hold.
+The TV shows the topic, "Answer on your phone", the bets on the board, and who
+has locked. Bets are public during ANSWER: being bet on is the pressure.
 
-A player may spend at most one token in a round. Multiple callers may target the
-same player. A player cannot target themselves. Selections remain private until
-everyone resolves the choice or the timer closes; missing choices default to
-hold. Persist calls, reveal all targets simultaneously, then wait through a
-short reveal beat before opening questions.
+### 3. Reveal
 
-Call settlement is:
+Players who got the same question form a group; each group gets its own
+15-second reveal step (one to four per round). The order is a stable shuffle,
+except that **on a player's topic the group holding the topic owner reveals
+last** (`revealOrder` in `deck.ts`), so the owner's question closes the round.
 
-- target is correct: caller loses 150 points;
-- target is incorrect or times out after being answer-eligible: caller gains
-  150 points;
-- target was not answer-eligible when the answer phase opened: refund the token
-  and award zero call points;
-- target's question is voided or has a server-detected content/assignment fault:
-  refund the token and award zero call points.
+Each step shows the question, the four choices, who picked what, the correct
+answer, the bets on that group's players with their ±150, and the
+explanation. A correct answer earns 100 (200 in the last round); a wrong
+answer earns 0 and never subtracts.
 
-Being called never changes the target's score. A caller's locked prediction
-still settles if the caller later disconnects. Client-reported network trouble
-is not a system fault and cannot void a call.
+### 4. Results (ROUND_RESULTS)
 
-### 3. Private Answer
-
-When the answer phase opens, atomically snapshot eligibility from the frozen
-roster's boundary-active state and create one immutable assignment per eligible
-player using their current hidden tier.
-
-Each eligible controller receives only its assigned question:
-
-- one concise prompt;
-- exactly four choices in frozen order;
-- one answer selection;
-- a clear lock action;
-- the remaining answer time.
-
-The shared stage shows submission progress, never question text or choices.
-Players are expected not to share answers until everyone locks. Short timers and
-the room's social contract are the anti-cheat model.
-
-Eligibility is fixed for the phase:
-
-- a player who is not boundary-active when the answer phase opens receives no
-  assignment, no quiz points, no difficulty update, and Call Slop refunds;
-- a player active when the phase opens remains accountable even if they
-  disconnect later;
-- an accountable player may reconnect and answer before the existing deadline;
-- an accountable player with no locked answer at closure is incorrect;
-- only a server-detected missing/corrupt assignment or content failure is a
-  system fault. A client cannot self-report one to avoid settlement.
-
-### 4. Shared Reveal
-
-Group players who received the same question. Reveal each distinct assigned
-question once, in a server-frozen reveal order unrelated to its hidden tier. At
-most four question groups can exist in a round.
-
-Each group owns a separate reveal turn. The stage presents one dominant
-question, its answer, its explanation, and the affected players; controllers
-mirror that same current group. Show `Question N of M`, retain already revealed
-groups only as secondary history, and give every later-round group a full
-30-second reveal budget. Never put several unread explanations on screen under
-one shared timer. The warm-up group has no deadline and advances only when the
-host confirms that the room has finished reading it.
-
-For each group, show:
-
-1. the question and all four choices;
-2. the correct choice;
-3. a short explanation;
-4. a source label on stage and source links on controllers;
-5. the assigned players and whether each was correct;
-6. provisional quiz and Call Slop deltas.
-
-Do not display internal tier names or reveal groups in tier order. Unassigned
-questions remain in the retained pack for audit but do not receive paced stage
-time.
-
-Before a group reveal becomes public, validate that its frozen question,
-assignment, key, and choice order are internally complete. A server-detected
-failure marks the group `SYSTEM_VOID`, shows deterministic "question voided"
-copy instead of a keyed result, refunds related calls, awards no quiz points,
-and causes no tier update. Clients cannot request this ruling.
-
-A normal valid correct answer provisionally earns 100 points. A final-round
-correct answer provisionally earns 200 points. Incorrect answers earn zero and
-never subtract quiz points. Total score may still fall below zero because an
-incorrect Call Slop prediction loses 150 points.
+After every round but the last, a 12-second leaderboard shows each player's
+round delta and new total. The last round's final reveal settles and goes
+straight to the final screen.
 
 ### Factual dispute
 
@@ -791,9 +743,11 @@ ties by:
 
 Do not use hidden difficulty or randomness as a final tie-breaker.
 
-The first version has no in-place rematch. `Play Again` returns the host to room
-creation and starts a fresh game, resetting topics, packs, scores, tokens, and
-hidden difficulty.
+"Play again" keeps the room code and the players in a fresh game, resetting
+topics, scores, bets, and hidden difficulty. The new game's lobby and the
+house's deals leave out the topics whose questions the room was asked in the
+previous game, and a question the room already saw is swapped for the nearest
+fresh tier, whenever the catalog has enough left.
 
 The mode-local final screen is the first version's complete results surface. It
 does not link to the generic prompt/response recap and does not project QuizSlop
@@ -802,39 +756,28 @@ unsupported-mode state instead of an empty or misleading generic recap. Do not
 schedule an AI winner tagline; use the deterministic awards below.
 
 Final comedy awards are non-scoring and use only visible facts. The initial set
-is `CALLED IT` for most successful calls, `FALSE ALARM DEPARTMENT` for most
-incorrect calls, and `SUSPICIOUSLY WELL-READ` for most correct answers. Omit an
+is `CALLED IT` for most bets won ("2 bets won"), `FALSE ALARM DEPARTMENT` for
+most bets lost ("1 bet lost"), and `SUSPICIOUSLY WELL-READ` for most correct
+answers ("3 correct answers"). Omit an
 award when its count is zero, show co-recipients on ties, and always show the
 underlying stat so the joke never obscures the result. Never base an award on
 hidden tier.
 
 ## Timers, Advancement, and Disconnects
 
-These defaults are tuning hypotheses stored in QuizSlop mode constants:
+These defaults live in `src/games/quizslop/game-constants.ts`:
 
-| Phase                      |                        Default | Timeout behavior                                          |
-| -------------------------- | -----------------------------: | --------------------------------------------------------- |
-| Final House Choice vote    |                     30 seconds | Abstain; resolve plurality and frozen rank                |
-| House Choice result        |                     15 seconds | Advance automatically                                     |
-| Topic reveal               |                     25 seconds | Advance automatically after the first-round exception     |
-| Call Slop                  |                     30 seconds | Hold                                                      |
-| Call Slop reveal           |                     15 seconds | Advance automatically                                     |
-| Private answer             |                     60 seconds | Accountable player is incorrect                           |
-| Question reveal            |  30 seconds per selected group | Advance to the next single-group reveal turn              |
-| Challenged-question ruling | 30 seconds per challenged item | Abstain; non-majority upholds                             |
-| Round results              |                     30 seconds | Advance automatically                                     |
-| Continuity reconnect grace |                     15 seconds | Resume with 2+ boundary-active players; otherwise abandon |
+| Phase         | Default              | Closes early when                          | Timeout behavior                           |
+| ------------- | -------------------- | ------------------------------------------ | ------------------------------------------ |
+| CALL (bets)   | 30 seconds           | every connected player decided or has none | Undecided players pass                     |
+| ANSWER        | 30 seconds           | every connected player locked              | An unlocked answer is a miss               |
+| REVEAL        | 15 seconds per group | never                                      | Next group, then results or final          |
+| ROUND_RESULTS | 12 seconds           | never                                      | Next round (or HOUSE_VOTE before the last) |
+| HOUSE_VOTE    | 30 seconds           | every connected player voted               | Plurality; ties go to slate order          |
 
-Submission phases may close early after every eligible participant explicitly
-locks an action. Short reveal phases still run so simultaneous public reveals
-remain legible.
-
-The first warm-up `TOPIC_REVEAL` and its `QUESTION_REVEAL` are exceptions to the
-table: neither has an automatic deadline, and each advances only when the host
-closes that part of the walkthrough. Every later `QUESTION_REVEAL` ordinal gets
-a fresh 30-second deadline; a round with four distinct questions therefore gets
-four readable reveal turns, not one page containing four receipts under one
-timer.
+A round takes at most 30 + 30 + 4 × 15 + 12 = 132 seconds, and about 75–90
+seconds with early closes. With timers disabled, every phase waits for the
+host. The rest of this section is the original design, kept as history.
 
 With Tutorial Mode or timers disabled:
 
@@ -1064,48 +1007,28 @@ application.
 
 ### Shared stage
 
-| Mode phase        | Stage responsibility                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| Lobby setup       | Join code, roster, and redacted per-player topic readiness                                          |
-| Final House vote  | Three reviewed topic cards and lock progress; counts only after closure                             |
-| House vote reveal | Winning topic and deterministic tie-break animation when needed                                     |
-| Topic reveal      | Topic, normalized scope, owner when applicable, round kind, and point value                         |
-| Call Slop         | Resolve progress only; no private targets                                                           |
-| Call reveal       | Simultaneous caller-to-target predictions                                                           |
-| Private answer    | Submission progress; never questions or choices                                                     |
-| Question reveal   | One current question group, answer, explanation, players, provisional deltas, and `N of M` progress |
-| Dispute           | Challenged questions, reasons, vote progress, and rulings                                           |
-| Round results     | Settled deltas, totals, subtotals, tokens, and round progress                                       |
-| Continuity grace  | Settled results plus a plain waiting-for-reconnect message; no gameplay action                      |
-| Final             | Winners, transparent tie-break facts, deterministic comedy awards, best calls, and new-game action  |
+The stage is a fixed 16:9 artboard that never scrolls, with one scene per round.
 
-Stage and controller microcopy should use a checked-in QuizSlop voice bank, not
-live generation. Clear state or action text comes first; a joke is secondary.
-Rotate lines without immediate repetition and keep an unembellished accessible
-label for screen readers. The copy may roast the quiz, topic, or outcome, but
-never a player's intelligence.
+| Phase         | Stage responsibility                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| Lobby         | Each player's avatar with their picked topic, or "Picking…"                                              |
+| CALL          | The round's topic as the hero, "Pick who gets it wrong", the ±150 stakes, and who decided               |
+| ANSWER        | Topic docked, "Answer on your phone", "Right answer +100", the bet board, and who has locked             |
+| REVEAL        | One question group: prompt, 2×2 choices, pickers, correct answer, that group's bets, explanation         |
+| ROUND_RESULTS | Leaderboard with round deltas, re-sorting, and the leader's crown                                        |
+| HOUSE_VOTE    | "Vote for the last topic", three topic cards, and who has voted; votes stay secret until the vote closes |
+| Last round    | The vote tally, then the winning topic becomes the round's hero with "Double points"                     |
+| Final         | Towers worst-first, the winner(s), and the comedy awards                                                 |
 
-Each optional joke line has a stable ID, phase/event tags, an accessible plain
-label, and human comedy-review metadata. At a phase transition, server code uses
-a stable hash of game ID, phase generation, and event tag to choose among valid
-lines while excluding the immediately prior ID when at least two are eligible,
-then persists the chosen ID.
-Clients do not randomize independently. Validation errors, safety messages,
-source failures, and abandonment reasons use plain actionable copy without a
-joke blocking comprehension.
+Copy is fixed and short; there is no voice bank and no rotating joke lines.
 
 ### Player controller
 
-- submit, revise, and confirm one Home Topic;
-- see private normalization and pack progress;
-- choose a reviewed fallback when required;
-- vote on the final House topic;
-- call one eligible player or hold;
-- receive only its own assigned question before reveal;
-- choose and lock one answer;
-- inspect explanations and source links after reveal;
-- initiate at most one successful dispute during reveal and vote on one challenged question per ruling turn;
-- reconnect into the exact current phase without duplicate submission.
+- pick a Home Topic from a deal of six (with "Shuffle"), or change it;
+- bet on one other player or pass (never asked with no bets left);
+- tap one choice to lock the answer;
+- vote for the last topic;
+- see their own result at each reveal and their placement at the end.
 
 The controller never displays or receives hidden difficulty.
 
@@ -1155,69 +1078,24 @@ and Workflow boundaries. Keep game rules typed, mode-local, and deterministic.
 
 ### Repository touchpoints
 
-Create mode-local frontend/domain modules such as:
+QuizSlop lives in these modules:
 
-- `src/games/quizslop/game-constants.ts`
-- `src/games/quizslop/types.ts`
-- `src/games/quizslop/difficulty.ts`
-- `src/games/quizslop/scoring.ts`
-- `src/games/quizslop/deck.ts`
-- `src/games/quizslop/config/topic-catalog.ts`
-- `src/games/quizslop/config/difficulty-examples.ts`
-- `src/games/quizslop/config/voice-lines.ts`
-- `scripts/quizslop/validate-catalog.ts`
-- `scripts/quizslop/render-catalog-review.ts`
-- `src/games/quizslop/ui/quizslop-game-shell.tsx`
-- `src/games/quizslop/ui/quizslop-controller-shell.tsx`
-- focused stage, controller, and hook modules under the same mode directory
-- focused QuizSlop fixture state and shells under `src/dev/game-fixtures/`
+- `src/games/quizslop/`: rules and content (`game-constants.ts`, `types.ts`,
+  `difficulty.ts`, `scoring.ts`, `deck.ts`, `catalog.ts`,
+  `content-validation.ts`, `canonical-key.ts`, `shuffle.ts`) and the reviewed
+  catalog under `config/`.
+- `src/games/quizslop/ui/`: the stage and controller screens (`stage.tsx`,
+  `controller.tsx`, `shared.tsx`, `beats.ts`), registered in
+  `src/games/ui-registry.ts`.
+- `convex/quizslop/`: the mode's rules for the engine (`mode.ts`), player
+  mutations (`play.ts`), tables (`tables.ts`), and view (`view.ts`).
+- `scripts/quizslop/`: catalog validation and the review render.
+- `src/dev/fixtures/quizslop.ts`: the `/dev/ui` fixtures.
 
-Create focused backend modules such as:
-
-- `convex/quizslopValidators.ts`
-- `convex/quizslopData.ts`
-- `convex/quizslop.ts`
-- `convex/quizslopLifecycle.ts`
-- `convex/quizslopSetup.ts`
-- `convex/quizslopMaterialization.ts`
-- `convex/quizslopGameplay.ts`
-- `convex/quizslopIntegrity.ts`
-- `convex/quizslopCleanup.ts`
-- `convex/quizslopViews.ts`
-- `convex/quizslopViewValidators.ts`
-- matching focused tests next to those modules
-
-Production integration also requires deliberate edits to existing shared
-surfaces, including:
-
-- `src/games/core/types.ts`
-- `convex/validators.ts`
-- `convex/gameLimits.ts`
-- `convex/schema.ts`
-- `convex/rooms.ts` and `convex/roomsInternal.ts`
-- `convex/lobby.ts`
-- `convex/gameViewData.ts`, `convex/gameViews.ts`, and
-  `convex/gameViewValidators.ts`
-- `convex/cleanup.ts` and its stale-game deletion tests
-- `convex/recaps.ts` and
-  `src/app/game/[code]/recap/recap-shell.tsx` for unsupported-mode handling
-- `src/lib/convex-room-session.ts`
-- `src/games/core/votability.ts`
-- `src/app/join/page.tsx`
-- `src/app/host/page.tsx`
-- `src/components/shell-resolvers.tsx`
-- `vite.config.ts` for checked Vite Plus catalog tasks
-- `/dev/ui` scenario routing
-
-Adding a `GameType` is a closed-world change. Search every duplicated literal
-union, `Record<GameType, ...>`, switch, equality branch, route decision, and
-generic fallback. QuizSlop joiners always route to the controller, stored room
-sessions accept `QUIZSLOP`, shell resolution selects only QuizSlop shells, and
-an accidental `/game/{code}` visit redirects a player capability to the
-controller or a display-only host capability to the stage. Generic prompt
-votability returns `false`. Generic prompt, response, chat,
-reaction, SlopLash-AI, and MatchSlop paths must reject or ignore QuizSlop rather
-than letting a default branch treat it as SlopLash.
+Shared surfaces (`src/games/meta.ts`, `convex/validators.ts`,
+`convex/schema.ts`, `convex/rooms.ts`, `convex/cleanup.ts`, the host page)
+carry the `QUIZSLOP` game type. Adding a game type is a closed-world change:
+search every literal union, `Record<GameType, ...>`, and switch on the game type.
 
 Do not hand-edit `convex/_generated/`. After schema/API changes, run the checked
 `vp run convex:codegen` task.
@@ -1280,6 +1158,10 @@ Workflow and Workpool handles through the existing generation-job path before
 deleting their owning rows.
 
 ### Authoritative mode phase
+
+> History: the shipped phases are `CALL`, `ANSWER`, `REVEAL`, `ROUND_RESULTS`
+> and `HOUSE_VOTE` (see [Standard Round](#standard-round)). The phase list and
+> transition table below are the original design.
 
 Use one exact mode-local phase:
 
@@ -1352,7 +1234,7 @@ Increment the shared generation for every mode-phase or reveal-ordinal change,
 and set/clear the shared deadline in that same transaction. The continuity grace
 is the one exception that sets a deadline even when gameplay timers are disabled.
 
-Entering either terminal mode phase atomically sets shared `finalizedAt` if it is
+Entering either terminal mode phase atomically sets shared `finishedAt` if it is
 unset and clears `games.phaseDeadline`. After terminalization, all
 gameplay/deadline mutations are stale no-ops. Only cleanup and read-only results
 access remain. `ABANDONED` stores no winner
@@ -1397,35 +1279,13 @@ use `rel="noopener noreferrer"` when opened in a new context.
 Focused answer-key, future-topic, hidden-tier, and cross-controller redaction
 tests are release blockers.
 
-### AI jobs and workflow
+### AI jobs
 
-Use Workpool for independent topic-normalization jobs. Use Workflow for the
-dependent evidence -> factual candidate -> comedy variant -> verification ->
-freeze sequence. Authoritative game and content state remains in application
-tables, not component state.
-
-Reuse the existing `aiGenerationWorkpool` and `gameWorkflow` configuration,
-currently bounded at `maxParallelism: 5`; do not create a QuizSlop-only
-unbounded component. Re-read `convex/components.ts` before implementation and
-treat a future configured bound as source of truth rather than duplicating the
-number in runtime code.
-
-Idempotency keys include at least:
-
-- game ID;
-- topic ID and monotonic topic revision;
-- pack version;
-- stage, internal tier, and candidate ordinal where applicable;
-- prompt and schema version.
-
-Every completion mutation revalidates job ID/status, game ID, topic revision,
-confirmed canonical key, pack version, and expected setup state before writing.
-Stale jobs may be retained as canceled diagnostics but cannot replace a topic,
-freeze a pack, or advance the game.
-
-Keep provider calls in bounded internal actions and persistence in internal
-mutations. Use the installed AI SDK/Gateway boundary rather than hand-written
-provider transports. The pipeline does not need an autonomous tool loop.
+QuizSlop makes no model calls: every question comes from the reviewed catalog.
+The generated-pack pipeline described in this document (topic normalization,
+evidence, comedy variants, verification) was cut. If it returns, it runs as
+bounded jobs on the shared AI job runner (`convex/jobs.ts`), and its results are
+applied only while the phase that asked for them is still current.
 
 ### Room-creation and rollout guards
 
@@ -1450,9 +1310,6 @@ in shared `LOBBY`. Shared lobby views show the derived-length description instea
 of `0 rounds`. Roster freeze must atomically replace it with 4-10 before leaving
 `LOBBY`; any non-lobby QuizSlop game with zero rounds violates an invariant.
 
-Do not expose QuizSlop in the production host picker when only its shared type
-or schema exists. Build and test the deterministic mode first, then add the host
-picker option as the final integration step of Milestone 2.
 
 ## Host Surface
 
@@ -1478,206 +1335,10 @@ Later versions may add Quick mode, localization, stricter family filters, or
 alternate Call Slop stock. Do not expose scoring, adaptation, source thresholds,
 or retry counts as host settings before playtesting the default.
 
-## Implementation Plan for an AI Agent
-
-Implement in order. Each milestone must leave the tree coherent and testable.
-Do not expose an incomplete production game mode merely because a shared type
-has been added.
-
-### Milestone 0: fixture-only fun prototype
-
-1. Add typed QuizSlop fixture state under `src/dev/game-fixtures/` without
-   changing production Convex types or schema.
-   Use a fixture-only discriminant such as `QUIZSLOP_FIXTURE`; do not cast it to
-   the closed production `GameType` before Milestone 2.
-2. Add dedicated QuizSlop stage and controller mock shells at static routes such
-   as `/dev/ui/quizslop-prototype` and
-   `/dev/ui/quizslop-prototype/controller`. Keeping them outside the existing
-   shared-game scenario union lets this milestone stay fixture-only and typed.
-3. Build one interactive four-player fixture covering:
-   - a preselected Easy warm-up;
-   - a host-paced first-round explanation with the complete four-beat loop
-     visible on stage and controllers;
-   - hidden per-player tier changes across later rounds;
-   - four shuffled Home Turf topics with owner reveals;
-   - Call Slop hold, success, failure, and several callers on one target;
-   - private questions and one separate 30-second reveal turn for every selected
-     question group;
-   - one accountable timeout and one pre-answer disconnect exemption;
-   - two distinct challenges resolved in two clearly labeled ruling turns;
-   - one upheld and one voided question;
-   - a three-option final topic vote and +200 final answer.
-4. Use fixed, sourced, comedy-reviewed questions and deterministic witty phase
-   copy. The fixture must demonstrate varied comedy devices, not placeholder
-   trivia with jokes deferred to a later milestone. Do not connect Convex or AI.
-5. Verify stage/controller synchronization with focused browser automation.
-6. Run an in-person or voice-call playtest with four humans and one shared stage.
-   Test 5-6 players after the production-mode fixture supports variable rosters.
-
-Definition of done:
-
-- players understand the normal loop without being taught difficulty rules;
-- no first-time player must read rules while a countdown is already running;
-- hidden escalation feels plausible rather than random or punitive;
-- the written questions and explanations produce laughs without obscuring facts;
-- Call Slop creates conversation based on the revealed topic and person;
-- Home Turf feels personal without granting a mechanical advantage;
-- the fixture completes within the target duration;
-- production `GameType`, Convex schema/API, room creation, and host picker remain
-  unchanged;
-- focused type, lint, and browser checks pass.
-
-The human playtest is an explicit product checkpoint. An AI implementation agent
-may build and verify the fixture but must not claim that the game is fun or that
-the playtest passed without human feedback.
-
-### Milestone 1: deterministic domain and reviewed content contracts
-
-1. Add mode-local types and constants without yet exposing `QUIZSLOP` through
-   production room creation.
-2. Implement pure functions for hidden-tier updates, catalog availability,
-   roster/deck freeze, category-aware shuffle, final vote resolution, question
-   assignment, Call Slop, ordered dispute rulings, settlement, and final ties.
-3. Add Zod and Convex validators for every mode-local contract.
-4. Create the checked-in 12-topic minimum catalog, four-tier pack schema,
-   comedy voice bank, and bounded factual/comedy rejection examples.
-5. Add `vp run quizslop:catalog:validate`,
-   `vp run quizslop:catalog:validate-approved`, and
-   `vp run quizslop:catalog:review` tasks. Structural validation checks bounds,
-   stable IDs, canonical hashes, one question per tier, source cardinality,
-   answer/choice invariants, comedy-device diversity, review metadata, and
-   eight-player capacity. The approved task adds the production approval gate.
-   Review renders neutral/display copy, choices/key, explanations, evidence, and
-   review state into a human-readable artifact without changing approval fields.
-6. Mark catalog factual/comedy review and voice-bank comedy review as draft
-   until explicit human approval.
-7. Build one deterministic fixture pack that drives a complete game entirely
-   through pure functions.
-
-Definition of done:
-
-- every gameplay rule has a typed deterministic representation;
-- hidden difficulty never appears in a public-view type;
-- round settlement is exact and idempotent;
-- the catalog capacity invariant proves eight-player curated games remain
-  constructible;
-- all catalog facts have retained source metadata;
-- every approved catalog question passes the read-aloud, choice-parity,
-  answer-leakage, and comedy-review contract;
-- every approved four-question catalog pack uses at least three primary comedy
-  devices without repeating a joke template;
-- every enabled optional voice line has an approved comedy review and a plain
-  accessible label;
-- catalog validation passes structurally, and
-  `quizslop:catalog:validate-approved` cannot pass while any selectable pack or
-  voice line remains draft;
-- focused tests and `vp check` pass.
-
-Human approval of catalog packs is a content gate, not something an AI agent may
-self-certify.
-
-### Milestone 2: playable Convex mode with reviewed content
-
-1. Add mode-local tables and indexes to `convex/schema.ts`, then regenerate the
-   checked-in Convex API through `vp run convex:codegen`.
-2. Add `QUIZSLOP` to the shared `GameType`, Convex validator, game limits, room
-   creation, mode-state creation, lobby start branching, shared views, and
-   shell resolvers. Complete the closed-world branch/route audit above in the
-   same change; do not rely on existing default branches.
-3. Enforce the server-side room guards for AI roster, narrator, round count,
-   host participation, and 2-8 humans.
-4. Implement server-authoritative setup, roster/deck freeze, phases, deadlines,
-   final vote, calls, assignments, answers, grouped reveals, ordered dispute rulings,
-   settlement, abandonment, reconnect, and finalization.
-5. Extend bounded stale-game cleanup to every QuizSlop-owned row and cover it in
-   the existing cleanup tests.
-6. Build separate stage and controller views with strict redaction.
-7. Connect production QuizSlop shells to Convex hooks.
-8. Keep content deterministic: custom topics remain disabled and every player
-   chooses reviewed catalog content.
-9. Add explicit unsupported generic-recap handling, hide recap links in QuizSlop
-   shells, and verify finalization schedules no SlopLash-only leaderboard or
-   winner-tagline work.
-10. Enable the production host-picker option only after the deterministic happy
-    path and redaction suite pass.
-
-Definition of done:
-
-- 2-8 humans can play start to finish without a model call;
-- duplicate submissions and stale deadlines cannot score or advance twice;
-- reconnect returns the same locked state;
-- every interactive phase eligibility snapshot behaves exactly as documented;
-- fewer than two boundary-active players at the guarded continuity recheck
-  produces `ABANDONED` with no winner;
-- no hidden tier, future topic, foreign question, or answer key reaches a client
-  before its boundary; retained support evidence never reaches a player-facing
-  client;
-- stale-game cleanup removes every game-owned QuizSlop row and external job
-  handle without unbounded transactions;
-- final results use the mode-local surface, while the generic recap is explicitly
-  unsupported and no SlopLash-only projection job is scheduled;
-- stored sessions, join routing, shell resolution, and generic helper rejection
-  all identify QuizSlop explicitly with no SlopLash fallthrough;
-- `vp run quizslop:catalog:validate-approved` passes before host picker exposure;
-- `vp check`, `vp test`, and `vp run build` pass on the settled tree.
-
-### Milestone 3: source-backed custom topics
-
-1. Run a capability spike against the current Gateway catalog to prove source
-   discovery, safe retrieval, structured output, source capture, latency, and
-   cost. Record exact models and results; do not choose from memory.
-2. Add typed backend configuration for the custom-topic feature and selected
-   generator/verifier models. Default the feature off when configuration or the
-   retrieval adapter is unavailable.
-3. Implement normalization/moderation as bounded Workpool work.
-4. Implement safe evidence retrieval and the revision-bound factual -> comedy
-   -> verification -> freeze pipeline as a durable Workflow.
-5. Add deterministic validation, independent verification, one missing-tier
-   retry, deadlines, cancellation, and catalog fallback.
-6. Add private player progress, revision handling, fallback selection, and
-   pack-ready start gating.
-7. Persist provenance, usage, latency, retry, and evidence records.
-
-Definition of done:
-
-- every accepted generated fact has retained evidence that directly supports
-  the keyed answer;
-- every custom topic has exactly one frozen question per tier before start;
-- provider, retrieval, deadline, or validation failure cannot produce a partial
-  playable pack;
-- editing a topic cannot allow stale output to win a race;
-- failure gives the player three currently valid catalog choices;
-- latency and cost are measured at 2, 5, and 8 players;
-- custom generation remains disabled unless the technical launch gate below
-  passes.
-
-### Milestone 4: reliability, polish, and launch gate
-
-1. Add final stage pacing, sounds, reduced motion, narrow-controller layouts,
-   timers-off controls, and dev/internal content QA tooling that is unavailable
-   in production player/host routes.
-2. Add the gameplay and content telemetry defined below.
-3. Run repeated source review and internal-tier calibration sessions.
-4. Run repeated comedy review against the checked-in voice rubric and reject
-   drift toward flat, repetitive, answer-leaking, or generic AI wording.
-5. Exercise the full live flow with browser automation after fixture coverage
-   is settled.
-6. Run repository-wide `vp check`, `vp test`, and `vp run build`.
-7. Enable custom topics only if every technical, source, safety, latency, and
-   comedy gate below passes; otherwise launch or remain curated-only.
-
-Definition of done:
-
-- no known factual error remains in the approved launch catalog;
-- assigned-question accuracy is monotonically lower from internal Easy through
-  Insane once the sample is large enough to assess;
-- approved catalog and launch-sample questions meet the comedy quality gate;
-- the normal four-beat round remains understandable without difficulty UI;
-- a standard 4-6 player game stays within the target duration;
-- no scored phase depends on a live model call;
-- every required check passes on the settled tree.
-
 ## Verification Matrix
+
+> History: this is the original test plan, including cut features. The tests
+> next to each module are authoritative.
 
 ### Pure rules tests
 
@@ -1724,7 +1385,7 @@ Definition of done:
 - host cannot start until every included topic is ready;
 - roster freeze excludes inactive/offline lobby players, derives 4-10 rounds,
   and opens at shared round one/mode deck position zero;
-- every later transition preserves `currentRound === deckPosition + 1`;
+- every later transition preserves `round === deckPosition + 1`;
 - phase, round, participant, and generation guards on every mutation;
 - timeout defaults for final vote, calls, answers, challenges, and disputes;
 - corrupt assignment/question integrity produces `SYSTEM_VOID` and never
@@ -1748,7 +1409,7 @@ Definition of done:
 - stale-game cleanup covers all QuizSlop tables and component job handles;
 - finalization does not schedule SlopLash leaderboard or winner-tagline work and
   the generic recap returns its explicit unsupported-mode result;
-- finalization/abandonment sets `finalizedAt` once and every later gameplay or
+- finalization/abandonment sets `finishedAt` once and every later gameplay or
   deadline mutation is a stale no-op;
 - generic prompt, response, chat, reaction, and other-mode mutations reject a
   QuizSlop game;
@@ -1890,38 +1551,9 @@ explicit product decision replace them:
   the first version;
 - one Home Topic per player is sufficient for the first version;
 - 8-player games retain every Home Turf round even if they run longer;
-- no category-veto UI and no in-place rematch ship initially.
+- no category-veto UI ships initially.
 
 Call Slop values, timer lengths, final points, pack deadline, and large-room
 duration remain tuning hypotheses, but they are not open implementation
 questions. Build the documented values, instrument them, and change them only
-after the relevant milestone's evidence is reviewed.
-
-## Remaining Human Gates
-
-No unresolved product decision blocks Milestones 0-2. An AI implementation
-agent should execute the locked defaults and stop only for these evidence gates:
-
-1. human fun/clarity feedback after the Milestone 0 playtest;
-2. explicit factual, comedy, and voice-bank approval for Milestone 1 content;
-3. human source and comedy ratings for the Milestone 4 custom-topic launch
-   sample.
-
-If a gate fails, report the exact rejected content or measured threshold and
-leave the prior milestone working. Do not silently redesign scoring, adaptation,
-round structure, or safety policy to force a pass.
-
-## Recommended Next Step
-
-Build Milestone 0 only: a four-player `/dev/ui` fixture with the preselected
-warm-up, four shuffled Home Turf topics, and a player-voted double-point finale.
-Make hidden difficulty diverge across players, include both Call Slop outcomes,
-exercise the agreed disconnect snapshot, and batch one upheld and one voided
-question into the same dispute vote. Use comedy-reviewed catalog examples and a
-deterministic witty UI voice from the first playable screen; humor is part of
-the thesis being tested, not Milestone 4 decoration.
-
-That fixture tests the product thesis with the least irreversible work: whether
-personal topics, genuinely funny trivia writing, quietly escalating questions,
-and topic-based Call Slop make ordinary trivia social enough. Do not invest in
-the source-retrieval pipeline until humans can play and evaluate that loop.
+after playtest evidence is reviewed.

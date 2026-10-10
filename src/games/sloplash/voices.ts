@@ -1,3 +1,5 @@
+import { stableHash } from "../../lib/hash";
+
 export interface NarratorVoice {
   id: string;
   name: string;
@@ -22,10 +24,5 @@ export function getNarratorVoice(voiceId: string): NarratorVoice | undefined {
 
 /** Resolves the Random option once per game without persisting another field. */
 export function pickVoiceForSeed(seed: string): string {
-  let hash = 2_166_136_261;
-  for (let index = 0; index < seed.length; index++) {
-    hash ^= seed.charCodeAt(index);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return NARRATOR_VOICES[(hash >>> 0) % NARRATOR_VOICES.length].id;
+  return NARRATOR_VOICES[stableHash(seed) % NARRATOR_VOICES.length].id;
 }

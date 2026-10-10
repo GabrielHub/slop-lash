@@ -1,463 +1,785 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { motion } from "motion/react";
-import { AiUsageBreakdown } from "@/components/ai-usage-breakdown";
-import { Timer, usePhaseCountdown } from "@/components/timer";
-import { fadeInUp, slideInRight, staggerContainer } from "@/lib/animations";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, LayoutGroup, MotionConfig, motion, type Variants } from "motion/react";
+import { setAmbient } from "@/lib/ambient-events";
+import { ACCENT, DUR, EASE, SPRING, enter, fade, pop } from "@/lib/animations";
+import type { TitleCardSpec } from "@/room/game-ui";
+import { isHostClocked } from "@/room/host-actions";
 import { useModeView, useRoom, type RoomView } from "@/room/context";
-import { PlayerProgress } from "@/room/parts";
-import { ProfileCard } from "./profile-card";
-import { FinalStandings, PostMortem, RoundReveal, Scoreboard } from "./results";
+import { CountUp, Stamp, useFreshAtMount, useSurface } from "@/room/moment";
+import { DoneTracker } from "@/room/parts";
+import { Avatar } from "@/room/avatar";
+import { BallotGrid, ContextBubble, VotedRow } from "./ballot";
 import {
-  BrokenHeartIcon,
-  Chat,
-  ENDINGS,
-  HeartIcon,
-  OutcomeVerdict,
-  PenIcon,
-  SignalChips,
-  SparkleIcon,
-  TypingDots,
-  VoteIcon,
-  card,
+  LONE,
+  MEET,
+  NEXT,
+  SEND,
+  finalBeats,
+  meetOffset,
+  replyBeats,
+  useBeats,
+  useDisplayMood,
+  type NamedCue,
+} from "./beats";
+import {
+  COPY,
+  UNMATCHED,
+  endingOf,
+  heartDelta,
+  reactionOf,
+  signedPoints,
+  stampOf,
+  type Ending,
+} from "./copy";
+import { MeetHero, ProfileHero, PromptDeck } from "./deck";
+import { FinalHero, RecapSections, Standings, rankPlayers } from "./finale";
+import { DockedStamp, PersonaStrip, type LinePulse, type MeterShown } from "./strip";
+import { Thread } from "./thread";
+import {
+  isLastMessageRound,
+  latestPersona,
   personaName,
-  raised,
-  type Answer,
+  personaTurn,
   type MatchslopMode,
 } from "./primitives";
 
-type Headline = { icon: ReactNode; title: string; subtitle: string; color: string };
-
-function headline(view: RoomView, mode: MatchslopMode): Headline {
-  const { room } = view;
-  const name = personaName(mode.persona);
-  const { comeback } = mode;
-  const outcome = mode.outcome === "IN_PROGRESS" ? null : mode.outcome;
-
-  if (room.status === "FINISHED" || (room.phase === "REPLY" && outcome)) {
-    const ending = outcome ?? "TURN_LIMIT";
-    const copy = {
-      DATE_SEALED: ["It's a match!", "You collectively charmed the persona. Date sealed."],
-      COMEBACK: [
-        "You saved it",
-        "Not a full date, but the room talked its way back from disaster.",
-      ],
-      UNMATCHED: ["Better luck next time", `${name} wasn't feeling it. Try a different approach?`],
-      TURN_LIMIT: ["Time ran out", "The conversation hit the round limit without a clear outcome."],
-    }[ending];
-    const { Icon, color } = ENDINGS[ending];
-    return { icon: <Icon size={24} />, title: copy[0], subtitle: copy[1], color };
-  }
-
-  switch (room.phase) {
-    case "PROFILE":
-      return {
-        icon: <HeartIcon size={26} className="animate-ms-heartbeat" />,
-        title: "Finding your match",
-        subtitle: "The profile is being written. The chat opens as soon as it's ready.",
-        color: "var(--ms-rose)",
-      };
-    case "WRITING":
-      return {
-        icon: <PenIcon size={24} />,
-        title: comeback
-          ? "Comeback round"
-          : room.round === 1
-            ? "Craft your opener"
-            : "Craft your best line",
-        subtitle: comeback
-          ? "You got unmatched, but one killer follow-up can still save the conversation."
-          : room.round === 1
-            ? `Everyone picks something on ${name}'s profile and writes an opener.`
-            : "Everyone's writing the next message on their phones.",
-        color: "var(--ms-coral)",
-      };
-    case "VOTING":
-      return {
-        icon: <VoteIcon size={24} />,
-        title: comeback ? "Vote for the save" : "Pick the winner",
-        subtitle: comeback
-          ? "This vote decides whether the room pulls off the comeback."
-          : "Votes turn straight into points, and even close seconds can score. Human votes count double.",
-        color: "var(--ms-violet)",
-      };
-    case "SENT":
-      return {
-        icon: <SparkleIcon size={22} />,
-        title: comeback ? "Did they save it?" : "Message sent",
-        subtitle: comeback
-          ? "The best rescue line has landed. Now we find out whether it worked."
-          : "The winning line has been sent. Let's see the response...",
-        color: "var(--ms-coral)",
-      };
-    default:
-      // The persona unmatched, but the room has its comeback still to come.
-      return mode.messages.at(-1)?.outcome === "UNMATCHED"
-        ? {
-            icon: <BrokenHeartIcon size={22} />,
-            title: "Unmatched!",
-            subtitle: "But the room gets one last message to win them back.",
-            color: "var(--ms-red)",
-          }
-        : {
-            icon: <SparkleIcon size={22} />,
-            title: "The verdict is in",
-            subtitle: `${name} wrote back.`,
-            color: "var(--ms-coral)",
-          };
-  }
-}
-
-function PhaseHeader({ view, mode }: { view: RoomView; mode: MatchslopMode }) {
-  const { icon, title, subtitle, color } = headline(view, mode);
-  const compact = ["SENT", "REPLY"].includes(view.room.phase) || view.room.status === "FINISHED";
-  const badge = (size: string) => (
-    <div
-      className={`shrink-0 flex items-center justify-center ${size}`}
-      style={{ background: `color-mix(in srgb, ${color} 10%, transparent)`, color }}
-    >
-      {icon}
-    </div>
-  );
-
-  if (compact) {
-    return (
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        {badge("w-8 h-8 rounded-lg [&_svg]:w-4 [&_svg]:h-4")}
-        <h2
-          className="font-display font-bold"
-          style={{ fontSize: "clamp(1rem, 1.2vw, 1.2rem)", color: "var(--ms-ink)" }}
-        >
-          {title}
-        </h2>
-        <span style={{ fontSize: "clamp(0.75rem, 0.85vw, 0.9rem)", color: "var(--ms-ink-dim)" }}>
-          — {subtitle}
-        </span>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-start gap-3 mb-4">
-      {badge("w-[clamp(2.5rem,3.5vw,4rem)] h-[clamp(2.5rem,3.5vw,4rem)] rounded-2xl")}
-      <div className="min-w-0">
-        <h2
-          className="font-display font-bold"
-          style={{ fontSize: "clamp(1.2rem, 1.8vw, 2rem)", color: "var(--ms-ink)" }}
-        >
-          {title}
-        </h2>
-        <p
-          className="mt-0.5"
-          style={{ fontSize: "clamp(0.8rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}
-        >
-          {subtitle}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function TurnsLeft({ view, mode }: { view: RoomView; mode: MatchslopMode }) {
-  const { room } = view;
-  const turnsLeft = room.totalRounds - room.round;
-  if (
-    !["WRITING", "VOTING", "SENT"].includes(room.phase) ||
-    mode.comeback ||
-    mode.outcome !== "IN_PROGRESS" ||
-    turnsLeft < 0 ||
-    turnsLeft > 2
-  ) {
+/** The shell's title card for the last message and the comeback (round 1 uses the game-start card). */
+export function titleCardOf(view: RoomView): TitleCardSpec | null {
+  const { room, mode } = view;
+  if (mode.kind !== "MATCHSLOP" || room.status !== "PLAYING" || room.phase !== "WRITING") {
     return null;
   }
-  const last = turnsLeft === 0;
-  const color = last ? "var(--ms-red)" : "var(--ms-coral)";
-  return (
-    <motion.div
-      className="flex items-center gap-2 rounded-xl mb-4"
-      style={{
-        padding: "clamp(0.5rem, 1vw, 0.75rem) clamp(0.75rem, 1.2vw, 1rem)",
-        background: last ? "var(--ms-red-soft)" : "var(--ms-coral-soft)",
-        border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
-        color,
-      }}
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 24 }}
-    >
-      {last ? (
-        <motion.div
-          animate={{ scale: [1, 1.2, 1] }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <BrokenHeartIcon size={16} />
-        </motion.div>
-      ) : (
-        <SparkleIcon size={14} />
-      )}
-      <span
-        className="font-display font-bold"
-        style={{ fontSize: "clamp(0.75rem, 0.9vw, 0.9rem)" }}
-      >
-        {last
-          ? "Last turn to seal the deal!"
-          : `${turnsLeft} turn${turnsLeft === 1 ? "" : "s"} left to seal the deal`}
-      </span>
-    </motion.div>
-  );
+  const name = personaName(mode.persona);
+  if (mode.comeback) {
+    return {
+      id: `comeback:${room.round}`,
+      kicker: COPY.comebackKicker(name),
+      title: COPY.oneLastShot,
+      tone: "punch",
+    };
+  }
+  if (isLastMessageRound(room)) {
+    return {
+      id: `last:${room.round}`,
+      kicker: COPY.lastMessageKicker,
+      title: COPY.lastMessage,
+      tone: "gold",
+    };
+  }
+  return null;
 }
 
-/** The reply's countdown, with no gap left behind in untimed rooms. */
-function StageTimer() {
-  const { untimed } = usePhaseCountdown();
-  if (untimed) return null;
-  return (
-    <div className="mb-4">
-      <Timer />
-    </div>
-  );
-}
+type Kind = "profile" | "meet" | "writing" | "voting" | "sent" | "reply" | "final";
 
-/** Who has written or voted so far, beside the phase clock. */
-function RoomProgress({ label, doneIds }: { label: string; doneIds: readonly string[] }) {
-  return (
-    <div className="mb-4">
-      <PlayerProgress label={label} doneIds={doneIds} aside={<Timer />} />
-    </div>
-  );
-}
-
-function WaitingBox({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-2xl p-4 flex items-center gap-3" style={raised}>
-      {children}
-    </div>
-  );
-}
-
-/** The messages up for the vote, with no names attached. */
-function Ballot({ answers }: { answers: Answer[] }) {
-  return (
-    <motion.div
-      className="grid gap-2 @xl:grid-cols-2"
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-    >
-      {answers.map((answer) => (
-        <motion.div
-          key={answer.id}
-          className="rounded-2xl"
-          style={{ ...raised, padding: "clamp(0.75rem, 1.2vw, 1rem) clamp(1rem, 1.5vw, 1.25rem)" }}
-          variants={fadeInUp}
-        >
-          {answer.openerPromptText && (
-            <p
-              className="font-display font-bold uppercase tracking-wider truncate mb-1"
-              style={{ fontSize: "clamp(0.6rem, 0.7vw, 0.7rem)", color: "var(--ms-violet)" }}
-            >
-              {answer.openerPromptText}
-            </p>
-          )}
-          <p
-            className="leading-relaxed break-words"
-            style={{ fontSize: "clamp(0.9rem, 1.1vw, 1.15rem)", color: "var(--ms-ink)" }}
-          >
-            {answer.text}
-          </p>
-        </motion.div>
-      ))}
-    </motion.div>
-  );
-}
-
-function PhaseBody({ view, mode }: { view: RoomView; mode: MatchslopMode }) {
-  const { room } = view;
-  const round = mode.round;
-  if (room.status === "FINISHED") return <FinalStandings />;
-  switch (room.phase) {
+function kindOf(view: RoomView): Kind {
+  const { status, phase, round } = view.room;
+  if (status === "FINISHED") return "final";
+  switch (phase) {
     case "PROFILE":
-      return (
-        <WaitingBox>
-          <TypingDots />
-          <p style={{ fontSize: "clamp(0.85rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}>
-            Writing a profile worth swiping on...
-          </p>
-        </WaitingBox>
-      );
+      return "profile";
     case "WRITING":
-      return (
-        <>
-          <RoomProgress label="Messages in" doneIds={round?.answeredPlayerIds ?? []} />
-          <WaitingBox>
-            <TypingDots />
-            <p style={{ fontSize: "clamp(0.85rem, 1vw, 1rem)", color: "var(--ms-ink-dim)" }}>
-              {mode.comeback
-                ? "Players are firing off one last save..."
-                : "Players are typing their best lines..."}
-            </p>
-          </WaitingBox>
-        </>
-      );
+      return round === 1 ? "meet" : "writing";
     case "VOTING":
-      return (
-        <>
-          <RoomProgress label="Votes in" doneIds={round?.votedPlayerIds ?? []} />
-          <Ballot answers={round?.answers ?? []} />
-        </>
-      );
+      return "voting";
     case "SENT":
-      return <RoundReveal mode={mode} />;
+      return "sent";
+    case "REPLY":
+      return "reply";
     default:
-      return (
-        <>
-          <StageTimer />
-          {mode.signal && <SignalChips signal={mode.signal} className="mb-3" />}
-          <Scoreboard />
-        </>
-      );
+      return "writing";
   }
 }
 
-function Conversation({ view, mode }: { view: RoomView; mode: MatchslopMode }) {
-  const count = mode.messages.length;
-  const typing = view.room.phase === "SENT" ? personaName(mode.persona) : null;
-  return (
-    <>
-      <div
-        className="flex items-center justify-between"
-        style={{
-          padding: "clamp(0.75rem, 1.5vw, 1.25rem) clamp(1rem, 2vw, 1.5rem)",
-          borderTop: "1px solid var(--ms-edge)",
-        }}
-      >
-        <div className="flex items-center gap-2" style={{ color: "var(--ms-rose)" }}>
-          <HeartIcon size={16} />
-          <h3
-            className="font-display font-bold"
-            style={{ fontSize: "clamp(0.9rem, 1.2vw, 1.2rem)", color: "var(--ms-ink)" }}
-          >
-            The conversation
-          </h3>
+/** Lands a stamp in place, without its slam: for a screen opened after the beat. */
+function Settled({ when, children }: { when: boolean; children: ReactNode }) {
+  return when ? <MotionConfig reducedMotion="always">{children}</MotionConfig> : <>{children}</>;
+}
+
+/** The REPLY's verdict state: what is stamped where, and when. */
+function useReplyOutcome(mode: MatchslopMode) {
+  const { latest, previous } = personaTurn(mode.messages);
+  const now = stampOf(latest, mode);
+  // A comeback reply: the last shot's "Unmatched" is already docked.
+  const before = previous?.outcome === "UNMATCHED" ? UNMATCHED : null;
+  return { latest, now, before, saved: before !== null && now?.tone === "win" };
+}
+
+/**
+ * The whole date on the TV, one scene from PROFILE to FINAL that never
+ * remounts: her strip (face + heart meter), one instruction line, and a body
+ * (the deck, the chat, or the ballot). Each phase changes the picture in
+ * place, so the portrait, voter faces, the sent line, the delta and the
+ * verdict stamp fly between regions.
+ */
+export function MatchslopStage() {
+  const { view, live } = useRoom();
+  const mode = useModeView("MATCHSLOP");
+  const surface = useSurface();
+  const { room, players } = view;
+  const kind = kindOf(view);
+  const tight = surface === "stage" && isHostClocked(room);
+  const fresh = useFreshAtMount();
+  const displayMood = useDisplayMood();
+  const name = personaName(mode.persona);
+  const round = mode.round;
+  const roundNumber = room.round;
+
+  // The scene never remounts, so this survives from PROFILE into the Meet.
+  const [sawProfile, setSawProfile] = useState(kind === "profile");
+  if (kind === "profile" && !sawProfile) setSawProfile(true);
+
+  useEffect(() => {
+    setAmbient({ mood: displayMood });
+  }, [displayMood]);
+  useEffect(() => () => setAmbient({ mood: null }), []);
+
+  const reply = useReplyOutcome(mode);
+  const signal = mode.signal;
+  const scored = kind === "reply" && signal?.source === "model" && signal.level !== null;
+  const level = scored ? signal!.level : null;
+  const heroTurn = kind === "reply" && reply.now !== null;
+  const lastShot = heroTurn && mode.outcome === "IN_PROGRESS";
+  const R = replyBeats(kind === "reply" ? (reply.latest?.text ?? "") : "");
+
+  // SENT: who flies to which card, by card then by voting order.
+  const answers = round?.answers ?? [];
+  const lone = answers.length === 1;
+  const voteOrder = new Map(
+    (round?.votedPlayerIds ?? []).map((id, index) => [id as string, index]),
+  );
+  const flights: string[] = answers.flatMap((answer) =>
+    answer.voterIds.toSorted((a, b) => (voteOrder.get(a) ?? 0) - (voteOrder.get(b) ?? 0)),
+  );
+
+  const ranked = rankPlayers(players);
+  const F = finalBeats(ranked.length);
+  const stampedInReply = stampOf(reply.latest, mode) !== null;
+  const finalEnding: Ending = mode.verdict ? endingOf(mode.verdict) : UNMATCHED;
+  const dateWon = finalEnding.tone === "win";
+  const crownRef = useRef<HTMLLIElement>(null);
+  const heroStampRef = useRef<HTMLDivElement>(null);
+
+  const cues: NamedCue<string>[] = (() => {
+    switch (kind) {
+      case "meet": {
+        const M = meetOffset(sawProfile);
+        return [
+          { name: "unblur", at: M + MEET.unblur },
+          { name: "stamp", at: M + MEET.stamp },
+          {
+            name: "stampImpact",
+            at: M + MEET.stamp + 170,
+            sound: "stamp-slam",
+            ambient: { kind: "heart", strength: 0.6 },
+          },
+          { name: "name", at: M + MEET.name },
+          { name: "place", at: M + MEET.place },
+          { name: "dock", at: M + MEET.dock, sound: "round-start" },
+          { name: "fill", at: M + MEET.fill },
+          { name: "unmatchLine", at: M + MEET.unmatchLine },
+          { name: "dateLine", at: M + MEET.dateLine },
+          { name: "deal", at: M + MEET.deal },
+          { name: "tracker", at: M + MEET.tracker },
+        ];
+      }
+      case "writing":
+        return [
+          { name: "start", at: 0, sound: titleCardOf(view) ? undefined : "round-start" },
+          { name: "instruction", at: NEXT.instruction },
+          { name: "tracker", at: NEXT.tracker },
+        ];
+      case "voting":
+        return [{ name: "start", at: 0, sound: "prompt-advance" }];
+      case "sent":
+        if (lone) {
+          return [
+            { name: "bubble", at: LONE.bubble, sound: "chat-send" },
+            { name: "author", at: LONE.author },
+            { name: "typing", at: LONE.typing },
+          ];
+        }
+        return [
+          { name: "reveal", at: SEND.reveal, sound: "vote-reveal" },
+          ...flights.map((_, k) => ({ name: `fly:${k}`, at: SEND.flyBase + k * SEND.flyStep })),
+          { name: "collapse", at: SEND.collapseB1 },
+          { name: "unmask", at: SEND.unmask },
+          { name: "stamp", at: SEND.stamp },
+          { name: "stampImpact", at: SEND.stamp + 170, sound: "stamp-slam" },
+          {
+            name: "morph",
+            at: SEND.morph,
+            sound: "chat-send",
+            ambient: { kind: "swell", strength: 0.4 },
+          },
+          { name: "typing", at: SEND.typing },
+        ];
+      case "reply": {
+        const positive = level === "cute" || level === "good" || level === "great";
+        const negative = level === "cringe" || level === "dealbreaker";
+        const won = reply.now?.tone === "win";
+        const list: NamedCue<string>[] = [
+          { name: "receive", at: 0, sound: "chat-receive" },
+          { name: "react", at: R.react },
+          {
+            name: "impact",
+            at: R.impact,
+            sound: scored && !heroTurn ? "stamp-slam" : undefined,
+            ambient: positive
+              ? { kind: "heart", strength: 0.5 }
+              : negative
+                ? { kind: "chill", strength: 0.6 }
+                : undefined,
+            shake: level === "dealbreaker" ? "soft" : undefined,
+          },
+          { name: "delta", at: R.delta },
+          { name: "swing", at: R.swing, sound: reply.saved ? "winner-reveal" : undefined },
+          { name: "chipGone", at: R.swing + 800 },
+        ];
+        if (!heroTurn) return [...list, { name: "thought", at: R.thought }];
+        return [
+          ...list,
+          { name: "pulse", at: R.pulse },
+          { name: "hero", at: R.hero },
+          {
+            name: "heroImpact",
+            at: R.heroImpact,
+            sound: "stamp-slam",
+            origin: heroStampRef,
+            ...(won
+              ? {
+                  flash: "win" as const,
+                  confetti: "hearts" as const,
+                  ambient: { kind: "heart" as const, strength: 1 },
+                }
+              : {
+                  shake: "soft" as const,
+                  flash: "fail" as const,
+                  ambient: { kind: "chill" as const, strength: 1 },
+                }),
+          },
+          ...(won ? [{ name: "celebrate", at: R.celebrate, sound: "celebration" as const }] : []),
+          { name: "dock", at: R.dock },
+          { name: "thought", at: R.heroThought },
+          ...(lastShot ? [{ name: "teaser", at: R.teaser }] : []),
+        ];
+      }
+      case "final":
+        return [
+          { name: "fold", at: F.fold },
+          { name: "unstamped", at: F.unstampedStamp },
+          {
+            name: "unstampedImpact",
+            at: F.unstampedImpact,
+            sound: stampedInReply ? undefined : "stamp-slam",
+          },
+          { name: "name", at: F.name },
+          { name: "parting", at: F.parting },
+          ...ranked.slice(1).map((_, j) => ({ name: `row:${j}`, at: F.row(j) })),
+          {
+            name: "crown",
+            at: F.crown,
+            sound: "game-over",
+            flash: "gold",
+            confetti: "final",
+            origin: crownRef,
+            ambient: dateWon ? { kind: "heart", strength: 1 } : { kind: "cheer", strength: 0.6 },
+          },
+          { name: "verdicts", at: F.verdicts },
+        ];
+      default:
+        return [];
+    }
+  })();
+  const reached = useBeats(cues);
+
+  // ---- Final -------------------------------------------------------------
+  let finale: ReactNode = null;
+  if (kind === "final") {
+    // Row i (best first) rises at row:(n - 1 - i), from last place up; the top waits for the crown.
+    const risen = (index: number) =>
+      index === 0 ? reached("crown") : reached(`row:${ranked.length - 1 - index}`);
+    const stamp = stampedInReply ? "docked" : reached("unstamped") ? "slam" : null;
+    const hero = (
+      <FinalHero
+        mode={mode}
+        ending={finalEnding}
+        stamp={stamp}
+        grey={finalEnding.verdict === "UNMATCHED" && (stampedInReply || reached("unstampedImpact"))}
+        named={reached("name")}
+        parting={reached("parting")}
+        fresh={fresh}
+      />
+    );
+    const standings = (
+      <Standings
+        mode={mode}
+        players={players}
+        risen={risen}
+        crowned={reached("crown")}
+        verdicts={reached("verdicts")}
+        topRef={crownRef}
+        stacked={!live}
+      />
+    );
+    if (!live) {
+      // The recap page: a plain page that may scroll; stacked on narrow screens.
+      return (
+        <div className="mx-auto w-full max-w-6xl overflow-x-clip px-4 py-8 sm:px-8">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,22fr)_minmax(0,52fr)] lg:gap-x-8">
+            {hero}
+            {standings}
+          </div>
+          <RecapSections mode={mode} />
         </div>
-        {count > 0 && (
-          <span
-            className="font-mono"
-            style={{ fontSize: "clamp(0.65rem, 0.75vw, 0.75rem)", color: "var(--ms-ink-dim)" }}
+      );
+    }
+    finale = (
+      <motion.div
+        key="final"
+        data-ms-frame=""
+        className="grid min-h-0 flex-1 grid-cols-[minmax(0,22fr)_minmax(0,52fr)] items-center gap-x-8 px-8 py-3 max-sm:flex max-sm:flex-col max-sm:items-stretch max-sm:gap-8 max-sm:overflow-y-auto max-sm:px-4"
+        variants={fade}
+        initial="hidden"
+        animate="visible"
+      >
+        <div className="flex min-h-0 flex-col justify-center">{hero}</div>
+        <div className="flex min-h-0 flex-col justify-center">{standings}</div>
+      </motion.div>
+    );
+  }
+
+  // ---- Strip -------------------------------------------------------------
+  const meetDocked = kind !== "meet" || reached("dock");
+  const stripShown = kind !== "profile" && meetDocked;
+  const meterShown: MeterShown | undefined =
+    kind === "meet"
+      ? {
+          track: reached("dock"),
+          fill: reached("fill"),
+          unmatchLine: reached("unmatchLine"),
+          dateLine: reached("dateLine"),
+        }
+      : undefined;
+  const moodFrom = kind === "meet" && fresh ? 0 : displayMood;
+
+  // Docked verdict, portrait greyscale, and the line pulse.
+  let docked: ReactNode = null;
+  let grey = false;
+  let pulse: LinePulse = null;
+  if (kind === "reply") {
+    const { now, before, saved } = reply;
+    if (before && !(saved ? reached("swing") : reached("hero"))) {
+      docked = <DockedStamp key="before" ending={before} layout={!saved} peel={saved} />;
+      grey = true;
+    } else if (now && reached("dock")) {
+      docked = <DockedStamp key="now" ending={now} />;
+    }
+    if (now?.verdict === "UNMATCHED" && (before ? !saved : reached("heroImpact"))) grey = true;
+    if (now && reached("pulse") && !reached("hero")) {
+      pulse = now.tone === "win" ? "date" : now.verdict === "UNMATCHED" ? "unmatch" : "missed";
+    }
+  } else {
+    const now = stampOf(reply.latest, mode);
+    if (now) {
+      docked = <DockedStamp key={mode.comeback ? "before" : "now"} ending={now} />;
+      grey = now.verdict === "UNMATCHED";
+    }
+  }
+
+  // The delta chip: off the reaction stamp, then into the meter.
+  // A saved comeback skips the chip: the peel and the meter's sweep tell that story.
+  const chip =
+    scored && signal && !reply.saved ? (
+      <motion.span
+        layoutId={`ms-delta-${roundNumber}`}
+        transition={SPRING.smooth}
+        className={`block whitespace-nowrap rounded-full bg-surface px-3 py-0.5 font-mono text-3xl font-bold shadow-md ${
+          signal.delta > 0 ? "text-win" : signal.delta < 0 ? "text-fail" : "text-ink"
+        }`}
+        variants={pop}
+        initial="hidden"
+        animate="visible"
+        exit={{ opacity: 0, transition: { duration: DUR.base } }}
+      >
+        {heartDelta(signal.delta)}
+      </motion.span>
+    ) : null;
+  const chipAtStamp = chip && reached("delta") && !reached("swing");
+  const chipAtMeter = chip && reached("swing") && !reached("chipGone");
+
+  // ---- Instruction slot (B1) --------------------------------------------
+  let instruction: { key: string; node: ReactNode } | null = null;
+  if (kind === "meet" && reached("deal")) {
+    instruction = { key: "opener", node: <Instruction>{COPY.writeOpener(name)}</Instruction> };
+  } else if (kind === "writing" && reached("instruction")) {
+    instruction = {
+      key: mode.comeback ? "comeback" : "reply",
+      node: <Instruction>{mode.comeback ? COPY.winBack(name) : COPY.writeReply(name)}</Instruction>,
+    };
+  } else if (kind === "voting" || (kind === "sent" && !lone && !reached("collapse"))) {
+    const anyAi = players.some((player) => player.type === "AI");
+    const flown = (id: string) => {
+      const k = flights.indexOf(id);
+      return kind === "sent" && k >= 0 && reached(`fly:${k}`);
+    };
+    instruction = {
+      key: "vote",
+      node: (
+        <div className="flex h-full items-center gap-6">
+          <AnimatePresence initial={false}>
+            {kind === "voting" && (
+              <motion.div
+                key="ask"
+                className="flex min-w-0 flex-1 items-baseline gap-4"
+                variants={fade}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <Instruction>{COPY.whichOne}</Instruction>
+                {anyAi && <span className="shrink-0 text-lg text-ink-dim">{COPY.humanDouble}</span>}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div className="ml-auto">
+            <VotedRow players={players} votedIds={round?.votedPlayerIds ?? []} flown={flown} />
+          </div>
+        </div>
+      ),
+    };
+  } else if (kind === "reply" && lastShot && reached("teaser")) {
+    instruction = {
+      key: "teaser",
+      node: (
+        <p className="truncate font-display text-3xl font-bold text-punch">
+          {COPY.oneLastShotNext}
+        </p>
+      ),
+    };
+  }
+  const b1Open = instruction !== null || (kind === "sent" && !lone && !reached("collapse"));
+
+  // ---- Body (B2) ---------------------------------------------------------
+  const heroShown = kind === "reply" && reply.now !== null && reached("hero") && !reached("dock");
+  const gap = tight ? "gap-3" : "gap-4";
+  let body: { key: string; node: ReactNode } = { key: "empty", node: null };
+  const tracker = round && (
+    <DoneTracker
+      variant="stage"
+      label={COPY.textsIn}
+      doneIds={round.answeredPlayerIds}
+      playerIds={round.writerIds}
+    />
+  );
+
+  if (kind === "profile") {
+    body = { key: "profile", node: <ProfileHero persona={mode.persona} /> };
+  } else if (kind === "meet" && !reached("dock")) {
+    body = {
+      key: "meet",
+      node: (
+        <MeetHero
+          persona={mode.persona}
+          unblurred={reached("unblur")}
+          stamped={reached("stamp")}
+          named={reached("name")}
+          placed={reached("place")}
+          fresh={fresh}
+        />
+      ),
+    };
+  } else if (kind === "meet") {
+    body = {
+      key: "deck",
+      node: (
+        <div className={`flex h-full flex-col justify-start ${tight ? "gap-3" : "gap-5"}`}>
+          {reached("deal") && <PromptDeck persona={mode.persona} deal={fresh} tight={tight} />}
+          <Reveal show={reached("tracker")}>{tracker}</Reveal>
+        </div>
+      ),
+    };
+  } else if (kind === "voting" || (kind === "sent" && !lone && !reached("morph"))) {
+    const sent = kind === "sent";
+    const context = roundNumber > 1 ? latestPersona(mode.messages) : null;
+    body = {
+      key: "ballot",
+      node: (
+        <div className={`flex h-full flex-col ${tight ? "gap-3" : "gap-4"}`}>
+          <AnimatePresence initial={false}>
+            {context && !sent && (
+              <motion.div
+                key="context"
+                variants={enter}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <ContextBubble text={context.text} tight={tight} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <BallotGrid
+            answers={answers}
+            players={players}
+            round={roundNumber}
+            winnerId={sent ? (round?.winnerResponseId ?? null) : null}
+            reveal={
+              sent
+                ? {
+                    flown: (id) => {
+                      const k = flights.indexOf(id);
+                      return k >= 0 && reached(`fly:${k}`);
+                    },
+                    unmasked: reached("unmask"),
+                    stamped: reached("stamp"),
+                  }
+                : null
+            }
+            deal={kind === "voting" && fresh}
+            tight={tight}
+          />
+        </div>
+      ),
+    };
+  } else {
+    const sent = kind === "sent";
+    const replying = kind === "reply";
+    const winner = answers.find((answer) => answer.id === round?.winnerResponseId);
+    const sentAuthor = players.find((player) => player.id === winner?.playerId);
+    const replyAuthor = players.find((player) => player.id === signal?.authorId);
+    const reaction = reactionOf(level);
+    const asideShown = sent && (lone ? reached("author") : reached("morph"));
+    body = {
+      key: "thread",
+      node: (
+        <div className={`flex h-full flex-col ${gap}`}>
+          <Thread
+            className="flex-1"
+            gap={gap}
+            messages={mode.messages}
+            round={roundNumber}
+            bigCurrent={sent || replying}
+            herLatestBig={!sent}
+            typing={sent && reached("typing")}
+            typeReply={replying && fresh}
+            holdCurrentTapback={sent || replying}
+            ourAside={
+              asideShown && sentAuthor ? (
+                <motion.span variants={enter} initial="hidden" animate="visible">
+                  <Avatar name={sentAuthor.name} modelId={sentAuthor.modelId} size="2.25rem" />
+                </motion.span>
+              ) : null
+            }
+            ourCorner={
+              replying ? (
+                // Hangs off our bubble's left edge, centred on it, so it never reaches
+                // the row above or covers our words; the delta chip sits to its left.
+                // It steps aside while the hero verdict holds the screen.
+                <span className="pointer-events-none absolute right-[calc(100%-1rem)] top-1/2 z-10 w-max -translate-y-1/2">
+                  {reached("react") && !heroShown && (
+                    <Settled when={!fresh}>
+                      <Stamp size="lg" tone={reaction.tone} tilt={ACCENT.matchslop.stampTilt}>
+                        {reaction.text}
+                      </Stamp>
+                    </Settled>
+                  )}
+                  <span className="absolute right-full top-1/2 mr-3 -translate-y-1/2">
+                    <AnimatePresence>{chipAtStamp && chip}</AnimatePresence>
+                  </span>
+                </span>
+              ) : null
+            }
+            ourBelow={
+              // Laid out from the start of REPLY and only faded in, so the chat
+              // never nudges up when they appear.
+              replying && scored && signal && signal.points !== 0 && replyAuthor ? (
+                <motion.div
+                  className="mt-3 flex items-center gap-3"
+                  initial={false}
+                  animate={{ opacity: reached("swing") ? 1 : 0 }}
+                  transition={{ duration: DUR.base, ease: EASE.out }}
+                >
+                  <Avatar name={replyAuthor.name} modelId={replyAuthor.modelId} size="2.25rem" />
+                  <span className="text-2xl text-ink">{replyAuthor.name}</span>
+                  <span
+                    className={`font-mono text-2xl font-bold ${signal.points > 0 ? "text-win" : "text-fail"}`}
+                  >
+                    <CountUp
+                      value={reached("swing") || !fresh ? signal.points : 0}
+                      from={fresh ? 0 : signal.points}
+                      format={(n) => signedPoints(Math.round(n))}
+                    />
+                  </span>
+                </motion.div>
+              ) : null
+            }
+            herBelow={
+              replying && signal?.thought ? (
+                <motion.p
+                  // Right padding keeps the italic overhang of the last glyph inside the clamp.
+                  className="mt-2 line-clamp-1 max-w-[80%] pr-3 text-2xl italic text-ink-dim"
+                  initial={false}
+                  animate={{ opacity: reached("thought") ? 1 : 0 }}
+                  transition={{ duration: DUR.base, ease: EASE.out }}
+                >
+                  💭 {signal.thought}
+                </motion.p>
+              ) : null
+            }
+          />
+          {kind === "writing" && <Reveal show={reached("tracker")}>{tracker}</Reveal>}
+        </div>
+      ),
+    };
+  }
+
+  const date = (
+    <motion.div
+      key="date"
+      data-ms-frame=""
+      className={`flex min-h-0 flex-1 flex-col px-8 pt-4 ${tight ? "pb-1" : "pb-5"}`}
+      exit={{ opacity: 0, transition: { duration: DUR.base, ease: EASE.in } }}
+    >
+      <AnimatePresence initial={false}>
+        {stripShown && (
+          <motion.div
+            key="strip"
+            className="shrink-0"
+            // Height only: the portrait flies in from the Meet's card at full strength.
+            variants={GROW}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
-            {count} message{count === 1 ? "" : "s"}
-          </span>
+            <div className="pb-5">
+              <PersonaStrip
+                persona={mode.persona}
+                mood={displayMood}
+                moodFrom={moodFrom}
+                meta={roundNumber === 1}
+                grey={grey}
+                docked={docked}
+                shown={meterShown}
+                pulse={pulse}
+                metaEnter={kind === "meet" && fresh}
+                landing={<AnimatePresence>{chipAtMeter && chip}</AnimatePresence>}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        className="shrink-0 overflow-hidden"
+        initial={false}
+        animate={{ height: b1Open ? "3rem" : 0, marginBottom: b1Open ? "1rem" : 0 }}
+        transition={{ duration: DUR.base, ease: EASE.inOut }}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {instruction && (
+            <motion.div
+              key={instruction.key}
+              className="h-[3rem]"
+              variants={enter}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {instruction.node}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      <div className="relative min-h-0 flex-1">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={body.key}
+            className="h-full"
+            variants={fade}
+            // In SENT the chat is the flight's landing: it is there at full strength.
+            initial={kind === "sent" && body.key === "thread" ? false : "hidden"}
+            animate="visible"
+            exit="exit"
+          >
+            {body.node}
+          </motion.div>
+        </AnimatePresence>
+        <AnimatePresence>
+          {heroShown && (
+            <motion.div
+              key="scrim"
+              className="absolute inset-0 z-20 rounded-[2rem] bg-canvas/85"
+              variants={fade}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            />
+          )}
+        </AnimatePresence>
+        {/* Not faded with the scrim: at the dock it flies, at full strength, to her portrait. */}
+        {heroShown && reply.now && (
+          <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center">
+            <motion.div
+              ref={heroStampRef}
+              layoutId="ms-outcome"
+              layoutCrossfade={false}
+              transition={SPRING.smooth}
+            >
+              <Settled when={!fresh}>
+                <Stamp
+                  size="xl"
+                  tone={reply.now.tone}
+                  tilt={ACCENT.matchslop.stampTilt}
+                  className="text-7xl!"
+                >
+                  {reply.now.text}
+                </Stamp>
+              </Settled>
+            </motion.div>
+          </div>
         )}
       </div>
-      <Chat
-        messages={mode.messages}
-        typing={typing}
-        className="px-[clamp(0.75rem,1.5vw,1.25rem)] pb-[clamp(0.75rem,1.5vw,1.25rem)] max-h-[clamp(20rem,50vh,50rem)]"
-        empty={
-          <div
-            className="text-center py-[clamp(2rem,4vw,4rem)]"
-            style={{ color: "var(--ms-ink-dim)" }}
-          >
-            <motion.div
-              animate={{ y: [0, -8, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-            >
-              <HeartIcon size={32} className="mx-auto mb-3" />
-            </motion.div>
-            <p
-              className="font-display font-semibold"
-              style={{ fontSize: "clamp(0.9rem, 1.1vw, 1.1rem)" }}
-            >
-              Waiting for the first move...
-            </p>
-            <p className="mt-1 opacity-70" style={{ fontSize: "clamp(0.75rem, 0.9vw, 0.85rem)" }}>
-              Players will write openers to impress {personaName(mode.persona)}.
-            </p>
-          </div>
-        }
-      />
-      <OutcomeVerdict outcome={mode.outcome} />
-    </>
+    </motion.div>
+  );
+
+  return (
+    <LayoutGroup id="ms-date">
+      <AnimatePresence mode="popLayout" initial={false}>
+        {finale ?? date}
+      </AnimatePresence>
+    </LayoutGroup>
   );
 }
 
-function AmbientGlow() {
+function Instruction({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="absolute inset-0 pointer-events-none opacity-60"
-      style={{
-        background: `
-          radial-gradient(ellipse 60% 50% at 20% 50%, var(--ms-rose-soft) 0%, transparent 70%),
-          radial-gradient(ellipse 50% 40% at 80% 30%, var(--ms-violet-soft) 0%, transparent 70%)
-        `,
-      }}
-    />
+    <p className="truncate font-display text-3xl font-bold leading-[3rem] text-ink">{children}</p>
   );
 }
 
 /**
- * The dating app on the big screen: the persona's profile beside the chat,
- * with the current phase on top of the conversation.
+ * Laid out from the start and faded in on its beat, so whatever it joins
+ * never shifts when it appears.
  */
-export function MatchslopStage() {
-  const { view } = useRoom();
-  const mode = useModeView("MATCHSLOP");
-  const finished = view.room.status === "FINISHED";
-
+function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
   return (
-    <main
-      className="@container flex-1 relative overflow-hidden"
-      style={{ padding: "clamp(0.75rem, 2vw, 2rem)" }}
+    <motion.div
+      initial={false}
+      animate={{ opacity: show ? 1 : 0 }}
+      transition={{ duration: DUR.slow, ease: EASE.out }}
+      aria-hidden={!show}
     >
-      <AmbientGlow />
-      <div className="relative mx-auto max-w-[120rem] grid gap-[clamp(0.75rem,2vw,2rem)] items-start @3xl:grid-cols-[clamp(18rem,40%,36rem)_minmax(0,1fr)]">
-        <div className="order-2 @3xl:order-none @3xl:sticky @3xl:top-4 self-start">
-          <ProfileCard
-            persona={mode.persona}
-            outcome={mode.outcome}
-            mood={mode.mood}
-            moodDelta={view.room.phase === "REPLY" ? (mode.signal?.moodDelta ?? null) : null}
-          />
-        </div>
-
-        <div className="min-w-0 space-y-[clamp(0.75rem,1.5vw,1.5rem)]">
-          <motion.section
-            className="rounded-[1.5rem] overflow-hidden"
-            style={card}
-            variants={slideInRight}
-            initial="hidden"
-            animate="visible"
-          >
-            <div className="p-[clamp(1rem,2vw,2rem)]">
-              <PhaseHeader view={view} mode={mode} />
-              <TurnsLeft view={view} mode={mode} />
-              <PhaseBody view={view} mode={mode} />
-            </div>
-            <Conversation view={view} mode={mode} />
-          </motion.section>
-
-          {finished && <PostMortem mode={mode} />}
-
-          {finished && view.usage && (
-            <motion.div variants={fadeInUp} initial="hidden" animate="visible">
-              <h2 className="text-base font-medium mb-3" style={{ color: "var(--ms-ink-dim)" }}>
-                AI usage
-              </h2>
-              <AiUsageBreakdown usage={view.usage} />
-            </motion.div>
-          )}
-        </div>
-      </div>
-    </main>
+      {children}
+    </motion.div>
   );
 }
 
-/** The persona as it is being written, beside the lobby's player list. */
-export function MatchslopStageLobby() {
-  const mode = useModeView("MATCHSLOP");
-  return (
-    <div className="max-w-md mx-auto lg:mx-0">
-      <ProfileCard persona={mode.persona} outcome="IN_PROGRESS" mood={null} compact />
-    </div>
-  );
-}
+/** The strip arriving or leaving: height only, never opacity (the portrait flies into it). */
+const GROW: Variants = {
+  hidden: { height: 0 },
+  visible: { height: "auto", transition: { duration: DUR.base, ease: EASE.inOut } },
+  exit: { height: 0, opacity: 0, transition: { duration: DUR.fast, ease: EASE.in } },
+};

@@ -280,7 +280,6 @@ A healthy prompt bank should roughly follow this distribution:
 | Fill-in-the-Blank       | 15-20%   | Mad lib style completions                    |
 | Memes & Internet        | 8-10%    | Meme formats, current references             |
 | Themed (NBA, etc.)      | 5-10%    | Audience-specific sections                   |
-| Foreign Language        | 3-5%     | Multilingual Easter eggs                     |
 
 ---
 

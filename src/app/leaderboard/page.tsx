@@ -7,14 +7,14 @@ import { motion, AnimatePresence } from "motion/react";
 import { api } from "../../../convex/_generated/api";
 import { AI_MODELS } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
+import { TopBar } from "@/components/top-bar";
 import { PlayerAvatar } from "@/components/player-avatar";
 import {
-  fadeInUp,
-  floatIn,
-  staggerContainer,
-  staggerContainerSlow,
-  springGentle,
-  buttonTapPrimary,
+  enter,
+  hoverLift,
+  listParent,
+  SPRING,
+  STAGGER,
 } from "@/lib/animations";
 
 /* ------------------------------------------------------------------ */
@@ -93,7 +93,7 @@ function StatsBanner({ stats }: { stats: LeaderboardData["stats"] }) {
   return (
     <motion.div
       className="grid grid-cols-3 gap-3 sm:gap-4 mb-8"
-      variants={staggerContainer}
+      variants={listParent(items.length, STAGGER.cards)}
       initial="hidden"
       animate="visible"
     >
@@ -102,7 +102,7 @@ function StatsBanner({ stats }: { stats: LeaderboardData["stats"] }) {
           key={item.label}
           className="text-center p-3 sm:p-4 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge relative overflow-hidden"
           style={{ boxShadow: "var(--shadow-card)" }}
-          variants={fadeInUp}
+          variants={enter}
         >
           <div className="absolute inset-0 bg-gradient-to-br from-punch/[0.04] to-transparent pointer-events-none" />
           <p className="font-mono font-bold text-2xl sm:text-3xl stat-number tabular-nums relative">
@@ -142,7 +142,7 @@ function LeaderboardChart({ entries }: { entries: ContestantStats[] }) {
             className="group"
             variants={{
               hidden: { opacity: 0, x: -20 },
-              visible: { opacity: 1, x: 0, transition: springGentle },
+              visible: { opacity: 1, x: 0, transition: SPRING.gentle },
             }}
           >
             {/* Main bar row */}
@@ -179,7 +179,7 @@ function LeaderboardChart({ entries }: { entries: ContestantStats[] }) {
                   initial={{ width: "0%" }}
                   animate={{ width: `${Math.max(pct, 4)}%` }}
                   transition={{
-                    ...springGentle,
+                    ...SPRING.gentle,
                     delay: 0.2 + idx * 0.08,
                   }}
                   style={
@@ -241,7 +241,7 @@ function HeadToHeadSection({ matchups }: { matchups: HeadToHead[] }) {
   return (
     <motion.div
       className="grid grid-cols-1 sm:grid-cols-2 gap-3"
-      variants={staggerContainerSlow}
+      variants={listParent(matchups.length, STAGGER.cards)}
       initial="hidden"
       animate="visible"
     >
@@ -255,7 +255,7 @@ function HeadToHeadSection({ matchups }: { matchups: HeadToHead[] }) {
             key={h2h.modelId}
             className="p-3.5 sm:p-4 rounded-xl bg-surface/80 backdrop-blur-md border-2 border-edge"
             style={{ boxShadow: "var(--shadow-card)" }}
-            variants={floatIn}
+            variants={enter}
           >
             {/* Matchup header */}
             <div className="flex items-center justify-between mb-3">
@@ -282,7 +282,7 @@ function HeadToHeadSection({ matchups }: { matchups: HeadToHead[] }) {
                 animate={{
                   width: `${humanPct}%`,
                 }}
-                transition={{ ...springGentle, delay: 0.3 }}
+                transition={{ ...SPRING.gentle, delay: 0.3 }}
               />
               <motion.div
                 className="bg-ai/70 rounded-r-full"
@@ -290,7 +290,7 @@ function HeadToHeadSection({ matchups }: { matchups: HeadToHead[] }) {
                 animate={{
                   width: `${aiPct}%`,
                 }}
-                transition={{ ...springGentle, delay: 0.35 }}
+                transition={{ ...SPRING.gentle, delay: 0.35 }}
               />
             </div>
 
@@ -369,10 +369,7 @@ function HallOfFame({ responses }: { responses: BestResponse[] }) {
               <span className="text-[10px] font-bold uppercase tracking-widest text-gold bg-gold-soft px-2 py-0.5 rounded-md border border-gold/15">
                 #{current + 1} All Time
               </span>
-              <span
-                className="font-mono font-bold text-sm text-gold tabular-nums"
-                style={{ textShadow: "0 0 10px rgba(255, 214, 68, 0.2)" }}
-              >
+              <span className="font-mono font-bold text-sm text-gold tabular-nums [text-shadow:0_0_10px_color-mix(in_oklab,var(--gold)_20%,transparent)]">
                 {item.votePct}%
               </span>
             </div>
@@ -462,7 +459,7 @@ function ModelUsageSection({
             className="p-3 rounded-lg bg-surface/60 border border-edge/60"
             variants={{
               hidden: { opacity: 0, x: -12 },
-              visible: { opacity: 1, x: 0, transition: springGentle },
+              visible: { opacity: 1, x: 0, transition: SPRING.gentle },
             }}
           >
             <div className="flex items-center gap-3 mb-2">
@@ -489,7 +486,7 @@ function ModelUsageSection({
                 className={`h-full rounded-full ${idx === 0 ? "bg-punch/70" : "bg-teal/50"}`}
                 initial={{ width: "0%" }}
                 animate={{ width: `${Math.max(pct, 3)}%` }}
-                transition={{ ...springGentle, delay: 0.15 + idx * 0.06 }}
+                transition={{ ...SPRING.gentle, delay: 0.15 + idx * 0.06 }}
               />
             </div>
           </motion.div>
@@ -518,13 +515,13 @@ function EmptyState() {
   return (
     <motion.div
       className="text-center py-16"
-      variants={fadeInUp}
+      variants={enter}
       initial="hidden"
       animate="visible"
     >
       <p className="font-display text-2xl font-bold text-ink mb-3">No games yet</p>
       <p className="text-ink-dim text-sm mb-6">Play some games to see who&rsquo;s the funniest!</p>
-      <motion.div {...buttonTapPrimary}>
+      <motion.div {...hoverLift}>
         <Link
           href="/host"
           className="inline-block bg-punch/90 backdrop-blur-sm hover:bg-punch-hover text-white font-display font-bold py-3 px-8 rounded-xl text-lg transition-colors"
@@ -594,152 +591,136 @@ export default function LeaderboardPage() {
   const loading = data === undefined;
 
   return (
-    <main className="min-h-svh flex flex-col items-center px-4 sm:px-6 py-12 pt-16 relative overflow-hidden">
-      {/* Background gradient blobs */}
-      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-        <div className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full blur-[120px] bg-gold opacity-[0.05]" />
-        <div className="absolute bottom-[30%] right-[15%] w-[350px] h-[350px] rounded-full blur-[90px] bg-teal opacity-[0.04]" />
-        <div className="absolute top-[55%] left-[8%] w-[250px] h-[250px] rounded-full blur-[70px] bg-punch opacity-[0.04]" />
-      </div>
-
-      <div className="w-full max-w-2xl lg:max-w-5xl relative z-10">
-        {/* Back link */}
-        <motion.div
-          className="mb-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Link href="/" className="text-sm text-ink-dim hover:text-ink transition-colors">
-            &larr; Back
-          </Link>
-        </motion.div>
-
-        {/* Title */}
-        <div className="text-center mb-6">
-          <motion.h1
-            className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-2 title-glow"
-            initial={{ opacity: 0, scale: 0.9, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{
-              type: "spring",
-              stiffness: 400,
-              damping: 25,
-            }}
-          >
-            Leaderboard
-          </motion.h1>
-          <motion.p
-            className="text-ink-dim text-sm"
-            variants={fadeInUp}
-            initial="hidden"
-            animate="visible"
-          >
-            Who&rsquo;s the funniest? Human vs Machine vs Machine.
-          </motion.p>
-        </div>
-
-        {/* Loading state */}
-        {loading && <LoadingSpinner />}
-
-        {/* Empty state */}
-        {data && (data.stats.totalGames === 0 || data.leaderboard.length === 0) && <EmptyState />}
-
-        {/* Main content */}
-        {data && data.stats.totalGames > 0 && data.leaderboard.length > 0 && (
-          <>
-            {/* Stats Banner */}
-            <StatsBanner stats={data.stats} />
-
-            {/* Rankings — full width in card panel */}
-            <motion.div
-              className="mb-8 rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-5 lg:p-6"
-              variants={fadeInUp}
+    <div className="min-h-svh flex flex-col">
+      <TopBar backHref="/" backLabel="Back to home" />
+      <main className="flex-1 flex flex-col items-center px-4 sm:px-6 pt-2 pb-12">
+        <div className="w-full max-w-2xl lg:max-w-5xl relative z-10">
+          {/* Title */}
+          <div className="text-center mb-6">
+            <motion.h1
+              className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold text-punch mb-2 title-glow"
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{
+                type: "spring",
+                stiffness: 400,
+                damping: 25,
+              }}
+            >
+              Leaderboard
+            </motion.h1>
+            <motion.p
+              className="text-ink-dim text-sm"
+              variants={enter}
               initial="hidden"
               animate="visible"
             >
-              <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-gold"
-                  style={{ boxShadow: "0 0 6px var(--gold)" }}
-                />
-                Rankings
-              </h2>
-              <LeaderboardChart entries={data.leaderboard} />
-            </motion.div>
+              Who&rsquo;s the funniest? Human vs Machine vs Machine.
+            </motion.p>
+          </div>
 
-            {/* Secondary content — 2-col grid on desktop */}
-            <div className="lg:grid lg:grid-cols-2 lg:gap-8">
-              {/* Left column: H2H */}
-              <div>
-                {data.headToHead.length > 0 && (
-                  <motion.div
-                    className="mb-8"
-                    variants={fadeInUp}
-                    initial="hidden"
-                    animate="visible"
-                    transition={{ delay: 0.15 }}
-                  >
-                    <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-teal"
-                        style={{ boxShadow: "0 0 6px var(--teal)" }}
+          {/* Loading state */}
+          {loading && <LoadingSpinner />}
+
+          {/* Empty state */}
+          {data && (data.stats.totalGames === 0 || data.leaderboard.length === 0) && <EmptyState />}
+
+          {/* Main content */}
+          {data && data.stats.totalGames > 0 && data.leaderboard.length > 0 && (
+            <>
+              {/* Stats Banner */}
+              <StatsBanner stats={data.stats} />
+
+              {/* Rankings — full width in card panel */}
+              <motion.div
+                className="mb-8 rounded-2xl border border-edge/90 bg-surface/50 backdrop-blur-sm p-5 lg:p-6"
+                variants={enter}
+                initial="hidden"
+                animate="visible"
+              >
+                <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-gold"
+                    style={{ boxShadow: "0 0 6px var(--gold)" }}
+                  />
+                  Rankings
+                </h2>
+                <LeaderboardChart entries={data.leaderboard} />
+              </motion.div>
+
+              {/* Secondary content — 2-col grid on desktop */}
+              <div className="lg:grid lg:grid-cols-2 lg:gap-8">
+                {/* Left column: H2H */}
+                <div>
+                  {data.headToHead.length > 0 && (
+                    <motion.div
+                      className="mb-8"
+                      variants={enter}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.15 }}
+                    >
+                      <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-teal"
+                          style={{ boxShadow: "0 0 6px var(--teal)" }}
+                        />
+                        Human vs AI
+                      </h2>
+                      <HeadToHeadSection matchups={data.headToHead} />
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Right column: Hall of Fame + AI Cost stacked */}
+                <div>
+                  {data.bestResponses.length > 0 && (
+                    <motion.div
+                      className="mb-8"
+                      variants={enter}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.3 }}
+                    >
+                      <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-punch"
+                          style={{ boxShadow: "0 0 6px var(--punch)" }}
+                        />
+                        Hall of Fame
+                      </h2>
+                      <HallOfFame responses={data.bestResponses} />
+                    </motion.div>
+                  )}
+
+                  {data.modelUsage && data.modelUsage.length > 0 && (
+                    <motion.div
+                      className="mb-8"
+                      variants={enter}
+                      initial="hidden"
+                      animate="visible"
+                      transition={{ delay: 0.45 }}
+                    >
+                      <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-teal"
+                          style={{ boxShadow: "0 0 6px var(--teal)" }}
+                        />
+                        AI Cost
+                      </h2>
+                      <ModelUsageSection
+                        usages={data.modelUsage}
+                        totalTokens={data.stats.totalTokens}
+                        totalCost={data.stats.totalCost}
                       />
-                      Human vs AI
-                    </h2>
-                    <HeadToHeadSection matchups={data.headToHead} />
-                  </motion.div>
-                )}
+                    </motion.div>
+                  )}
+                </div>
               </div>
-
-              {/* Right column: Hall of Fame + AI Cost stacked */}
-              <div>
-                {data.bestResponses.length > 0 && (
-                  <motion.div
-                    className="mb-8"
-                    variants={fadeInUp}
-                    initial="hidden"
-                    animate="visible"
-                    transition={{ delay: 0.3 }}
-                  >
-                    <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-punch"
-                        style={{ boxShadow: "0 0 6px var(--punch)" }}
-                      />
-                      Hall of Fame
-                    </h2>
-                    <HallOfFame responses={data.bestResponses} />
-                  </motion.div>
-                )}
-
-                {data.modelUsage && data.modelUsage.length > 0 && (
-                  <motion.div
-                    className="mb-8"
-                    variants={fadeInUp}
-                    initial="hidden"
-                    animate="visible"
-                    transition={{ delay: 0.45 }}
-                  >
-                    <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-teal"
-                        style={{ boxShadow: "0 0 6px var(--teal)" }}
-                      />
-                      AI Cost
-                    </h2>
-                    <ModelUsageSection
-                      usages={data.modelUsage}
-                      totalTokens={data.stats.totalTokens}
-                      totalCost={data.stats.totalCost}
-                    />
-                  </motion.div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </main>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

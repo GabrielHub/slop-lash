@@ -14,6 +14,8 @@ const app = defineApp({
 });
 
 app.use(presence);
+// Background AI jobs (the original pool) and calls the room waits on; see components.ts.
 app.use(workpool, { name: "aiGenerationWorkpool" });
+app.use(workpool, { name: "aiCriticalWorkpool" });
 
 export default app;

@@ -1,3 +1,6 @@
+/** The longest player name; longer ones are cut. */
+export const MAX_PLAYER_NAME_LENGTH = 20;
+
 /** The longest answer or chat message a player (or AI) can submit. */
 export const MAX_ANSWER_LENGTH = 200;
 

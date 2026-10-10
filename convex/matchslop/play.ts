@@ -5,15 +5,15 @@ import { settle } from "../engine";
 import { findResponse, findVote, insertResponse, insertVote, isForfeit } from "../rounds";
 import { loadCurrentRound } from "../rounds";
 import { loadState, validOpenerPromptId } from "./mode";
-import { MAX_ANSWER_LENGTH, isForfeitMarker } from "../../src/games/core/constants";
-import { sanitize } from "../../src/lib/sanitize";
+import { isForfeitMarker } from "../../src/games/core/constants";
+import { cleanLine } from "../../src/games/matchslop/rules";
 
 export const submitResponse = mutation({
   args: {
     capability: v.string(),
     promptId: v.id("prompts"),
     text: v.string(),
-    /** Which profile prompt (or the photo) an opener answers; round 1 only. */
+    /** Which profile prompt (or the photo, once it exists) an opener answers; round 1 only. */
     openerPromptId: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
@@ -21,7 +21,7 @@ export const submitResponse = mutation({
     if (game.gameType !== "MATCHSLOP" || game.phase !== "WRITING") {
       throw new ConvexError("Writing time is over");
     }
-    const text = sanitize(args.text, MAX_ANSWER_LENGTH);
+    const text = cleanLine(args.text);
     if (!text) throw new ConvexError("Write something first");
     if (isForfeitMarker(text)) throw new ConvexError("That message is not allowed");
 
@@ -36,7 +36,12 @@ export const submitResponse = mutation({
     let opener: string | undefined;
     if (game.round === 1) {
       const state = await loadState(ctx, game._id);
-      opener = validOpenerPromptId(state.profile, args.openerPromptId) ?? undefined;
+      opener =
+        validOpenerPromptId(
+          state.profile,
+          args.openerPromptId,
+          state.portrait?.status === "READY",
+        ) ?? undefined;
       if (!opener) throw new ConvexError("Pick which part of their profile you're replying to");
     }
     if (await findResponse(ctx, prompt._id, player._id)) return;

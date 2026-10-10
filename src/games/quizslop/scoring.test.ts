@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
+  callDecided,
   computeAwards,
   quizPointsForRound,
   rankFinalStandings,
@@ -373,25 +374,41 @@ describe("computeAwards", () => {
     expect(calledIt?.recipients).not.toContain("Cara");
   });
 
-  test('a count of one uses the singular stat: "1 correct call", "1 missed call", "1 correct answer"', () => {
+  test('a count of one uses the singular stat: "1 bet won", "1 bet lost", "1 correct answer"', () => {
     const awards = computeAwards([
       awardStats("Alice", { successfulCalls: 1, incorrectCalls: 1, correctAnswers: 1 }),
     ]);
     expect(awards.map((award) => award.stat)).toEqual([
-      "1 correct call",
-      "1 missed call",
+      "1 bet won",
+      "1 bet lost",
       "1 correct answer",
     ]);
   });
 
-  test('counts above one pluralize the stat: "2 correct calls", "2 missed calls", "2 correct answers"', () => {
+  test('counts above one pluralize the stat: "2 bets won", "2 bets lost", "2 correct answers"', () => {
     const awards = computeAwards([
       awardStats("Alice", { successfulCalls: 2, incorrectCalls: 2, correctAnswers: 2 }),
     ]);
     expect(awards.map((award) => award.stat)).toEqual([
-      "2 correct calls",
-      "2 missed calls",
+      "2 bets won",
+      "2 bets lost",
       "2 correct answers",
     ]);
+  });
+});
+
+describe("callDecided", () => {
+  test("a player who bet or passed this round is decided", () => {
+    expect(callDecided(true, 2)).toBe(true);
+    expect(callDecided(true, 0)).toBe(true);
+  });
+
+  test("a player with no bets left is never waited on", () => {
+    expect(callDecided(false, 0)).toBe(true);
+  });
+
+  test("a player with bets left who has not acted is undecided", () => {
+    expect(callDecided(false, 1)).toBe(false);
+    expect(callDecided(false, 2)).toBe(false);
   });
 });

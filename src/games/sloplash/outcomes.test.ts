@@ -1,70 +1,148 @@
 import { describe, expect, it } from "vite-plus/test";
-import { fixtureId, fixturePlayer } from "@/dev/fixtures/base";
-import { bestAnswers, matchupResult } from "./outcomes";
-import { sloplashPrompt } from "./test-kit";
+import type { Id } from "../../../convex/_generated/dataModel";
+import type { SloplashPrompt } from "../../../convex/sloplash/view";
+import { FORFEIT_MARKER } from "@/games/core/constants";
+import { matchupOutcome } from "./outcomes";
 
-const human = fixturePlayer("human", "Hana");
-const ai = fixturePlayer("ai", "Bot", { type: "AI", modelId: "openai/gpt-6.1-sol" });
-const otherAi = fixturePlayer("ai2", "Bit", { type: "AI" });
-const voterA = fixturePlayer("va", "Vic");
-const voterB = fixturePlayer("vb", "Val", { type: "AI" });
-const players = [human, ai, otherAi, voterA, voterB];
-const typeOf = (id: string) => players.find((player) => player.id === id)?.type;
+const TYPES: Record<string, "HUMAN" | "AI"> = { ana: "HUMAN", ben: "HUMAN", bot: "AI", bot2: "AI" };
+const typeOf = (playerId: string) => TYPES[playerId];
 
-const robotWins = sloplashPrompt(
-  "robot",
-  "A rejected cereal mascot:",
-  [
-    { by: "human", text: "Captain Crunchwrap" },
-    { by: "ai", text: "Sergeant Soggy", points: 195 },
-  ],
-  [
-    ["va", 1],
-    ["vb", 1],
-  ],
-);
+/** A revealed matchup: `authors` (null text = no answer) and picks by answer index. */
+function matchup(
+  authors: [string, string | null][],
+  picks: (number | null)[],
+  points: number[] = [],
+): SloplashPrompt {
+  const answerId = (index: number) => `answer-${index}` as Id<"responses">;
+  const present = authors.filter(([, text]) => text !== null).length;
+  return {
+    id: "prompt" as Id<"prompts">,
+    text: "The worst thing to hear from your dentist",
+    assigneeIds: authors.map(([by]) => by as Id<"players">),
+    kind: present >= 2 ? "vote" : present === 1 ? "walkover" : "void",
+    order: present === 0 ? null : 0,
+    revealed: true,
+    answers: authors.map(([by, text], index) => ({
+      id: answerId(index),
+      text: text ?? FORFEIT_MARKER,
+      forfeited: text === null,
+      playerId: by as Id<"players">,
+      pointsEarned: points[index] ?? 0,
+      reactions: [],
+    })),
+    votes: picks.map((pick, index) => ({
+      voterId: `voter-${index}` as Id<"players">,
+      responseId: pick === null ? null : answerId(pick),
+      timedOut: false,
+    })),
+    liveReactions: [],
+  };
+}
 
-describe("matchupResult", () => {
-  it("flags a unanimous AI win over a human as slopped", () => {
-    const result = matchupResult(robotWins, typeOf);
-    expect(result.answers.map((entry) => [entry.isWinner, entry.pct, entry.points])).toEqual([
-      [false, 0, 0],
-      [true, 100, 195],
-    ]);
-    expect(result).toMatchObject({ isUnanimous: true, aiBeatsHuman: true, isTie: false });
-  });
-
-  it("separates passes from timeouts and spots an all-human pass", () => {
-    const passed = sloplashPrompt(
-      "pass",
-      "Prompt",
-      [
-        { by: "ai", text: "a", penalty: -100 },
-        { by: "ai2", text: "b", penalty: -100 },
-      ],
-      [
-        ["va", null],
-        ["vb", null, true],
-      ],
+describe("matchupOutcome", () => {
+  it("stamps a unanimous AI win over a human as slopped", () => {
+    const result = matchupOutcome(
+      matchup(
+        [
+          ["ana", "We drill after dark"],
+          ["bot", "Pain is temporary"],
+        ],
+        [1, 1, 1],
+      ),
+      1,
+      typeOf,
     );
-    const result = matchupResult(passed, typeOf);
-    expect(result.answers.map((entry) => entry.points)).toEqual([-100, -100]);
-    expect(result.passed.map((vote) => vote.voterId)).toEqual([fixtureId("players", "va")]);
-    expect(result.timedOut.map((vote) => vote.voterId)).toEqual([fixtureId("players", "vb")]);
-    expect(result).toMatchObject({ allPassed: true, isTie: false, castVotes: 0 });
+    expect(result.stamp).toBe("slopped");
+    expect(result.aiWon).toBe(true);
+    expect(result.winnerAnswerId).toBe("answer-1");
   });
-});
 
-describe("bestAnswers", () => {
-  it("ranks winning answers by vote share", () => {
-    expect(bestAnswers([{ number: 2, prompts: [robotWins] }])).toEqual([
-      {
-        promptText: "A rejected cereal mascot:",
-        text: "Sergeant Soggy",
-        playerId: ai.id,
-        pct: 100,
-        round: 2,
-      },
-    ]);
+  it("a non-unanimous AI win gets no stamp", () => {
+    const result = matchupOutcome(
+      matchup(
+        [
+          ["ana", "a"],
+          ["bot", "b"],
+        ],
+        [1, 1, 0],
+      ),
+      1,
+      typeOf,
+    );
+    expect(result.stamp).toBeNull();
+    expect(result.aiWon).toBe(true);
+  });
+
+  it("stamps an AI-vs-AI sweep as flawless", () => {
+    const sweep = matchup(
+      [
+        ["bot", "a"],
+        ["bot2", "b"],
+      ],
+      [0, 0],
+    );
+    expect(matchupOutcome(sweep, 1, typeOf).stamp).toBe("flawless");
+    const human = matchup(
+      [
+        ["ana", "a"],
+        ["bot", "b"],
+      ],
+      [0, 0, 0],
+    );
+    expect(matchupOutcome(human, 1, typeOf).stamp).toBe("flawless");
+  });
+
+  it("stamps ties and no-vote matchups", () => {
+    const pair: [string, string][] = [
+      ["ana", "a"],
+      ["ben", "b"],
+    ];
+    expect(matchupOutcome(matchup(pair, [0, 1]), 1, typeOf).stamp).toBe("tie");
+    expect(matchupOutcome(matchup(pair, [null, null]), 1, typeOf).stamp).toBe("noVotes");
+    // A single vote is a plain win, never unanimous.
+    expect(matchupOutcome(matchup(pair, [0]), 1, typeOf).stamp).toBeNull();
+  });
+
+  it("a walkover has no stamp", () => {
+    const result = matchupOutcome(
+      matchup(
+        [
+          ["ana", "a"],
+          ["bot", null],
+        ],
+        [],
+      ),
+      2,
+      typeOf,
+    );
+    expect(result.stamp).toBeNull();
+    expect(result.score.outcome).toBe("walkover");
+    expect(result.score.points["answer-0"]).toBe(200);
+  });
+
+  it("agrees with the points the server stored", () => {
+    // Round 3 (×4): a 4–2 split pays 1,600 / 800; a 6–0 sweep pays 6 × 400 × 1.5.
+    const split = matchup(
+      [
+        ["ana", "a"],
+        ["ben", "b"],
+      ],
+      [0, 0, 1, 0, 1, 0],
+      [1_600, 800],
+    );
+    const sweep = matchup(
+      [
+        ["ana", "a"],
+        ["ben", "b"],
+      ],
+      [0, 0, 0, 0, 0, 0],
+      [3_600, 0],
+    );
+    for (const prompt of [split, sweep]) {
+      const { score } = matchupOutcome(prompt, 3, typeOf);
+      for (const answer of prompt.answers) {
+        expect(score.points[answer.id]).toBe(answer.pointsEarned);
+      }
+    }
   });
 });

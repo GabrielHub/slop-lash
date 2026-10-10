@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-const TARGETS = ["src/app", "src/components"];
+const TARGETS = ["src/app", "src/components", "src/games", "src/room"];
 
 // Catch Tailwind palette colors that bypass the theme token system.
 // This intentionally ignores semantic tokens (punch/teal/gold/ink/etc.).
@@ -8,18 +8,7 @@ const PATTERN = String.raw`\b(?:text|bg|border|from|to|via|ring|stroke|fill)-(?:
 
 // Minimal allowlist for intentional high-contrast utility usage.
 // Keep this small so new hardcoded colors fail by default.
-const ALLOWLIST = [
-  /src[\\/]+app[\\/]+page\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+leaderboard[\\/]+page\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+host[\\/]+page\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+join[\\/]+page\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+game[\\/]+\[code\][\\/]+lobby\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+game[\\/]+\[code\][\\/]+results\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+game[\\/]+\[code\][\\/]+writing\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+game[\\/]+\[code\][\\/]+writing\.tsx:.*border-white\/30.*border-t-white/,
-  /src[\\/]+app[\\/]+game[\\/]+\[code\][\\/]+voting\.tsx:.*text-white/,
-  /src[\\/]+app[\\/]+game[\\/]+\[code\][\\/]+voting-reveal\.tsx:.*text-white/,
-];
+const ALLOWLIST = [/src[\\/]+app[\\/]+leaderboard[\\/]+page\.tsx:.*text-white/];
 
 let output = "";
 try {
@@ -41,7 +30,7 @@ const violations = output
   .filter((line) => !ALLOWLIST.some((pattern) => pattern.test(line)));
 
 if (violations.length > 0) {
-  console.error("Found non-token Tailwind color classes in app/components:");
+  console.error("Found non-token Tailwind color classes:");
   console.error(violations.join("\n"));
   console.error(
     "\nUse theme tokens from src/app/globals.css (e.g. text-ink, bg-surface, text-punch) unless intentionally exempt.",

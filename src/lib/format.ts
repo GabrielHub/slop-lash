@@ -6,7 +6,19 @@ export function ordinal(place: number): string {
   return `${place}${suffix}`;
 }
 
-/** Points with an explicit sign: +100, -150, 0. */
-export function formatSigned(value: number): string {
-  return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
+const MINUS = "−";
+
+/** "1,250", and "−150" with a true minus sign. */
+export function formatPoints(n: number): string {
+  // Round first, so a count passing through -0.3 reads "0", not "−0".
+  const rounded = Math.round(n);
+  const body = Math.abs(rounded).toLocaleString("en-US");
+  return rounded < 0 ? `${MINUS}${body}` : body;
+}
+
+/** "+250", "−150" or "0". */
+export function formatDelta(n: number): string {
+  const rounded = Math.round(n);
+  if (rounded === 0) return "0";
+  return `${rounded > 0 ? "+" : MINUS}${formatPoints(Math.abs(rounded))}`;
 }

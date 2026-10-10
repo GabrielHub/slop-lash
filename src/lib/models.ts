@@ -10,6 +10,14 @@ export interface ModelInfo {
   inputPer1M: number;
   /** Cost per 1M output tokens in USD */
   outputPer1M: number;
+  /**
+   * Cost per 1M input tokens read from the prompt cache, in USD. Set only
+   * when the provider publishes it; without it cached reads are priced as
+   * plain input and the estimate is flagged (`cachePriceKnown: false`).
+   */
+  cacheReadPer1M?: number;
+  /** Cost per 1M input tokens written to a 5-minute prompt cache, in USD, when published. */
+  cacheWritePer1M?: number;
   /** Decision models answer fixed-choice questions instead of writing text. */
   decision?: true;
 }
@@ -76,6 +84,10 @@ export const AI_MODELS: AIModel[] = [
     icon: "/icons/claude-color.svg",
     inputPer1M: 0.1,
     outputPer1M: 0.5,
+    // Anthropic bills cache reads at 0.1x input and 5-minute writes at 1.25x,
+    // and caches prefixes of 512+ tokens on Haiku 5.5 (docs/ai-calls.md).
+    cacheReadPer1M: 0.01,
+    cacheWritePer1M: 0.125,
     anthropicModelId: "claude-haiku-5-5",
   },
 ];
@@ -128,19 +140,6 @@ export function selectUniqueModelsByProvider(modelIds: readonly string[]): AIMod
   }
 
   return selected;
-}
-
-/** Calculate USD cost from token counts for a given model. */
-export function calculateCostUsd(
-  modelId: string,
-  inputTokens: number,
-  outputTokens: number,
-): number {
-  const model = getModelInfo(modelId);
-  if (!model) return 0;
-  return (
-    (inputTokens / 1_000_000) * model.inputPer1M + (outputTokens / 1_000_000) * model.outputPer1M
-  );
 }
 
 /** Rough per-game cost bucket ("$"/"$$"/"$$$") for a model, based on a typical

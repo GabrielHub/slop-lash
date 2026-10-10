@@ -1,736 +1,698 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState, type ReactNode } from "react";
+import Image from "next/image";
+import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { api } from "../../../../convex/_generated/api";
-import { CompletionCard } from "@/components/completion-card";
+import { CompletionCard } from "@/room/completion-card";
 import { ErrorBanner } from "@/components/error-banner";
-import { PulsingDot } from "@/components/pulsing-dot";
-import { Timer } from "@/components/timer";
-import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
-import { MAX_ANSWER_LENGTH } from "@/games/core/constants";
-import { buttonTapPrimary, collapseExpand, springDefault } from "@/lib/animations";
+import { setAmbient } from "@/lib/ambient-events";
+import { SPRING, enter, fade, pop, press } from "@/lib/animations";
 import { ordinal } from "@/lib/format";
-import { playSound } from "@/lib/sounds";
-import { useModeView, usePlayers, useRoom, useRoomAction } from "@/room/context";
-import { StatusCard } from "@/room/parts";
-import { MATCHSLOP_PHOTO_PROMPT_ID, MATCHSLOP_PHOTO_PROMPT_TEXT } from "../config/game-config";
-import { ProfileCard } from "./profile-card";
+import { useModeView, useRoom, useRoomAction, type RoomPlayer } from "@/room/context";
+import { CountUp, TypeOn, buzz, useFreshAtMount } from "@/room/moment";
 import {
-  Chat,
-  HeartIcon,
-  OutcomeBadge,
-  PhotoIcon,
-  ProgressCount,
-  SignalChips,
+  LONE,
+  PARTING_CPS,
+  SEND,
+  finalBeats,
+  replyBeats,
+  useBeats,
+  useDisplayMood,
+  type NamedCue,
+} from "./beats";
+import { Composer } from "./composer";
+import {
+  COPY,
+  LEVEL_TONE,
+  TONE_TEXT,
+  heartDelta,
+  letterOf,
+  phoneEnding,
+  reactionOf,
+  signedPoints,
+  stampOf,
+} from "./copy";
+import { rankPlayers, verdictFor } from "./finale";
+import { PersonaFace } from "./strip";
+import {
   TypingDots,
+  isLastMessageRound,
+  latestPersona,
+  openerCards,
   personaName,
-  raised,
   type Answer,
   type MatchslopMode,
+  type Round,
 } from "./primitives";
 
-type Round = NonNullable<MatchslopMode["round"]>;
-type Opener = { id: string; prompt: string; answer: string };
-
-function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
+/** A status screen: centred in the lower two-thirds, where eyes already are. */
+function Status({ children }: { children: ReactNode }) {
   return (
-    <div className={`rounded-2xl p-4 ${className}`} style={raised}>
+    <output className="flex flex-1 flex-col items-center justify-center gap-3 pb-16 pt-[18svh] text-center">
       {children}
-    </div>
+    </output>
   );
 }
 
-function Eyebrow({ children, color }: { children: ReactNode; color: string }) {
-  return (
-    <p className="text-[11px] uppercase tracking-[0.15em] font-bold mb-1" style={{ color }}>
-      {children}
-    </p>
-  );
+function EyesOnTv({ className = "text-base" }: { className?: string }) {
+  return <p className={`text-ink-dim ${className}`}>{COPY.eyesOnTv}</p>;
 }
 
-/** A tap-to-open copy of the persona's profile. */
-function ProfileToggle({ mode }: { mode: MatchslopMode }) {
-  const [open, setOpen] = useState(false);
-  if (!mode.persona.profile) return null;
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded-2xl text-sm font-display font-semibold cursor-pointer"
-        style={{ border: "1px solid var(--ms-edge)", color: "var(--ms-ink-dim)" }}
-      >
-        <HeartIcon size={14} className="text-[var(--ms-rose)]" />
-        {open ? "Hide profile" : `View ${personaName(mode.persona)}'s profile`}
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            className="overflow-hidden pt-3"
-            variants={collapseExpand}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <ProfileCard persona={mode.persona} outcome={mode.outcome} mood={mode.mood} compact />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/** A one-line message box with a send button. Enter sends. */
-function Composer({
-  placeholder,
-  label,
-  onSend,
+/** Her line on a phone: her face and a bubble. */
+function HerLine({
+  mode,
+  text,
+  className = "text-lg",
+  clamp = "",
 }: {
-  placeholder: string;
-  label: string;
-  onSend: (text: string) => Promise<boolean>;
+  mode: MatchslopMode;
+  text: ReactNode;
+  className?: string;
+  /** A line clamp, kept off the padded bubble so the padding never shows a cut line. */
+  clamp?: string;
 }) {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const { triggerElement } = usePixelDissolve();
-  const ready = text.trim().length > 0 && !sending;
-
-  const send = async () => {
-    if (!ready) return;
-    setSending(true);
-    const ok = await onSend(text.trim());
-    setSending(false);
-    if (ok) playSound("submitted");
-  };
-
   return (
-    <div className="space-y-3">
-      <input
-        type="text"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") void send();
-        }}
-        placeholder={placeholder}
-        maxLength={MAX_ANSWER_LENGTH}
-        enterKeyHint="send"
-        className="w-full py-3.5 px-4 rounded-2xl text-base focus:outline-none transition-colors"
-        style={{
-          background: "var(--ms-raised)",
-          border: "2px solid var(--ms-edge)",
-          color: "var(--ms-ink)",
-        }}
+    <div className="flex items-end gap-2">
+      <PersonaFace
+        persona={mode.persona}
+        className="size-8"
+        radius="50%"
+        monogram="text-base"
+        layoutId={null}
       />
-      <motion.button
-        type="button"
-        onClick={(event) => {
-          triggerElement(event.currentTarget);
-          void send();
-        }}
-        disabled={!ready}
-        className="w-full py-3.5 rounded-2xl font-display font-bold text-white text-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        style={{
-          background: "var(--ms-gradient-romance)",
-          boxShadow: ready ? "0 4px 20px var(--ms-rose-glow)" : "none",
-        }}
-        {...buttonTapPrimary}
+      <p
+        className={`min-w-0 rounded-2xl rounded-bl-md border border-edge bg-surface px-4 py-2.5 leading-snug text-ink ${className}`}
       >
-        {sending ? "Sending..." : label}
-      </motion.button>
+        {clamp ? <span className={clamp}>{text}</span> : text}
+      </p>
     </div>
   );
 }
 
-function OpenerPicker({
-  name,
-  openers,
-  onPick,
-}: {
-  name: string;
-  openers: Opener[];
-  onPick: (opener: Opener) => void;
-}) {
-  const photo = openers.find((opener) => opener.id === MATCHSLOP_PHOTO_PROMPT_ID);
-  return (
-    <motion.div
-      className="space-y-4"
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={springDefault}
-    >
-      <div className="text-center">
-        <Eyebrow color="var(--ms-rose)">Step 1</Eyebrow>
-        <p className="text-sm" style={{ color: "var(--ms-ink-dim)" }}>
-          Pick a prompt from {name}&apos;s profile
-        </p>
-      </div>
-      <div className="space-y-3">
-        {openers
-          .filter((opener) => opener !== photo)
-          .map((opener, index) => (
-            <motion.button
-              key={opener.id}
-              type="button"
-              onClick={() => onPick(opener)}
-              className="w-full rounded-2xl p-4 text-left cursor-pointer"
-              style={{ background: "var(--ms-raised)", border: "2px solid var(--ms-edge)" }}
-              whileHover={{ borderColor: "var(--ms-rose)" }}
-              whileTap={{ scale: 0.97 }}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...springDefault, delay: index * 0.08 }}
-            >
-              <p
-                className="font-display font-bold text-[15px] leading-snug mb-1.5"
-                style={{ color: "var(--ms-rose)" }}
-              >
-                {opener.prompt}
-              </p>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--ms-ink)" }}>
-                {opener.answer}
-              </p>
-            </motion.button>
-          ))}
-      </div>
-      {photo && (
-        <>
-          <div className="flex items-center gap-3 px-2">
-            <div className="flex-1 h-px" style={{ background: "var(--ms-edge)" }} />
-            <span
-              className="text-[10px] uppercase tracking-[0.2em] font-bold"
-              style={{ color: "var(--ms-ink-dim)" }}
-            >
-              or
-            </span>
-            <div className="flex-1 h-px" style={{ background: "var(--ms-edge)" }} />
-          </div>
-          <motion.button
-            type="button"
-            onClick={() => onPick(photo)}
-            className="w-full rounded-2xl py-3.5 px-4 flex items-center justify-center gap-2.5 cursor-pointer"
-            style={{
-              background: "var(--ms-violet-soft)",
-              border: "2px dashed var(--ms-edge-strong)",
-              color: "var(--ms-violet)",
-            }}
-            whileHover={{ borderColor: "var(--ms-violet)" }}
-            whileTap={{ scale: 0.97 }}
-          >
-            <PhotoIcon />
-            <span className="font-display font-bold text-[14px]">Just respond to their photo</span>
-          </motion.button>
-        </>
-      )}
-    </motion.div>
-  );
-}
-
-function OpenerChosen({ opener, onBack }: { opener: Opener; onBack: () => void }) {
-  const photo = opener.id === MATCHSLOP_PHOTO_PROMPT_ID;
-  const color = photo ? "var(--ms-violet)" : "var(--ms-rose)";
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-1.5 mb-3 text-sm font-medium cursor-pointer"
-        style={{ color: "var(--ms-ink-dim)" }}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M15 18l-6-6 6-6" />
-        </svg>
-        Change prompt
-      </button>
-      <div
-        className="rounded-2xl p-4 flex items-start gap-3"
-        style={{
-          background: photo ? "var(--ms-violet-soft)" : "var(--ms-rose-soft)",
-          border: `1px solid ${color}`,
-          color,
-        }}
-      >
-        {photo && <PhotoIcon size={20} className="shrink-0 mt-0.5" />}
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.15em] font-bold mb-0.5">Responding to</p>
-          <p className="font-display font-bold text-[15px] leading-snug">{opener.prompt}</p>
-          {opener.answer && (
-            <p className="text-sm mt-1 leading-relaxed" style={{ color: "var(--ms-ink)" }}>
-              {opener.answer}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Round 1: pick something on the profile, then write the opener to it. */
+/** Round 1: tap one of her prompts (or her photo, once it exists), then write to it. */
 function OpenerWriting({
   mode,
   send,
 }: {
   mode: MatchslopMode;
-  send: (text: string, openerPromptId: string | null) => Promise<boolean>;
+  send: (text: string, opener: string) => Promise<boolean>;
 }) {
-  const [chosen, setChosen] = useState<Opener | null>(null);
-  const { persona } = mode;
-  const openers: Opener[] = [...(persona.profile?.prompts.slice(0, 3) ?? [])];
-  // Only offer the photo when there is one to talk about.
-  if (persona.portraitUrl || persona.portraitPending) {
-    openers.push({
-      id: MATCHSLOP_PHOTO_PROMPT_ID,
-      prompt: MATCHSLOP_PHOTO_PROMPT_TEXT,
-      answer: "",
-    });
-  }
+  const [picked, setPicked] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const openers = openerCards(mode.persona);
+  const chosen = openers.find((opener) => opener.id === picked) ?? null;
+  const others = openers.filter((opener) => opener !== chosen);
 
-  if (!chosen) {
-    return <OpenerPicker name={personaName(persona)} openers={openers} onPick={setChosen} />;
-  }
-  const photo = chosen.id === MATCHSLOP_PHOTO_PROMPT_ID;
   return (
-    <motion.div
-      className="space-y-4"
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={springDefault}
-    >
-      <OpenerChosen opener={chosen} onBack={() => setChosen(null)} />
-      <div>
-        <Eyebrow color="var(--ms-coral)">Step 2 &mdash; Write your opener</Eyebrow>
-        <Composer
-          placeholder={
-            photo ? "Say something about their photo..." : `Reply to "${chosen.prompt}"...`
-          }
-          label="Send opener"
-          onSend={(text) => send(text, chosen.id)}
-        />
+    <LayoutGroup id="ms-opener">
+      <h2 className="font-display text-xl font-bold text-ink">{COPY.pickOne}</h2>
+      <div className="mt-auto flex flex-col gap-2 pt-4">
+        {chosen && (
+          <fieldset
+            className="m-0 flex min-w-0 gap-2 overflow-x-auto border-0 p-0 pb-1"
+            aria-label="Switch prompt"
+          >
+            {others.map((opener) => (
+              <motion.button
+                key={opener.id}
+                layoutId={`opener-${opener.id}`}
+                type="button"
+                onClick={() => setPicked(opener.id)}
+                className="flex h-12 min-w-0 max-w-[45%] shrink-0 cursor-pointer items-center gap-2 rounded-full border-2 border-edge bg-surface px-4 text-sm font-bold text-punch"
+                transition={SPRING.snappy}
+                whileTap={press.whileTap}
+              >
+                {opener.photo && <Thumb src={opener.photo} className="-ml-3 size-9" />}
+                <span className="truncate">{opener.prompt}</span>
+              </motion.button>
+            ))}
+          </fieldset>
+        )}
+        {(chosen ? [chosen] : openers).map((opener) => (
+          <motion.button
+            key={opener.id}
+            layoutId={`opener-${opener.id}`}
+            type="button"
+            aria-pressed={opener === chosen}
+            onClick={() => setPicked(opener.id)}
+            className={`flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-2xl border-2 p-3 text-left ${
+              opener === chosen ? "border-punch bg-punch/10" : "border-edge bg-surface"
+            }`}
+            transition={SPRING.snappy}
+            whileTap={press.whileTap}
+          >
+            {opener.photo && <Thumb src={opener.photo} className="size-12" />}
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-punch">{opener.prompt}</span>
+              {opener.answer && (
+                <span
+                  className={`block text-base leading-snug text-ink ${opener === chosen ? "" : "line-clamp-3"}`}
+                >
+                  {opener.answer}
+                </span>
+              )}
+            </span>
+          </motion.button>
+        ))}
       </div>
-    </motion.div>
+      <Composer
+        placeholder={COPY.yourOpener}
+        ready={chosen !== null}
+        field={chosen !== null}
+        draft={draft}
+        onDraft={setDraft}
+        onSend={(text) => (chosen ? send(text, chosen.id) : Promise.resolve(false))}
+      />
+    </LayoutGroup>
   );
 }
 
+function Thumb({ src, className }: { src: string; className: string }) {
+  return (
+    <span className={`relative shrink-0 overflow-hidden rounded-xl ${className}`}>
+      <Image src={src} alt="" fill unoptimized sizes="48px" className="object-cover" />
+    </span>
+  );
+}
+
+/** Round 2 on: her latest line, then the composer. */
 function ReplyWriting({
   mode,
   round,
-  comeback,
+  last,
   send,
 }: {
   mode: MatchslopMode;
   round: Round;
-  comeback: boolean;
-  send: (text: string, openerPromptId: string | null) => Promise<boolean>;
+  last: boolean;
+  send: (text: string) => Promise<boolean>;
 }) {
-  const { signal } = mode;
+  const [draft, setDraft] = useState("");
+  const name = personaName(mode.persona);
+  const her = latestPersona(mode.messages)?.text ?? round.promptText;
   return (
-    <div className="space-y-4">
-      <Panel>
-        <Eyebrow color="var(--ms-ink-dim)">{comeback ? "One last shot" : "Reply to"}</Eyebrow>
-        <p
-          className="font-display font-semibold text-sm leading-snug"
-          style={{ color: "var(--ms-rose)" }}
-        >
-          {round.promptText}
-        </p>
-      </Panel>
-      {signal && (
-        <motion.div
-          className="rounded-xl flex items-start gap-2 px-3 py-2"
-          style={{
-            background: "color-mix(in srgb, var(--ms-coral) 8%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--ms-coral) 20%, transparent)",
-          }}
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ type: "spring", stiffness: 300, damping: 24, delay: 0.15 }}
-        >
-          <span
-            className="font-mono font-bold uppercase tracking-wider shrink-0 px-1.5 py-0.5 rounded-md text-[9px]"
-            style={{ color: "var(--ms-coral)", background: "var(--ms-coral-soft)" }}
-          >
-            {signal.category}
-          </span>
-          <div
-            className="min-w-0 text-xs leading-snug italic"
-            style={{ color: "var(--ms-ink-dim)" }}
-          >
-            {signal.sideComment && (
-              <p className="mb-1 opacity-85">&ldquo;{signal.sideComment}&rdquo;</p>
-            )}
-            <p>{signal.nextSignal}</p>
+    <>
+      <div className="mt-auto flex flex-col gap-2 pt-4">
+        {mode.comeback ? (
+          <div className="mb-1">
+            <p className="text-base font-bold text-punch">{COPY.oneLastShot}</p>
+            <p className="text-sm text-ink-dim">{COPY.comebackKicker(name)}</p>
           </div>
-        </motion.div>
-      )}
+        ) : (
+          last && (
+            <p className="mb-1 text-sm font-bold uppercase tracking-[0.2em] text-gold-ink">
+              {COPY.lastMessage}
+            </p>
+          )
+        )}
+        <HerLine mode={mode} text={her} />
+      </div>
       <Composer
-        placeholder={
-          comeback ? "Type the line that saves the match..." : "Type your funniest reply..."
-        }
-        label={comeback ? "Send comeback" : "Send"}
-        onSend={(text) => send(text, null)}
+        placeholder={mode.comeback ? COPY.winBackPlaceholder(name) : COPY.yourReply}
+        draft={draft}
+        onDraft={setDraft}
+        onSend={send}
       />
-    </div>
+    </>
   );
 }
 
+/** WRITING: write, then "Locked in" with who's still writing. */
 function Writing({ mode, round }: { mode: MatchslopMode; round: Round }) {
+  const { view } = useRoom();
   const { act, error } = useRoomAction();
-  const { comeback } = mode;
-  const send = (text: string, openerPromptId: string | null) =>
-    act(api.matchslop.play.submitResponse, { promptId: round.promptId, text, openerPromptId });
+  const [sent, setSent] = useState<string | null>(null);
+  const me = view.me?.playerId;
 
-  if (round.myResponseId) {
+  if (!me || !round.writerIds.includes(me)) {
     return (
-      <CompletionCard
-        title="Sent!"
-        subtitle={
-          comeback
-            ? "Waiting to see if the room can save this."
-            : "Waiting for everyone else to write."
-        }
-      />
+      <Status>
+        <p className="text-xl text-ink">{COPY.nextRound}</p>
+        <EyesOnTv />
+      </Status>
     );
   }
+  if (round.myResponseId) {
+    const done = new Set<string>(round.answeredPlayerIds);
+    const pending = view.players.filter(
+      (player) => round.writerIds.includes(player.id) && !done.has(player.id),
+    );
+    return (
+      <Status>
+        <CompletionCard
+          title={COPY.lockedIn}
+          subtitle={sent ? `“${sent}”` : undefined}
+          pending={pending.map(face)}
+        />
+      </Status>
+    );
+  }
+  const submit = async (text: string, openerPromptId: string | null) => {
+    const ok = await act(api.matchslop.play.submitResponse, {
+      promptId: round.promptId,
+      text,
+      openerPromptId,
+    });
+    if (ok) setSent(text);
+    return ok;
+  };
   return (
     <>
       <ErrorBanner error={error} />
       {round.number === 1 ? (
-        <OpenerWriting mode={mode} send={send} />
+        <OpenerWriting mode={mode} send={(text, opener) => submit(text, opener)} />
       ) : (
-        <ReplyWriting mode={mode} round={round} comeback={comeback} send={send} />
+        <ReplyWriting
+          mode={mode}
+          round={round}
+          last={isLastMessageRound(view.room)}
+          send={(text) => submit(text, null)}
+        />
       )}
     </>
   );
 }
 
-function BallotOption({
-  answer,
-  disabled,
-  onVote,
-}: {
-  answer: Answer;
-  disabled: boolean;
-  onVote: (answer: Answer, button: HTMLElement) => void;
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={(event) => onVote(answer, event.currentTarget)}
-      disabled={disabled}
-      className="w-full text-left py-3 px-4 rounded-2xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-      style={{ background: "var(--ms-raised)", border: "2px solid var(--ms-edge)" }}
-      whileHover={{ borderColor: "var(--ms-violet)" }}
-      whileTap={{ scale: 0.97 }}
-    >
-      <span className="text-[15px] leading-relaxed break-words" style={{ color: "var(--ms-ink)" }}>
-        {answer.text}
-      </span>
-    </motion.button>
-  );
+function face(player: RoomPlayer) {
+  return { id: player.id, name: player.name, modelId: player.modelId };
 }
 
-/** Groups openers under the profile prompt they answered, in ballot order. */
-function groupByOpener(answers: Answer[]): { prompt: string | null; answers: Answer[] }[] {
-  const groups = new Map<string | null, Answer[]>();
-  for (const answer of answers) {
-    const key = answer.openerPromptText;
-    groups.set(key, [...(groups.get(key) ?? []), answer]);
-  }
-  return [...groups].map(([prompt, grouped]) => ({ prompt, answers: grouped }));
-}
-
+/** VOTING: tap a card to send it. One tap, no confirm. */
 function Voting({ mode, round }: { mode: MatchslopMode; round: Round }) {
+  const { view } = useRoom();
   const { act, pending, error } = useRoomAction();
-  const { triggerElement } = usePixelDissolve();
-  const { comeback } = mode;
-  const ballot = round.answers.filter((answer) => answer.id !== round.myResponseId);
+  const answers = round.answers;
+  const mine = (answer: Answer) => answer.id === round.myResponseId;
 
   if (round.myVoteResponseId) {
+    const index = answers.findIndex((answer) => answer.id === round.myVoteResponseId);
+    const voted = new Set<string>(round.votedPlayerIds);
     return (
-      <Panel>
-        <p
-          className="font-display font-semibold text-lg mb-2"
-          style={{ color: "var(--ms-violet)" }}
-        >
-          Vote cast!
-        </p>
-        <PulsingDot>
-          {comeback ? "Waiting to see if the room saved it..." : "Waiting on other players..."}
-        </PulsingDot>
-      </Panel>
-    );
-  }
-  if (ballot.length === 0) {
-    return <CompletionCard title="Nothing to vote on" subtitle="Your line is the only one in." />;
-  }
-
-  const vote = (answer: Answer, button: HTMLElement) => {
-    triggerElement(button);
-    void act(api.matchslop.play.castVote, { promptId: round.promptId, responseId: answer.id }).then(
-      (ok) => ok && playSound("vote-cast"),
-    );
-  };
-  const opener = round.number === 1;
-
-  return (
-    <div className="space-y-3">
-      <ErrorBanner error={error} />
-      <Panel>
-        <Eyebrow color="var(--ms-violet)">
-          {comeback
-            ? "Vote for the line that saves it"
-            : opener
-              ? "Pick the best opener"
-              : "Vote for the funniest reply"}
-        </Eyebrow>
-        {!opener && (
-          <p
-            className="font-display font-semibold text-sm leading-snug mb-1"
-            style={{ color: "var(--ms-rose)" }}
-          >
-            {round.promptText}
-          </p>
-        )}
-        <p className="text-xs" style={{ color: "var(--ms-ink-dim)" }}>
-          {comeback
-            ? "Pick the follow-up that gives the room the best chance to claw this back."
-            : "Votes become points, even for strong runner-ups. Human votes count double."}
-        </p>
-      </Panel>
-      {opener ? (
-        <div className="space-y-4">
-          {groupByOpener(ballot).map((group, index) => (
-            <motion.div
-              key={group.prompt ?? "none"}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...springDefault, delay: index * 0.06 }}
-            >
-              {group.prompt && (
-                <p
-                  className="flex items-center gap-2 mb-2 px-1 text-[11px] font-bold uppercase tracking-wider"
-                  style={{
-                    color:
-                      group.prompt === MATCHSLOP_PHOTO_PROMPT_TEXT
-                        ? "var(--ms-violet)"
-                        : "var(--ms-rose)",
-                  }}
-                >
-                  {group.prompt === MATCHSLOP_PHOTO_PROMPT_TEXT ? (
-                    <PhotoIcon size={12} className="shrink-0" />
-                  ) : (
-                    <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-current" />
-                  )}
-                  <span className="truncate">{group.prompt}</span>
-                </p>
-              )}
-              <div className="space-y-2">
-                {group.answers.map((answer) => (
-                  <BallotOption key={answer.id} answer={answer} disabled={pending} onVote={vote} />
-                ))}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {ballot.map((answer) => (
-            <BallotOption key={answer.id} answer={answer} disabled={pending} onVote={vote} />
-          ))}
-        </div>
-      )}
-      {round.forfeitedPlayerIds.length > 0 && (
-        <p className="text-xs text-center opacity-60" style={{ color: "var(--ms-ink-dim)" }}>
-          {round.forfeitedPlayerIds.length} player{round.forfeitedPlayerIds.length === 1 ? "" : "s"}{" "}
-          didn&apos;t send anything
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** SENT and REPLY: the action is on the big screen; the phone keeps a short chat. */
-function Watching({ mode }: { mode: MatchslopMode }) {
-  const { view } = useRoom();
-  const { room } = view;
-  const round = mode.round;
-  const typing = room.phase === "SENT";
-  const won = round?.myResponseId != null && round.myResponseId === round.winnerResponseId;
-
-  return (
-    <div className="space-y-4">
-      <StatusCard>
-        <p className="font-display font-bold text-lg text-ink mb-2">
-          {won
-            ? "Your line got sent!"
-            : typing
-              ? "Message sent"
-              : `${personaName(mode.persona)} replied`}
-        </p>
-        <PulsingDot>Watch the big screen</PulsingDot>
-        {!typing && mode.signal && (
-          <div className="mt-3 flex justify-center">
-            <SignalChips signal={mode.signal} className="justify-center" />
-          </div>
-        )}
-      </StatusCard>
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--ms-surface)", border: "1px solid var(--ms-edge)" }}
-      >
-        <Chat
-          messages={mode.messages.slice(-4)}
-          typing={typing ? personaName(mode.persona) : null}
-          compact
-          className="px-3 py-3 max-h-[50svh]"
+      <Status>
+        <CompletionCard
+          title={COPY.voted(letterOf(Math.max(0, index)))}
+          subtitle={index >= 0 ? `“${answers[index]!.text}”` : undefined}
+          pending={view.players.filter((player) => !voted.has(player.id)).map(face)}
         />
-      </div>
-    </div>
-  );
-}
-
-function Finished({ mode }: { mode: MatchslopMode }) {
-  const { view } = useRoom();
-  const { players, byId } = usePlayers();
-  const me = byId(view.me?.playerId);
-  const place = me ? players.filter((player) => player.score > me.score).length + 1 : null;
-
+      </Status>
+    );
+  }
+  if (!answers.some((answer) => !mine(answer))) {
+    return (
+      <Status>
+        <EyesOnTv className="text-xl" />
+      </Status>
+    );
+  }
+  const her = round.number > 1 ? latestPersona(mode.messages) : null;
+  const vote = (answer: Answer) => {
+    buzz(12);
+    void act(api.matchslop.play.castVote, { promptId: round.promptId, responseId: answer.id });
+  };
+  // Seven or eight lines: compact cards and a one-line context, so the whole
+  // ballot fits one phone screen without scrolling.
+  const compact = answers.length >= 7;
   return (
-    <div className="space-y-4">
-      <div
-        className="rounded-2xl p-5 text-center"
-        style={{ background: "var(--ms-surface)", border: "1px solid var(--ms-edge)" }}
-      >
-        {me && place && (
-          <>
-            <p className="text-sm" style={{ color: "var(--ms-ink-dim)" }}>
-              You placed
-            </p>
-            <p
-              className="font-display font-bold text-4xl"
-              style={{ color: place === 1 ? "var(--gold)" : "var(--ms-ink)" }}
-            >
-              {ordinal(place)}
-            </p>
-            <p className="font-mono text-sm mt-1" style={{ color: "var(--ms-ink-dim)" }}>
-              {me.score} point{me.score === 1 ? "" : "s"}
-            </p>
-          </>
-        )}
-        <div className="mt-3 flex justify-center">
-          <OutcomeBadge outcome={mode.outcome} small />
-        </div>
-      </div>
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--ms-surface)", border: "1px solid var(--ms-edge)" }}
-      >
-        <div
-          className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: "1px solid var(--ms-edge)" }}
-        >
-          <span className="font-display font-bold text-sm" style={{ color: "var(--ms-ink)" }}>
-            The whole chat
-          </span>
-          <span className="text-[10px] font-mono" style={{ color: "var(--ms-ink-dim)" }}>
-            {mode.messages.length} msg{mode.messages.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <Chat messages={mode.messages} compact className="px-3 py-3 max-h-[50svh]" />
-      </div>
-    </div>
-  );
-}
-
-function Waiting({ mode }: { mode: MatchslopMode }) {
-  return (
-    <div className="space-y-4">
-      <div className="text-center py-6">
-        <div className="flex justify-center mb-3">
-          <TypingDots />
-        </div>
-        <p className="font-display font-bold text-lg" style={{ color: "var(--ms-ink)" }}>
-          Finding your match...
-        </p>
-        <p className="text-sm mt-1" style={{ color: "var(--ms-ink-dim)" }}>
-          Writing opens as soon as the profile is ready.
-        </p>
-      </div>
-      {mode.persona.profile && (
-        <ProfileCard persona={mode.persona} outcome={mode.outcome} mood={null} compact />
+    <div className="flex flex-1 flex-col gap-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <ErrorBanner error={error} />
+      <h2 className="font-display text-xl font-bold text-ink">{COPY.whichOne}</h2>
+      {her && (
+        <HerLine
+          mode={mode}
+          text={her.text}
+          className="text-sm"
+          clamp={compact ? "line-clamp-1" : "line-clamp-2"}
+        />
       )}
+      <ul className={`mt-auto flex flex-col pt-2 ${compact ? "gap-1.5" : "gap-2"}`}>
+        {answers.map((answer, index) => {
+          const own = mine(answer);
+          return (
+            <motion.li key={answer.id} variants={enter} initial="hidden" animate="visible">
+              <motion.button
+                type="button"
+                disabled={own || pending}
+                onClick={() => vote(answer)}
+                className={`flex w-full cursor-pointer gap-3 rounded-2xl border-2 border-edge bg-surface text-left disabled:cursor-not-allowed ${
+                  compact ? "min-h-12 items-center px-3 py-1.5" : "min-h-14 items-start p-3"
+                } ${own ? "opacity-50" : ""}`}
+                {...press}
+              >
+                {own ? (
+                  <span className="mt-0.5 shrink-0 rounded-full bg-raised px-2 py-1 text-xs font-bold text-ink-dim">
+                    {COPY.yours}
+                  </span>
+                ) : (
+                  <span
+                    className={`grid shrink-0 place-items-center rounded-full border border-edge bg-raised font-bold text-ink ${
+                      compact ? "size-7 text-sm" : "size-8"
+                    }`}
+                  >
+                    {letterOf(index)}
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={`block break-words leading-snug text-ink ${
+                      compact ? "line-clamp-2 text-sm" : "text-base"
+                    }`}
+                  >
+                    {answer.text}
+                  </span>
+                  {round.number === 1 && answer.openerPromptText && (
+                    <span className="mt-0.5 block truncate text-xs text-punch">
+                      ↳ {answer.openerPromptText}
+                    </span>
+                  )}
+                </span>
+              </motion.button>
+            </motion.li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
 
-const TITLES: Record<string, [normal: string, comeback: string]> = {
-  PROFILE: ["Get ready", "Get ready"],
-  WRITING: ["Write", "Comeback round"],
-  VOTING: ["Vote", "Comeback vote"],
-  SENT: ["Sent", "Comeback sent"],
-  REPLY: ["The reply", "The verdict"],
-};
+/** A line that appears on its beat. */
+function Beat({
+  show,
+  children,
+  variants = fade,
+}: {
+  show: boolean;
+  children: ReactNode;
+  variants?: typeof fade;
+}) {
+  return (
+    <AnimatePresence initial={false}>
+      {show && (
+        <motion.div key="beat" variants={variants} initial="hidden" animate="visible" exit="exit">
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
-/** One player's phone: write, vote, then watch the screen. */
+/** SENT: eyes up, then your own payoff on the TV's beat. */
+function Sent({ mode, round }: { mode: MatchslopMode; round: Round }) {
+  const { view } = useRoom();
+  const fresh = useFreshAtMount();
+  const me = view.me?.playerId;
+  const name = personaName(mode.persona);
+  const lone = round.answers.length === 1;
+  const mine = round.answers.find((answer) => answer.playerId === me);
+  const author = mine !== undefined && mine.id === round.winnerResponseId;
+  const pickedIt =
+    !author && round.myVoteResponseId !== null && round.myVoteResponseId === round.winnerResponseId;
+  const cues: NamedCue<string>[] = lone
+    ? [
+        {
+          name: "payoff",
+          at: LONE.author,
+          ...(author ? { haptic: [30, 40, 90], confetti: "personal" as const } : {}),
+        },
+        { name: "typing", at: LONE.typing },
+      ]
+    : [
+        { name: "unmask", at: SEND.unmask },
+        {
+          name: "payoff",
+          at: SEND.stamp + 170,
+          ...(author
+            ? { haptic: [30, 40, 90], confetti: "personal" as const }
+            : pickedIt
+              ? { haptic: 20 }
+              : {}),
+        },
+        { name: "typing", at: SEND.typing },
+      ];
+  const reached = useBeats(cues);
+  const points = mine?.pointsEarned ?? 0;
+
+  return (
+    <Status>
+      {author && reached("payoff") ? (
+        <motion.div
+          className="flex flex-col items-center gap-2"
+          variants={pop}
+          initial="hidden"
+          animate="visible"
+        >
+          <p className="font-display text-3xl font-bold text-punch">{COPY.gotSent}</p>
+          {!lone && points > 0 && (
+            <p className="font-mono text-6xl font-bold text-ink">
+              <CountUp
+                value={points}
+                from={fresh ? 0 : points}
+                format={(n) => `+${Math.round(n)}`}
+              />
+            </p>
+          )}
+        </motion.div>
+      ) : mine && !lone && reached("unmask") ? (
+        <motion.div variants={enter} initial="hidden" animate="visible">
+          {points > 0 ? (
+            <p className="font-mono text-2xl font-bold text-ink">
+              {COPY.yourText}{" "}
+              <CountUp
+                value={points}
+                from={fresh ? 0 : points}
+                format={(n) => `+${Math.round(n)}`}
+              />
+            </p>
+          ) : (
+            <p className="text-xl text-ink-dim">{COPY.noVotes}</p>
+          )}
+        </motion.div>
+      ) : (
+        <EyesOnTv className="text-xl" />
+      )}
+      <Beat show={pickedIt && reached("payoff")} variants={pop}>
+        <p className="text-xl font-bold text-win">{COPY.youPicked}</p>
+      </Beat>
+      <Beat show={reached("typing")}>
+        <p className="mt-4 flex items-center gap-2 text-base text-ink-dim">
+          {COPY.isTyping(name)}
+          <TypingDots dot="0.4rem" />
+        </p>
+      </Beat>
+    </Status>
+  );
+}
+
+/** REPLY: her reaction and what it did, then the verdict on a hero turn. */
+function Reply({ mode }: { mode: MatchslopMode }) {
+  const { view } = useRoom();
+  const fresh = useFreshAtMount();
+  const me = view.me?.playerId;
+  const latest = latestPersona(mode.messages);
+  const R = replyBeats(latest?.text ?? "");
+  const signal = mode.signal;
+  const level = signal?.source === "model" ? signal.level : null;
+  const ending = stampOf(latest, mode);
+  const lastShot = ending !== null && mode.outcome === "IN_PROGRESS";
+  const verdict = ending ? (mode.verdict ? phoneEnding(mode.verdict) : ending) : null;
+  const author = signal?.authorId != null && signal.authorId === me;
+  const tone = level ? LEVEL_TONE[level] : "ink";
+  const won = verdict?.tone === "win";
+  const reached = useBeats([
+    {
+      name: "react",
+      at: R.impact,
+      haptic: !level
+        ? undefined
+        : tone === "win"
+          ? 30
+          : level === "cringe" || level === "dealbreaker"
+            ? [50, 30, 50]
+            : undefined,
+    },
+    { name: "delta", at: R.delta },
+    { name: "swing", at: R.swing },
+    ...(verdict
+      ? [
+          {
+            name: "hero",
+            at: R.heroImpact,
+            haptic: won ? [40, 60, 40, 60, 120] : [80, 40, 80],
+            ...(won ? { confetti: "personal" as const } : {}),
+          },
+        ]
+      : []),
+    ...(lastShot ? [{ name: "teaser", at: R.teaser }] : []),
+  ]);
+  const reaction = reactionOf(level);
+
+  return (
+    <>
+      <Status>
+        <AnimatePresence mode="wait" initial={false}>
+          {verdict && reached("hero") ? (
+            <motion.div
+              key="hero"
+              className="flex flex-col items-center gap-3"
+              variants={pop}
+              initial="hidden"
+              animate="visible"
+            >
+              <p className={`font-display text-4xl font-bold ${TONE_TEXT[verdict.tone]}`}>
+                {verdict.text}
+              </p>
+              <Beat show={lastShot && reached("teaser")}>
+                <p className="text-lg font-bold text-punch">{COPY.oneLastShotNext}</p>
+              </Beat>
+            </motion.div>
+          ) : reached("react") ? (
+            <motion.div
+              key="react"
+              className="flex flex-col items-center gap-2"
+              variants={pop}
+              initial="hidden"
+              animate="visible"
+            >
+              {level ? (
+                <p className={`font-display text-4xl font-bold ${TONE_TEXT[tone]}`}>
+                  {reaction.text}
+                </p>
+              ) : (
+                <p className="text-2xl text-ink-dim">{reaction.text}</p>
+              )}
+              <Beat show={!!level && !!signal && reached("delta")}>
+                <p className={`font-mono text-2xl font-bold ${TONE_TEXT[tone]}`}>
+                  {signal ? heartDelta(signal.delta) : null}
+                </p>
+              </Beat>
+              <Beat show={author && !!level && !!signal && signal.points !== 0 && reached("swing")}>
+                <p
+                  className={`font-mono text-2xl font-bold ${signal && signal.points < 0 ? "text-fail" : "text-ink"}`}
+                >
+                  {COPY.yourText}{" "}
+                  <CountUp
+                    value={signal?.points ?? 0}
+                    from={fresh ? 0 : (signal?.points ?? 0)}
+                    format={(n) => signedPoints(Math.round(n))}
+                  />
+                </p>
+              </Beat>
+            </motion.div>
+          ) : (
+            <motion.div key="wait" variants={fade} initial="hidden" animate="visible" exit="exit">
+              <TypingDots dot="0.5rem" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Status>
+      <p className="pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-sm text-ink-dim">
+        {COPY.eyesOnTv}
+      </p>
+    </>
+  );
+}
+
+/** FINISHED: the outcome, then your rank on the crown beat, then her verdict on you. */
+function Final({ mode }: { mode: MatchslopMode }) {
+  const { view, live } = useRoom();
+  const fresh = useFreshAtMount();
+  const me = view.players.find((player) => player.id === view.me?.playerId);
+  const ranked = rankPlayers(view.players);
+  const mine = ranked.find((entry) => entry.player.id === me?.id);
+  const F = finalBeats(ranked.length);
+  const top = mine?.rank === 1;
+  const reached = useBeats([
+    {
+      name: "crown",
+      at: F.crown,
+      haptic: top ? [40, 60, 120] : 20,
+      ...(top ? { confetti: "personal" as const } : {}),
+    },
+    { name: "verdict", at: F.verdicts },
+  ]);
+  const ending = phoneEnding(mode.verdict ?? "UNMATCHED");
+  const name = personaName(mode.persona);
+  const pending = mode.postMortem?.pending ?? false;
+  const [pendingAtMount] = useState(pending);
+  const verdict = me ? verdictFor(mode, me.name) : null;
+  const typeVerdict = live && (fresh || pendingAtMount);
+
+  return (
+    <div className="flex flex-1 flex-col items-center gap-4 pb-6 pt-6 text-center">
+      <p className={`font-display text-2xl font-bold ${TONE_TEXT[ending.tone]}`}>{ending.text}</p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2">
+        <AnimatePresence mode="wait" initial={false}>
+          {mine && reached("crown") ? (
+            <motion.div
+              key="rank"
+              className="flex flex-col items-center"
+              variants={pop}
+              initial="hidden"
+              animate="visible"
+            >
+              <p
+                className={`font-display text-7xl font-bold leading-none ${top ? "text-gold-ink" : "text-ink"}`}
+              >
+                {ordinal(mine.rank)}
+              </p>
+              <p className="mt-2 font-mono text-xl text-ink-dim">
+                {COPY.points(mine.player.score)}
+              </p>
+            </motion.div>
+          ) : (
+            <motion.div key="eyes" variants={fade} initial="hidden" animate="visible" exit="exit">
+              <EyesOnTv />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <Beat show={reached("verdict") && (pending || verdict !== null)}>
+        <div className="w-full text-left">
+          <p className="mb-2 text-sm font-bold text-ink-dim">{COPY.onYou(name)}</p>
+          {pending ? (
+            <div className="inline-flex rounded-2xl rounded-bl-md border border-edge bg-surface px-4 py-3">
+              <TypingDots dot="0.4rem" />
+            </div>
+          ) : (
+            <HerLine
+              mode={mode}
+              text={typeVerdict && verdict ? <TypeOn text={verdict} cps={PARTING_CPS} /> : verdict}
+            />
+          )}
+        </div>
+      </Beat>
+    </div>
+  );
+}
+
+/** One player's phone: write, vote, then the personal payoff on the TV's beats. */
 export function MatchslopController() {
   const { view } = useRoom();
   const mode = useModeView("MATCHSLOP");
+  const displayMood = useDisplayMood();
   const { room } = view;
   const round = mode.round;
-  const finished = room.status === "FINISHED";
-  const title = finished
-    ? mode.outcome === "COMEBACK"
-      ? "Partial win"
-      : "Game over"
-    : (TITLES[room.phase]?.[mode.comeback ? 1 : 0] ?? "MatchSlop");
-  const progress =
-    room.phase === "WRITING"
-      ? { count: round?.answeredPlayerIds.length ?? 0, label: "in" }
-      : room.phase === "VOTING"
-        ? { count: round?.votedPlayerIds.length ?? 0, label: "voted" }
-        : null;
 
-  let body: ReactNode = <Waiting mode={mode} />;
-  if (finished) body = <Finished mode={mode} />;
-  else if (room.phase === "WRITING" && round) body = <Writing mode={mode} round={round} />;
-  else if (room.phase === "VOTING" && round) body = <Voting mode={mode} round={round} />;
-  else if (room.phase === "SENT" || room.phase === "REPLY") body = <Watching mode={mode} />;
+  // The bubbles behind the phone follow her mood too; the shell resets it when the room closes.
+  useEffect(() => {
+    setAmbient({ mood: displayMood });
+  }, [displayMood]);
 
-  return (
-    <main className="flex-1 flex flex-col items-center px-4 py-6">
-      <div className="w-full max-w-md space-y-4">
-        <h1
-          className="font-display text-2xl font-bold text-center"
-          style={{ color: "var(--ms-ink)" }}
-        >
-          {title}
-        </h1>
-        {progress && (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 min-w-0">
-              <Timer />
-            </div>
-            <ProgressCount
-              count={progress.count}
-              total={view.players.length}
-              label={progress.label}
-            />
-          </div>
-        )}
-        {body}
-        {!finished && room.phase !== "PROFILE" && <ProfileToggle mode={mode} />}
-      </div>
-    </main>
-  );
+  let screen: ReactNode;
+  if (room.status === "FINISHED") screen = <Final mode={mode} />;
+  else if (room.phase === "WRITING" && round) screen = <Writing mode={mode} round={round} />;
+  else if (room.phase === "VOTING" && round) screen = <Voting mode={mode} round={round} />;
+  else if (room.phase === "SENT" && round) screen = <Sent mode={mode} round={round} />;
+  else if (room.phase === "REPLY") screen = <Reply mode={mode} />;
+  else
+    screen = (
+      <Status>
+        <p className="flex items-center gap-3 font-display text-2xl font-bold text-ink">
+          {COPY.findingMatch}
+          <TypingDots dot="0.45rem" />
+        </p>
+      </Status>
+    );
+
+  return <div className="flex min-h-full flex-1 flex-col px-4 pt-3">{screen}</div>;
 }

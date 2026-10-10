@@ -8,11 +8,16 @@ function requireWriterModel(modelId: string): AIModel {
 }
 
 /**
- * Free Play rooms need no host password. Claude Haiku writes every line on the
- * owner's Claude Console credits, and Jev makes every judging decision.
+ * Free Play rooms need no host password, and need only the Claude API key.
+ * Claude Haiku writes every line on the owner's Claude Console credits and
+ * plays the MatchSlop persona, which also judges the players' lines. SlopLash
+ * AI ballots go to Jev first when the Vercel AI Gateway key is set; without
+ * it, or when Jev fails, Haiku casts them (`castBallots` in
+ * src/games/sloplash/ai.ts).
  */
 export const FREE_PLAY_WRITER_MODEL = requireWriterModel("anthropic/claude-haiku-5.5");
 export const FREE_PLAY_WRITER_MODEL_ID = FREE_PLAY_WRITER_MODEL.id;
+/** Jev: the SlopLash ballot model while the Gateway key is configured. */
 export const FREE_PLAY_JUDGE_MODEL_ID = JEV_MODEL.id;
 
 /** Default rooms per UTC day, overridable with `FREE_PLAY_DAILY_GAME_LIMIT`. */

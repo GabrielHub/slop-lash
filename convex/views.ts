@@ -3,21 +3,27 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireViewer, type Viewer } from "./capabilities";
 import { getMode } from "./modes";
-import { findGameByCode, loadPlayers, loadPresence } from "./roster";
+import { findGameByCode, findGameByNumber, loadPlayers, loadPresence } from "./roster";
 import { matchslopView } from "./matchslop/view";
 import { quizslopView } from "./quizslop/view";
 import { sloplashView } from "./sloplash/view";
 
 const MAX_MODEL_USAGES = 32;
 
-async function modeView(ctx: QueryCtx, game: Doc<"games">, viewerId: Id<"players"> | null) {
+/** `players` is the room view's own read of every player (kicked ones included), shared, not repeated. */
+async function modeView(
+  ctx: QueryCtx,
+  game: Doc<"games">,
+  viewerId: Id<"players"> | null,
+  players: Promise<Doc<"players">[]>,
+) {
   switch (game.gameType) {
     case "SLOPLASH":
-      return sloplashView(ctx, game, viewerId);
+      return sloplashView(ctx, game, viewerId, players);
     case "MATCHSLOP":
       return matchslopView(ctx, game, viewerId);
     case "QUIZSLOP":
-      return quizslopView(ctx, game, viewerId);
+      return quizslopView(ctx, game, viewerId, players);
   }
 }
 
@@ -46,17 +52,26 @@ async function loadUsage(ctx: QueryCtx, game: Doc<"games">) {
 /** What one viewer sees of a room. A null viewer is an outside spectator. */
 async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer | null) {
   const viewerId = viewer?.player?._id ?? null;
-  const [players, presence, mode, usage] = await Promise.all([
-    loadPlayers(ctx, game._id),
+  const finished = game.status === "FINISHED";
+  const allPlayers = loadPlayers(ctx, game._id);
+  const [players, presence, mode, usage, live] = await Promise.all([
+    allPlayers,
     loadPresence(ctx, game._id),
-    modeView(ctx, game, viewerId),
-    game.status === "FINISHED" ? loadUsage(ctx, game) : Promise.resolve(null),
+    modeView(ctx, game, viewerId, allPlayers),
+    finished ? loadUsage(ctx, game) : Promise.resolve(null),
+    // A finished game may have been followed by a "Play again" under the same code.
+    finished ? findGameByCode(ctx, game.roomCode) : Promise.resolve(null),
   ]);
   const { minPlayers, maxPlayers } = getMode(game.gameType);
   return {
     room: {
       id: game._id,
       code: game.roomCode,
+      /** 1 for the room's first game, +1 for each "Play again". */
+      gameNumber: game.gameNumber,
+      /** The rematch that followed this finished game, for a seat that was left behind. */
+      next:
+        live && live._id !== game._id ? { gameNumber: live.gameNumber, status: live.status } : null,
       gameType: game.gameType,
       status: game.status,
       phase: game.phase,
@@ -68,6 +83,8 @@ async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer |
       phaseGeneration: game.phaseGeneration,
       phaseStartedAt: game.phaseStartedAt,
       phaseDeadline: game.deadlineHidden ? null : (game.phaseDeadline ?? null),
+      /** The phase waits on an AI call (its deadline is a hidden watchdog), so it has no clock but is not host-paced. */
+      awaitingAi: game.deadlineHidden === true,
       timersDisabled: game.timersDisabled,
       freePlay: game.freePlay,
       ttsMode: game.ttsMode,
@@ -92,8 +109,6 @@ async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer |
         type: candidate.type,
         modelId: candidate.modelId ?? null,
         score: candidate.score,
-        humorRating: candidate.humorRating,
-        winStreak: candidate.winStreak,
         online: candidate.type === "AI" || presence.get(candidate._id)?.online === true,
         joinedAt: candidate.joinedAt,
       })),
@@ -129,11 +144,13 @@ export const watch = query({
   },
 });
 
-/** A finished room, as anyone with the code sees it. */
+/** A finished game of a room, as anyone with the code sees it. Game 1 by default. */
 export const recap = query({
-  args: { roomCode: v.string() },
+  args: { roomCode: v.string(), gameNumber: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const game = await findGameByCode(ctx, args.roomCode);
+    const gameNumber = args.gameNumber ?? 1;
+    if (!Number.isInteger(gameNumber) || gameNumber < 1) return { kind: "NOT_FOUND" as const };
+    const game = await findGameByNumber(ctx, args.roomCode, gameNumber);
     if (!game) return { kind: "NOT_FOUND" as const };
     if (game.status !== "FINISHED") return { kind: "IN_PROGRESS" as const };
     return { kind: "READY" as const, view: await buildRoomView(ctx, game, null) };

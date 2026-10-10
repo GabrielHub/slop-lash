@@ -1,278 +1,113 @@
 /**
- * Comedy Heat scoring engine — pure, deterministic domain functions.
- * Shared by the Convex state machine and the achievements replay.
+ * SlopLash scoring: every vote is worth 100 points times the round
+ * multiplier. Pure, so the server and every screen agree on the numbers.
  */
 
 export type PlayerType = "HUMAN" | "AI";
 
-// --------------- Constants ---------------
+export const POINTS_PER_VOTE = 100;
+/** A unanimous win (every cast vote, at least two) earns +50%. */
+export const UNANIMOUS_BONUS = 0.5;
 
-const BASE_COEFF = 50;
-const HUMAN_VOTE_MULT = 1.5;
-const AI_VOTE_MULT = 1.0;
-const HR_WIN_DELTA = 0.2;
-const HR_LOSE_DELTA = -0.1;
-const HR_FLOOR = 0.5;
-const FLAWLESS_BONUS = 0.25;
-const UPSET_PCT = 0.1;
-const UPSET_CAP_PER_ROUND = 500;
-const ABSTAIN_AI_PENALTY_PER_HUMAN = 100;
-const ABSTAIN_HUMAN_PENALTY = 75;
+/** ×1, ×2, ×4, … uncapped. */
+export const roundMultiplier = (round: number): number => 2 ** (round - 1);
 
-import { FORFEIT_MARKER } from "@/games/core/constants";
-export { FORFEIT_MARKER };
+/** What one vote is worth this round. */
+export const pointsPerVote = (round: number): number => POINTS_PER_VOTE * roundMultiplier(round);
 
-// --------------- Multipliers ---------------
+/**
+ * How a matchup plays out from how many answers are present: two go to a
+ * vote, one wins by walkover, none is void (skipped entirely).
+ */
+export type MatchupKind = "vote" | "walkover" | "void";
 
-export function roundMultiplier(n: number): number {
-  return Math.pow(2, n - 1);
+export const matchupKind = (present: number): MatchupKind =>
+  present >= 2 ? "vote" : present === 1 ? "walkover" : "void";
+
+/** Walkovers first, then contested matchups, each in input order; voids dropped. Stable. */
+export function orderMatchups<T>(
+  items: readonly { item: T; present: number }[],
+): { item: T; kind: "vote" | "walkover" }[] {
+  const walkovers: { item: T; kind: "walkover" }[] = [];
+  const votes: { item: T; kind: "vote" }[] = [];
+  for (const { item, present } of items) {
+    const kind = matchupKind(present);
+    if (kind === "walkover") walkovers.push({ item, kind });
+    else if (kind === "vote") votes.push({ item, kind });
+  }
+  return [...walkovers, ...votes];
 }
 
-export function streakMultiplier(streak: number): number {
-  if (streak <= 1) return 1.0;
-  if (streak === 2) return 1.3;
-  if (streak === 3) return 1.7;
-  return 2.0;
-}
+export type MatchupOutcome = "win" | "tie" | "noVotes" | "walkover" | "void";
 
-function voteMultiplier(type: PlayerType): number {
-  return type === "HUMAN" ? HUMAN_VOTE_MULT : AI_VOTE_MULT;
-}
-
-// --------------- Types ---------------
-
-export interface PlayerState {
-  score: number;
-  humorRating: number;
-  winStreak: number;
-}
-
-export interface PromptResponse {
-  id: string;
-  playerId: string;
-  playerType: PlayerType;
-  text: string;
-}
-
-export interface PromptVoter {
-  id: string;
-  type: PlayerType;
-  responseId: string | null;
-}
-
-export interface ScorePromptResult {
+export interface MatchupScore {
+  outcome: MatchupOutcome;
+  /** 100 × multiplier. */
+  unit: number;
+  /** Ballots naming a present answer. */
+  cast: number;
+  /** The winning answer id (`win` and `walkover` only). */
+  winnerId: string | null;
+  /** A `win` with at least 2 cast votes, all for the winner. */
+  unanimous: boolean;
+  /** Votes per answer id. */
+  votes: Record<string, number>;
+  /** Points per answer id. */
   points: Record<string, number>;
-  hrUpdates: Record<string, number>;
-  streakUpdates: Record<string, number>;
-  /** Set of response IDs that triggered an upset bonus */
-  upsetResponseIds: Set<string>;
-  /** Penalty amounts keyed by player ID (negative values) */
-  penalties: Record<string, number>;
 }
-
-// --------------- Helpers ---------------
 
 /**
- * Apply a ScorePromptResult's deltas to mutable player states.
- * Used by the Convex state machine and achievements.
+ * Scores one matchup. Ballots name an answer id; null (abstain or timeout)
+ * and unknown ids are ignored, as is who cast them. A walkover pays a flat
+ * unit, which equals the smallest real win, so it never pays more.
  */
-export function applyScoreResult(
-  result: ScorePromptResult,
-  responses: { id: string; playerId: string }[],
-  playerStates: Map<string, PlayerState>,
-): void {
-  for (const resp of responses) {
-    const pts = result.points[resp.id] ?? 0;
-    const state = playerStates.get(resp.playerId);
-    if (state) state.score += pts;
-  }
-  for (const [playerId, penalty] of Object.entries(result.penalties)) {
-    const state = playerStates.get(playerId);
-    if (state) state.score += penalty;
-  }
-  for (const [playerId, newHR] of Object.entries(result.hrUpdates)) {
-    const state = playerStates.get(playerId);
-    if (state) state.humorRating = newHR;
-  }
-  for (const [playerId, newStreak] of Object.entries(result.streakUpdates)) {
-    const state = playerStates.get(playerId);
-    if (state) state.winStreak = newStreak;
-  }
-}
-
-function emptyResult(responses: PromptResponse[]): ScorePromptResult {
+export function scoreMatchup(
+  answers: readonly { id: string; forfeited: boolean }[],
+  ballots: readonly (string | null)[],
+  round: number,
+): MatchupScore {
+  const unit = pointsPerVote(round);
+  const present = answers.filter((answer) => !answer.forfeited);
+  const votes: Record<string, number> = {};
   const points: Record<string, number> = {};
-  for (const r of responses) {
-    points[r.id] = 0;
+  for (const answer of answers) {
+    votes[answer.id] = 0;
+    points[answer.id] = 0;
   }
-  return { points, hrUpdates: {}, streakUpdates: {}, upsetResponseIds: new Set(), penalties: {} };
-}
+  const base = { unit, votes, points, unanimous: false };
 
-function clampHR(value: number): number {
-  return Math.max(HR_FLOOR, value);
-}
-
-function applyWinLoss(
-  result: ScorePromptResult,
-  winnerId: string,
-  loserId: string,
-  playerStates: ReadonlyMap<string, PlayerState>,
-): void {
-  const winnerState = playerStates.get(winnerId);
-  const loserState = playerStates.get(loserId);
-
-  result.hrUpdates[winnerId] = clampHR((winnerState?.humorRating ?? 1.0) + HR_WIN_DELTA);
-  result.hrUpdates[loserId] = clampHR((loserState?.humorRating ?? 1.0) + HR_LOSE_DELTA);
-  result.streakUpdates[winnerId] = (winnerState?.winStreak ?? 0) + 1;
-  result.streakUpdates[loserId] = 0;
-}
-
-// --------------- Core ---------------
-
-/**
- * Score a single prompt matchup.
- *
- * @param responses   The 2 responses for this prompt
- * @param voters      Voters who cast (or abstained) on this prompt, with their type and chosen responseId
- * @param playerStates  Current player states (score, HR, streak) -- read-only, caller updates after
- * @param roundNumber   Current round number (1-based)
- * @param eligibleVoterCount  Total eligible voters for this prompt (used for forfeit path)
- */
-export function scorePrompt(
-  responses: PromptResponse[],
-  voters: PromptVoter[],
-  playerStates: ReadonlyMap<string, PlayerState>,
-  roundNumber: number,
-  eligibleVoterCount: number,
-): ScorePromptResult {
-  const result = emptyResult(responses);
-  const roundMult = roundMultiplier(roundNumber);
-
-  // A forfeited response is never votable and never wins. The prompt is only
-  // uncontested when a single contender remains -- the 2-way Slop-Lash case.
-  // With more contenders, the others still competed for real votes, so score
-  // them normally and leave forfeiters at 0.
-  const contenders = responses.filter((r) => r.text !== FORFEIT_MARKER);
-  if (contenders.length < responses.length && contenders.length <= 1) {
-    return scoreForfeit(responses, playerStates, roundMult, eligibleVoterCount, result);
+  const kind = matchupKind(present.length);
+  if (kind === "void") return { ...base, outcome: "void", cast: 0, winnerId: null };
+  if (kind === "walkover") {
+    const winner = present[0]!;
+    points[winner.id] = unit;
+    return { ...base, outcome: "walkover", cast: 0, winnerId: winner.id };
   }
 
-  // Compute vote power per response
-  const votePowerByResponse = new Map<string, number>(contenders.map((r) => [r.id, 0]));
-
-  const castVoters = voters.filter(
-    (v) => v.responseId != null && votePowerByResponse.has(v.responseId),
-  );
-
-  for (const voter of castVoters) {
-    const voterHR = playerStates.get(voter.id)?.humorRating ?? 1.0;
-    const mult = voteMultiplier(voter.type);
-    const power = voterHR * mult;
-    const current = votePowerByResponse.get(voter.responseId!) ?? 0;
-    votePowerByResponse.set(voter.responseId!, current + power);
+  const presentIds = new Set(present.map((answer) => answer.id));
+  let cast = 0;
+  for (const ballot of ballots) {
+    if (ballot === null || !presentIds.has(ballot)) continue;
+    votes[ballot] = (votes[ballot] ?? 0) + 1;
+    cast += 1;
   }
+  if (cast === 0) return { ...base, outcome: "noVotes", cast, winnerId: null };
 
-  // Rank by vote power
-  const ranked = contenders
-    .map((r) => ({ response: r, votePower: votePowerByResponse.get(r.id) ?? 0 }))
-    .sort((a, b) => b.votePower - a.votePower);
-
-  const isTie = ranked.length >= 2 && ranked[0].votePower === ranked[1].votePower;
-  const winner = !isTie ? ranked[0] : null;
-  const loser = !isTie && ranked.length >= 2 ? ranked[ranked.length - 1] : null;
-
-  const isUnanimous =
-    winner != null &&
-    castVoters.length >= 1 &&
-    castVoters.every((v) => v.responseId === winner.response.id);
-
-  // Calculate points for each response
-  for (const entry of ranked) {
-    const state = playerStates.get(entry.response.playerId);
-    const streakMult = entry === winner ? streakMultiplier(state?.winStreak ?? 0) : 1.0;
-
-    let pts = Math.floor(entry.votePower * entry.votePower * BASE_COEFF * roundMult * streakMult);
-
-    if (entry === winner && isUnanimous) {
-      pts += Math.floor(pts * FLAWLESS_BONUS);
-    }
-
-    if (entry === winner && loser) {
-      const winnerScore = state?.score ?? 0;
-      const loserScore = playerStates.get(loser.response.playerId)?.score ?? 0;
-      if (loserScore > winnerScore) {
-        const upsetBonus = Math.min(
-          Math.floor((loserScore - winnerScore) * UPSET_PCT),
-          UPSET_CAP_PER_ROUND * roundMult,
-        );
-        pts += upsetBonus;
-        result.upsetResponseIds.add(entry.response.id);
-      }
-    }
-
-    result.points[entry.response.id] = pts;
+  const counts = present.map((answer) => votes[answer.id] ?? 0);
+  const top = Math.max(...counts);
+  const leaders = present.filter((answer) => votes[answer.id] === top);
+  const winnerId = leaders.length === 1 ? leaders[0]!.id : null;
+  const unanimous = winnerId !== null && cast >= 2 && top === cast;
+  for (const answer of present) {
+    const earned = (votes[answer.id] ?? 0) * unit;
+    points[answer.id] =
+      unanimous && answer.id === winnerId ? Math.round(earned * (1 + UNANIMOUS_BONUS)) : earned;
   }
-
-  if (winner && loser) {
-    applyWinLoss(result, winner.response.playerId, loser.response.playerId, playerStates);
-  }
-
-  // Abstain penalties: check if ALL human voters abstained
-  const humanVoters = voters.filter((v) => v.type === "HUMAN");
-  const allHumansAbstained =
-    humanVoters.length > 0 && humanVoters.every((v) => v.responseId === null);
-
-  if (allHumansAbstained) {
-    const bothAI = responses.every((r) => r.playerType === "AI");
-    if (bothAI) {
-      // Penalize both AI respondents
-      const penalty = -ABSTAIN_AI_PENALTY_PER_HUMAN * humanVoters.length * roundMult;
-      for (const r of responses) {
-        result.penalties[r.playerId] = penalty;
-      }
-    } else {
-      // At least one human respondent — penalize each abstaining human voter
-      const penalty = -ABSTAIN_HUMAN_PENALTY * roundMult;
-      for (const v of humanVoters) {
-        result.penalties[v.id] = penalty;
-      }
-    }
-  }
-
-  return result;
-}
-
-function scoreForfeit(
-  responses: PromptResponse[],
-  playerStates: ReadonlyMap<string, PlayerState>,
-  roundMult: number,
-  eligibleVoterCount: number,
-  result: ScorePromptResult,
-): ScorePromptResult {
-  const winner = responses.find((r) => r.text !== FORFEIT_MARKER);
-  if (!winner) return result;
-
-  const loser = responses.find((r) => r.text === FORFEIT_MARKER);
-
-  // Synthetic vote power: all eligible voters at neutral HR (1.0) x human mult
-  const syntheticVotePower = eligibleVoterCount * HUMAN_VOTE_MULT;
-  const state = playerStates.get(winner.playerId);
-  const streakMult = streakMultiplier(state?.winStreak ?? 0);
-
-  let pts = Math.floor(
-    syntheticVotePower * syntheticVotePower * BASE_COEFF * roundMult * streakMult,
-  );
-  pts += Math.floor(pts * FLAWLESS_BONUS);
-
-  result.points[winner.id] = pts;
-
-  if (loser) {
-    applyWinLoss(result, winner.playerId, loser.playerId, playerStates);
-  } else {
-    // Only winner present (no loser record) -- update winner only
-    result.hrUpdates[winner.playerId] = clampHR((state?.humorRating ?? 1.0) + HR_WIN_DELTA);
-    result.streakUpdates[winner.playerId] = (state?.winStreak ?? 0) + 1;
-  }
-
-  return result;
+  return {
+    ...base,
+    outcome: winnerId === null ? "tie" : "win",
+    cast,
+    winnerId,
+    unanimous,
+  };
 }

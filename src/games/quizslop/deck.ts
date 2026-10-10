@@ -1,4 +1,5 @@
 import { FINAL_SLATE_SIZE } from "./game-constants";
+import { stableHash } from "../../lib/hash";
 import type { QuizslopCategory } from "./types";
 
 /**
@@ -114,30 +115,50 @@ export function resolveHouseVote<TopicId extends string>(
   return best[0] ?? null;
 }
 
-export interface DeckSlot<TopicId extends string = string, PlayerId extends string = string> {
-  kind: "WARM_UP" | "HOME_TURF" | "HOUSE_CHOICE";
-  /** Frozen topic for warm-up and Home Turf; null for the voted finale. */
-  topicId: TopicId | null;
-  /** Home Topic owner for HOME_TURF slots. */
-  ownerPlayerId: PlayerId | null;
+/** A stable hash shuffle of `ids` by `seed`, ties broken by id. Never mutates its input. */
+function seededOrder(ids: readonly string[], seed: string): string[] {
+  return ids.toSorted(
+    (left, right) =>
+      stableHash(`${seed}:${left}`) - stableHash(`${seed}:${right}`) || left.localeCompare(right),
+  );
 }
 
 /**
- * The persisted deck: warm-up, every frozen Home Topic once in category-aware
- * shuffled order, then the final House Choice. `totalRounds` is always the
- * frozen player count plus two.
+ * The order a round's distinct questions are revealed in: a stable hash shuffle
+ * of `seed`, with `lastId` (the topic owner's question) moved to the end so
+ * the owner's group closes the round. Never mutates its input.
  */
-export function buildDeck<TopicId extends string, PlayerId extends string>(input: {
-  warmUpTopicId: TopicId;
-  homeTopics: readonly { topicId: TopicId; ownerPlayerId: PlayerId }[];
-}): readonly DeckSlot<TopicId, PlayerId>[] {
-  return [
-    { kind: "WARM_UP", topicId: input.warmUpTopicId, ownerPlayerId: null },
-    ...input.homeTopics.map((topic): DeckSlot<TopicId, PlayerId> => ({
-      kind: "HOME_TURF",
-      topicId: topic.topicId,
-      ownerPlayerId: topic.ownerPlayerId,
-    })),
-    { kind: "HOUSE_CHOICE", topicId: null, ownerPlayerId: null },
-  ];
+export function revealOrder(
+  questionIds: readonly string[],
+  seed: string,
+  lastId: string | null,
+): string[] {
+  const ordered = seededOrder(questionIds, seed);
+  if (lastId === null) return ordered;
+  const index = ordered.indexOf(lastId);
+  if (index === -1) return ordered;
+  return [...ordered.slice(0, index), ...ordered.slice(index + 1), lastId];
+}
+
+/**
+ * The lobby deal: `n` topics the viewer may pick, never one claimed by
+ * someone else. The viewer's current pick comes first; the rest follow a
+ * stable shuffle of `seed` and `shuffle`, so each "Shuffle" tap deals anew
+ * and every render of the same deal agrees.
+ */
+export function dealTopics(
+  topics: readonly { id: string; claimedBy: string | null }[],
+  seed: string,
+  shuffle: number,
+  mine: string | null,
+  n = 6,
+): string[] {
+  const pinned = mine !== null && topics.some((topic) => topic.id === mine) ? [mine] : [];
+  const rest = seededOrder(
+    topics
+      .filter((topic) => topic.claimedBy === null && topic.id !== mine)
+      .map((topic) => topic.id),
+    `${seed}:${shuffle}`,
+  );
+  return [...pinned, ...rest].slice(0, Math.max(0, n));
 }

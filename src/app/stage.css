@@ -1,0 +1,91 @@
+/* Stage surface: the TV artboard (rem scale, fixed 16:9 frame). Owned by the room shell. */
+
+/*
+ * The shared screen scales rem with the viewport: 24px at 1080p, 48px at 4K.
+ * The stage is then always 80rem x 45rem, so every Tailwind rem utility reads
+ * from the couch (text-xs = 18px, text-base = 24px at 1080p). A narrow or
+ * portrait screen (a phone watching the stage) keeps a 16px floor and scrolls.
+ * Phones and the docked /game view keep the browser's 16px.
+ * The height term is an exact 100svh / 45 (not a rounded 2.222svh), so rem
+ * lands on whole pixels (24px at 1080p) and 0.75rem is 18px, not 17.998px.
+ * `html[data-surface]` is set from script too, for TV browsers without :has().
+ */
+html:has([data-surface="stage"]),
+html[data-surface="stage"] {
+  font-size: clamp(16px, min(1.25vw, 100svh / 45), 64px);
+}
+
+/*
+ * A landscape screen from about 900x500 up (TV browsers often report 960x540
+ * or 1280x720) is a fixed artboard: the rail on top, the scene filling the
+ * rest. The floor drops to 10px so 80rem x 45rem always fits (at 1024x768,
+ * 12.8px). Nothing scrolls the page, so the host dock can never fall
+ * off-screen. A phone held sideways is too short and scrolls as a page.
+ */
+@media (orientation: landscape) and (min-width: 900px) and (min-height: 500px) {
+  html:has([data-surface="stage"]),
+  html[data-surface="stage"] {
+    font-size: clamp(10px, min(1.25vw, 100svh / 45), 64px);
+  }
+
+  [data-surface="stage"] {
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  /* Last resort for a scene that doesn't fit yet: it scrolls inside the
+     artboard (for a host with a mouse) without a visible scrollbar. */
+  [data-surface="stage"] [data-stage-scene] {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  [data-surface="stage"] [data-stage-scene]::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* QR codes are dark modules on a white plate in both themes, so phones scan them. */
+.qr-plate {
+  background: #ffffff;
+  color: #0e0c15;
+}
+
+/* The phone's "your turn" nudge: an inset glow around the screen edge. */
+.your-turn-glow {
+  box-shadow:
+    inset 0 0 0 3px var(--punch),
+    inset 0 0 36px color-mix(in srgb, var(--punch) 45%, transparent);
+}
+
+/* The untimed "Continue" breathes so the host can find it: a ring that grows and
+   fades behind it (transform and opacity only). The button needs `relative`. */
+@keyframes continue-breathe {
+  0% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.18, 1.45);
+  }
+}
+
+.animate-continue-breathe::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--punch) 40%, transparent);
+  animation: continue-breathe 2s var(--ease-out, ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-continue-breathe::before {
+    animation: none;
+    opacity: 0;
+  }
+}

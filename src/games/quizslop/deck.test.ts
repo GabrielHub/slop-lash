@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
 import {
-  buildDeck,
+  dealTopics,
   orderHomeTopics,
   resolveHouseVote,
+  revealOrder,
   selectFinalSlate,
   selectWarmUpTopic,
   type HouseVoteSlateEntry,
@@ -130,35 +131,6 @@ describe("orderHomeTopics", () => {
   });
 });
 
-describe("buildDeck", () => {
-  const homeTopics = [
-    { topicId: "t-home-1", ownerPlayerId: "p1" },
-    { topicId: "t-home-2", ownerPlayerId: "p2" },
-    { topicId: "t-home-3", ownerPlayerId: "p3" },
-  ];
-
-  test("the warm-up is first and the House Choice is last with a null topic", () => {
-    const deck = buildDeck({ warmUpTopicId: "t-warm-up", homeTopics });
-    expect(deck[0]).toEqual({ kind: "WARM_UP", topicId: "t-warm-up", ownerPlayerId: null });
-    expect(deck.at(-1)).toEqual({ kind: "HOUSE_CHOICE", topicId: null, ownerPlayerId: null });
-  });
-
-  test("every Home Topic appears exactly once, in the given order, with its owner", () => {
-    const deck = buildDeck({ warmUpTopicId: "t-warm-up", homeTopics });
-    expect(deck.slice(1, -1)).toEqual([
-      { kind: "HOME_TURF", topicId: "t-home-1", ownerPlayerId: "p1" },
-      { kind: "HOME_TURF", topicId: "t-home-2", ownerPlayerId: "p2" },
-      { kind: "HOME_TURF", topicId: "t-home-3", ownerPlayerId: "p3" },
-    ]);
-  });
-
-  test("deck length is the frozen player count plus two (totalRounds relationship)", () => {
-    const frozenPlayerCount = homeTopics.length;
-    const deck = buildDeck({ warmUpTopicId: "t-warm-up", homeTopics });
-    expect(deck).toHaveLength(frozenPlayerCount + 2);
-  });
-});
-
 describe("resolveHouseVote", () => {
   const slate: HouseVoteSlateEntry[] = [
     { topicId: "t-a", tieBreakRank: 2 },
@@ -201,5 +173,80 @@ describe("resolveHouseVote", () => {
 
   test("an empty slate yields null", () => {
     expect(resolveHouseVote([], [{ topicId: "t-a" }])).toBeNull();
+  });
+});
+
+describe("revealOrder", () => {
+  const ids = ["q-1", "q-2", "q-3", "q-4"];
+
+  test("moves the topic owner's question to the end", () => {
+    for (const owner of ids) {
+      const ordered = revealOrder(ids, "game:2", owner);
+      expect(ordered.at(-1)).toBe(owner);
+      expect(ordered.toSorted()).toEqual(ids);
+    }
+  });
+
+  test("null keeps the hash order", () => {
+    const hashed = revealOrder(ids, "game:2", null);
+    expect(hashed.toSorted()).toEqual(ids);
+    const withOwnerLast = revealOrder(ids, "game:2", hashed.at(-1)!);
+    expect(withOwnerLast).toEqual(hashed);
+  });
+
+  test("an absent id leaves the order unchanged", () => {
+    expect(revealOrder(ids, "game:2", "q-missing")).toEqual(revealOrder(ids, "game:2", null));
+  });
+
+  test("is deterministic for a seed", () => {
+    expect(revealOrder(ids, "game:3", "q-2")).toEqual(revealOrder(ids, "game:3", "q-2"));
+  });
+
+  test("does not mutate its input", () => {
+    const input = ["q-4", "q-3", "q-2", "q-1"];
+    revealOrder(input, "game:2", "q-4");
+    expect(input).toEqual(["q-4", "q-3", "q-2", "q-1"]);
+  });
+});
+
+describe("dealTopics", () => {
+  const topics = Array.from({ length: 12 }, (_, index) => ({
+    id: `t-${index}`,
+    claimedBy: index < 3 ? `p-${index}` : null,
+  }));
+
+  test("is deterministic for the same seed and shuffle", () => {
+    expect(dealTopics(topics, "room:p-9", 0, null)).toEqual(
+      dealTopics(topics, "room:p-9", 0, null),
+    );
+  });
+
+  test("never deals a topic claimed by someone else", () => {
+    for (let shuffle = 0; shuffle < 10; shuffle += 1) {
+      const dealt = dealTopics(topics, "room:p-1", shuffle, "t-1");
+      expect(dealt).not.toContain("t-0");
+      expect(dealt).not.toContain("t-2");
+    }
+  });
+
+  test("pins the viewer's own pick first", () => {
+    const dealt = dealTopics(topics, "room:p-1", 4, "t-1");
+    expect(dealt[0]).toBe("t-1");
+    expect(dealt.filter((id) => id === "t-1")).toHaveLength(1);
+  });
+
+  test("a shuffle changes the rest of the deal", () => {
+    const deals = new Set(
+      Array.from({ length: 6 }, (_, shuffle) =>
+        dealTopics(topics, "room:p-9", shuffle, null).join(","),
+      ),
+    );
+    expect(deals.size).toBeGreaterThan(1);
+  });
+
+  test("returns n topics when enough are free", () => {
+    expect(dealTopics(topics, "room:p-9", 0, null)).toHaveLength(6);
+    expect(dealTopics(topics, "room:p-9", 0, null, 4)).toHaveLength(4);
+    expect(dealTopics(topics.slice(0, 5), "room:p-9", 0, null).toSorted()).toEqual(["t-3", "t-4"]);
   });
 });

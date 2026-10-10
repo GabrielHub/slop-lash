@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { internalMutation, mutation } from "../_generated/server";
 import { requirePlayer } from "../capabilities";
 import { settle } from "../engine";
 import {
@@ -11,10 +11,12 @@ import {
   loadCurrentRound,
   responsesFor,
 } from "../rounds";
-import { votablePrompts } from "./mode";
+import { castStagedBallot as castStaged, votingMatchup } from "./mode";
 import { MAX_ANSWER_LENGTH, isForfeitMarker } from "../../src/games/core/constants";
 import { sanitize } from "../../src/lib/sanitize";
 import { isValidReactionEmoji } from "../../src/lib/reactions";
+import { capAnswer } from "../../src/games/sloplash/answer";
+import { REACTION_STRIP, SLOPLASH_MAX_ANSWER } from "../../src/games/sloplash/game-constants";
 
 export const submitResponse = mutation({
   args: { capability: v.string(), promptId: v.id("prompts"), text: v.string() },
@@ -23,7 +25,7 @@ export const submitResponse = mutation({
     if (game.gameType !== "SLOPLASH" || game.phase !== "WRITING") {
       throw new ConvexError("Writing time is over");
     }
-    const text = sanitize(args.text, MAX_ANSWER_LENGTH);
+    const text = capAnswer(sanitize(args.text, MAX_ANSWER_LENGTH), SLOPLASH_MAX_ANSWER);
     if (!text) throw new ConvexError("Write something first");
     if (isForfeitMarker(text)) throw new ConvexError("That answer is not allowed");
 
@@ -46,8 +48,7 @@ export const castVote = mutation({
   args: {
     capability: v.string(),
     promptId: v.id("prompts"),
-    /** Null passes without picking either answer. */
-    responseId: v.union(v.id("responses"), v.null()),
+    responseId: v.id("responses"),
   },
   handler: async (ctx, args) => {
     const { game, player } = await requirePlayer(ctx, args.capability);
@@ -55,17 +56,14 @@ export const castVote = mutation({
       throw new ConvexError("Voting is closed");
     }
     const bundle = await loadCurrentRound(ctx, game);
-    const prompt = bundle ? votablePrompts(bundle)[game.step] : undefined;
+    const prompt = bundle ? votingMatchup(game, bundle)?.prompt : undefined;
     if (!bundle || !prompt || prompt._id !== args.promptId) {
       throw new ConvexError("Voting moved on to another matchup");
     }
     if (prompt.assigneeIds.includes(player._id)) {
       throw new ConvexError("You can't vote on your own matchup");
     }
-    if (
-      args.responseId !== null &&
-      !responsesFor(bundle, prompt._id).some((response) => response._id === args.responseId)
-    ) {
+    if (!responsesFor(bundle, prompt._id).some((response) => response._id === args.responseId)) {
       throw new ConvexError("That answer is not in this matchup");
     }
     if (await findVote(ctx, prompt._id, player._id)) return;
@@ -74,30 +72,66 @@ export const castVote = mutation({
   },
 });
 
-/** Toggles a reaction on an answer in the matchup on screen. */
+/**
+ * Adds a reaction to the answer the player voted for, while the matchup is
+ * being voted on. Add-only: sending the same reaction again is a no-op, so a
+ * player sends each reaction at most once per matchup.
+ */
 export const react = mutation({
   args: { capability: v.string(), responseId: v.id("responses"), emoji: v.string() },
   handler: async (ctx, args) => {
-    if (!isValidReactionEmoji(args.emoji)) throw new ConvexError("Unknown reaction");
+    if (
+      !isValidReactionEmoji(args.emoji) ||
+      !(REACTION_STRIP as readonly string[]).includes(args.emoji)
+    ) {
+      throw new ConvexError("Unknown reaction");
+    }
     const { game, player } = await requirePlayer(ctx, args.capability);
-    if (game.phase !== "VOTING" && game.phase !== "REVEAL") {
+    if (game.gameType !== "SLOPLASH" || game.phase !== "VOTING") {
       throw new ConvexError("Reactions open during voting");
     }
-    const response = await ctx.db.get("responses", args.responseId);
-    const round = response ? await ctx.db.get("rounds", response.roundId) : null;
-    if (!response || !round || round.gameId !== game._id || round.roundNumber !== game.round) {
-      throw new ConvexError("That answer is not on screen");
+    const bundle = await loadCurrentRound(ctx, game);
+    const prompt = bundle ? votingMatchup(game, bundle)?.prompt : undefined;
+    const response =
+      bundle && prompt
+        ? responsesFor(bundle, prompt._id).find((r) => r._id === args.responseId)
+        : undefined;
+    if (!prompt || !response) throw new ConvexError("That answer is not on screen");
+    if (prompt.assigneeIds.includes(player._id)) {
+      throw new ConvexError("You can't react to your own matchup");
     }
+    const vote = await findVote(ctx, prompt._id, player._id);
+    if (vote?.responseId !== args.responseId) throw new ConvexError("Vote first");
     const existing = await ctx.db
       .query("reactions")
       .withIndex("by_responseId_and_playerId_and_emoji", (index) =>
         index.eq("responseId", response._id).eq("playerId", player._id).eq("emoji", args.emoji),
       )
       .unique();
-    if (existing) {
-      await ctx.db.delete("reactions", existing._id);
-      return;
-    }
+    if (existing) return;
     await insertReaction(ctx, response, player._id, args.emoji);
+  },
+});
+
+/**
+ * Casts a staged AI ballot a few seconds into its matchup's VOTING phase.
+ * Dropped when the phase has moved on: closing the vote already cast it.
+ */
+export const castStagedBallot = internalMutation({
+  args: { ballotId: v.id("sloplashBallots"), phaseGeneration: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const ballot = await ctx.db.get("sloplashBallots", args.ballotId);
+    if (!ballot) return null;
+    const game = await ctx.db.get("games", ballot.gameId);
+    if (!game || game.status !== "PLAYING" || game.phaseGeneration !== args.phaseGeneration) {
+      return null;
+    }
+    const bundle = await loadCurrentRound(ctx, game);
+    const prompt = bundle ? votingMatchup(game, bundle)?.prompt : undefined;
+    if (!prompt || prompt._id !== ballot.promptId) return null;
+    await castStaged(ctx, prompt, ballot);
+    await settle(ctx, game._id);
+    return null;
   },
 });

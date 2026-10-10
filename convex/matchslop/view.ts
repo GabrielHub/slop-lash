@@ -3,7 +3,7 @@ import type { QueryCtx } from "../_generated/server";
 import { loadPlayers } from "../roster";
 import { isForfeit, loadCurrentRound } from "../rounds";
 import { loadMessages, loadState, openerPromptText, tallyRound, type MatchslopPhase } from "./mode";
-import { pickWinner } from "../../src/games/matchslop/rules";
+import { pickWinner, verdictOf } from "../../src/games/matchslop/rules";
 
 /**
  * Everything a MatchSlop screen needs. Who wrote what stays secret until the
@@ -33,11 +33,14 @@ export async function matchslopView(
       number: bundle.round.roundNumber,
       promptId: prompt._id,
       promptText: prompt.text,
+      /** Who writes this round: the seats at its start. Late joiners only vote. */
+      writerIds: prompt.assigneeIds,
       /** Assignees who have answered, forfeits included. */
       answeredPlayerIds: bundle.responses.map((response) => response.playerId),
       votedPlayerIds: bundle.votes.map((vote) => vote.voterId),
       myResponseId: mine?._id ?? null,
       myVoteResponseId: bundle.votes.find((vote) => vote.voterId === viewerId)?.responseId ?? null,
+      /** The ballot, sorted by id so stage and phones share one order. */
       answers:
         phase === "WRITING"
           ? []
@@ -52,6 +55,8 @@ export async function matchslopView(
                 weightedVotes: revealed ? entry.weightedVotes : 0,
                 rawVotes: revealed ? entry.rawVotes : 0,
                 pointsEarned: revealed ? entry.response.pointsEarned : 0,
+                /** Who picked this line, in voting order; empty until revealed. */
+                voterIds: revealed ? entry.voterIds : [],
               })),
       forfeitedPlayerIds: bundle.responses.filter(isForfeit).map((response) => response.playerId),
       winnerResponseId: winner?.response._id ?? null,
@@ -66,12 +71,14 @@ export async function matchslopView(
       modelId: state.personaModelId,
       profile: state.profile ?? null,
       portraitUrl: state.portrait?.status === "READY" ? (state.portrait.url ?? null) : null,
-      portraitPending: state.portrait?.status === "PENDING",
     },
     mood: state.mood,
     outcome: state.outcome,
-    /** The room is on its one last shot after the persona nearly unmatched. */
+    /** How the date ended: null while it is still going. */
+    verdict: verdictOf(state),
+    /** The room is on its one last shot after the persona unmatched. */
     comeback: game.status === "PLAYING" && state.comebackRound === game.round,
+    /** What the latest reply did: its level, mood delta and the author's points. */
     signal: state.signal ?? null,
     messages: messages.map((message) => ({
       id: message._id,
@@ -82,6 +89,7 @@ export async function matchslopView(
       openerPromptText: message.openerPromptText ?? null,
       mood: message.mood ?? null,
       outcome: message.outcome ?? null,
+      level: message.level ?? null,
     })),
     round,
     postMortem:

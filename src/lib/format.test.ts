@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { formatSigned, ordinal } from "./format";
+import { formatDelta, formatPoints, ordinal } from "./format";
 
 describe("ordinal", () => {
   test("uses st, nd, rd, and th, with teens always th", () => {
@@ -19,8 +19,12 @@ describe("ordinal", () => {
   });
 });
 
-describe("formatSigned", () => {
-  test("adds a plus to gains only", () => {
-    expect([100, -150, 0].map(formatSigned)).toEqual(["+100", "-150", "0"]);
+describe("formatPoints and formatDelta", () => {
+  test("group thousands and use a true minus sign", () => {
+    expect([1250, -150, -0.3].map(formatPoints)).toEqual(["1,250", "−150", "0"]);
+  });
+
+  test("sign gains and losses only", () => {
+    expect([2500, -150, 0.2].map(formatDelta)).toEqual(["+2,500", "−150", "0"]);
   });
 });

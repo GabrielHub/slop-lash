@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "./quizslop-theme.css";
+@import "./matchslop-theme.css";
+@import "./motion.css";
+@import "./stage.css";
 
 /* ============================================
    SLOP-LASH THEME: "ELECTRIC PUNCH"
@@ -7,65 +10,42 @@
    Vermillion + Teal + Gold on warm neutrals.
    ============================================ */
 
-/* --- Light Mode (Default) --- */
-:root {
-  --bg: #faf7f2;
-  --surface: #ffffff;
-  --raised: #f0ece5;
-  --ink: #1a1625;
-  --ink-dim: #6e6784;
-  --accent-ink: #ffffff;
-  --punch: #e8422f;
-  --punch-hover: #d13a28;
-  --teal: #0ea392;
-  --teal-hover: #0c8b7d;
-  --teal-soft: #e6f7f5;
-  --gold: #d99b00;
-  --gold-soft: #fff8e6;
-  --edge: #ddd7cd;
-  --edge-strong: #c5bfb4;
-  --win: #16a34a;
-  --win-soft: #e8f5ec;
-  --fail: #dc2626;
-  --fail-soft: #fee8e8;
-  --vs-bg: #f0ece5;
-  --human-badge: #3b82f6;
-  --human-badge-soft: #ebf2ff;
-  --ai-badge: #8b5cf6;
-  --ai-badge-soft: #f0ebff;
-  --shadow-card: 0 1px 3px rgba(26, 22, 37, 0.06), 0 1px 2px rgba(26, 22, 37, 0.04);
-}
-/* --- Dark Mode --- */
-[data-theme="dark"] {
-  --bg: #0e0c15;
-  --surface: #1a1726;
-  --raised: #262236;
-  --ink: #f0ebe3;
-  --ink-dim: #c0b9d0;
-  --accent-ink: #0e0c15;
-  --punch: #ff5647;
-  --punch-hover: #ff6e62;
-  --teal: #2dd4b8;
-  --teal-hover: #5ddfc8;
-  --teal-soft: #0e2420;
-  --gold: #ffd644;
-  --gold-soft: #2a2310;
-  --edge: #302c3f;
-  --edge-strong: #5b5476;
-  --win: #34d399;
-  --win-soft: #0e2a1e;
-  --fail: #f87171;
-  --fail-soft: #2a1010;
-  --vs-bg: #262236;
-  --human-badge: #60a5fa;
-  --human-badge-soft: #1a2540;
-  --ai-badge: #a78bfa;
-  --ai-badge-soft: #1f1640;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+/* Base tokens sit in a layer so a game theme ([data-game], unlayered) always
+   overrides them, even when both attributes land on <html>. */
+@layer base {
+  /* --- Light Mode (Default) --- */
+  :root {
+    --bg: #faf7f2;
+    --surface: #ffffff;
+    --raised: #f0ece5;
+    --ink: #1a1625;
+    --ink-dim: #6e6784;
+    --accent-ink: #ffffff;
+    --punch: #e8422f;
+    --punch-hover: #d13a28;
+    --teal: #0ea392;
+    --teal-hover: #0c8b7d;
+    --teal-soft: #e6f7f5;
+    --gold: #d99b00;
+    --gold-soft: #fff8e6;
+    /* Text-safe gold and teal (4.5:1 on the canvas); --gold and --teal stay for fills and glows. */
+    --gold-ink: #8f6200;
+    --teal-ink: #0a7d70;
+    --edge: #ddd7cd;
+    --edge-strong: #c5bfb4;
+    --win: #16a34a;
+    --win-soft: #e8f5ec;
+    --fail: #dc2626;
+    --fail-soft: #fee8e8;
+    --vs-bg: #f0ece5;
+    --human-badge: #3b82f6;
+    --human-badge-soft: #ebf2ff;
+    --ai-badge: #8b5cf6;
+    --ai-badge-soft: #f0ebff;
+    --shadow-card: 0 1px 3px rgba(26, 22, 37, 0.06), 0 1px 2px rgba(26, 22, 37, 0.04);
+  }
+  /* --- Dark Mode --- */
+  [data-theme="dark"] {
     --bg: #0e0c15;
     --surface: #1a1726;
     --raised: #262236;
@@ -79,6 +59,8 @@
     --teal-soft: #0e2420;
     --gold: #ffd644;
     --gold-soft: #2a2310;
+    --gold-ink: #ffd644;
+    --teal-ink: #2dd4b8;
     --edge: #302c3f;
     --edge-strong: #5b5476;
     --win: #34d399;
@@ -92,11 +74,43 @@
     --ai-badge-soft: #1f1640;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
   }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e0c15;
+      --surface: #1a1726;
+      --raised: #262236;
+      --ink: #f0ebe3;
+      --ink-dim: #c0b9d0;
+      --accent-ink: #0e0c15;
+      --punch: #ff5647;
+      --punch-hover: #ff6e62;
+      --teal: #2dd4b8;
+      --teal-hover: #5ddfc8;
+      --teal-soft: #0e2420;
+      --gold: #ffd644;
+      --gold-soft: #2a2310;
+      --gold-ink: #ffd644;
+      --teal-ink: #2dd4b8;
+      --edge: #302c3f;
+      --edge-strong: #5b5476;
+      --win: #34d399;
+      --win-soft: #0e2a1e;
+      --fail: #f87171;
+      --fail-soft: #2a1010;
+      --vs-bg: #262236;
+      --human-badge: #60a5fa;
+      --human-badge-soft: #1a2540;
+      --ai-badge: #a78bfa;
+      --ai-badge-soft: #1f1640;
+      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+    }
+  }
 }
 
 /* --- Tailwind v4 Theme Integration --- */
 @theme inline {
-  --color-base: var(--bg);
+  --color-canvas: var(--bg);
   --color-surface: var(--surface);
   --color-raised: var(--raised);
   --color-ink: var(--ink);
@@ -109,6 +123,8 @@
   --color-teal-soft: var(--teal-soft);
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
+  --color-gold-ink: var(--gold-ink);
+  --color-teal-ink: var(--teal-ink);
   --color-edge: var(--edge);
   --color-edge-strong: var(--edge-strong);
   --color-win: var(--win);
@@ -127,50 +143,42 @@
 }
 
 /* --- Base Styles --- */
+/* The page colour lives on <html> (a [data-game] theme there repaints it), so
+   the ambient canvas can sit between it and every piece of content. */
+html {
+  background: var(--bg);
+}
+
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  /* A stacking context of its own, so the ambient layer's z-index: -1 lands
+     above the page colour and below all content. */
+  isolation: isolate;
+  min-height: 100svh;
 }
 
 .text-ui-muted {
   color: color-mix(in srgb, var(--ink) 72%, var(--ink-dim) 28%);
 }
 
-.text-ui-soft {
-  color: color-mix(in srgb, var(--ink) 64%, var(--ink-dim) 36%);
-}
+/* --- Focus & Selection ---
+   In the base layer, so a component's own focus style (`focus:outline-none`
+   plus a border or ring) replaces this ring instead of doubling it. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid var(--punch);
+    outline-offset: 2px;
+  }
 
-.text-ui-faint {
-  color: color-mix(in srgb, var(--ink) 52%, var(--ink-dim) 48%);
-}
-
-/* --- Focus & Selection --- */
-*:focus-visible {
-  outline: 2px solid var(--punch);
-  outline-offset: 2px;
-}
-
-::selection {
-  background: var(--punch);
-  color: #ffffff;
+  ::selection {
+    background: var(--punch);
+    color: #ffffff;
+  }
 }
 
 /* --- Animation Keyframes --- */
-@keyframes pulse-urgent {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.animate-pulse-urgent {
-  animation: pulse-urgent 1s ease-in-out infinite;
-}
-
 @keyframes gentle-float {
   0%,
   100% {
@@ -183,55 +191,6 @@ body {
 
 .animate-gentle-float {
   animation: gentle-float 4s ease-in-out infinite;
-}
-
-/* --- Periodic Wiggle (attention hint for clickable icons) --- */
-@keyframes wiggle {
-  0%,
-  85% {
-    transform: translateY(0) rotate(0deg);
-  }
-  88% {
-    transform: translateY(-2px) rotate(-12deg);
-  }
-  91% {
-    transform: translateY(-1px) rotate(10deg);
-  }
-  94% {
-    transform: translateY(-2px) rotate(-8deg);
-  }
-  97% {
-    transform: translateY(-1px) rotate(4deg);
-  }
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-}
-
-.animate-wiggle {
-  animation: wiggle 6s ease-in-out infinite;
-}
-
-/* --- Pixel Rain --- */
-@keyframes pixel-rain {
-  0% {
-    transform: translateY(-20px);
-    opacity: 0;
-  }
-  8% {
-    opacity: var(--rain-opacity, 0.3);
-  }
-  92% {
-    opacity: var(--rain-opacity, 0.3);
-  }
-  100% {
-    transform: translateY(100vh);
-    opacity: 0;
-  }
-}
-
-.animate-pixel-rain {
-  animation: pixel-rain linear infinite backwards;
 }
 
 /* --- Title Glow --- */
@@ -258,98 +217,6 @@ body {
     var(--shadow-card);
 }
 
-/* --- Noise Texture --- */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
-  opacity: 0.018;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 200px 200px;
-}
-
-/* --- Stamp Slam (SLOPPED!) --- */
-@keyframes stamp-slam {
-  0% {
-    transform: scale(3) rotate(-12deg);
-    opacity: 0;
-  }
-  40% {
-    transform: scale(0.85) rotate(2deg);
-    opacity: 1;
-  }
-  55% {
-    transform: scale(1.08) rotate(-1deg);
-  }
-  70% {
-    transform: scale(0.97) rotate(0.5deg);
-  }
-  100% {
-    transform: scale(1) rotate(-3deg);
-    opacity: 1;
-  }
-}
-
-.animate-stamp-slam {
-  animation: stamp-slam 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-/* --- Slop Drip (Lost to the slop) --- */
-@keyframes slop-drip {
-  0% {
-    clip-path: inset(0 0 100% 0);
-    opacity: 0;
-  }
-  30% {
-    clip-path: inset(0 0 40% 0);
-    opacity: 1;
-  }
-  60% {
-    clip-path: inset(0 0 10% 0);
-  }
-  100% {
-    clip-path: inset(0 0 0 0);
-    opacity: 1;
-  }
-}
-
-.animate-slop-drip {
-  animation: slop-drip 0.8s ease-out forwards;
-}
-
-/* --- Winner Crown Shimmer --- */
-@keyframes crown-shimmer {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--gold) 40%, transparent));
-  }
-  50% {
-    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--gold) 70%, transparent));
-  }
-}
-
-.animate-crown-shimmer {
-  animation: crown-shimmer 2s ease-in-out infinite;
-}
-
-/* --- Achievement badge shine --- */
-@keyframes badge-shine {
-  0% {
-    background-position: -200% center;
-  }
-  100% {
-    background-position: 200% center;
-  }
-}
-
-.animate-badge-shine {
-  background-size: 200% 100%;
-  animation: badge-shine 3s ease-in-out infinite;
-}
-
 /* --- Blinking Cursor (streaming tagline) --- */
 @keyframes blink-cursor {
   0%,
@@ -365,141 +232,6 @@ body::after {
   animation: blink-cursor 0.8s step-end infinite;
 }
 
-/* --- Heat Pulse (Comedy Heat badge) --- */
-@keyframes heat-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
-.animate-heat-pulse {
-  animation: heat-pulse 2s ease-in-out infinite;
-}
-
-/* --- Volume Slider --- */
-.volume-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-}
-
-.volume-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--edge);
-}
-
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--ink-dim);
-  border: none;
-  margin-top: -4px;
-  cursor: pointer;
-}
-
-.volume-slider:hover::-webkit-slider-thumb {
-  background: var(--ink);
-}
-
-.volume-slider::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--edge);
-  border: none;
-}
-
-.volume-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--ink-dim);
-  border: none;
-  cursor: pointer;
-}
-
-.volume-slider:hover::-moz-range-thumb {
-  background: var(--ink);
-}
-
-/* --- Shimmer Sweep (award badges, featured cards) --- */
-@keyframes shimmer-sweep {
-  0% {
-    transform: translateX(-100%) skewX(-15deg);
-  }
-  100% {
-    transform: translateX(200%) skewX(-15deg);
-  }
-}
-
-.shimmer-sweep {
-  position: relative;
-  overflow: hidden;
-}
-
-.shimmer-sweep::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.06) 40%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(255, 255, 255, 0.06) 60%,
-    transparent 100%
-  );
-  animation: shimmer-sweep 4s ease-in-out infinite;
-  animation-delay: 1s;
-  pointer-events: none;
-}
-
-/* --- Timer Bar Gradients --- */
-.timer-bar-normal {
-  background: linear-gradient(
-    90deg,
-    var(--teal) 0%,
-    color-mix(in srgb, var(--teal) 70%, var(--gold) 30%) 100%
-  );
-}
-
-.timer-bar-warning {
-  background: linear-gradient(
-    90deg,
-    var(--gold) 0%,
-    color-mix(in srgb, var(--gold) 80%, var(--punch) 20%) 100%
-  );
-}
-
-.timer-bar-urgent {
-  background: linear-gradient(90deg, var(--fail) 0%, var(--punch) 100%);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--fail) 40%, transparent);
-}
-
-/* --- VS Glow Pulse --- */
-@keyframes vs-glow {
-  0%,
-  100% {
-    text-shadow: 0 0 8px color-mix(in srgb, var(--ink-dim) 15%, transparent);
-  }
-  50% {
-    text-shadow:
-      0 0 20px color-mix(in srgb, var(--punch) 25%, transparent),
-      0 0 40px color-mix(in srgb, var(--punch) 10%, transparent);
-  }
-}
-
-.animate-vs-glow {
-  animation: vs-glow 3s ease-in-out infinite;
-}
-
 /* --- Stat Number Highlight --- */
 .stat-number {
   background: linear-gradient(
@@ -512,263 +244,152 @@ body::after {
   -webkit-text-fill-color: transparent;
 }
 
-/* ============================================
-   MATCHSLOP THEME: "NEON ROMANCE"
-   A dating-app-meets-cocktail-bar aesthetic.
-   Rose + Coral + Electric Violet on deep plum.
-   ============================================ */
-
-[data-game="matchslop"] {
-  background: #110b14;
-  --ms-bg: #110b14;
-  --ms-surface: #1a1220;
-  --ms-raised: #24192e;
-  --ms-ink: #f4ecf8;
-  --ms-ink-dim: #9b8aae;
-  --ms-rose: #f06292;
-  --ms-rose-soft: #f0629218;
-  --ms-rose-glow: #f0629240;
-  --ms-coral: #ff8a65;
-  --ms-coral-soft: #ff8a6518;
-  --ms-violet: #b388ff;
-  --ms-violet-soft: #b388ff18;
-  --ms-mint: #69f0ae;
-  --ms-mint-soft: #69f0ae18;
-  --ms-red: #ff5252;
-  --ms-red-soft: #ff525218;
-  --ms-bubble-player: #1e1428;
-  --ms-bubble-persona: #2a1424;
-  --ms-edge: #302040;
-  --ms-edge-strong: #4a3660;
-  --ms-glow: 0 0 40px #f0629215, 0 0 80px #b388ff08;
-  --ms-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-  --ms-gradient-romance: linear-gradient(135deg, #f06292, #ff8a65, #b388ff);
+/* --- Ambient background (src/components/ambient) ---
+   One fixed layer under all content: each scene's stage lighting as a static
+   gradient (painted once, crossfaded by opacity), then the soft half-resolution
+   canvas (bokeh) and the crisp canvas. Glows are sized in vmax, so they keep
+   their 1080p shape on a portrait phone instead of stretching into pillars. */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
 }
 
-[data-theme="light"][data-game="matchslop"],
-[data-theme="light"] [data-game="matchslop"],
-:root:not([data-theme="dark"])[data-game="matchslop"],
-:root:not([data-theme="dark"]) [data-game="matchslop"] {
-  background: #fff5f7;
-  --ms-bg: #fff5f7;
-  --ms-surface: #ffffff;
-  --ms-raised: #fff0f3;
-  --ms-ink: #2d1b33;
-  --ms-ink-dim: #8a7090;
-  --ms-rose: #e91e63;
-  --ms-rose-soft: #e91e6318;
-  --ms-rose-glow: #e91e6340;
-  --ms-coral: #e65100;
-  --ms-coral-soft: #e6510018;
-  --ms-violet: #7c4dff;
-  --ms-violet-soft: #7c4dff18;
-  --ms-mint: #00c853;
-  --ms-mint-soft: #00c85318;
-  --ms-red: #d32f2f;
-  --ms-red-soft: #d32f2f18;
-  --ms-bubble-player: #fff0f3;
-  --ms-bubble-persona: #f3e5f5;
-  --ms-edge: #e8d5e8;
-  --ms-edge-strong: #d0b8d0;
-  --ms-glow: 0 0 40px #e91e6312, 0 0 80px #7c4dff08;
-  --ms-shadow: 0 2px 12px rgba(45, 27, 51, 0.1);
-  --ms-gradient-romance: linear-gradient(135deg, #e91e63, #e65100, #7c4dff);
+.ambient > * {
+  position: absolute;
+  inset: 0;
 }
 
-/* Games restyle the shared shell and parts by remapping the base tokens. */
-[data-game="matchslop"] {
-  --bg: var(--ms-bg);
-  --surface: var(--ms-surface);
-  --raised: var(--ms-raised);
-  --ink: var(--ms-ink);
-  --ink-dim: var(--ms-ink-dim);
-  --punch: var(--ms-rose);
-  --punch-hover: var(--ms-coral);
-  --teal: var(--ms-violet);
-  --teal-hover: var(--ms-violet);
-  --teal-soft: var(--ms-violet-soft);
-  --edge: var(--ms-edge);
-  --edge-strong: var(--ms-edge-strong);
-  --win: var(--ms-mint);
-  --win-soft: var(--ms-mint-soft);
-  --fail: var(--ms-red);
-  --fail-soft: var(--ms-red-soft);
-  --vs-bg: var(--ms-raised);
+.ambient > canvas {
+  width: 100%;
+  height: 100%;
 }
 
-/* --- MatchSlop Heart Beat --- */
-@keyframes ms-heartbeat {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  14% {
-    transform: scale(1.15);
-  }
-  28% {
-    transform: scale(1);
-  }
-  42% {
-    transform: scale(1.1);
-  }
-  56% {
-    transform: scale(1);
-  }
+.ambient-glow,
+.ambient-warm {
+  opacity: 0;
+  transition: opacity 700ms var(--ease-in-out);
 }
 
-.animate-ms-heartbeat {
-  animation: ms-heartbeat 1.4s ease-in-out infinite;
+.ambient[data-scene="stars"] > [data-for="stars"],
+.ambient[data-scene="pixels"] > [data-for="pixels"],
+.ambient[data-scene="bubbles"] > [data-for="bubbles"],
+.ambient[data-scene="confetti"] > [data-for="confetti"] {
+  opacity: 1;
 }
 
-/* --- MatchSlop Match Sealed Celebration --- */
-@keyframes ms-match-sealed {
-  0% {
-    transform: scale(0) rotate(-20deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.2) rotate(5deg);
-    opacity: 1;
-  }
-  70% {
-    transform: scale(0.9) rotate(-2deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
+/* The brand sky: a warm nebula low left, a cool one high right, a faint glow behind the title. */
+.ambient-glow[data-for="stars"] {
+  background:
+    radial-gradient(
+      34vmax 22.5vmax at 50% 26%,
+      color-mix(in srgb, var(--punch) 6%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      40vmax 26vmax at 12% 84%,
+      color-mix(in srgb, var(--gold) 6%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      40vmax 26vmax at 88% 14%,
+      color-mix(in srgb, var(--teal) 6%, transparent),
+      transparent 72%
+    );
 }
 
-.animate-ms-match-sealed {
-  animation: ms-match-sealed 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+/* The slop machine: a cool glow where the pixels pour from, a punch pool where they land. */
+.ambient-glow[data-for="pixels"] {
+  background:
+    radial-gradient(
+      70vmax 17vmax at 50% -4%,
+      color-mix(in srgb, var(--teal) 7%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      80vmax 18vmax at 50% 104%,
+      color-mix(in srgb, var(--punch) 8%, transparent),
+      transparent 72%
+    );
 }
 
-/* --- MatchSlop Unmatched X Slam --- */
-@keyframes ms-unmatch-slam {
-  0% {
-    transform: scale(2.5) rotate(15deg);
-    opacity: 0;
-  }
-  40% {
-    transform: scale(0.85) rotate(-3deg);
-    opacity: 1;
-  }
-  60% {
-    transform: scale(1.05) rotate(1deg);
-  }
-  100% {
-    transform: scale(1) rotate(-2deg);
-    opacity: 0.9;
-  }
+/* Neon bar light, rose from the left and violet from the right. */
+.ambient-glow[data-for="bubbles"] {
+  background:
+    radial-gradient(
+      50vmax 31vmax at 14% 60%,
+      color-mix(in srgb, var(--ms-rose, var(--punch)) 9%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      45vmax 25vmax at 86% 26%,
+      color-mix(in srgb, var(--ms-violet, var(--teal)) 9%, transparent),
+      transparent 70%
+    );
 }
 
-.animate-ms-unmatch-slam {
-  animation: ms-unmatch-slam 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-/* --- MatchSlop Bubble Float In --- */
-@keyframes ms-bubble-in {
-  0% {
-    transform: translateY(20px) scale(0.95);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
-}
-
-.animate-ms-bubble-in {
-  animation: ms-bubble-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-/* --- MatchSlop Profile Card Shimmer --- */
-@keyframes ms-profile-shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.ms-profile-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(240, 98, 146, 0.06) 40%,
-    rgba(179, 136, 255, 0.1) 50%,
-    rgba(240, 98, 146, 0.06) 60%,
-    transparent 100%
+/* Studio lights: a cyan wash bottom right, and the amber spotlight above. */
+.ambient-glow[data-for="confetti"] {
+  background: radial-gradient(
+    45vmax 22.5vmax at 86% 92%,
+    color-mix(in srgb, var(--qs-signal, var(--teal)) 9%, transparent),
+    transparent 70%
   );
-  background-size: 200% 100%;
-  animation: ms-profile-shimmer 5s ease-in-out infinite;
 }
 
-/* --- MatchSlop Glow Pulse for active states --- */
-@keyframes ms-glow-pulse {
-  0%,
-  100% {
-    box-shadow:
-      0 0 20px var(--ms-rose-soft),
-      var(--ms-shadow);
-  }
-  50% {
-    box-shadow:
-      0 0 40px var(--ms-rose-glow),
-      0 0 80px var(--ms-violet-soft),
-      var(--ms-shadow);
-  }
+.ambient-spotlight {
+  position: absolute;
+  inset: -10% -10% 0;
+  background: radial-gradient(
+    58vmax 26vmax at 50% 0%,
+    color-mix(in srgb, var(--qs-marquee, var(--gold)) 13%, transparent),
+    transparent 72%
+  );
+  animation: ambient-spotlight 40s var(--ease-in-out) infinite alternate;
 }
 
-.animate-ms-glow-pulse {
-  animation: ms-glow-pulse 3s ease-in-out infinite;
-}
-
-/* --- MatchSlop Typing Dots --- */
-@keyframes ms-typing-dot {
-  0%,
-  60%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
+@keyframes ambient-spotlight {
+  from {
+    transform: translateX(-8%);
   }
-  30% {
-    opacity: 1;
-    transform: translateY(-4px);
+  to {
+    transform: translateX(8%);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  body::after {
-    display: none;
-  }
+/* The last seconds of a countdown: the room warms from below. */
+.ambient-warm {
+  background: radial-gradient(
+    90vmax 22.5vmax at 50% 104%,
+    color-mix(in srgb, var(--punch) 10%, transparent),
+    transparent 72%
+  );
+  transition-duration: 2s;
+}
 
-  .animate-pulse-urgent,
-  .animate-gentle-float,
-  .animate-pixel-rain,
-  .animate-stamp-slam,
-  .animate-slop-drip,
-  .animate-crown-shimmer,
-  .animate-badge-shine,
-  .animate-blink-cursor,
-  .animate-heat-pulse,
-  .animate-vs-glow,
-  .animate-ms-heartbeat,
-  .animate-ms-match-sealed,
-  .animate-ms-unmatch-slam,
-  .animate-ms-bubble-in,
-  .animate-ms-glow-pulse {
-    animation: none !important;
-    opacity: 1 !important;
-  }
+.ambient[data-urgent="true"] > .ambient-warm {
+  opacity: 1;
+}
 
-  .ms-profile-shimmer {
-    animation: none !important;
-  }
+/* Film grain over the lighting: dithers the gradients so they don't band on a TV. */
+.ambient-grain {
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
 
-  .shimmer-sweep::after {
-    animation: none !important;
-    opacity: 0 !important;
-  }
+/* Light theme: print on paper, so the lighting is fainter still, and the grain
+   is a little stronger: faint colour on cream bands without it. */
+[data-theme="light"] .ambient-grain {
+  opacity: 0.08;
+}
+
+[data-theme="light"] .ambient[data-scene="stars"] > [data-for="stars"],
+[data-theme="light"] .ambient[data-scene="pixels"] > [data-for="pixels"],
+[data-theme="light"] .ambient[data-scene="bubbles"] > [data-for="bubbles"],
+[data-theme="light"] .ambient[data-scene="confetti"] > [data-for="confetti"] {
+  opacity: 0.7;
 }

@@ -133,27 +133,3 @@ export interface QuizslopRejectedExample {
   text: string;
   whyItFails: string;
 }
-
-/** Deterministic stage/controller microcopy with review metadata. */
-export interface QuizslopVoiceLine {
-  /** Stable ID persisted with the phase that selected it. */
-  id: string;
-  /** Phase or event this line may decorate. */
-  tag: QuizslopVoiceEventTag;
-  text: string;
-  /** Unembellished label for screen readers. */
-  accessibleLabel: string;
-  review: { approved: boolean; reviewer: string | null; reviewedAt: string | null };
-}
-
-export type QuizslopVoiceEventTag =
-  | "LOBBY_SETUP"
-  | "HOUSE_VOTE"
-  | "TOPIC_REVEAL_WARM_UP"
-  | "TOPIC_REVEAL_HOME_TURF"
-  | "TOPIC_REVEAL_HOUSE_CHOICE"
-  | "SLOP_CALL"
-  | "ANSWER"
-  | "QUESTION_REVEAL"
-  | "ROUND_RESULTS"
-  | "FINAL_RESULTS";

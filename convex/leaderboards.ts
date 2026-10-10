@@ -195,9 +195,14 @@ async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<Ga
     const { prompts } = bundle;
     totalPrompts += prompts.length;
     const voteCounts = new Map<Id<"responses">, number>();
+    // Human vs AI is judged by people only: AI ballots never decide it.
+    const humanVoteCounts = new Map<Id<"responses">, number>();
     for (const vote of bundle.votes) {
       if (!vote.responseId) continue;
       voteCounts.set(vote.responseId, (voteCounts.get(vote.responseId) ?? 0) + 1);
+      if (playersById.get(vote.voterId)?.type === "HUMAN") {
+        humanVoteCounts.set(vote.responseId, (humanVoteCounts.get(vote.responseId) ?? 0) + 1);
+      }
       totalVotes += 1;
     }
 
@@ -232,13 +237,20 @@ async function buildProjection(ctx: MutationCtx, game: Doc<"games">): Promise<Ga
       if (leftVotes > rightVotes) leftCompetitor.matchupsWon += 1;
       if (rightVotes > leftVotes) rightCompetitor.matchupsWon += 1;
 
+      const leftHumanVotes = humanVoteCounts.get(leftResponse._id) ?? 0;
+      const rightHumanVotes = humanVoteCounts.get(rightResponse._id) ?? 0;
       const humanAndAi =
         leftPlayer.type === "AI" && rightPlayer.type !== "AI"
-          ? { aiPlayer: leftPlayer, aiVotes: leftVotes, humanVotes: rightVotes }
+          ? { aiPlayer: leftPlayer, aiVotes: leftHumanVotes, humanVotes: rightHumanVotes }
           : rightPlayer.type === "AI" && leftPlayer.type !== "AI"
-            ? { aiPlayer: rightPlayer, aiVotes: rightVotes, humanVotes: leftVotes }
+            ? { aiPlayer: rightPlayer, aiVotes: rightHumanVotes, humanVotes: leftHumanVotes }
             : null;
-      if (humanAndAi?.aiPlayer.modelId && getModelByModelId(humanAndAi.aiPlayer.modelId)) {
+      // A matchup no person voted on has no human verdict, so it is left out.
+      if (
+        humanAndAi?.aiPlayer.modelId &&
+        leftHumanVotes + rightHumanVotes > 0 &&
+        getModelByModelId(humanAndAi.aiPlayer.modelId)
+      ) {
         const row = getHeadToHead(headToHead, humanAndAi.aiPlayer.modelId);
         if (humanAndAi.humanVotes > humanAndAi.aiVotes) row.humanWins += 1;
         else if (humanAndAi.aiVotes > humanAndAi.humanVotes) row.aiWins += 1;

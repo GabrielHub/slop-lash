@@ -1,0 +1,54 @@
+/* Motion tokens, shared keyframes, and reduced-motion guards.
+   The easings mirror EASE.out and EASE.inOut in src/lib/animations.ts. */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* --- Tick ---
+   One small kick per second for the last seconds of a countdown: re-key the
+   element each second. Needs a box that can transform (block or inline-block). */
+@keyframes tick {
+  from {
+    transform: scale(1.14);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.animate-tick {
+  animation: tick 250ms var(--ease-out);
+}
+
+/* --- Waiting pulse (PulsingDot) --- */
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 2s var(--ease-in-out) infinite;
+}
+
+/* --- Reduced motion ---
+   Every CSS animation and transition finishes at once. The countdown drain
+   (src/room/timer.tsx) runs on the Web Animations API, so it keeps going. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

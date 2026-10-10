@@ -1,6 +1,10 @@
+import type { LanguageModelCallOptions } from "ai";
+
 /**
- * Every text model call reasons at the lowest effort that keeps reasoning on.
- * `minimal` is AI SDK's portable level; each provider maps it to its own floor
- * (Anthropic's adaptive thinking runs it at effort `low`).
+ * AI SDK's portable reasoning levels. Each provider maps them to its own
+ * controls: on Claude Haiku 5.5 `none` turns thinking off and `minimal` runs
+ * adaptive thinking at effort `low`. Thinking tokens count against
+ * `maxOutputTokens`, so a task's output cap must leave room for them.
  */
-export const MINIMAL_REASONING = { reasoning: "minimal" } as const;
+export type AiReasoning = NonNullable<LanguageModelCallOptions["reasoning"]>;
+

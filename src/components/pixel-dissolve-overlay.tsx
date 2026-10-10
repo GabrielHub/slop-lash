@@ -2,13 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import { subscribeDissolve, type DissolveRequest } from "@/lib/dissolve-events";
+import { prefersReducedMotion } from "@/lib/animations";
 
 const DISSOLVE_COLORS = ["var(--punch)", "var(--teal)", "var(--gold)"];
-
-function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -27,6 +23,8 @@ function runDissolve(container: HTMLElement, request: DissolveRequest) {
 
   const { sourceRect } = request;
   const colors = request.colors ?? DISSOLVE_COLORS;
+  // Glows read as smudges on the light theme's paper; plain pixels there.
+  const glow = document.documentElement.dataset.theme !== "light";
   const particleCount = request.particleCount ?? 20;
 
   const dissolveParticles: HTMLElement[] = [];
@@ -51,7 +49,7 @@ function runDissolve(container: HTMLElement, request: DissolveRequest) {
       height: ${size}px;
       border-radius: 50%;
       background: ${color};
-      box-shadow: 0 0 ${size * 2}px ${color}, 0 0 ${size * 5}px ${color};
+      box-shadow: ${glow ? `0 0 ${size * 2}px ${color}, 0 0 ${size * 5}px ${color}` : "none"};
       left: ${startX}px;
       top: ${startY}px;
       pointer-events: none;

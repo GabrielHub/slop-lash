@@ -16,6 +16,7 @@ const runners: Record<string, (input: never) => Promise<JobResult<unknown>>> = {
 export const run = internalAction({
   args: { jobId: v.id("generationJobs") },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
     const prepared = await ctx.runQuery(internal.jobs.prepare, args);
     if (!prepared) return null;
     const runner = runners[prepared.kind];
@@ -25,7 +26,10 @@ export const run = internalAction({
     await ctx.runMutation(internal.jobs.apply, {
       jobId: args.jobId,
       output: result.output,
-      usage: result.usage,
+      failReason: result.failReason,
+      calls: result.calls,
+      startedAt,
+      latencyMs: Date.now() - startedAt,
     });
     return null;
   },

@@ -72,6 +72,20 @@ export const quizslopTables = {
     delta: v.optional(v.number()),
   }).index("by_gameId_and_ordinal_and_callerId", ["gameId", "ordinal", "callerId"]),
 
+  /** A spectator's emoji during one reveal step; each emoji once per player per step. */
+  quizSlopReactions: defineTable({
+    gameId: v.id("games"),
+    ordinal: v.number(),
+    step: v.number(),
+    playerId: v.id("players"),
+    emoji: v.string(),
+  }).index("by_gameId_and_ordinal_and_step_and_playerId", [
+    "gameId",
+    "ordinal",
+    "step",
+    "playerId",
+  ]),
+
   /** Votes for the finale topic. */
   quizSlopHouseVotes: defineTable({
     gameId: v.id("games"),

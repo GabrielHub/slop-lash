@@ -36,7 +36,11 @@ export default function DevUiIndexPage() {
                     {fixture.view.room.status} · {fixture.view.room.phase}
                   </p>
                   <div className="mt-3 flex gap-2 text-sm">
-                    {(["stage", "controller", "game"] as const).map((layout) => (
+                    {/* A finished room also renders as the static, never-live recap page. */}
+                    {(fixture.view.room.status === "FINISHED"
+                      ? (["stage", "controller", "game", "recap"] as const)
+                      : (["stage", "controller", "game"] as const)
+                    ).map((layout) => (
                       <Link
                         key={layout}
                         href={`/dev/ui/${fixture.id}?layout=${layout}`}

@@ -38,6 +38,7 @@ import type * as rounds from "../rounds.js";
 import type * as sloplash_mode from "../sloplash/mode.js";
 import type * as sloplash_play from "../sloplash/play.js";
 import type * as sloplash_runners from "../sloplash/runners.js";
+import type * as sloplash_tables from "../sloplash/tables.js";
 import type * as sloplash_view from "../sloplash/view.js";
 import type * as validators from "../validators.js";
 import type * as views from "../views.js";
@@ -79,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   "sloplash/mode": typeof sloplash_mode;
   "sloplash/play": typeof sloplash_play;
   "sloplash/runners": typeof sloplash_runners;
+  "sloplash/tables": typeof sloplash_tables;
   "sloplash/view": typeof sloplash_view;
   validators: typeof validators;
   views: typeof views;
@@ -113,4 +115,5 @@ export declare const internal: FilterApi<
 export declare const components: {
   presence: import("@convex-dev/presence/_generated/component.js").ComponentApi<"presence">;
   aiGenerationWorkpool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"aiGenerationWorkpool">;
+  aiCriticalWorkpool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"aiCriticalWorkpool">;
 };

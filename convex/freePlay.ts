@@ -1,10 +1,14 @@
 import { v } from "convex/values";
 import { env, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { getAiProviderKeys } from "./aiGateway";
 import { getFreePlayDay, parseFreePlayDailyGameLimit } from "../src/lib/free-play";
 
-/** Without Claude credentials Free Play has no writer, so it is switched off. */
+/**
+ * Free Play needs only the Claude API key: Haiku writes every line and plays
+ * the MatchSlop persona. Without it Free Play is switched off.
+ */
 export function isFreePlayConfigured(): boolean {
-  return Boolean(env.ANTHROPIC_API_KEY?.trim());
+  return getAiProviderKeys().anthropic !== undefined;
 }
 
 async function loadFreePlayDay(ctx: QueryCtx, now: number) {

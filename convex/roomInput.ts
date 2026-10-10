@@ -5,6 +5,7 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
 } from "../src/lib/room-code";
+import { MAX_PLAYER_NAME_LENGTH } from "../src/games/core/constants";
 
 export function createRoomCode(): string {
   const bytes = new Uint8Array(ROOM_CODE_LENGTH);
@@ -29,7 +30,7 @@ export function normalizePlayerName(name: string): {
     const code = character.charCodeAt(0);
     return code <= 8 || code === 11 || code === 12 || (code >= 14 && code <= 31) ? "" : character;
   }).join("");
-  const cleanName = withoutControlCharacters.trim().slice(0, 20);
+  const cleanName = withoutControlCharacters.trim().slice(0, MAX_PLAYER_NAME_LENGTH);
   if (cleanName.length === 0) throw new ConvexError("Player name is required");
   return { name: cleanName, normalizedName: cleanName.toLocaleLowerCase("en-US") };
 }

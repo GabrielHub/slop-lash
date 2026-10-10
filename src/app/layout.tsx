@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Urbanist, Outfit, Geist_Mono } from "next/font/google";
 import { ConvexClientProvider } from "@/components/convex-client-provider";
-import { ThemeProvider, ThemeToggle } from "@/components/theme-provider";
-import { PixelRain } from "@/components/pixel-rain";
+import { ThemeProvider } from "@/components/theme-provider";
+import { Ambient } from "@/components/ambient/ambient";
+import { MotionRoot } from "@/components/ambient/motion-root";
 import { PixelDissolveOverlay } from "@/components/pixel-dissolve-overlay";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
@@ -77,10 +78,9 @@ export default function RootLayout({
       <body className={`${urbanist.variable} ${outfit.variable} ${geistMono.variable} antialiased`}>
         <ConvexClientProvider>
           <ThemeProvider>
-            <PixelRain />
+            <Ambient />
             <PixelDissolveOverlay />
-            <ThemeToggle />
-            {children}
+            <MotionRoot>{children}</MotionRoot>
           </ThemeProvider>
         </ConvexClientProvider>
         <Analytics />

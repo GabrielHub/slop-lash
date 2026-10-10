@@ -1,7 +1,9 @@
 import type { RoomInfo, RoomPlayer } from "@/room/context";
 import { sortPlayersByScore } from "@/games/core/player-rankings";
 import type { SloplashPrompt, SloplashView } from "../../../convex/sloplash/view";
+import { matchupOutcome } from "./outcomes";
 import { roundMultiplier } from "./scoring";
+import { currentPrompt, typeOfPlayer, walkoverCount } from "./ui/data";
 
 const NARRATION_EVENT_TYPES = [
   "game_start",
@@ -97,24 +99,38 @@ export function buildVoteResultNarration(
   prompt: SloplashPrompt,
   players: readonly RoomPlayer[],
 ): NarrationCue | null {
-  const [first, second] = prompt.answers;
-  if (!first || !second) return null;
-  const tally = (answerId: string) =>
-    prompt.votes.filter((vote) => vote.responseId === answerId).length;
-  const firstVotes = tally(first.id);
-  const secondVotes = tally(second.id);
-  if (firstVotes === secondVotes) {
-    return generatedCue("vote_result", "It's a tie. Split crowd.", {
-      outcome: "tie",
-      margin: "split",
-    });
+  // Votes and outcome don't depend on the round; only points do.
+  const { score } = matchupOutcome(prompt, 1, typeOfPlayer(players));
+  const nameOf = (answerId: string | null, fallback: string) =>
+    boundedFact(
+      players.find(
+        (player) => player.id === prompt.answers.find((answer) => answer.id === answerId)?.playerId,
+      )?.name ?? fallback,
+    );
+
+  switch (score.outcome) {
+    case "void":
+      return null;
+    case "walkover": {
+      const winnerName = nameOf(score.winnerId, "The other player");
+      return generatedCue("vote_result", `No answer. ${winnerName} wins by default.`, {
+        outcome: "walkover",
+        winnerName,
+      });
+    }
+    case "noVotes":
+      return generatedCue("vote_result", "Nobody voted. Nobody scores.", { outcome: "no_votes" });
+    case "tie":
+      return generatedCue("vote_result", "It's a tie. Split crowd.", {
+        outcome: "tie",
+        margin: "split",
+      });
+    case "win":
+      break;
   }
 
-  const winner = firstVotes > secondVotes ? first : second;
-  const winnerName = boundedFact(
-    players.find((player) => player.id === winner.playerId)?.name ?? "The winner",
-  );
-  if (Math.min(firstVotes, secondVotes) === 0) {
+  const winnerName = nameOf(score.winnerId, "The winner");
+  if (score.unanimous) {
     return generatedCue("vote_result", `${winnerName} wins unanimously. No debate at all.`, {
       outcome: "winner",
       winnerName,
@@ -122,7 +138,8 @@ export function buildVoteResultNarration(
     });
   }
 
-  const spread = Math.abs(firstVotes - secondVotes);
+  const counts = Object.values(score.votes);
+  const spread = Math.max(...counts) - Math.min(...counts);
   const margin = spread <= 1 ? "razor close" : spread <= 3 ? "comfortable" : "landslide";
   const fallbackText =
     margin === "razor close"
@@ -187,25 +204,29 @@ export function buildNextRoundNarration(room: NarrationRoom): NarrationCue {
  * game that is still in its first writing phase.
  */
 export function phaseNarration(
-  room: Pick<RoomInfo, "phase" | "round" | "totalRounds">,
+  room: Pick<RoomInfo, "phase" | "round" | "totalRounds" | "step">,
   mode: SloplashView,
   players: readonly RoomPlayer[],
   previousPhase: string | null,
 ): NarrationCue[] {
   const prompts = mode.round?.prompts ?? [];
-  const current = prompts.find((prompt) => prompt.id === mode.currentPromptId);
+  const current = currentPrompt(mode);
   const cues: (NarrationCue | null)[] = [];
   switch (room.phase) {
     case "WRITING":
       if (room.round === 1) cues.push(buildGameStartNarration(room.totalRounds, players.length));
       else if (previousPhase !== null) cues.push(buildNextRoundNarration(room));
       break;
-    case "VOTING":
-      if (previousPhase === "WRITING") {
-        cues.push(buildVotingStartNarration(mode.matchupCount));
+    case "VOTING": {
+      // Walkovers play first, so the round's first vote is at step `walkovers`.
+      if (previousPhase !== null && room.step === walkoverCount(mode)) {
+        cues.push(
+          buildVotingStartNarration(prompts.filter((prompt) => prompt.kind === "vote").length),
+        );
       }
       if (previousPhase !== null && current) cues.push(buildMatchupNarration(current));
       break;
+    }
     case "REVEAL":
       if (previousPhase !== null && current) cues.push(buildVoteResultNarration(current, players));
       break;

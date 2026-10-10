@@ -1,8 +1,21 @@
 import { describe, expect, test } from "vite-plus/test";
-import { MINIMAL_REASONING } from "./ai-reasoning";
+import { AI_TASKS } from "./ai/tasks";
 
 describe("reasoning policy", () => {
-  test("keeps reasoning on at the lowest portable effort", () => {
-    expect(MINIMAL_REASONING).toEqual({ reasoning: "minimal" });
+  test("turns thinking off for ballots, taglines and narration", () => {
+    for (const task of [
+      "sloplash.ballots",
+      "sloplash.tagline",
+      "matchslop.vote",
+      "narrator.line",
+    ] as const) {
+      expect(AI_TASKS[task].reasoning).toBe("none");
+    }
+  });
+
+  test("keeps minimal thinking for writing tasks until measured", () => {
+    for (const task of ["sloplash.jokes", "matchslop.botLine", "matchslop.reply"] as const) {
+      expect(AI_TASKS[task].reasoning).toBe("minimal");
+    }
   });
 });

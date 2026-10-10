@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { applyLadderResult, INITIAL_TIER, tierIndex } from "./difficulty";
+import { applyLadderResult, INITIAL_TIER, pickQuestion, tierIndex } from "./difficulty";
 import type { QuizslopTier } from "./types";
 import { QUIZSLOP_TIERS } from "./types";
 
@@ -60,5 +60,27 @@ describe("full ladder walk", () => {
       walk.push(tier);
     }
     expect(walk).toEqual(["HARD", "MEDIUM", "EASY", "EASY"]);
+  });
+});
+
+describe("pickQuestion", () => {
+  const questions = QUIZSLOP_TIERS.map((tier) => ({ id: `q-${tier}`, tier }));
+
+  test("gives the question at the player's tier", () => {
+    expect(pickQuestion(questions, "HARD")?.id).toBe("q-HARD");
+  });
+
+  test("skips a question the room saw last game for the nearest fresh tier, easier first", () => {
+    expect(pickQuestion(questions, "MEDIUM", new Set(["q-MEDIUM"]))?.id).toBe("q-EASY");
+    expect(pickQuestion(questions, "EASY", new Set(["q-EASY"]))?.id).toBe("q-MEDIUM");
+  });
+
+  test("falls back to the tier's question when every question is stale", () => {
+    const asked = new Set(questions.map((question) => question.id));
+    expect(pickQuestion(questions, "INSANE", asked)?.id).toBe("q-INSANE");
+  });
+
+  test("an empty topic yields null", () => {
+    expect(pickQuestion([], "EASY")).toBeNull();
   });
 });

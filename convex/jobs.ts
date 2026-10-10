@@ -8,12 +8,14 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { aiWorkpool } from "./components";
+import { aiWorkpools } from "./components";
 import { settle } from "./engine";
 import { getJobHandler } from "./modes";
-import { aiUsageValidator } from "./validators";
+import { aiCallRecordValidator } from "./validators";
+import type { AiPool } from "../src/lib/ai/tasks";
+import { rollUpUsage, type AiModelUsage } from "../src/lib/ai/usage";
 
-export type AiUsage = Infer<typeof aiUsageValidator>;
+export type AiCallRow = Infer<typeof aiCallRecordValidator>;
 
 /**
  * The database half of one kind of AI job. The matching network half lives in
@@ -22,9 +24,14 @@ export type AiUsage = Infer<typeof aiUsageValidator>;
 export interface JobHandler<Input = unknown, Output = unknown> {
   /** Phase-bound jobs are dropped once the phase that queued them is over. */
   phaseBound: boolean;
+  /**
+   * Workpool for this kind: `critical` when the room waits on the result
+   * (persona replies, ballots), else `background` (the default).
+   */
+  pool?: AiPool;
   /** Loads what the AI call needs, or null when the job no longer applies. */
   prepare(ctx: QueryCtx, game: Doc<"games">, job: Doc<"generationJobs">): Promise<Input | null>;
-  /** Persists a successful result. */
+  /** Persists the runner's output, including a failed call's fallback output. */
   apply(
     ctx: MutationCtx,
     game: Doc<"games">,
@@ -35,7 +42,26 @@ export interface JobHandler<Input = unknown, Output = unknown> {
   fallback?(ctx: MutationCtx, game: Doc<"games">, job: Doc<"generationJobs">): Promise<void>;
 }
 
-export type JobResult<Output> = { output: Output; usage: AiUsage[] };
+/**
+ * What a runner returns. `calls` are the `aiCalls` rows (`result.call` from
+ * the task layer), which `apply` also rolls up into `gameModelUsage`;
+ * `failReason` marks the job FAILED (with that reason) even though `apply`
+ * still runs, so a failure never looks like a success.
+ */
+export type JobResult<Output> = {
+  output: Output;
+  calls: AiCallRow[];
+  failReason: string | null;
+};
+
+/** A runner result from task-layer calls. */
+export function jobResult<Output>(
+  output: Output,
+  calls: readonly AiCallRow[],
+  failReason: string | null = null,
+): JobResult<Output> {
+  return { output, calls: [...calls], failReason };
+}
 
 /** Map of job kind → its input and output payloads, declared once per mode. */
 export type JobSpecs = Record<string, { input: unknown; output: unknown }>;
@@ -50,7 +76,7 @@ export type JobRunners<Specs extends JobSpecs> = {
 
 /**
  * Queues one AI job. Keys are unique per game, so queueing the same work twice
- * is a harmless no-op.
+ * is a harmless no-op. It runs in the handler's `pool` (default `background`).
  */
 export async function enqueueJob(
   ctx: MutationCtx,
@@ -60,19 +86,20 @@ export async function enqueueJob(
   payload?: unknown,
 ): Promise<boolean> {
   if (await findJob(ctx, game._id, key)) return false;
+  const handler = getJobHandler(kind);
   const now = Date.now();
   const jobId = await ctx.db.insert("generationJobs", {
     gameId: game._id,
     kind,
     key,
     phaseGeneration: game.phaseGeneration,
-    phaseBound: getJobHandler(kind).phaseBound,
+    phaseBound: handler.phaseBound,
     ...(payload === undefined ? {} : { payload }),
     status: "QUEUED",
     createdAt: now,
     updatedAt: now,
   });
-  await aiWorkpool.enqueueAction(
+  await aiWorkpools[handler.pool ?? "background"].enqueueAction(
     ctx,
     internal.jobRunner.run,
     { jobId },
@@ -116,7 +143,7 @@ function isCurrent(game: Doc<"games"> | null, job: Doc<"generationJobs">): game 
   return !job.phaseBound || game.phaseGeneration === job.phaseGeneration;
 }
 
-async function recordUsage(ctx: MutationCtx, gameId: Id<"games">, usage: AiUsage[]) {
+async function recordUsage(ctx: MutationCtx, gameId: Id<"games">, usage: AiModelUsage[]) {
   for (const entry of usage) {
     if (!entry.modelId) continue;
     const existing = await ctx.db
@@ -137,6 +164,29 @@ async function recordUsage(ctx: MutationCtx, gameId: Id<"games">, usage: AiUsage
   }
 }
 
+/** Inserts `aiCalls` rows, one per model call. */
+export async function recordCalls(
+  ctx: MutationCtx,
+  gameId: Id<"games">,
+  calls: readonly AiCallRow[],
+  jobId?: Id<"generationJobs">,
+): Promise<void> {
+  for (const call of calls) {
+    await ctx.db.insert("aiCalls", { gameId, ...(jobId ? { jobId } : {}), ...call });
+  }
+}
+
+/** Records calls made outside a job, such as narrator lines. */
+export const recordAiCalls = internalMutation({
+  args: { gameId: v.id("games"), calls: v.array(aiCallRecordValidator) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (!(await ctx.db.get("games", args.gameId))) return null;
+    await recordCalls(ctx, args.gameId, args.calls);
+    return null;
+  },
+});
+
 export const prepare = internalQuery({
   args: { jobId: v.id("generationJobs") },
   handler: async (ctx, args) => {
@@ -153,23 +203,41 @@ export const apply = internalMutation({
   args: {
     jobId: v.id("generationJobs"),
     output: v.any(),
-    usage: v.array(aiUsageValidator),
+    failReason: v.union(v.string(), v.null()),
+    calls: v.array(aiCallRecordValidator),
+    startedAt: v.optional(v.number()),
+    latencyMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const job = await ctx.db.get("generationJobs", args.jobId);
     if (!job) return;
-    // The call happened either way, so its cost is always recorded.
-    await recordUsage(ctx, job.gameId, args.usage);
+    // The calls happened either way, so their cost is always recorded.
+    await recordUsage(ctx, job.gameId, rollUpUsage(args.calls));
+    await recordCalls(ctx, job.gameId, args.calls, job._id);
     const game = await ctx.db.get("games", job.gameId);
     const now = Date.now();
+    const timing = {
+      ...(args.startedAt === undefined ? {} : { startedAt: args.startedAt }),
+      ...(args.latencyMs === undefined ? {} : { latencyMs: args.latencyMs }),
+    };
     if (!isCurrent(game, job)) {
       if (job.status === "QUEUED") {
-        await ctx.db.patch("generationJobs", job._id, { status: "CANCELED", updatedAt: now });
+        await ctx.db.patch("generationJobs", job._id, {
+          status: "CANCELED",
+          ...timing,
+          updatedAt: now,
+        });
       }
       return;
     }
     await getJobHandler(job.kind).apply(ctx, game, job, args.output);
-    await ctx.db.patch("generationJobs", job._id, { status: "SUCCEEDED", updatedAt: now });
+    await ctx.db.patch("generationJobs", job._id, {
+      ...(args.failReason
+        ? { status: "FAILED" as const, failReason: args.failReason }
+        : { status: "SUCCEEDED" as const }),
+      ...timing,
+      updatedAt: now,
+    });
     await settle(ctx, game._id);
   },
 });
@@ -190,7 +258,9 @@ export const complete = internalMutation({
     if (failed) console.error(`[jobs] ${job.kind} ${job.key} failed`, args.result);
     await ctx.db.patch("generationJobs", job._id, {
       status: failed ? "FAILED" : "CANCELED",
-      ...(args.result.kind === "failed" ? { error: args.result.error.slice(0, 500) } : {}),
+      ...(args.result.kind === "failed"
+        ? { failReason: "action-error", error: args.result.error.slice(0, 500) }
+        : {}),
       updatedAt: now,
     });
     if (!isCurrent(game, job)) return;

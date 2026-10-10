@@ -124,3 +124,12 @@ export function roomPath(session: RoomSession, preferController: boolean): strin
   if (session.playerId === null) return `/stage/${session.roomCode}`;
   return preferController ? `/controller/${session.roomCode}` : `/game/${session.roomCode}`;
 }
+
+/**
+ * A finished game's results page. Game 1 keeps the short URL, so the common
+ * case's QR stays easy to scan; each "Play again" adds `?game=N`.
+ */
+export function recapPath(roomCode: string, gameNumber = 1): string {
+  const path = `/game/${roomCode}/recap`;
+  return gameNumber > 1 ? `${path}?game=${gameNumber}` : path;
+}

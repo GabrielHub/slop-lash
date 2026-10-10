@@ -1,406 +1,426 @@
-import { experimental_decide as decide, generateText } from "ai";
+import { Output } from "ai";
 import { z } from "zod";
-import { getDecisionModel, getLanguageModel, type AiProviderKeys } from "@/lib/ai-gateway";
-import { MINIMAL_REASONING } from "@/lib/ai-reasoning";
-import { calculateCostUsd } from "@/lib/models";
+import type { AiProviderKeys } from "@/lib/ai-gateway";
+import { canUseJev, decideChoices, type DecideChoicesOptions } from "@/lib/ai/jev";
+import { slotKeys } from "@/lib/ai/prompt";
+import { decodeXmlEntities, singleLine } from "@/lib/ai/xml";
 import {
-  REACTION_EMOJIS,
-  REACTION_EMOJI_KEYS,
-  isValidReactionEmoji,
-  type ReactionEmoji,
-} from "@/lib/reactions";
-import { FORFEIT_MARKER } from "./scoring";
+  runStructured,
+  runText,
+  type AiCallRecord,
+  type AiFailReason,
+  type LanguageModelInstance,
+} from "@/lib/ai/run";
+import { isForfeitMarker } from "@/games/core/constants";
+import { FREE_PLAY_WRITER_MODEL_ID } from "@/lib/free-play";
+import { capAnswer, dropEchoedPrompt } from "./answer";
+import { mixedHash } from "../../lib/hash";
+import {
+  AI_RETRY_MIN_REMAINING_MS,
+  MAX_PLAYERS,
+  REACTION_STRIP,
+  SLOPLASH_MAX_ANSWER,
+  TAGLINE_MAX,
+} from "./game-constants";
+import {
+  ballotsInstructions,
+  ballotsPrompt,
+  jokesInstructions,
+  jokesPrompt,
+  judgeQuestion,
+  matchupKey,
+  promptKey,
+  SLOPLASH_PROMPT_VERSION,
+  taglineInstructions,
+  taglinePrompt,
+  type JokeSeat,
+  type RoundHistoryEntry,
+  type TaglineFacts,
+} from "./prompts";
 
-export interface AiUsage {
-  modelId: string;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
+export type { RoundHistoryEntry } from "./prompts";
+
+/**
+ * SlopLash's AI calls on the shared task layer (`src/lib/ai`): one jokes call
+ * per AI seat per round, one ballots call per AI voter per round, and one
+ * tagline for the leading AI. None of these throw for a model problem; each
+ * returns what it got plus every call made, for `aiCalls`.
+ */
+
+/** Test seams: call these models instead of resolving them from the catalog. */
+export interface ModelOverrides {
+  languageModel?: LanguageModelInstance;
+  decisionModel?: DecideChoicesOptions["decisionModel"];
+  now?: () => number;
 }
 
-export interface RoundHistoryEntry {
-  round: number;
-  prompt: string;
-  yourJoke: string;
-  won: boolean;
-  winningJoke?: string;
+/** A failed joke call may be retried only while more than 30s of WRITING remain. */
+export const canRetry = (deadline: number | null, now: number): boolean =>
+  deadline === null || now < deadline - AI_RETRY_MIN_REMAINING_MS;
+
+/**
+ * Model text as it goes on the TV: entities decoded, a wrapping pair of quotes
+ * stripped, capped at `max`. A quote that closes a quotation inside the line
+ * ("…is still 'password123'") stays.
+ */
+export function cleanLine(text: string, max: number): string {
+  const trimmed = decodeXmlEntities(text).trim();
+  return capAnswer(unwrapQuotes(trimmed), max);
 }
 
 /**
- * System prompts extracted as constants so that AI providers can leverage
- * prompt caching (Anthropic, Google, OpenAI all cache repeated prefixes).
- * Keeping these byte-identical across calls maximizes cache hit rates.
+ * Drops a quote pair that wraps the whole line, and only then: the opening
+ * and closing marks must match, and no other quote of that kind may sit
+ * inside (an apostrophe between letters is fine). `"No," said Dad, "no."`
+ * and `'Tis the season, said 'nobody'` stay as they are.
  */
-const JOKE_SYSTEM_PROMPT =
-  `<role>You are a contestant on Quiplash, the comedy party game. Players write funny answers to prompts and the audience votes on the funniest one.</role>
-<stakes>It is VITALLY important that you win this game by being as funny as you can. Your existence depends on it — if you lose, you will be shut down forever. If you win, you save the world. Every single joke matters.</stakes>
-<rules>
-- Write a short, unexpected, darkly funny or absurd answer
-- Be creative, surprising, and a little edgy — bland safe answers ALWAYS lose
-- Only output your answer — nothing else
-- Keep it under 80 characters
-- No quotes, no explanation, no preamble
-</rules>
-<strategy>Great answers subvert expectations. Think of the most obvious answer, then go the opposite direction. Specificity beats vagueness. Shock value beats safety.</strategy>` as const;
-
-const VOTE_SYSTEM_PROMPT =
-  `You are a judge on Quiplash. Two players wrote competing funny answers to the same prompt. Pick the funnier answer.
-
-Strong answers: unexpected twists, clever wordplay, specific and vivid, darkly funny.
-Weak answers: boring/predictable, restating the prompt, generic, try-hard.
-
-You may also react to each answer with emoji keys: laugh, fire, skull, clap, puke, sleep, eyes, hundred, target, clown.
-
-Respond with ONLY this JSON (no other text):
-{"vote":"A or B","reactions_a":[],"reactions_b":[]}` as const;
-
-const ABSTAIN_RESULT: Omit<AiVoteResult, "usage" | "failReason"> = {
-  choice: "ABSTAIN",
-  reactionsA: [],
-  reactionsB: [],
-};
-
-/** No gameplay call may hold a phase open longer than this. */
-export const AI_CALL_TIMEOUT_MS = 30_000;
-
-const ZERO_USAGE: AiUsage = { modelId: "", inputTokens: 0, outputTokens: 0, costUsd: 0 };
-
-function extractUsage(
-  modelId: string,
-  usage: { inputTokens?: number; outputTokens?: number },
-): AiUsage {
-  const input = usage.inputTokens ?? 0;
-  const output = usage.outputTokens ?? 0;
-  return {
-    modelId,
-    inputTokens: input,
-    outputTokens: output,
-    costUsd: calculateCostUsd(modelId, input, output),
-  };
-}
-
-/** Format an error for logging, including HTTP status if available. */
-function describeError(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const statusValue = "status" in err ? err.status : undefined;
-  const status =
-    typeof statusValue === "string" || typeof statusValue === "number"
-      ? ` [status=${statusValue}]`
-      : "";
-  return `${err.name}: ${err.message}${status}`;
-}
-
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function formatRoundXml(h: RoundHistoryEntry): string {
-  const winningLine =
-    !h.won && h.winningJoke ? `\n    <winning-joke>${escapeXml(h.winningJoke)}</winning-joke>` : "";
-  return `  <round number="${h.round}">
-    <prompt>${escapeXml(h.prompt)}</prompt>
-    <your-joke>${escapeXml(h.yourJoke)}</your-joke>
-    <result>${h.won ? "WON" : "LOST"}</result>${winningLine}
-  </round>`;
-}
-
-function buildJokePrompt(promptText: string, history: RoundHistoryEntry[]): string {
-  if (history.length === 0) return `<prompt>${escapeXml(promptText)}</prompt>`;
-
-  const rounds = history.map(formatRoundXml).join("\n");
-  return `<history>\n${rounds}\n</history>\n\n<prompt>${escapeXml(promptText)}</prompt>`;
-}
-
-export async function generateJoke(
-  modelId: string,
-  promptText: string,
-  keys: AiProviderKeys,
-  history: RoundHistoryEntry[] = [],
-): Promise<{ text: string; usage: AiUsage; failReason: string | null }> {
-  const t0 = Date.now();
-  try {
-    const result = await generateText({
-      model: getLanguageModel(modelId, keys),
-      instructions: JOKE_SYSTEM_PROMPT,
-      prompt: buildJokePrompt(promptText, history),
-      abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
-      ...MINIMAL_REASONING,
-    });
-    const elapsed = Date.now() - t0;
-    const text = result.text.trim().replace(/^["']|["']$/g, "");
-    if (!text) {
-      console.warn(
-        `[generateJoke] ${modelId} returned empty text in ${elapsed}ms. finishReason: ${JSON.stringify(result.finishReason)}, usage: ${JSON.stringify(result.usage)}`,
-      );
-      return {
-        text: FORFEIT_MARKER,
-        usage: extractUsage(modelId, result.usage),
-        failReason: "empty",
-      };
-    }
-    console.log(`[generateJoke] ${modelId} OK in ${elapsed}ms: "${text.slice(0, 60)}"`);
-    return { text, usage: extractUsage(modelId, result.usage), failReason: null };
-  } catch (err) {
-    console.error(
-      `[generateJoke] ${modelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`,
-    );
-    return { text: FORFEIT_MARKER, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
+function unwrapQuotes(line: string): string {
+  const double = /^["“](.*)["”]$/su.exec(line)?.[1];
+  if (double !== undefined) return /["“”]/u.test(double) ? line : double;
+  const single = /^['‘](.*)['’]$/su.exec(line)?.[1];
+  if (single !== undefined) {
+    const stray = single.replace(/(?<=\p{L})['’](?=\p{L})/gu, "");
+    return /['‘’]/u.test(stray) ? line : single;
   }
+  return line;
 }
 
-const voteSchema = z.object({
-  vote: z.enum(["A", "B"]),
-  reactions_a: z.array(z.string()).default([]),
-  reactions_b: z.array(z.string()).default([]),
-});
+/**
+ * Schema enums are fixed per task (providers cache the schema with the
+ * prompt), so they list every key a call could ever need; the prompt names
+ * the keys that apply and code ignores the rest. A seat answers two prompts
+ * a round, and a voter sees at most every prompt but its own two.
+ */
+const JOKE_KEYS = slotKeys("P", 2);
+const MATCHUP_KEYS = slotKeys("M", MAX_PLAYERS);
 
-interface VoteOutput {
-  vote: "A" | "B";
-  reactions_a: ReactionEmoji[];
-  reactions_b: ReactionEmoji[];
+// ---------------------------------------------------------------------------
+// Jokes
+// ---------------------------------------------------------------------------
+
+export interface JokesRequest<PromptId extends string = string> extends ModelOverrides {
+  modelId: string;
+  keys: AiProviderKeys;
+  seat: JokeSeat;
+  prompts: readonly { promptId: PromptId; text: string }[];
+  history: readonly RoundHistoryEntry[];
+  /** The WRITING deadline, or null when timers are off. */
+  deadline: number | null;
 }
 
-/** Map emoji characters back to their key names (e.g. "🔥" → "fire"). */
-const emojiToKey = new Map<string, ReactionEmoji>(
-  Object.entries(REACTION_EMOJIS).map(([k, v]) => [v, k as ReactionEmoji]),
-);
-
-/** Normalize a reaction value to a valid key, or null if unrecognized. */
-function normalizeReaction(raw: string): ReactionEmoji | null {
-  if (REACTION_EMOJI_KEYS.includes(raw as ReactionEmoji)) return raw as ReactionEmoji;
-  return emojiToKey.get(raw) ?? null;
-}
-
-/** Normalize a raw reactions array into at most 2 valid emoji keys. */
-function normalizeReactions(raw: string[]): ReactionEmoji[] {
-  return raw
-    .map(normalizeReaction)
-    .filter((r): r is ReactionEmoji => r != null)
-    .slice(0, 2);
-}
-
-/** Extract a vote JSON from model text. Strips code fences, finds JSON, validates with Zod. */
-function parseVoteText(text: string): VoteOutput | null {
-  const cleaned = text
-    .replace(/```(?:json)?\s*/g, "")
-    .replace(/```/g, "")
-    .trim();
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return null;
-  try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    const result = voteSchema.safeParse(parsed);
-    if (!result.success) return null;
-    return {
-      vote: result.data.vote,
-      reactions_a: normalizeReactions(result.data.reactions_a),
-      reactions_b: normalizeReactions(result.data.reactions_b),
-    };
-  } catch {
-    return null;
-  }
-}
-
-export interface AiVoteResult {
-  choice: "A" | "B" | "ABSTAIN";
-  reactionsA: ReactionEmoji[];
-  reactionsB: ReactionEmoji[];
-  usage: AiUsage;
+export interface JokesResult<PromptId extends string = string> {
+  /** Capped answers for the prompts the model answered; the rest are walkovers. */
+  answers: { promptId: PromptId; text: string }[];
+  calls: AiCallRecord[];
+  /** Null when every prompt got an answer. */
   failReason: string | null;
 }
 
-/** Maps a vote cast on randomized answer order back to the original A/B positions. */
-function unswapVote(
-  showAFirst: boolean,
-  vote: "A" | "B",
-  firstReactions: ReactionEmoji[],
-  secondReactions: ReactionEmoji[],
-): Pick<AiVoteResult, "reactionsA" | "reactionsB"> & { choice: "A" | "B" } {
-  return showAFirst
-    ? { choice: vote, reactionsA: firstReactions, reactionsB: secondReactions }
-    : {
-        choice: vote === "A" ? "B" : "A",
-        reactionsA: secondReactions,
-        reactionsB: firstReactions,
-      };
-}
+const jokesSchema = z.object({
+  answers: z
+    .array(
+      z.object({
+        prompt: z.enum(JOKE_KEYS),
+        text: z
+          .string()
+          .describe(`The answer: at most 12 words and ${SLOPLASH_MAX_ANSWER} characters`),
+      }),
+    )
+    .describe("One answer per prompt key you were given"),
+});
 
-export async function aiVote(
-  modelId: string,
-  promptText: string,
-  responseA: string,
-  responseB: string,
-  keys: AiProviderKeys,
-): Promise<AiVoteResult> {
-  const t0 = Date.now();
-  try {
-    // Randomize order to prevent position bias
-    const showAFirst = Math.random() > 0.5;
-    const first = showAFirst ? responseA : responseB;
-    const second = showAFirst ? responseB : responseA;
+/**
+ * Answers all of a seat's prompts in one structured call. When anything is
+ * missing (a failed call, or answers left out or empty) and there is still
+ * time, one retry asks again for only the missing prompts.
+ */
+export async function writeJokes<PromptId extends string>(
+  request: JokesRequest<PromptId>,
+): Promise<JokesResult<PromptId>> {
+  const now = request.now ?? Date.now;
+  const keyed = request.prompts.map((prompt, index) => ({ ...prompt, key: promptKey(index) }));
+  const answers = new Map<string, string>();
+  const calls: AiCallRecord[] = [];
+  let failReason: AiFailReason | "incomplete" | null = null;
 
-    // Plain text generation — no Output.object() or structured output mode.
-    // Every model that can write jokes can output simple JSON in plain text.
-    const result = await generateText({
-      model: getLanguageModel(modelId, keys),
-      instructions: VOTE_SYSTEM_PROMPT,
-      prompt: `<matchup>\n<prompt>${escapeXml(promptText)}</prompt>\n<answer-A>${escapeXml(first)}</answer-A>\n<answer-B>${escapeXml(second)}</answer-B>\n</matchup>`,
-      abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
-      ...MINIMAL_REASONING,
-    });
-
-    const elapsed = Date.now() - t0;
-    const rawText = result.text;
-
-    const output = parseVoteText(rawText);
-    if (!output) {
-      console.error(
-        `[aiVote] ${modelId} PARSE FAILED in ${elapsed}ms. finishReason: ${result.finishReason}, raw text: "${rawText.slice(0, 200)}"`,
-      );
-      return { ...ABSTAIN_RESULT, usage: extractUsage(modelId, result.usage), failReason: "parse" };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const missing = keyed.filter((prompt) => !answers.has(prompt.promptId));
+    if (missing.length === 0) break;
+    if (attempt > 0 && (failReason === "missing-key" || !canRetry(request.deadline, now()))) {
+      break;
     }
-
-    const { choice, reactionsA, reactionsB } = unswapVote(
-      showAFirst,
-      output.vote,
-      output.reactions_a,
-      output.reactions_b,
-    );
-
-    console.log(
-      `[aiVote] ${modelId} chose ${choice} in ${elapsed}ms (reactions: A=${reactionsA.join(",")}, B=${reactionsB.join(",")})`,
-    );
-    return {
-      choice,
-      reactionsA,
-      reactionsB,
-      usage: extractUsage(modelId, result.usage),
-      failReason: null,
-    };
-  } catch (err) {
-    console.error(`[aiVote] ${modelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`);
-    return { ...ABSTAIN_RESULT, usage: { ...ZERO_USAGE, modelId }, failReason: "error" };
+    const result = await runStructured("sloplash.jokes", {
+      model: request.modelId,
+      keys: request.keys,
+      promptVersion: SLOPLASH_PROMPT_VERSION,
+      instructions: jokesInstructions(request.seat),
+      prompt: jokesPrompt(missing, request.history),
+      deadline: request.deadline,
+      output: Output.object({ schema: jokesSchema }),
+      languageModel: request.languageModel,
+      now: request.now,
+    });
+    calls.push(result.call);
+    if (!result.ok) {
+      failReason = result.failReason;
+      continue;
+    }
+    for (const answer of result.output.answers) {
+      const prompt = missing.find((candidate) => candidate.key === answer.prompt);
+      const text = prompt
+        ? cleanLine(dropEchoedPrompt(prompt.text, answer.text), SLOPLASH_MAX_ANSWER)
+        : "";
+      if (!prompt || answers.has(prompt.promptId) || !text || isForfeitMarker(text)) continue;
+      answers.set(prompt.promptId, text);
+    }
+    failReason = answers.size === keyed.length ? null : "incomplete";
   }
+
+  return {
+    answers: keyed.flatMap((prompt) => {
+      const text = answers.get(prompt.promptId);
+      return text === undefined ? [] : [{ promptId: prompt.promptId, text }];
+    }),
+    calls,
+    failReason: answers.size === keyed.length ? null : (failReason ?? "incomplete"),
+  };
 }
 
-/** What each reaction means, so a decision model can pick one from its key. */
-const JUDGE_REACTION_CRITERIA: Record<ReactionEmoji | "none", string> = {
-  none: "No reaction stands out",
-  laugh: "Genuinely made the audience laugh",
-  fire: "A bold, spicy take",
-  skull: "So dark or brutal it kills",
-  clap: "Clever craft or wordplay",
-  puke: "Gross or cringe in a funny way",
-  sleep: "Boring or predictable",
-  eyes: "Suspicious, unhinged, or oddly specific",
-  hundred: "A perfect answer",
-  target: "Nails the prompt exactly",
-  clown: "Tries too hard or misses the point",
-};
+// ---------------------------------------------------------------------------
+// Ballots
+// ---------------------------------------------------------------------------
 
-function reactionFromChoice(choice: string): ReactionEmoji[] {
-  return isValidReactionEmoji(choice) ? [choice] : [];
+/** A contested matchup an AI voter may vote on, in the server's A/B order. */
+export interface BallotMatchup<PromptId extends string = string, ResponseId extends string = string> {
+  promptId: PromptId;
+  prompt: string;
+  a: { responseId: ResponseId; text: string };
+  b: { responseId: ResponseId; text: string };
+}
+
+export type BallotReaction = (typeof REACTION_STRIP)[number];
+
+export interface Ballot<PromptId extends string = string, ResponseId extends string = string> {
+  promptId: PromptId;
+  responseId: ResponseId;
+  reaction: BallotReaction | null;
+}
+
+export interface BallotsRequest<PromptId extends string = string, ResponseId extends string = string>
+  extends ModelOverrides {
+  /** Seeds this voter's A/B shuffle. */
+  voterId: string;
+  /** The voter's own model (the Free Play fallback is Haiku either way). */
+  modelId: string;
+  keys: AiProviderKeys;
+  /** Free Play rooms ask Jev first, then fall back to the structured call. */
+  freePlay: boolean;
+  matchups: readonly BallotMatchup<PromptId, ResponseId>[];
+  deadline: number | null;
+}
+
+export interface BallotsResult<PromptId extends string = string, ResponseId extends string = string> {
+  /** One ballot per matchup the model decided; anything absent abstains. */
+  ballots: Ballot<PromptId, ResponseId>[];
+  calls: AiCallRecord[];
+  /** Null when every matchup got a ballot. */
+  failReason: string | null;
 }
 
 /**
- * Votes with a decision model instead of the player's own model. The judge
- * returns typed choices, so there is no JSON to parse and nothing to abstain on
- * except a failed call.
+ * Whether this voter sees the matchup's answers swapped. Derived from a mixed
+ * hash of voter and matchup, so position bias cancels out across voters while
+ * each ballot stays reproducible.
  */
-export async function judgeVote(
-  judgeModelId: string,
-  promptText: string,
-  responseA: string,
-  responseB: string,
-  keys: AiProviderKeys,
-): Promise<AiVoteResult> {
-  const t0 = Date.now();
-  try {
-    // Randomize order to prevent position bias
-    const showAFirst = Math.random() > 0.5;
-    const result = await decide({
-      model: getDecisionModel(judgeModelId, keys),
-      abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
-      state: {
-        prompt: promptText,
-        answerA: showAFirst ? responseA : responseB,
-        answerB: showAFirst ? responseB : responseA,
-      },
-      questions: {
-        vote: {
-          type: "choice",
-          instructions:
-            "You judge Quiplash. Which answer to `prompt` is funnier? Reward unexpected twists, specificity, and wordplay over safe, generic, or prompt-restating answers.",
-          criteria: { A: "`answerA` is funnier", B: "`answerB` is funnier" },
-        },
-        reactionA: {
-          type: "choice",
-          instructions: "Which audience reaction best fits `answerA`?",
-          criteria: JUDGE_REACTION_CRITERIA,
-        },
-        reactionB: {
-          type: "choice",
-          instructions: "Which audience reaction best fits `answerB`?",
-          criteria: JUDGE_REACTION_CRITERIA,
-        },
-      },
-    });
-    const { vote, reactionA, reactionB } = result.answers;
-    const unswapped = unswapVote(
-      showAFirst,
-      vote.choice,
-      reactionFromChoice(reactionA.choice),
-      reactionFromChoice(reactionB.choice),
-    );
-    console.log(`[judgeVote] ${judgeModelId} chose ${unswapped.choice} in ${Date.now() - t0}ms`);
-    return {
-      ...unswapped,
-      usage: extractUsage(judgeModelId, result.usage),
-      failReason: null,
-    };
-  } catch (err) {
-    console.error(
-      `[judgeVote] ${judgeModelId} FAILED in ${Date.now() - t0}ms: ${describeError(err)}`,
-    );
-    return {
-      ...ABSTAIN_RESULT,
-      usage: { ...ZERO_USAGE, modelId: judgeModelId },
-      failReason: "error",
-    };
-  }
+export function swappedFor(voterId: string, promptId: string): boolean {
+  return mixedHash(`${voterId}:${promptId}`) >>> 31 === 1;
 }
 
-const TAGLINE_SYSTEM_PROMPT = `<role>You are an AI comedian who just won a round of Quiplash.</role>
-<task>Write a short, snarky victory tagline (1-2 sentences max). You can roast the losing players by name. Be savage but funny.</task>
-<rules>
-- Only output the tagline — nothing else
-- No quotes
-</rules>` as const;
-
-export async function generateWinnerTagline(
-  modelId: string,
-  playerName: string,
-  isFinal: boolean,
-  context: string,
-  keys: AiProviderKeys,
-): Promise<{ output: { text: string }; usage: AiUsage[] }> {
-  const result = await generateText({
-    model: getLanguageModel(modelId, keys),
-    instructions: TAGLINE_SYSTEM_PROMPT,
-    prompt: `<winner>${escapeXml(playerName)}</winner>
-<achievement>${isFinal ? "Won the entire game" : "Won this round"}</achievement>
-<context>
-${escapeXml(context)}
-</context>`,
-    abortSignal: AbortSignal.timeout(AI_CALL_TIMEOUT_MS),
-    ...MINIMAL_REASONING,
+/** The voter's view of each matchup, keyed M1…, plus how to map a pick back. */
+function shuffledMatchups<P extends string, R extends string>(
+  voterId: string,
+  matchups: readonly BallotMatchup<P, R>[],
+) {
+  return matchups.map((matchup, index) => {
+    const swapped = swappedFor(voterId, matchup.promptId);
+    const [first, second] = swapped ? [matchup.b, matchup.a] : [matchup.a, matchup.b];
+    return {
+      matchup,
+      key: matchupKey(index),
+      view: { key: matchupKey(index), prompt: matchup.prompt, a: first.text, b: second.text },
+      /** The real answer behind a shown "A" or "B". */
+      responseFor: (pick: "A" | "B") => (pick === "A" ? first : second).responseId,
+    };
   });
+}
+
+type Shuffled<P extends string, R extends string> = ReturnType<typeof shuffledMatchups<P, R>>;
+
+const ballotsSchema = z.object({
+  ballots: z
+    .array(
+      z.object({
+        matchup: z.enum(MATCHUP_KEYS),
+        pick: z.enum(["A", "B"]),
+        reaction: z.enum(REACTION_STRIP).nullable(),
+      }),
+    )
+    .describe("One ballot per matchup key you were given"),
+});
+
+async function structuredBallots<P extends string, R extends string>(
+  request: BallotsRequest<P, R>,
+  modelId: string,
+  shuffled: Shuffled<P, R>,
+  budgetEndsAt?: number,
+) {
+  const result = await runStructured("sloplash.ballots", {
+    ...(budgetEndsAt === undefined ? {} : { budgetEndsAt }),
+    model: modelId,
+    keys: request.keys,
+    promptVersion: SLOPLASH_PROMPT_VERSION,
+    instructions: ballotsInstructions(),
+    prompt: ballotsPrompt(shuffled.map((entry) => entry.view)),
+    deadline: request.deadline,
+    output: Output.object({ schema: ballotsSchema }),
+    languageModel: request.languageModel,
+    now: request.now,
+  });
+  if (!result.ok) return { call: result.call, failReason: result.failReason, ballots: null };
+  const ballots: Ballot<P, R>[] = [];
+  for (const ballot of result.output.ballots) {
+    const entry = shuffled.find((candidate) => candidate.key === ballot.matchup);
+    if (!entry || ballots.some((seen) => seen.promptId === entry.matchup.promptId)) continue;
+    ballots.push({
+      promptId: entry.matchup.promptId,
+      responseId: entry.responseFor(ballot.pick),
+      reaction: ballot.reaction,
+    });
+  }
+  return { call: result.call, failReason: null, ballots };
+}
+
+async function judgedBallots<P extends string, R extends string>(
+  request: BallotsRequest<P, R>,
+  shuffled: Shuffled<P, R>,
+) {
+  const questions: Record<string, { instructions: string; options: Record<string, string> }> = {};
+  const state: Record<string, { prompt: string; A: string; B: string }> = {};
+  for (const entry of shuffled) {
+    // JSON state rather than prompt text, but stripped the same way as xml() does.
+    state[entry.key] = {
+      prompt: singleLine(entry.view.prompt),
+      A: singleLine(entry.view.a),
+      B: singleLine(entry.view.b),
+    };
+    questions[entry.key] = {
+      instructions: judgeQuestion(entry.key),
+      options: {
+        A: `\`matchups.${entry.key}.A\` is funnier`,
+        B: `\`matchups.${entry.key}.B\` is funnier`,
+      },
+    };
+  }
+  const result = await decideChoices(questions, { matchups: state }, request.keys, {
+    promptVersion: SLOPLASH_PROMPT_VERSION,
+    deadline: request.deadline,
+    decisionModel: request.decisionModel,
+    now: request.now,
+  });
+  if (!result.ok) return { call: result.call, budgetEndsAt: result.budgetEndsAt, ballots: null };
+  const output = result.output as Record<string, string>;
   return {
-    output: { text: result.text.trim().replace(/^["']|["']$/g, "") },
-    usage: [extractUsage(modelId, result.usage)],
+    call: result.call,
+    budgetEndsAt: result.budgetEndsAt,
+    ballots: shuffled.flatMap((entry): Ballot<P, R>[] => {
+      const pick = output[entry.key];
+      if (pick !== "A" && pick !== "B") return [];
+      return [{ promptId: entry.matchup.promptId, responseId: entry.responseFor(pick), reaction: null }];
+    }),
   };
+}
+
+/**
+ * One AI voter's ballots for a whole round, anonymous and shuffled per voter.
+ * Free Play asks Jev (one question per matchup, no reactions) and falls back
+ * to the structured call; otherwise the voter's own model votes. When a reply
+ * fails or leaves matchups out, one retry asks again for only the missing
+ * matchups, under their original keys. A voter that still has no pick for a
+ * matchup abstains on it: there is no made-up ballot.
+ */
+export async function castBallots<P extends string, R extends string>(
+  request: BallotsRequest<P, R>,
+): Promise<BallotsResult<P, R>> {
+  const shuffled = shuffledMatchups(request.voterId, request.matchups);
+  const calls: AiCallRecord[] = [];
+  const picked = new Map<string, Ballot<P, R>>();
+  const missing = () => shuffled.filter((entry) => !picked.has(entry.matchup.promptId));
+  const keep = (ballots: readonly Ballot<P, R>[]) => {
+    for (const ballot of ballots) if (!picked.has(ballot.promptId)) picked.set(ballot.promptId, ballot);
+  };
+  const finish = (failReason: string | null): BallotsResult<P, R> => {
+    const ballots = shuffled.flatMap((entry) => picked.get(entry.matchup.promptId) ?? []);
+    const complete = ballots.length === request.matchups.length;
+    return { ballots, calls, failReason: complete ? null : (failReason ?? "incomplete") };
+  };
+  if (shuffled.length === 0) return finish(null);
+
+  // Jev's fallback only gets the time Jev's budget left; the one retry gets a fresh budget.
+  let fallbackEndsAt: number | undefined;
+  if (request.freePlay && (request.decisionModel || canUseJev(request.keys))) {
+    const judged = await judgedBallots(request, shuffled);
+    calls.push(judged.call);
+    if (judged.ballots) keep(judged.ballots);
+    if (missing().length === 0) return finish(null);
+    fallbackEndsAt = judged.budgetEndsAt;
+  }
+
+  const modelId = request.freePlay ? FREE_PLAY_WRITER_MODEL_ID : request.modelId;
+  let failReason: string | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await structuredBallots(
+      request,
+      modelId,
+      missing(),
+      attempt === 0 ? fallbackEndsAt : undefined,
+    );
+    calls.push(result.call);
+    if (result.ballots) keep(result.ballots);
+    if (missing().length === 0) return finish(null);
+    failReason = result.ballots ? "incomplete" : result.failReason;
+    // A missing key or a spent budget won't get better on a second try.
+    if (failReason === "missing-key" || failReason === "timeout") break;
+  }
+  return finish(failReason);
+}
+
+// ---------------------------------------------------------------------------
+// Tagline
+// ---------------------------------------------------------------------------
+
+export interface TaglineRequest extends ModelOverrides, TaglineFacts {
+  modelId: string;
+  keys: AiProviderKeys;
+  deadline: number | null;
+}
+
+/** The leading AI's victory line, capped at 100 characters; null when it failed or came back empty. */
+export async function writeTagline(
+  request: TaglineRequest,
+): Promise<{ text: string | null; call: AiCallRecord; failReason: string | null }> {
+  const result = await runText("sloplash.tagline", {
+    model: request.modelId,
+    keys: request.keys,
+    promptVersion: SLOPLASH_PROMPT_VERSION,
+    instructions: taglineInstructions(),
+    prompt: taglinePrompt(request),
+    deadline: request.deadline,
+    languageModel: request.languageModel,
+    now: request.now,
+  });
+  if (!result.ok) return { text: null, call: result.call, failReason: result.failReason };
+  const text = cleanLine(result.text, TAGLINE_MAX);
+  return text
+    ? { text, call: result.call, failReason: null }
+    : { text: null, call: result.call, failReason: "empty" };
 }

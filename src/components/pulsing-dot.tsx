@@ -1,18 +1,14 @@
-"use client";
-
-import { motion } from "motion/react";
-
 interface PulsingDotProps {
   children: React.ReactNode;
 }
 
+/** A status line with a softly pulsing dot: the one "waiting" indicator on a screen. */
 export function PulsingDot({ children }: PulsingDotProps) {
   return (
     <div className="inline-flex items-center gap-2 text-ink-dim">
-      <motion.div
-        className="w-2 h-2 rounded-full bg-teal"
-        animate={{ scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }}
-        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+      <span
+        className="h-2 w-2 shrink-0 rounded-full bg-teal animate-soft-pulse"
+        aria-hidden="true"
       />
       <p className="font-medium">{children}</p>
     </div>

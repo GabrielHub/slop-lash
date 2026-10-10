@@ -1,0 +1,95 @@
+/* ============================================
+   MATCHSLOP THEME: "NEON ROMANCE"
+   A dating-app-meets-cocktail-bar aesthetic.
+   Rose + Coral + Electric Violet on deep plum.
+   ============================================ */
+
+[data-game="matchslop"] {
+  --ms-bg: #110b14;
+  --ms-surface: #1a1220;
+  --ms-raised: #24192e;
+  --ms-ink: #f4ecf8;
+  --ms-ink-dim: #9b8aae;
+  --ms-rose: #f06292;
+  --ms-coral: #ff8a65;
+  --ms-violet: #b388ff;
+  --ms-violet-soft: #b388ff18;
+  --ms-mint: #69f0ae;
+  --ms-mint-soft: #69f0ae18;
+  --ms-red: #ff5252;
+  --ms-red-soft: #ff525218;
+  --ms-edge: #302040;
+  --ms-edge-strong: #4a3660;
+  /* An earlier one of our chat bubbles: a muted, opaque rose under light ink. */
+  --ms-bubble-earlier: color-mix(in oklab, var(--ms-rose) 34%, var(--ms-surface));
+}
+
+[data-theme="light"][data-game="matchslop"],
+[data-theme="light"] [data-game="matchslop"],
+:root:not([data-theme="dark"])[data-game="matchslop"],
+:root:not([data-theme="dark"]) [data-game="matchslop"] {
+  --ms-bg: #fff5f7;
+  --ms-surface: #ffffff;
+  --ms-raised: #fff0f3;
+  --ms-ink: #2d1b33;
+  /* Dark enough for small labels ("Human votes count double") on the blush canvas. */
+  --ms-ink-dim: #74587a;
+  --ms-rose: #e91e63;
+  --ms-coral: #e65100;
+  --ms-violet: #7c4dff;
+  --ms-violet-soft: #7c4dff18;
+  /* Deep enough to read as text (stamps, "+50") on the blush canvas. */
+  --ms-mint: #078a3e;
+  --ms-mint-soft: #078a3e18;
+  /* A deep brick red, so the meter's unmatch zone never reads as the rose fill. */
+  --ms-red: #b3261e;
+  --ms-red-soft: #b3261e18;
+  --ms-edge: #e8d5e8;
+  --ms-edge-strong: #c9a8c9;
+  /* Light: a pale rose under dark ink (white on a faded rose loses contrast). */
+  --ms-bubble-earlier: color-mix(in oklab, var(--ms-rose) 16%, var(--ms-surface));
+}
+
+/* Games restyle the shared shell and parts by remapping the base tokens. */
+[data-game="matchslop"] {
+  --bg: var(--ms-bg);
+  --surface: var(--ms-surface);
+  --raised: var(--ms-raised);
+  --ink: var(--ms-ink);
+  --ink-dim: var(--ms-ink-dim);
+  --punch: var(--ms-rose);
+  --punch-hover: var(--ms-coral);
+  --teal: var(--ms-violet);
+  --teal-hover: var(--ms-violet);
+  --teal-soft: var(--ms-violet-soft);
+  --teal-ink: var(--ms-violet);
+  --edge: var(--ms-edge);
+  --edge-strong: var(--ms-edge-strong);
+  --win: var(--ms-mint);
+  --win-soft: var(--ms-mint-soft);
+  --fail: var(--ms-red);
+  --fail-soft: var(--ms-red-soft);
+  --vs-bg: var(--ms-raised);
+}
+
+/* --- MatchSlop Typing Dots --- */
+@keyframes ms-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-45%);
+  }
+}
+
+/* --- MatchSlop chat thread: bubbles mostly under the top fade step out --- */
+.ms-thread > [data-ms-row] > * {
+  transition: opacity 200ms ease-out;
+}
+.ms-thread > [data-ms-masked] > * {
+  opacity: 0;
+}

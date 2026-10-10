@@ -1,12 +1,9 @@
 /// <reference types="vite/client" />
 // @vitest-environment edge-runtime
 
-import presenceTest from "@convex-dev/presence/test";
-import workpoolTest from "@convex-dev/workpool/test";
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { api } from "./_generated/api";
-import schema from "./schema";
+import { setup, type Backend, view, drainJobs, heartbeat } from "./test.harness";
 
 // Every model call fails, so these tests exercise the fallbacks that keep a
 // room moving when AI is down.
@@ -20,36 +17,7 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-const modules = import.meta.glob("./**/*.ts");
 const PERSONA_MODEL = "anthropic/claude-haiku-5.5";
-
-function setup() {
-  const t = convexTest(schema, modules);
-  presenceTest.register(t);
-  workpoolTest.register(t, "aiGenerationWorkpool");
-  return t;
-}
-
-type Backend = ReturnType<typeof setup>;
-
-async function view(t: Backend, capability: string) {
-  return t.query(api.views.room, { capability });
-}
-
-async function drainJobs(t: Backend) {
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
-}
-
-/** Marks seats as here; draining jobs jumps the clock past their presence. */
-async function heartbeat(t: Backend, capabilities: string[]) {
-  for (const [index, capability] of capabilities.entries()) {
-    await t.mutation(api.presence.heartbeat, {
-      capability,
-      tabId: `${index}`.padStart(16, "0"),
-      interval: 5_000,
-    });
-  }
-}
 
 beforeEach(() => {
   vi.stubEnv("HOST_SECRET", "secret");
@@ -93,7 +61,7 @@ describe("MatchSlop", () => {
     await drainJobs(t);
     const persona = (await mode(t, host.capability)).persona;
     expect(persona.profile?.prompts.length).toBeGreaterThan(0);
-    expect(persona.portraitPending).toBe(false);
+    expect(persona.portraitUrl).toBeNull();
   });
 
   test("waits on a late persona without showing a countdown, then moves on", async () => {
@@ -148,8 +116,16 @@ describe("MatchSlop", () => {
     await heartbeat(t, everyone);
     const reply = await view(t, ana.capability);
     expect(reply.room.phase).toBe("REPLY");
-    const chat = (await mode(t, ana.capability)).messages;
-    expect(chat.map((message) => message.speaker)).toEqual(["PLAYERS", "PERSONA"]);
+    const replied = await mode(t, ana.capability);
+    expect(replied.messages.map((message) => message.speaker)).toEqual(["PLAYERS", "PERSONA"]);
+    // A stand-in reply never moves mood or points: the author keeps vote points only.
+    expect(replied.mood).toBe(50);
+    expect(replied.signal).toMatchObject({ source: "fallback", level: null, points: 0 });
+    const sent = replied.round!.answers.find(
+      (answer) => answer.id === replied.round!.winnerResponseId,
+    )!;
+    const author = reply.players.find((player) => player.id === replied.signal!.authorId)!;
+    expect(author.score).toBe(sent.pointsEarned);
 
     await t.mutation(api.engine.advanceByHost, {
       capability: host.capability,
@@ -161,7 +137,7 @@ describe("MatchSlop", () => {
     await t.mutation(api.engine.end, { capability: host.capability });
     await drainJobs(t);
     const final = await mode(t, host.capability);
-    expect(final.outcome).toBe("TURN_LIMIT");
+    expect(final.outcome).toBe("UNMATCHED");
     expect(final.postMortem).toEqual({ pending: false, value: null });
   });
 
@@ -175,7 +151,7 @@ describe("MatchSlop", () => {
       capability: host.capability,
       promptId: round.promptId,
       text: "only me",
-      openerPromptId: "__photo__",
+      openerPromptId: (await mode(t, host.capability)).persona.profile!.prompts[0]!.id,
     });
     const writing = (await view(t, host.capability)).room;
     await t.mutation(api.engine.advanceByHost, {
@@ -209,7 +185,7 @@ describe("QuizSlop", () => {
     return current;
   }
 
-  test("plays the whole deck with topic picks, calls, answers, and a voted finale", async () => {
+  test("plays the whole deck with topic picks, bets, answers, and a voted last round", async () => {
     const t = setup();
     const host = await t.action(api.rooms.create, {
       gameType: "QUIZSLOP",
@@ -235,17 +211,23 @@ describe("QuizSlop", () => {
     // Ana never picks; she gets a random topic instead of blocking the start.
     await t.mutation(api.engine.start, { capability: host.capability });
     let room = (await view(t, host.capability)).room;
-    expect(room).toMatchObject({ phase: "TOPIC", round: 1, totalRounds: 4 });
+    expect(room).toMatchObject({ phase: "CALL", round: 1, totalRounds: 4 });
 
+    const visited: string[] = [];
     for (let guard = 0; guard < 60 && room.status === "PLAYING"; guard += 1) {
+      visited.push(`${room.phase}:${room.round}`);
       if (room.phase === "CALL") {
-        const seats = (await mode(t, host.capability)).seats;
-        const tokens = seats.find((seat) => seat.playerId === host.playerId)!.callTokens;
-        await t.mutation(api.quizslop.play.call, {
-          capability: host.capability,
-          targetId: tokens > 0 ? ana.playerId : null,
-        });
-        await t.mutation(api.quizslop.play.call, { capability: ana.capability, targetId: null });
+        // Only players with a bet left are asked.
+        const eligible = (await mode(t, host.capability)).calls.eligiblePlayerIds;
+        if (eligible.includes(host.playerId!)) {
+          await t.mutation(api.quizslop.play.call, {
+            capability: host.capability,
+            targetId: ana.playerId,
+          });
+        }
+        if (eligible.includes(ana.playerId!)) {
+          await t.mutation(api.quizslop.play.call, { capability: ana.capability, targetId: null });
+        }
       } else if (room.phase === "ANSWER") {
         for (const capability of everyone) {
           const mine = (await mode(t, capability)).answer?.mine;
@@ -287,10 +269,13 @@ describe("QuizSlop", () => {
     }
 
     expect(room.status).toBe("FINISHED");
+    expect(visited.some((entry) => entry.startsWith("TOPIC:"))).toBe(false);
+    expect(visited).not.toContain("ROUND_RESULTS:4");
+    expect(visited).toContain("REVEAL:4");
     const final = (await mode(t, host.capability)).final!;
     expect(final.standings).toHaveLength(2);
     expect(final.standings[0]!.rank).toBe(1);
-    // Two Slop Calls per game, each settled as a win or a loss.
+    // Two bets per game, each settled as a win or a loss.
     const hostSeat = (await mode(t, host.capability)).seats.find(
       (seat) => seat.playerId === host.playerId,
     )!;

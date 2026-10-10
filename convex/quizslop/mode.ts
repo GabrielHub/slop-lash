@@ -2,42 +2,42 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { timed, type GameMode, type Transition } from "../engine";
-import { loadActivePlayers } from "../roster";
+import { findGameByNumber, loadActivePlayers, loadConnectedPlayers } from "../roster";
 import { availableCatalogTopics } from "../../src/games/quizslop/catalog";
 import { QUIZSLOP_TOPIC_CATALOG } from "../../src/games/quizslop/config/topic-catalog";
 import {
   orderHomeTopics,
   resolveHouseVote,
+  revealOrder,
   selectFinalSlate,
   selectWarmUpTopic,
 } from "../../src/games/quizslop/deck";
-import { INITIAL_TIER, applyLadderResult } from "../../src/games/quizslop/difficulty";
+import { INITIAL_TIER, applyLadderResult, pickQuestion } from "../../src/games/quizslop/difficulty";
 import {
   ANSWER_SECONDS,
   CALL_SLOP_TOKENS_PER_GAME,
+  FINAL_SLATE_SIZE,
   HOUSE_VOTE_SECONDS,
   MAX_PLAYERS,
   MIN_PLAYERS,
   QUESTION_REVEAL_SECONDS_PER_GROUP,
   ROUND_RESULTS_SECONDS,
   SLOP_CALL_SECONDS,
-  TOPIC_REVEAL_SECONDS,
 } from "../../src/games/quizslop/game-constants";
-import { settleRound } from "../../src/games/quizslop/scoring";
+import { callDecided, settleRound } from "../../src/games/quizslop/scoring";
+import { presentChoices } from "../../src/games/quizslop/shuffle";
 import type { QuizslopCatalogTopic, QuizslopQuestionContent } from "../../src/games/quizslop/types";
-import { stableHash } from "../../src/games/quizslop/voice";
 
 /**
  * QuizSlop phases, one round per topic in the deck:
- *   TOPIC → [CALL] → ANSWER → REVEAL(step)* → ROUND_RESULTS → TOPIC …
- * with HOUSE_VOTE before the finale picks its topic. `step` indexes the
- * round's distinct questions in reveal order. CALL is skipped when nobody has
- * a Slop Call token left.
+ *   CALL → ANSWER → REVEAL(step)* → ROUND_RESULTS → CALL …
+ * HOUSE_VOTE opens the last round by picking its topic, and the last round's
+ * final REVEAL finishes the game (no ROUND_RESULTS, so nothing spoils the
+ * winner). CALL ("bets") shows the round's topic on the TV while phones bet;
+ * a round where no connected player has a bet left opens at ANSWER. `step`
+ * indexes the round's distinct questions in reveal order.
  */
-export type QuizslopPhase = "TOPIC" | "CALL" | "ANSWER" | "REVEAL" | "ROUND_RESULTS" | "HOUSE_VOTE";
-
-/** The first topic reveal also explains the rules, so it stays up longer. */
-const FIRST_TOPIC_EXTRA_SECONDS = 20;
+export type QuizslopPhase = "CALL" | "ANSWER" | "REVEAL" | "ROUND_RESULTS" | "HOUSE_VOTE";
 
 type DatabaseCtx = QueryCtx | MutationCtx;
 
@@ -48,12 +48,32 @@ const questionsById = new Map(
   ),
 );
 
+const topicIdByQuestion = new Map(
+  QUIZSLOP_TOPIC_CATALOG.flatMap((topic) =>
+    topic.questions.map((question) => [question.id, topic.id] as const),
+  ),
+);
+
 export function catalogTopic(topicId: string | undefined): QuizslopCatalogTopic | null {
   return (topicId && topicsById.get(topicId)) || null;
 }
 
-export function catalogQuestion(questionId: string): QuizslopQuestionContent | null {
+function catalogQuestion(questionId: string): QuizslopQuestionContent | null {
   return questionsById.get(questionId) ?? null;
+}
+
+/**
+ * A catalog question with its choices in this game's order. The catalog writes
+ * the correct answer first, so everything players see or score against goes
+ * through here; `selectedIndex` is stored in this order.
+ */
+export function presentedQuestion(
+  gameId: Id<"games">,
+  questionId: string,
+): QuizslopQuestionContent | null {
+  const question = catalogQuestion(questionId);
+  if (!question) return null;
+  return { ...question, ...presentChoices(question, `${gameId}:${questionId}`) };
 }
 
 export async function loadSeats(ctx: DatabaseCtx, gameId: Id<"games">) {
@@ -106,6 +126,44 @@ export async function loadHouseVotes(ctx: DatabaseCtx, gameId: Id<"games">) {
     .take(MAX_PLAYERS * 2);
 }
 
+/**
+ * Question ids this room was asked in its previous game, so a "Play again"
+ * deals fresh questions. Empty for a room's first game, or once the previous
+ * game has been cleaned up. Each answered round froze its distinct questions
+ * when answers locked; only a round the game ended inside of still needs its
+ * answer rows read.
+ */
+export async function previousGameQuestionIds(
+  ctx: DatabaseCtx,
+  game: Doc<"games">,
+): Promise<Set<string>> {
+  if (game.gameNumber <= 1) return new Set();
+  const previous = await findGameByNumber(ctx, game.roomCode, game.gameNumber - 1);
+  if (!previous || previous.gameType !== game.gameType) return new Set();
+  const rounds = await ctx.db
+    .query("quizSlopRounds")
+    .withIndex("by_gameId_and_ordinal", (index) => index.eq("gameId", previous._id))
+    .take(MAX_PLAYERS + 2);
+  const asked = new Set(rounds.flatMap((round) => round.revealQuestionIds ?? []));
+  const unfrozen = await Promise.all(
+    rounds
+      .filter((round) => round.topicId !== undefined && round.revealQuestionIds === undefined)
+      .map((round) => loadAnswers(ctx, previous._id, round.ordinal)),
+  );
+  for (const answer of unfrozen.flat()) asked.add(answer.questionId);
+  return asked;
+}
+
+/** Topics holding any of these questions: the ones a rematch avoids dealing. */
+export function staleTopicIds(askedQuestionIds: ReadonlySet<string>): Set<string> {
+  const stale = new Set<string>();
+  for (const questionId of askedQuestionIds) {
+    const topicId = topicIdByQuestion.get(questionId);
+    if (topicId) stale.add(topicId);
+  }
+  return stale;
+}
+
 async function requireDeckRound(ctx: DatabaseCtx, game: Doc<"games">) {
   const round = await loadDeckRound(ctx, game._id, game.round);
   if (!round) throw new ConvexError("QuizSlop round is missing");
@@ -130,12 +188,25 @@ function rank(topic: QuizslopCatalogTopic) {
   return { topicId: topic.id, category: topic.category, rank: Math.random() };
 }
 
-/** Freezes the deck: warm-up, every Home Topic, then a voted finale. */
+/**
+ * Freezes the deck: warm-up, every Home Topic, then a voted finale. In a
+ * rematch the house deals only topics the room did not play last game, unless
+ * that would leave too few to build a deck.
+ */
 async function buildDeck(ctx: MutationCtx, game: Doc<"games">, players: Doc<"players">[]) {
-  const seats = new Map((await loadSeats(ctx, game._id)).map((seat) => [seat.playerId, seat]));
+  const [seatList, asked] = await Promise.all([
+    loadSeats(ctx, game._id),
+    previousGameQuestionIds(ctx, game),
+  ]);
+  const seats = new Map(seatList.map((seat) => [seat.playerId, seat]));
+  const stale = staleTopicIds(asked);
   const claimed = new Set<string>();
   for (const seat of seats.values()) if (seat.homeTopicId) claimed.add(seat.homeTopicId);
   const unclaimed = () => availableCatalogTopics(claimed);
+  const preferFresh = <T extends { id: string }>(topics: T[], needed: number) => {
+    const fresh = topics.filter((topic) => !stale.has(topic.id));
+    return fresh.length >= needed ? fresh : topics;
+  };
 
   const home: { playerId: Id<"players">; topic: QuizslopCatalogTopic }[] = [];
   for (const player of players) {
@@ -147,7 +218,7 @@ async function buildDeck(ctx: MutationCtx, game: Doc<"games">, players: Doc<"pla
     let topic = catalogTopic(seat.homeTopicId);
     if (!topic) {
       // Anyone who never picked gets a random topic rather than blocking the start.
-      const options = unclaimed();
+      const options = preferFresh(unclaimed(), 1);
       topic = options[Math.floor(Math.random() * options.length)] ?? null;
       if (!topic) throw new ConvexError("Not enough QuizSlop topics for this many players");
       claimed.add(topic.id);
@@ -156,7 +227,7 @@ async function buildDeck(ctx: MutationCtx, game: Doc<"games">, players: Doc<"pla
     home.push({ playerId: player._id, topic });
   }
 
-  const pool = unclaimed().map(rank);
+  const pool = preferFresh(unclaimed(), 1 + FINAL_SLATE_SIZE).map((topic) => rank(topic));
   const warmUp = selectWarmUpTopic(pool);
   const finalists = selectFinalSlate(pool.filter((topic) => topic.topicId !== warmUp?.topicId));
   if (!warmUp || finalists.length === 0) {
@@ -190,41 +261,61 @@ async function buildDeck(ctx: MutationCtx, game: Doc<"games">, players: Doc<"pla
   await ctx.db.patch("games", game._id, { totalRounds: ordinal });
 }
 
-function topicPhase(game: Doc<"games">, round: number): Transition {
-  const extra = round === 1 ? FIRST_TOPIC_EXTRA_SECONDS : 0;
-  return { phase: "TOPIC", round, seconds: timed(game, TOPIC_REVEAL_SECONDS + extra) };
-}
-
-async function openAnswers(ctx: MutationCtx, game: Doc<"games">): Promise<Transition> {
-  const round = await requireDeckRound(ctx, game);
+/**
+ * Deals each active player the question at their hidden tier and opens answers.
+ * `loaded` reuses the players and seats a caller already read in this mutation.
+ */
+async function openAnswers(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  ordinal: number,
+  loaded?: { players: Doc<"players">[]; seats: Doc<"quizSlopSeats">[] },
+): Promise<Transition> {
+  const [round, players, seatList, asked] = await Promise.all([
+    loadDeckRound(ctx, game._id, ordinal),
+    loaded?.players ?? loadActivePlayers(ctx, game._id),
+    loaded?.seats ?? loadSeats(ctx, game._id),
+    previousGameQuestionIds(ctx, game),
+  ]);
+  if (!round) throw new ConvexError("QuizSlop round is missing");
   const topic = catalogTopic(round.topicId);
   if (!topic) throw new ConvexError("QuizSlop round has no topic");
-  const [players, seatList] = await Promise.all([
-    loadActivePlayers(ctx, game._id),
-    loadSeats(ctx, game._id),
-  ]);
   const seats = new Map(seatList.map((seat) => [seat.playerId, seat]));
   for (const player of players) {
     const tier = seats.get(player._id)?.tier ?? INITIAL_TIER;
-    const question =
-      topic.questions.find((candidate) => candidate.tier === tier) ?? topic.questions[0];
+    const question = pickQuestion(topic.questions, tier, asked);
     if (!question) throw new ConvexError(`${topic.label} has no questions`);
     await ctx.db.insert("quizSlopAnswers", {
       gameId: game._id,
-      ordinal: game.round,
+      ordinal,
       playerId: player._id,
       questionId: question.id,
     });
   }
-  return { phase: "ANSWER", seconds: timed(game, ANSWER_SECONDS) };
+  return { phase: "ANSWER", round: ordinal, seconds: timed(game, ANSWER_SECONDS) };
 }
 
-/** Calls open only when two or more players are in and one still has a token. */
-export function callsOpen(seats: Doc<"quizSlopSeats">[], players: Doc<"players">[]) {
-  const active = new Set<string>(players.map((player) => player._id));
-  return (
-    players.length > 1 && seats.some((seat) => active.has(seat.playerId) && seat.callTokens > 0)
-  );
+/**
+ * A round opens on bets while someone can bet, otherwise straight at answers.
+ * Bets open only when two or more players are in and a connected one still has a bet.
+ */
+async function openRound(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  ordinal: number,
+): Promise<Transition> {
+  const [seats, { players, connected }] = await Promise.all([
+    loadSeats(ctx, game._id),
+    loadConnectedPlayers(ctx, game, Date.now()),
+  ]);
+  const connectedIds = new Set<string>(connected.map((player) => player._id));
+  const callsOpen =
+    players.length > 1 &&
+    seats.some((seat) => connectedIds.has(seat.playerId) && seat.callTokens > 0);
+  if (callsOpen) {
+    return { phase: "CALL", round: ordinal, seconds: timed(game, SLOP_CALL_SECONDS) };
+  }
+  return openAnswers(ctx, game, ordinal, { players, seats });
 }
 
 async function loadSettlement(ctx: MutationCtx, game: Doc<"games">) {
@@ -239,7 +330,7 @@ async function loadSettlement(ctx: MutationCtx, game: Doc<"games">) {
       playerId: answer.playerId,
       questionId: answer.questionId,
       selectedIndex: answer.lockedAt !== undefined ? (answer.selectedIndex ?? null) : null,
-      correctIndex: catalogQuestion(answer.questionId)?.correctIndex ?? -1,
+      correctIndex: presentedQuestion(game._id, answer.questionId)?.correctIndex ?? -1,
     })),
     calls: calls.flatMap((call) =>
       call.targetId ? [{ callerId: call.callerId, targetId: call.targetId }] : [],
@@ -307,6 +398,11 @@ function roundResults(game: Doc<"games">): Transition {
   return { phase: "ROUND_RESULTS", seconds: timed(game, ROUND_RESULTS_SECONDS) };
 }
 
+/** The last round's reveal goes straight to the final screen, so nothing spoils the winner. */
+function afterRound(game: Doc<"games">): Transition | "FINISH" {
+  return game.round >= game.totalRounds ? "FINISH" : roundResults(game);
+}
+
 function revealStep(game: Doc<"games">, step: number): Transition {
   return { phase: "REVEAL", step, seconds: timed(game, QUESTION_REVEAL_SECONDS_PER_GROUP) };
 }
@@ -326,15 +422,23 @@ export const quizslopMode: GameMode = {
       throw new ConvexError("QuizSlop is humans only");
     }
     await buildDeck(ctx, game, players);
-    return topicPhase(game, 1);
+    return openRound(ctx, game, 1);
   },
 
   async isComplete(ctx, game, connected) {
     const here = connected.map((player) => player._id as Id<"players">);
     switch (game.phase as QuizslopPhase) {
       case "CALL": {
-        const called = new Set((await loadCalls(ctx, game._id, game.round)).map((c) => c.callerId));
-        return here.every((id) => called.has(id));
+        // Players with no bets left are never asked, so never waited on.
+        const [calls, seats] = await Promise.all([
+          loadCalls(ctx, game._id, game.round),
+          loadSeats(ctx, game._id),
+        ]);
+        const called = new Set<string>(calls.map((entry) => entry.callerId));
+        const tokens = new Map<string, number>(
+          seats.map((seat) => [seat.playerId, seat.callTokens]),
+        );
+        return here.every((id) => callDecided(called.has(id), tokens.get(id) ?? 0));
       }
       case "ANSWER": {
         const locked = new Set(
@@ -355,18 +459,8 @@ export const quizslopMode: GameMode = {
 
   async next(ctx, game) {
     switch (game.phase as QuizslopPhase) {
-      case "TOPIC": {
-        const [seats, players] = await Promise.all([
-          loadSeats(ctx, game._id),
-          loadActivePlayers(ctx, game._id),
-        ]);
-        if (callsOpen(seats, players)) {
-          return { phase: "CALL", seconds: timed(game, SLOP_CALL_SECONDS) };
-        }
-        return openAnswers(ctx, game);
-      }
       case "CALL": {
-        // Anyone who did not call held.
+        // Anyone who did not bet passed, including players with no bets left.
         const [calls, players] = await Promise.all([
           loadCalls(ctx, game._id, game.round),
           loadActivePlayers(ctx, game._id),
@@ -380,20 +474,26 @@ export const quizslopMode: GameMode = {
             callerId: player._id,
           });
         }
-        return openAnswers(ctx, game);
+        return openAnswers(ctx, game, game.round);
       }
       case "ANSWER": {
         const round = await markAnswers(ctx, game);
         const answers = await loadAnswers(ctx, game._id, game.round);
-        const questionIds = [...new Set(answers.map((answer) => answer.questionId))].toSorted(
-          (left, right) =>
-            stableHash(`${game._id}:${game.round}:${left}`) -
-              stableHash(`${game._id}:${game.round}:${right}`) || left.localeCompare(right),
+        // On a player's topic, the owner's question closes the round.
+        const ownerQuestionId =
+          round.kind === "HOME_TURF" && round.ownerPlayerId
+            ? (answers.find((answer) => answer.playerId === round.ownerPlayerId)?.questionId ??
+              null)
+            : null;
+        const questionIds = revealOrder(
+          [...new Set(answers.map((answer) => answer.questionId))],
+          `${game._id}:${game.round}`,
+          ownerQuestionId,
         );
         await ctx.db.patch("quizSlopRounds", round._id, { revealQuestionIds: questionIds });
         if (questionIds.length === 0) {
           await settle(ctx, game);
-          return roundResults(game);
+          return afterRound(game);
         }
         return revealStep(game, 0);
       }
@@ -403,9 +503,10 @@ export const quizslopMode: GameMode = {
           return revealStep(game, game.step + 1);
         }
         await settle(ctx, game);
-        return roundResults(game);
+        return afterRound(game);
       }
       case "ROUND_RESULTS": {
+        // afterRound never opens results after the last round; this is a safety net.
         if (game.round >= game.totalRounds) return "FINISH";
         if ((await loadActivePlayers(ctx, game._id)).length < MIN_PLAYERS) return "FINISH";
         const nextRound = await loadDeckRound(ctx, game._id, game.round + 1);
@@ -416,7 +517,7 @@ export const quizslopMode: GameMode = {
             seconds: timed(game, HOUSE_VOTE_SECONDS),
           };
         }
-        return topicPhase(game, game.round + 1);
+        return openRound(ctx, game, game.round + 1);
       }
       case "HOUSE_VOTE": {
         const round = await requireDeckRound(ctx, game);
@@ -427,7 +528,7 @@ export const quizslopMode: GameMode = {
         const winner = resolveHouseVote(slate, await loadHouseVotes(ctx, game._id));
         if (!winner) return "FINISH";
         await ctx.db.patch("quizSlopRounds", round._id, { topicId: winner.topicId });
-        return topicPhase(game, game.round);
+        return openRound(ctx, game, game.round);
       }
       default:
         return "FINISH";

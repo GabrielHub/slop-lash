@@ -51,11 +51,17 @@ export function useRoom(): RoomContextValue {
   return room;
 }
 
+/** The room's mode view if it is a `kind` room, else null. Not a hook. */
+export function modeOf<K extends GameType>(view: RoomView, kind: K): ModeView<K> | null {
+  return view.mode.kind === kind ? (view.mode as ModeView<K>) : null;
+}
+
 /** The current mode's view, narrowed to the game the component was written for. */
 export function useModeView<K extends GameType>(kind: K): ModeView<K> {
-  const { mode } = useRoom().view;
-  if (mode.kind !== kind) throw new Error(`Expected a ${kind} room, got ${mode.kind}`);
-  return mode as ModeView<K>;
+  const { view } = useRoom();
+  const mode = modeOf(view, kind);
+  if (!mode) throw new Error(`Expected a ${kind} room, got ${view.mode.kind}`);
+  return mode;
 }
 
 export function usePlayers(): {
@@ -67,12 +73,6 @@ export function usePlayers(): {
     const index = new Map<string, RoomPlayer>(players.map((player) => [player.id, player]));
     return { players, byId: (id) => (id ? index.get(id) : undefined) };
   }, [players]);
-}
-
-/** A player's name by id, with a stand-in for seats that are gone. */
-export function usePlayerName(): (id: Id<"players"> | string | null | undefined) => string {
-  const { byId } = usePlayers();
-  return useCallback((id) => byId(id)?.name ?? "Someone", [byId]);
 }
 
 /** One interval for every countdown on the page, however many are mounted. */
@@ -100,13 +100,25 @@ function subscribeClock(listener: () => void) {
 }
 
 const readClock = () => clockNow;
-/** Nothing ticks on the server, so read the time fresh, whole seconds so hydration agrees. */
-const readServerClock = () => Math.floor(Date.now() / 1_000) * 1_000;
+
+let hydrationClock: number | undefined;
+/**
+ * The clock that server rendering and hydration read, in whole seconds. The
+ * server reads it fresh; the browser reads it once per page load, so every
+ * hydrating component (hydration can yield for seconds) agrees with the first
+ * one, and anything offset from it, such as the fixture clock, hydrates to the
+ * same time the server rendered.
+ */
+export function readHydrationClock(): number {
+  const now = Math.floor(Date.now() / 1_000) * 1_000;
+  if (typeof window === "undefined") return now;
+  return (hydrationClock ??= now);
+}
 
 /** The server's clock, ticking on this device. */
 export function useServerNow(): number {
   const { clockOffsetMs } = useRoom();
-  return useSyncExternalStore(subscribeClock, readClock, readServerClock) + clockOffsetMs;
+  return useSyncExternalStore(subscribeClock, readClock, readHydrationClock) + clockOffsetMs;
 }
 
 /**
@@ -185,7 +197,7 @@ export function RoomProvider({
   const seated = useQuery(api.views.room, capability ? { capability } : "skip");
   const watching = useQuery(api.views.watch, capability ? "skip" : { roomCode });
   const view = capability ? seated : watching;
-  const clockOffsetMs = useRoomPresence(capability);
+  const clockOffsetMs = useRoomPresence(capability, capability ? (view?.room.id ?? null) : null);
   const run = useCallback<RoomRunner>(
     (mutation, args) =>
       capability

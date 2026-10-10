@@ -11,6 +11,10 @@ person — backstory first, everything else derived from that.
 ONE example is randomly selected per game, filtered by the persona's identity
 (MAN / WOMAN / NON_BINARY / OTHER). This prevents the model from fixating on a
 single style. The example teaches the LLM the _level of detail_ and _tone_ expected.
+One structured call (`matchslop.profile`) writes the whole profile, the texting
+style and the portrait prompt together; the portrait job only sends that prompt
+to Fal. If the call fails, the seed itself becomes the profile. "Play again"
+picks a different seed from the same identity pool.
 
 ## Design Philosophy
 
@@ -170,3 +174,69 @@ Funny, specific, slightly absurd. The best ones are weirdly specific observation
 
 Good: "keeps loose walnuts in pockets"
 Bad: "bad communicator"
+
+---
+
+## Judge levels and the date line
+
+The persona's reply is one structured call (`matchslop.reply`). The model first
+judges the newest sent line with one of six **levels**, then writes its reply
+knowing what that level will do. It never outputs a mood number or an outcome:
+code maps the level to a mood change, and code decides the ending
+(`resolveTurn` in `src/games/matchslop/rules.ts`). The same function builds the
+`<consequences>` block in the call's last user turn (`levelConsequences`), so
+the reply text and the coded outcome agree.
+
+| Level | Mood delta | Author points | What earns it |
+|---|---|---|---|
+| great | +15 | +150 | Specific and genuinely charming or funny; she'd screenshot it |
+| good | +10 | +100 | Clever or warm, and engages with what she said |
+| cute | +5 | +50 | Pleasant, mildly fun |
+| meh | 0 | 0 | Generic, or could be sent to anyone |
+| cringe | −10 | −100 | Try-hard, awkward, too forward, or ignores her |
+| dealbreaker | −20 | −200 | Rude, creepy or hostile |
+
+Author points are `delta × 10`, capped at ±200, and go to whoever wrote the sent
+line (on top of their vote points). There is no score floor. Her reaction is
+weighted to outweigh the room's votes: a sent line with two human votes earns
+100 vote points plus the 50 sent bonus, so a dealbreaker (−200) leaves its
+author behind and the worst texter cannot win on votes alone. (It was briefly
+`delta × 5`, capped at ±100, and play showed a player winning with three
+dealbreaker or cringe lines.)
+
+**The rules:**
+- Mood starts at 50. The **date line is 80**: reaching 80 or more after any
+  reply seals the date at once.
+- Dropping to **20 or less unmatches**, but the room gets **one comeback
+  message** (the next round). The comeback seals the date only at **good or
+  better** (mood is lifted to 80); anything else ends in an unmatch.
+- **The last message forces a verdict:** after the final round's reply, mood ≥ 80
+  is a date and anything less is "no second date". There is no "time ran out".
+- **Fallbacks never score.** A refused call (`declined`) or any other failure
+  (`fallback`) shows a canned reply and leaves mood and points unchanged. On a
+  final or comeback turn the code rule still decides, with the unchanged mood.
+- A text that talks to her as an AI, or gives her instructions, is judged as a
+  dating text like any other. It is not automatically the lowest level.
+
+**Why round 1 can't decide anything:** from 50, the opener ranges over 30
+(dealbreaker) to 65 (great), so it can neither reach 80 nor fall to 20. Every
+game gets at least two exchanges.
+
+**Calibration** (5 rounds; the targets are a consistently good team dating
+around round 3, mediocre lines never dating, and two dealbreakers in a row
+booking the last shot):
+
+| Team plays | Mood from 50 | Result |
+|---|---|---|
+| great, great | 65, 80 | date in round 2 |
+| good ×3 | 60, 70, 80 | **date in round 3** (target) |
+| good/cute alternating | 60, 65, 75, 80 | date in round 4 |
+| cute ×5 | 55 … 75 | **no second date** |
+| dealbreaker ×2 | 30, 10 | **last shot in round 2** (target) |
+| cringe ×3 | 40, 30, 20 | last shot in round 3 |
+
+The table is checked by `src/games/matchslop/rules.test.ts`. If playtests show
+the model rating generously (read `signal.level` across about ten games),
+retune only `MATCHSLOP_LEVEL_DELTA` in `src/games/matchslop/types.ts`, update
+this section, and bump `MATCHSLOP_PROMPT_VERSION.reply` if the rubric text
+changes.

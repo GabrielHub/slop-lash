@@ -8,6 +8,19 @@ export interface AiProviderKeys {
   anthropic?: string;
 }
 
+/** Which API serves a model: Claude models with an `anthropicModelId` go direct. */
+export type ModelRoute = "anthropic" | "gateway";
+
+export function getModelRoute(modelId: string): ModelRoute {
+  return getModelByModelId(modelId)?.anthropicModelId ? "anthropic" : "gateway";
+}
+
+/** Whether the key that `modelId`'s route needs is configured. */
+export function hasProviderKey(modelId: string, keys: AiProviderKeys): boolean {
+  const key = getModelRoute(modelId) === "anthropic" ? keys.anthropic : keys.gateway;
+  return Boolean(key?.trim());
+}
+
 function requireGateway(apiKey: string | undefined) {
   if (!apiKey?.trim()) throw new Error("Vercel AI Gateway is not configured");
   return createGateway({ apiKey });

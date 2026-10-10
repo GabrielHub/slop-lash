@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import { MoonIcon, SunIcon } from "@/components/icons";
+import { DUR, EASE, press } from "@/lib/animations";
 
 type Theme = "light" | "dark";
 
@@ -52,64 +54,40 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <ThemeContext value={{ theme, toggle, mounted }}>{children}</ThemeContext>;
 }
 
-export function ThemeToggle() {
-  const { theme, toggle, mounted } = useTheme();
+/** A round 44px icon-only button; the top bar uses it for the back arrow too. */
+export const ICON_BUTTON_CLASS =
+  "grid size-11 shrink-0 place-items-center rounded-full text-ink-dim transition-colors hover:bg-surface/70 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-punch/60 cursor-pointer";
 
-  // Don't render until mounted to avoid hydration mismatch
+/** Inline sun/moon button that flips the theme. It sits in a top bar or menu row. */
+export function ThemeToggle({ className = "" }: { className?: string }) {
+  const { theme, toggle, mounted } = useTheme();
+  const reduceMotion = useReducedMotion();
+
+  // The stored theme is unknown until mount, so render an inert slot of the same size.
   if (!mounted) {
-    return (
-      <div className="fixed top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-40 w-10 h-10 rounded-full bg-surface border-2 border-edge" />
-    );
+    return <span className={`${ICON_BUTTON_CLASS} ${className}`} aria-hidden="true" />;
   }
 
+  const spin = reduceMotion ? 0 : 90;
   return (
     <motion.button
+      type="button"
       onClick={toggle}
-      className="fixed top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-40 w-10 h-10 flex items-center justify-center rounded-full bg-surface border-2 border-edge hover:border-edge-strong transition-colors cursor-pointer"
+      className={`${ICON_BUTTON_CLASS} ${className}`}
       aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.9, rotate: 15 }}
-      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      {...press}
     >
       <AnimatePresence mode="wait" initial={false}>
-        {theme === "dark" ? (
-          <motion.svg
-            key="sun"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            initial={{ rotate: -90, opacity: 0 }}
-            animate={{ rotate: 0, opacity: 1 }}
-            exit={{ rotate: 90, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <circle cx="12" cy="12" r="5" />
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </motion.svg>
-        ) : (
-          <motion.svg
-            key="moon"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            initial={{ rotate: 90, opacity: 0 }}
-            animate={{ rotate: 0, opacity: 1 }}
-            exit={{ rotate: -90, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </motion.svg>
-        )}
+        <motion.span
+          key={theme}
+          className="grid place-items-center"
+          initial={{ rotate: -spin, opacity: 0 }}
+          animate={{ rotate: 0, opacity: 1 }}
+          exit={{ rotate: spin, opacity: 0 }}
+          transition={{ duration: DUR.fast, ease: EASE.out }}
+        >
+          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+        </motion.span>
       </AnimatePresence>
     </motion.button>
   );

@@ -56,6 +56,8 @@ take precedence over this file.
 Read the matching doc before working in its area:
 
 - `docs/architecture.md`: runtime boundaries and data flow.
+- `docs/ai-calls.md`: how every model call goes through `src/lib/ai/` (tasks,
+  caching, retries, failure handling).
 - `docs/prompt-design-guide.md`: writing SlopLash prompts that produce funny
   answers.
 - `docs/matchslop-persona-guide.md`: MatchSlop persona seed examples.

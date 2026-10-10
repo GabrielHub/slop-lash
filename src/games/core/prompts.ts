@@ -1270,37 +1270,6 @@ const PROMPT_BANK: string[] = [
   "A deleted power-up from the newest Mario game",
   "A Pokemon move that's actually just a war crime",
   "The Pokemon that is definitely going through something right now",
-
-  // ==========================================================================
-  // FOREIGN LANGUAGE EASTER EGGS — surprise multilingual prompts.
-  // ==========================================================================
-  "你绝对不应该在第一次约会时说的话", // The thing you should never say on a first date (Chinese)
-  "Lo peor que puedes gritar en un elevador lleno de gente", // The worst thing to yell in a crowded elevator (Spanish)
-  "おばあちゃんの秘密の材料は実は______", // Grandma's secret ingredient is actually ______ (Japanese)
-  "La pire excuse pour arriver en retard à son propre mariage", // The worst excuse for being late to your own wedding (French)
-  "Das Schlimmste, was man bei einer Beerdigung laut sagen könnte", // The worst thing to say out loud at a funeral (German)
-  "지구에 대한 외계인의 Yelp 리뷰", // An alien's Yelp review of Earth (Korean)
-  "La peor cosa da scrivere su una torta di compleanno", // The worst thing to write on a birthday cake (Italian)
-  "Самое худшее, что можно шепнуть незнакомцу в автобусе", // The worst thing to whisper to a stranger on a bus (Russian)
-  "أسوأ شيء تصرخ به في مصعد مزدحم", // The worst thing to shout in a crowded elevator (Arabic)
-  "สิ่งที่ไม่ควรพูดกับแม่ยายในมื้อแรก", // What you shouldn't say to your mother-in-law at the first meal (Thai)
-  "Điều tệ nhất để viết lên bánh cưới", // The worst thing to write on a wedding cake (Vietnamese)
-  "O pior conselho para dar a alguém que está prestes a saltar de paraquedas", // The worst advice to give someone about to skydive (Portuguese)
-  "Het ergste om per ongeluk te zeggen tijdens een sollicitatiegesprek", // The worst thing to accidentally say during a job interview (Dutch)
-  "Det värsta att viska till personen bredvid dig på en begravning", // The worst thing to whisper to the person next to you at a funeral (Swedish)
-  "Najgorsze, co można powiedzieć przy pierwszym spotkaniu z teściową", // The worst thing to say when meeting your mother-in-law (Polish)
-  "Cel mai prost lucru pe care să-l strigi într-o bibliotecă", // The worst thing to yell in a library (Romanian)
-  "Az orvos legrosszabb mondata a műtét közepén: '______'", // The worst thing for a doctor to say mid-surgery: '______' (Hungarian)
-  "Ang pinakamasamang bagay na isulat sa isang sympathy card", // The worst thing to write in a sympathy card (Filipino/Tagalog)
-  "पायलट ने उड़ान भरने से पहले जो सबसे बुरी बात कही: '______'", // The worst thing a pilot said before takeoff: '______' (Hindi)
-  "Kötü bir süper kahraman ismi: ______", // A bad superhero name: ______ (Turkish)
-  "Pahin asia, jonka voi kuulla hammaslääkäriltä: '______'", // The worst thing to hear from your dentist: '______' (Finnish)
-  "Nejhorší věc, kterou říct na prvním rande", // The worst thing to say on a first date (Czech)
-  "Det verste å rope under en begravelse", // The worst thing to shout during a funeral (Norwegian)
-  "ရေခဲမုန့်အရသာ အဆိုးဆုံးအမည်: ______", // The worst ice cream flavor name: ______ (Burmese)
-  "Perkara paling teruk untuk ditulis pada kad hari jadi", // The worst thing to write on a birthday card (Malay)
-  "בדיחה שלעולם לא כדאי לספר בראיון עבודה", // A joke you should never tell at a job interview (Hebrew)
-  "Το χειρότερο πράγμα να πεις σε κηδεία: '______'", // The worst thing to say at a funeral: '______' (Greek)
 ];
 
 function cryptoRandInt(max: number): number {

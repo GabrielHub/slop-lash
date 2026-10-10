@@ -6,7 +6,13 @@ import { requireHost } from "./capabilities";
 import { cancelGameJobs } from "./jobs";
 import { getMode } from "./modes";
 import type { RoomSettings } from "./rooms";
-import { HOST_FAILOVER_MS, loadActivePlayers, loadConnectedPlayers, loadPresence } from "./roster";
+import {
+  findGameByCode,
+  HOST_FAILOVER_MS,
+  loadActivePlayers,
+  loadConnectedPlayers,
+  loadPresence,
+} from "./roster";
 
 /** Where a phase goes next. `seconds: null` waits for players or the host. */
 export type Transition = {
@@ -40,6 +46,12 @@ export interface GameMode {
   onEnter?(ctx: MutationCtx, game: Doc<"games">): Promise<void>;
   /** Runs once when the game ends early or naturally, before the status flips. */
   onFinish?(ctx: MutationCtx, game: Doc<"games">, early: boolean): Promise<void>;
+  /**
+   * Sets up the mode's own state for a "Play again" of `previous`. `next` is the
+   * new LOBBY game under the same code, already holding the carried-over seats.
+   * `previous` is FINISHED and must not be changed.
+   */
+  rematch?(ctx: MutationCtx, previous: Doc<"games">, next: Doc<"games">): Promise<void>;
 }
 
 /** A phase deadline that respects the room's "no timers" setting. */
@@ -50,6 +62,12 @@ export function timed(game: Doc<"games">, seconds: number): number | null {
 /** If a scheduled tick was lost, the sweep fires it this long after the deadline. */
 const MISSED_DEADLINE_GRACE_MS = 10_000;
 const SWEEP_BATCH = 50;
+
+/**
+ * How long after the end a finished game still hands host controls to someone
+ * online, so "Play again" never dies with a host who walked off at the results.
+ */
+export const REMATCH_WINDOW_MS = 30 * 60_000;
 
 async function reload(ctx: MutationCtx, gameId: Id<"games">): Promise<Doc<"games">> {
   const game = await ctx.db.get("games", gameId);
@@ -227,13 +245,25 @@ export const tick = internalMutation({
   },
 });
 
+/** When a finished game ended, falling back to `updatedAt` where `finishedAt` is unset. */
+export function finishedAtOf(game: Doc<"games">): number {
+  return game.finishedAt ?? game.updatedAt;
+}
+
 /** Per-room housekeeping: missed deadlines, quorum after someone left, host failover. */
 export const maintain = internalMutation({
   args: { gameId: v.id("games") },
   handler: async (ctx, args) => {
     const game = await ctx.db.get("games", args.gameId);
-    if (!game || game.status === "FINISHED") return;
+    if (!game) return;
     const now = Date.now();
+    if (game.status === "FINISHED") {
+      // Only the room's live game can be played again, and only for a while.
+      if (now - finishedAtOf(game) > REMATCH_WINDOW_MS) return;
+      const live = await findGameByCode(ctx, game.roomCode);
+      if (live?._id === game._id) await failOverHost(ctx, game, now);
+      return;
+    }
     await failOverHost(ctx, game, now);
     if (game.status !== "PLAYING") return;
     if (game.phaseDeadline !== undefined && game.phaseDeadline + MISSED_DEADLINE_GRACE_MS < now) {
@@ -248,17 +278,27 @@ export const maintain = internalMutation({
   },
 });
 
-/** Cron entry point: fans `maintain` out to every live room. */
+/** Cron entry point: fans `maintain` out to every live room and recent results screen. */
 export const sweep = internalMutation({
   args: {},
   handler: async (ctx) => {
-    for (const status of ["LOBBY", "PLAYING"] as const) {
+    const now = Date.now();
+    for (const status of ["LOBBY", "PLAYING", "FINISHED"] as const) {
       const games = await ctx.db
         .query("games")
-        .withIndex("by_status_and_updatedAt", (index) => index.eq("status", status))
+        .withIndex("by_status_and_updatedAt", (index) =>
+          status === "FINISHED"
+            ? index.eq("status", status).gt("updatedAt", now - REMATCH_WINDOW_MS)
+            : index.eq("status", status),
+        )
         .order("desc")
         .take(SWEEP_BATCH);
       for (const game of games) {
+        if (status === "FINISHED") {
+          // Same checks as `maintain`: only the live game, inside its rematch window.
+          if (now - finishedAtOf(game) > REMATCH_WINDOW_MS) continue;
+          if ((await findGameByCode(ctx, game.roomCode))?._id !== game._id) continue;
+        }
         await ctx.scheduler.runAfter(0, internal.engine.maintain, { gameId: game._id });
       }
     }

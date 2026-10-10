@@ -8,8 +8,8 @@ import { RoomSpinner } from "@/room/gate";
 import { RoomFrame } from "@/room/shell";
 
 /** A finished game's results, shareable with anyone who has the room code. */
-export function RecapShell({ code }: { code: string }) {
-  const recap = useQuery(api.views.recap, { roomCode: code });
+export function RecapShell({ code, gameNumber }: { code: string; gameNumber: number }) {
+  const recap = useQuery(api.views.recap, { roomCode: code, gameNumber });
   if (recap === undefined) return <RoomSpinner />;
   if (recap.kind !== "READY") {
     return (

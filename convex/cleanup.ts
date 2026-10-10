@@ -28,8 +28,10 @@ const GAME_TABLES = [
   ["votes", "by_gameId"],
   ["reactions", "by_gameId"],
   ["generationJobs", "by_gameId_and_key"],
+  ["aiCalls", "by_gameId"],
   ["gameModelUsage", "by_gameId_and_modelId"],
   ["winnerTaglines", "by_gameId_and_phaseGeneration"],
+  ["sloplashBallots", "by_gameId"],
   ["matchSlopState", "by_gameId"],
   ["matchSlopMessages", "by_gameId_and_turn"],
   ["quizSlopSeats", "by_gameId_and_playerId"],
@@ -37,6 +39,7 @@ const GAME_TABLES = [
   ["quizSlopAnswers", "by_gameId_and_ordinal_and_playerId"],
   ["quizSlopCalls", "by_gameId_and_ordinal_and_callerId"],
   ["quizSlopHouseVotes", "by_gameId_and_voterId"],
+  ["quizSlopReactions", "by_gameId_and_ordinal_and_step_and_playerId"],
 ] as const satisfies readonly (readonly [TableNames, string])[];
 
 export const sweep = internalMutation({

@@ -1,5 +1,4 @@
-import { FixtureScreen } from "@/dev/fixture-screen";
-import type { RoomLayout } from "@/room/shell";
+import { FixtureScreen, type FixtureLayout } from "@/dev/fixture-screen";
 
 export const metadata = {
   title: "Dev UI Fixture",
@@ -14,6 +13,7 @@ export default async function DevUiFixturePage({
 }) {
   const { scenario } = await params;
   const { layout } = await searchParams;
-  const resolved: RoomLayout = layout === "controller" || layout === "game" ? layout : "stage";
+  const resolved: FixtureLayout =
+    layout === "controller" || layout === "game" || layout === "recap" ? layout : "stage";
   return <FixtureScreen key={`${scenario}:${resolved}`} id={scenario} layout={resolved} />;
 }

@@ -45,6 +45,8 @@ A mode (`convex/<mode>/mode.ts`, registered in `convex/modes.ts`) supplies:
 - `next`, which closes the current phase, filling gaps such as forfeits or
   timed-out votes, and returns the next phase or `FINISH`;
 - optional `createRoom`, `onEnter`, `onFinish`, and `onPlayerRemoved` hooks;
+- an optional `rematch` hook, which sets up the mode's own state when a
+  finished game is played again (MatchSlop seeds a fresh persona);
 - `keepsRecaps` when finished rooms should outlive the one-hour cleanup.
 
 Scoring happens on the server as soon as the result is shown: SlopLash scores
@@ -64,9 +66,34 @@ Games advance in one of three ways:
 Each path checks the phase generation, so a double tap, a late timer, or a
 stale vote can never advance twice. A cron sweep every 15 seconds catches lost
 ticks, rooms that are waiting only on absent players, and hosts who have been
-gone for about 30 seconds; it hands host controls to a present player. If a
-mode throws while advancing, the engine ends the game rather than leaving the
-room stuck.
+gone for about 30 seconds; it hands host controls to a present player. The
+sweep keeps doing that for a finished game for 30 minutes
+(`REMATCH_WINDOW_MS`), while it is still the room's live game, so "Play again"
+never leaves with a host who walked off at the results. If a mode throws while
+advancing, the engine ends the game rather than leaving the room stuck.
+
+### Play again
+
+A room code is a chain of games. Each `games` row carries a `gameNumber` (1 for
+a new room, +1 for each "Play again"), and the newest game for a code is the
+live one: `findGameByCode` returns it, so joining and `views.watch` always land
+there. `findGameByNumber` reaches an older one.
+
+`rooms.playAgain` (host only, FINISHED only) inserts the next game with the same
+code and settings, gives every carried player a fresh seat with a score of 0,
+and moves their sessions to the new game in place. Capability strings don't
+change, so every phone and TV follows through the subscription it already
+holds. It carries AI seats, the caller, and humans whose tab is online or
+dropped within a minute of the end; a player who left mid-game, or tapped Done
+(`rooms.leave`), stays on the finished game, whose view then reports the
+rematch in `room.next` so that seat can join it in one tap. Presence for the
+old game is cleared, because the presence component refuses a tab that beats
+into a second room. A Free Play rematch claims a daily slot in the same
+transaction, and refuses with a readable message once the cap is spent.
+
+The finished game is never touched, so its recap and leaderboard projection
+stay valid. Recaps are addressed by number: `/game/CODE/recap` is game 1 and
+`/game/CODE/recap?game=N` is game N (`views.recap` takes `gameNumber`).
 
 AI work is a job (`convex/jobs.ts`). Each job has:
 
@@ -99,17 +126,18 @@ three routes:
 - `/controller/CODE` shows the controller only.
 - `/game/CODE` docks the controller beside the stage for players on a desktop.
 
-The recap page renders the same stage, read-only, for a finished room, through
+The recap page renders the same stage, read-only, for a finished game, through
 `StaticRoomProvider`. Recaps are not `live`, so sounds, confetti, and narration
 stay quiet there. Dev fixtures (`src/dev/fixtures/`) render static room views
 through the same frame at `/dev/ui`.
 
 Games share building blocks rather than copying them:
 
-- `src/room/parts.tsx` holds components such as `PlayerProgress` and
-  `StatusCard`.
-- `src/room/effects.ts` holds `useCue` (a sound when something changes) and
-  `useCelebration` (a sound plus confetti, once).
+- `src/room/parts.tsx` holds `DoneTracker` (who is in, on the stage or a
+  phone).
+- `src/room/moment/` is the moment kit: `useMoment` (staged beats on one
+  clock), `Stamp`, `CountUp`, `TypeOn`, confetti and haptics.
+- `src/room/effects.ts` holds `useCue` (a sound when something changes).
 - `src/lib/format.ts` formats places and signed points.
 
 Shared parts draw with the base color tokens (`surface`, `edge`, `ink`, `win`,
@@ -154,12 +182,19 @@ text. Gateway, Anthropic, Fal, and host secrets live in the Convex deployment
 environment and are available only to backend functions. Speech generation
 stays on the Gateway.
 
+Game code never calls the SDK directly: every model call goes through the task
+layer in `src/lib/ai/` (`runStructured`, `runText`, `decideChoices`), which
+handles instruction caching, retries, budgets, and the `aiCalls` log. See
+[`docs/ai-calls.md`](./ai-calls.md).
+
 Free Play rooms (`games.freePlay`) are created without the host password.
 `rooms.create` pins them to Claude Haiku for writing and Jev for judging. It
 also refuses the narrator and extra AI players, and Free Play MatchSlop rooms
 skip portraits. A transactional `freePlayUsage` counter enforces the daily cap
-inside room creation. Free Play AI votes record their usage under the Jev model
-ID.
+inside room creation. Free Play SlopLash AI ballots go to Jev first when the
+Gateway key is set; without it, or when Jev fails, Haiku casts them
+(`castBallots` in `src/games/sloplash/ai.ts`). Each call records its usage
+under the model that answered.
 
 Slop-Lash narration is a hybrid pipeline: deterministic cues preserve prompts
 and jokes verbatim, while selected transitions use a short bounded text-model

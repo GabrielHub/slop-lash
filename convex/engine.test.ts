@@ -9,6 +9,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
+import { scoreMatchup } from "../src/games/sloplash/scoring";
 
 const modules = import.meta.glob("./**/*.ts");
 const TAB = "0123456789abcdef0123";
@@ -17,6 +18,7 @@ function setup() {
   const t = convexTest(schema, modules);
   presenceTest.register(t);
   workpoolTest.register(t, "aiGenerationWorkpool");
+  workpoolTest.register(t, "aiCriticalWorkpool");
   return t;
 }
 
@@ -136,7 +138,8 @@ describe("rooms", () => {
     await answerEverything(t, [host.capability, ana.capability]);
     expect((await room(t, host.capability)).phase).toBe("WRITING");
     await t.mutation(api.rooms.kick, { capability: host.capability, playerId: bo.playerId! });
-    expect((await room(t, host.capability)).phase).toBe("VOTING");
+    // Bo's unanswered prompts became walkovers, which are revealed before any vote.
+    expect((await room(t, host.capability)).phase).toBe("REVEAL");
 
     await expect(view(t, bo.capability)).rejects.toThrow();
     await expect(t.action(api.rooms.join, { roomCode: host.roomCode, name: "Bo" })).rejects.toThrow(
@@ -195,6 +198,28 @@ describe("SlopLash", () => {
     current = await view(t, host.capability);
     expect(current.room.phase).toBe("ROUND_RESULTS");
     expect(current.players.reduce((sum, player) => sum + player.score, 0)).toBeGreaterThan(0);
+    // Every vote is worth 100 in round 1, and a score is the sum of its answers' points.
+    const scored = await t.run(async (ctx) => ({
+      responses: await ctx.db.query("responses").take(20),
+      votes: await ctx.db.query("votes").take(20),
+    }));
+    for (const response of scored.responses) {
+      const siblings = scored.responses.filter((other) => other.promptId === response.promptId);
+      const score = scoreMatchup(
+        siblings.map((other) => ({ id: other._id, forfeited: other.text === FORFEIT_MARKER })),
+        scored.votes
+          .filter((vote) => vote.promptId === response.promptId)
+          .map((vote) => vote.responseId ?? null),
+        1,
+      );
+      expect(response.pointsEarned).toBe(score.points[response._id]);
+    }
+    for (const player of current.players) {
+      const earned = scored.responses
+        .filter((response) => response.playerId === player.id)
+        .reduce((sum, response) => sum + response.pointsEarned, 0);
+      expect(player.score).toBe(earned);
+    }
 
     await t.mutation(api.engine.advanceByHost, {
       capability: host.capability,
@@ -233,7 +258,7 @@ describe("SlopLash", () => {
     expect(await room(t, host.capability)).toEqual(after);
   });
 
-  test("skips voting when every matchup forfeited", async () => {
+  test("skips void matchups and goes straight to scores", async () => {
     const t = setup();
     const host = await createRoom(t);
     await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Ana" });
@@ -247,6 +272,9 @@ describe("SlopLash", () => {
     expect((await room(t, host.capability)).phase).toBe("ROUND_RESULTS");
     const responses = await t.run(async (ctx) => ctx.db.query("responses").take(20));
     expect(responses.every((response) => response.text === FORFEIT_MARKER)).toBe(true);
+    expect((await view(t, host.capability)).players.every((player) => player.score === 0)).toBe(
+      true,
+    );
   });
 
   test("deadlines advance the game without the host", async () => {

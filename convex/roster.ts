@@ -19,11 +19,27 @@ export const HOST_FAILOVER_MS = 30_000;
 
 export type Presence = Map<string, { online: boolean; lastDisconnected: number }>;
 
-/** A room by its code, typed however the player typed it. */
+/**
+ * A room's current game by its code, typed however the player typed it. A code
+ * is a chain of games (one per "Play again"); the newest one is live.
+ */
 export async function findGameByCode(ctx: DatabaseCtx, roomCode: string) {
   return ctx.db
     .query("games")
-    .withIndex("by_roomCode", (index) => index.eq("roomCode", normalizeRoomCodeValue(roomCode)))
+    .withIndex("by_roomCode_and_gameNumber", (index) =>
+      index.eq("roomCode", normalizeRoomCodeValue(roomCode)),
+    )
+    .order("desc")
+    .first();
+}
+
+/** One game of a room: 1 for the first, +1 for each "Play again". */
+export async function findGameByNumber(ctx: DatabaseCtx, roomCode: string, gameNumber: number) {
+  return ctx.db
+    .query("games")
+    .withIndex("by_roomCode_and_gameNumber", (index) =>
+      index.eq("roomCode", normalizeRoomCodeValue(roomCode)).eq("gameNumber", gameNumber),
+    )
     .unique();
 }
 
@@ -38,8 +54,6 @@ export async function insertPlayer(
     gameId,
     ...fields,
     score: 0,
-    humorRating: 1,
-    winStreak: 0,
     joinedAt: now,
   });
 }

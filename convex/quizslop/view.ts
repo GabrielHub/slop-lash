@@ -1,53 +1,40 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { loadActivePlayers } from "../roster";
 import {
-  callsOpen,
-  catalogQuestion,
+  presentedQuestion,
   catalogTopic,
   loadAnswers,
   loadCalls,
   loadDeckRound,
   loadHouseVotes,
   loadSeats,
+  previousGameQuestionIds,
+  staleTopicIds,
   type QuizslopPhase,
 } from "./mode";
 import { availableCatalogTopics } from "../../src/games/quizslop/catalog";
-import { getVoiceLinesForTag } from "../../src/games/quizslop/config/voice-lines";
-import { finalResults, quizPointsForRound } from "../../src/games/quizslop/scoring";
-import type { QuizslopCatalogTopic, QuizslopVoiceEventTag } from "../../src/games/quizslop/types";
-import { pickStable } from "../../src/games/quizslop/voice";
-
-type RoundKind = Doc<"quizSlopRounds">["kind"];
+import {
+  FINAL_SLATE_SIZE,
+  MAX_PLAYERS,
+  QUIZSLOP_REACTIONS,
+} from "../../src/games/quizslop/game-constants";
+import { callDecided, finalResults, quizPointsForRound } from "../../src/games/quizslop/scoring";
+import type { QuizslopCatalogTopic } from "../../src/games/quizslop/types";
 
 function publicTopic(topic: QuizslopCatalogTopic) {
-  return { id: topic.id, label: topic.label, scope: topic.scope, category: topic.category };
+  return { id: topic.id, label: topic.label };
 }
 
-function voiceTag(phase: QuizslopPhase | "LOBBY" | "FINAL", kind: RoundKind | undefined) {
-  const tags: Record<QuizslopPhase | "LOBBY" | "FINAL", QuizslopVoiceEventTag> = {
-    LOBBY: "LOBBY_SETUP",
-    TOPIC:
-      kind === "HOME_TURF"
-        ? "TOPIC_REVEAL_HOME_TURF"
-        : kind === "HOUSE_CHOICE"
-          ? "TOPIC_REVEAL_HOUSE_CHOICE"
-          : "TOPIC_REVEAL_WARM_UP",
-    CALL: "SLOP_CALL",
-    ANSWER: "ANSWER",
-    REVEAL: "QUESTION_REVEAL",
-    ROUND_RESULTS: "ROUND_RESULTS",
-    HOUSE_VOTE: "HOUSE_VOTE",
-    FINAL: "FINAL_RESULTS",
-  };
-  return tags[phase];
-}
-
-/** One line of game-show copy per phase, the same on every screen. */
-function voiceLine(game: Doc<"games">, kind: RoundKind | undefined) {
-  const lines = getVoiceLinesForTag(voiceTag(game.phase as QuizslopPhase, kind));
-  const line = pickStable(lines, `${game._id}:${game.phaseGeneration}`);
-  return line ? { text: line.text, accessibleLabel: line.accessibleLabel } : null;
+/**
+ * Topics a lobby may offer: every shippable topic, minus the ones this room
+ * played in its previous game (a rematch deals fresh questions).
+ */
+async function lobbyTopics(ctx: QueryCtx, game: Doc<"games">) {
+  const stale = staleTopicIds(await previousGameQuestionIds(ctx, game));
+  const topics = availableCatalogTopics();
+  const fresh = topics.filter((topic) => !stale.has(topic.id));
+  // Never strand a lobby: fall back to the whole catalog if a full deck can't be fresh.
+  return fresh.length >= MAX_PLAYERS + 1 + FINAL_SLATE_SIZE ? fresh : topics;
 }
 
 /**
@@ -59,19 +46,48 @@ export async function quizslopView(
   ctx: QueryCtx,
   game: Doc<"games">,
   viewerId: Id<"players"> | null,
+  /** Every player in the game, as the room view loaded them. */
+  allPlayers: Promise<Doc<"players">[]>,
 ) {
   const phase = game.phase as QuizslopPhase | "LOBBY" | "FINAL";
-  const [seats, round, answers, calls, houseVotes, players] = await Promise.all([
-    loadSeats(ctx, game._id),
-    game.round > 0 ? loadDeckRound(ctx, game._id, game.round) : null,
-    game.round > 0 ? loadAnswers(ctx, game._id, game.round) : [],
-    game.round > 0 ? loadCalls(ctx, game._id, game.round) : [],
-    phase === "HOUSE_VOTE" ? loadHouseVotes(ctx, game._id) : [],
-    phase === "TOPIC" ? loadActivePlayers(ctx, game._id) : [],
-  ]);
+  // The House Choice is always the deck's last round, so only it reads the votes.
+  const lastRound = game.round > 0 && game.round === game.totalRounds;
+  const [allSeats, round, answers, allCalls, players, offered, votes, reactions] =
+    await Promise.all([
+      loadSeats(ctx, game._id),
+      game.round > 0 ? loadDeckRound(ctx, game._id, game.round) : null,
+      game.round > 0 ? loadAnswers(ctx, game._id, game.round) : [],
+      game.round > 0 ? loadCalls(ctx, game._id, game.round) : [],
+      allPlayers,
+      game.status === "LOBBY" ? lobbyTopics(ctx, game) : null,
+      lastRound ? loadHouseVotes(ctx, game._id) : [],
+      // Only the step on screen: the stage floats new ones, the phone lights the viewer's own.
+      phase === "REVEAL"
+        ? ctx.db
+            .query("quizSlopReactions")
+            .withIndex("by_gameId_and_ordinal_and_step_and_playerId", (index) =>
+              index.eq("gameId", game._id).eq("ordinal", game.round).eq("step", game.step),
+            )
+            .take(MAX_PLAYERS * QUIZSLOP_REACTIONS.length)
+        : [],
+    ]);
+  const houseChoice = round?.kind === "HOUSE_CHOICE";
+  const houseVotes = houseChoice ? votes : [];
+
+  /** Every player in the game, kicked ones included, so old bets and reveals still name them. */
+  const names: Record<string, string> = Object.fromEntries(
+    players.map((player) => [player._id, player.name]),
+  );
+  const activeIds = new Set<string>(
+    players.filter((player) => player.kickedAt === undefined).map((player) => player._id),
+  );
+  const seats = allSeats.filter((seat) => activeIds.has(seat.playerId));
+  const calls = allCalls.filter((entry) => activeIds.has(entry.callerId));
 
   const claimedBy = new Map(
-    seats.flatMap((seat) => (seat.homeTopicId ? [[seat.homeTopicId, seat.playerId] as const] : [])),
+    allSeats.flatMap((seat) =>
+      seat.homeTopicId ? [[seat.homeTopicId, seat.playerId] as const] : [],
+    ),
   );
   const topic = catalogTopic(round?.topicId);
   const revealOrder = round?.revealQuestionIds ?? [];
@@ -83,31 +99,50 @@ export async function quizslopView(
         : 0;
   const settled = round?.settledAt !== undefined;
   const revealedIds = new Set(revealOrder.slice(0, revealedCount));
-  // A call is decided once its target's question is on screen (refunds wait for the round).
+  // A bet is decided once its target's question is on screen (refunds wait for the round).
   const callShown = (targetId: Id<"players">) => {
     const target = answers.find((answer) => answer.playerId === targetId);
     return settled || (target !== undefined && revealedIds.has(target.questionId));
   };
   const mine = answers.find((answer) => answer.playerId === viewerId);
-  const myQuestion = mine ? catalogQuestion(mine.questionId) : null;
-  const myCall = calls.find((entry) => entry.callerId === viewerId);
+  const myQuestion = mine ? presentedQuestion(game._id, mine.questionId) : null;
+  const myCall = allCalls.find((entry) => entry.callerId === viewerId);
+  const myRevealStep = mine ? revealOrder.indexOf(mine.questionId) : -1;
+  const slate = houseChoice
+    ? (round.finalistTopicIds ?? []).flatMap((id) => {
+        const candidate = catalogTopic(id);
+        return candidate ? [publicTopic(candidate)] : [];
+      })
+    : [];
+  const calledIds = new Set<string>(calls.map((entry) => entry.callerId));
+  // While bets are open, a spent token would tell a bettor from a passer: show everyone
+  // else's count from before this round's bet (the viewer still sees their own).
+  const betThisRound = new Set<string>(
+    phase === "CALL" ? allCalls.flatMap((entry) => (entry.targetId ? [entry.callerId] : [])) : [],
+  );
+  const publicTokens = (seat: Doc<"quizSlopSeats">) =>
+    seat.callTokens + (seat.playerId !== viewerId && betThisRound.has(seat.playerId) ? 1 : 0);
+  const tokensByPlayer = new Map<string, number>(
+    seats.map((seat) => [seat.playerId, seat.callTokens]),
+  );
+  // The bet phase asks whoever it would wait on, and keeps showing them once they decide.
+  const callEligible = (playerId: string) =>
+    calledIds.has(playerId) || !callDecided(false, tokensByPlayer.get(playerId) ?? 0);
 
   return {
     kind: "QUIZSLOP" as const,
-    voiceLine: voiceLine(game, round?.kind),
-    lobby:
-      game.status === "LOBBY"
-        ? {
-            topics: availableCatalogTopics().map((candidate) => ({
-              ...publicTopic(candidate),
-              claimedBy: claimedBy.get(candidate.id) ?? null,
-            })),
-          }
-        : null,
+    names,
+    lobby: offered
+      ? {
+          topics: offered.map((candidate) => ({
+            ...publicTopic(candidate),
+            claimedBy: claimedBy.get(candidate.id) ?? null,
+          })),
+        }
+      : null,
     seats: seats.map((seat) => ({
       playerId: seat.playerId,
-      homeTopic: catalogTopic(seat.homeTopicId)?.label ?? null,
-      callTokens: seat.callTokens,
+      callTokens: publicTokens(seat),
       quizPoints: seat.quizPoints,
       callPoints: seat.callPoints,
       correctAnswers: seat.correctAnswers,
@@ -118,7 +153,7 @@ export async function quizslopView(
       ? {
           ordinal: round.ordinal,
           kind: round.kind,
-          pointValue: quizPointsForRound(round.kind === "HOUSE_CHOICE"),
+          pointValue: quizPointsForRound(houseChoice),
           topic: topic ? publicTopic(topic) : null,
           ownerPlayerId: round.ownerPlayerId ?? null,
           settled,
@@ -134,23 +169,35 @@ export async function quizslopView(
             : [],
         }
       : null,
-    /** TOPIC only: whether Slop Calls open next (otherwise answers do). */
-    callsNext: phase === "TOPIC" && callsOpen(seats, players),
-    houseVote:
-      phase === "HOUSE_VOTE" && round
-        ? {
-            slate: (round.finalistTopicIds ?? []).flatMap((id) => {
-              const candidate = catalogTopic(id);
-              return candidate ? [publicTopic(candidate)] : [];
-            }),
-            votedPlayerIds: houseVotes.map((vote) => vote.voterId),
-            myVoteTopicId: houseVotes.find((vote) => vote.voterId === viewerId)?.topicId ?? null,
-          }
-        : null,
+    houseVote: houseChoice
+      ? {
+          slate,
+          votedPlayerIds: houseVotes.map((vote) => vote.voterId),
+          myVoteTopicId: houseVotes.find((vote) => vote.voterId === viewerId)?.topicId ?? null,
+          /** Who voted for what, once the vote closes; ties resolve by slate order. */
+          result:
+            phase === "HOUSE_VOTE"
+              ? null
+              : {
+                  winnerTopicId: round.topicId ?? null,
+                  votes: slate.map((entry) => ({
+                    topicId: entry.id,
+                    voterIds: houseVotes
+                      .filter((vote) => vote.topicId === entry.id)
+                      .map((vote) => vote.voterId),
+                  })),
+                },
+        }
+      : null,
     calls: {
-      /** Who has decided; targets stay secret until calls close. */
+      /** Who the bet phase asks: players with a bet left, or who already bet this round. */
+      eligiblePlayerIds: players
+        .filter((player) => activeIds.has(player._id) && callEligible(player._id))
+        .map((player) => player._id),
+      /** Who has decided; targets stay secret until bets close. */
       decidedPlayerIds: calls.map((entry) => entry.callerId),
       myCall: myCall ? { targetId: myCall.targetId ?? null } : null,
+      /** Bets only (passes are left out); a kicked target still resolves through `names`. */
       list:
         phase === "CALL"
           ? []
@@ -170,8 +217,11 @@ export async function quizslopView(
     answer:
       phase === "ANSWER"
         ? {
+            assignedPlayerIds: answers
+              .filter((answer) => activeIds.has(answer.playerId))
+              .map((answer) => answer.playerId),
             lockedPlayerIds: answers
-              .filter((answer) => answer.lockedAt !== undefined)
+              .filter((answer) => answer.lockedAt !== undefined && activeIds.has(answer.playerId))
               .map((answer) => answer.playerId),
             mine:
               mine && myQuestion
@@ -185,7 +235,7 @@ export async function quizslopView(
           }
         : null,
     reveal: revealOrder.slice(0, revealedCount).flatMap((questionId) => {
-      const question = catalogQuestion(questionId);
+      const question = presentedQuestion(game._id, questionId);
       if (!question) return [];
       return [
         {
@@ -194,7 +244,6 @@ export async function quizslopView(
           choices: [...question.choices],
           correctIndex: question.correctIndex,
           explanation: question.explanation,
-          sources: question.sources.map((source) => ({ title: source.title, url: source.url })),
           players: answers
             .filter((answer) => answer.questionId === questionId)
             .map((answer) => {
@@ -211,6 +260,16 @@ export async function quizslopView(
       ];
     }),
     revealTotal: revealOrder.length,
+    /** This reveal step's reactions, oldest first. */
+    reactions: reactions
+      .toSorted((left, right) => left._creationTime - right._creationTime)
+      .map((reaction) => ({
+        id: reaction._id,
+        emoji: reaction.emoji,
+        mine: reaction.playerId === viewerId,
+      })),
+    /** Which reveal step holds the viewer's question, or null if they had none. */
+    myRevealStep: myRevealStep === -1 ? null : myRevealStep,
     final: game.status === "FINISHED" ? finalResults(seats) : null,
   };
 }
