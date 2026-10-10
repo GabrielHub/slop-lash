@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
+import { z } from "zod";
 import { MOVE_TYPES, NEUTRAL_TRAITS } from "./vocab";
 import {
   ChampionSchema,
+  ForgeChampionSchema,
   ForgeResultSchema,
   armCount,
   balanceChampion,
@@ -17,6 +19,7 @@ import {
   stableStringify,
   validateChampion,
   type Champion,
+  type Marking,
   type Part,
 } from "./sheet";
 
@@ -76,9 +79,10 @@ const codes = (champion: Champion) => validateChampion(champion).map((problem) =
 describe("the example champion", () => {
   test("parses, validates and balances to itself", () => {
     expect(ChampionSchema.parse(LARRY)).toEqual(LARRY);
+    const forged = { ...LARRY, markings: [] };
     expect(
-      ForgeResultSchema.parse({ verdict: "FORGE", rejection: null, champion: LARRY }).champion,
-    ).toEqual(LARRY);
+      ForgeResultSchema.parse({ verdict: "FORGE", rejection: null, champion: forged }).champion,
+    ).toEqual(forged);
     expect(validateChampion(LARRY)).toEqual([]);
     expect(balanceChampion(LARRY)).toEqual(LARRY);
   });
@@ -98,6 +102,7 @@ describe("the example champion", () => {
       "bodyPlan",
       "palette",
       "parts",
+      "markings",
       "face",
       "item",
       "stats",
@@ -108,6 +113,94 @@ describe("the example champion", () => {
       "bio",
       "narration",
     ]);
+    expect(Object.keys(ForgeChampionSchema.shape)).toEqual(keys);
+  });
+});
+
+describe("markings", () => {
+  const painted = (markings: Marking[]): Champion => ({ ...clone(LARRY), markings });
+  const mask: Marking = { part: "head", kind: "mask", color: "secondary" };
+  const ringedTail: Marking = { part: "tail", kind: "stripes", color: "secondary" };
+
+  test("are optional on stored sheets and required from the model", () => {
+    expect(ChampionSchema.safeParse(LARRY).success).toBe(true);
+    expect(ChampionSchema.safeParse(painted([mask])).success).toBe(true);
+    expect(ForgeChampionSchema.safeParse(LARRY).success).toBe(false);
+    expect(ForgeResultSchema.safeParse({ verdict: "FORGE", rejection: null, champion: LARRY }).success).toBe(false);
+
+    const json = z.toJSONSchema(ForgeResultSchema) as unknown as {
+      properties: { champion: { anyOf: { type?: string; required?: string[]; properties?: object }[] } };
+    };
+    const champion = json.properties.champion.anyOf.find((option) => option.type === "object")!;
+    expect(champion.required).toContain("markings");
+    const order = Object.keys(champion.properties!);
+    expect(order[order.indexOf("parts") + 1]).toBe("markings");
+  });
+
+  test("a sheet without markings balances without the key, so its hash is unchanged", () => {
+    const balanced = balanceChampion(LARRY);
+    expect("markings" in balanced).toBe(false);
+    expect(championHash(balanced)).toBe(championHash(LARRY));
+  });
+
+  test("valid markings survive and balance idempotently", () => {
+    const sheet = painted([mask, ringedTail]);
+    expect(balanceChampion(sheet)).toEqual(sheet);
+    expect(balanceChampion(balanceChampion(sheet))).toEqual(sheet);
+    expect(balanceChampion(painted([])).markings).toEqual([]);
+    expect(championHash(sheet)).not.toBe(championHash(LARRY));
+  });
+
+  test("normalizes ids and drops unknown parts, own-colour paint and misplaced masks", () => {
+    const out = balanceChampion(
+      painted([
+        { part: "  head ", kind: "belly", color: "secondary" },
+        { part: "ghost", kind: "spots", color: "accent" },
+        { part: "torso", kind: "band", color: "primary" },
+        { part: "tail", kind: "mask", color: "secondary" },
+        { part: "torso", kind: "mask", color: "accent" },
+      ]),
+    ).markings;
+    expect(out).toEqual([
+      { part: "head", kind: "belly", color: "secondary" },
+      { part: "torso", kind: "mask", color: "accent" },
+    ]);
+  });
+
+  test("keeps the first marking per part and at most four, in input order", () => {
+    const out = balanceChampion(
+      painted([
+        { part: "tail", kind: "stripes", color: "secondary" },
+        { part: "tail", kind: "tip", color: "accent" },
+        { part: "head", kind: "mask", color: "secondary" },
+        { part: "torso", kind: "belly", color: "secondary" },
+        { part: "leg1", kind: "tip", color: "accent" },
+        { part: "leg2", kind: "tip", color: "accent" },
+      ]),
+    ).markings;
+    expect(out?.map((marking) => `${marking.part}:${marking.kind}`)).toEqual([
+      "tail:stripes",
+      "head:mask",
+      "torso:belly",
+      "leg1:tip",
+    ]);
+  });
+
+  test("suit and streak validate and balance like the other kinds", () => {
+    const sheet = painted([
+      { part: "torso", kind: "suit", color: "secondary" },
+      { part: "tail", kind: "streak", color: "secondary" },
+    ]);
+    expect(ChampionSchema.safeParse(sheet).success).toBe(true);
+    expect(ForgeChampionSchema.safeParse(sheet).success).toBe(true);
+    expect(balanceChampion(sheet)).toEqual(sheet);
+    expect(balanceChampion(balanceChampion(sheet))).toEqual(sheet);
+  });
+
+  test("markings on parts that balancing drops are dropped with them", () => {
+    const sheet = painted([{ part: "orphan", kind: "spots", color: "accent" }]);
+    sheet.parts.push(part("orphan", { parent: "nowhere-loop" }), part("nowhere-loop", { parent: "orphan" }));
+    expect(balanceChampion(sheet).markings).toEqual([]);
   });
 });
 
@@ -395,7 +488,7 @@ describe("validateChampion", () => {
     expect(
       forgeResultProblems({ verdict: "REJECT", rejection: { reason: "A blank page.", suggestion: "Draw a creature." }, champion: null }),
     ).toEqual([]);
-    expect(forgeResultProblems({ verdict: "FORGE", rejection: null, champion: LARRY })).toEqual([]);
+    expect(forgeResultProblems({ verdict: "FORGE", rejection: null, champion: { ...LARRY, markings: [] } })).toEqual([]);
   });
 });
 

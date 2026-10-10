@@ -4,6 +4,8 @@ import {
   ERASER_INDEX,
   EYE_STYLE_INFO,
   EYE_STYLES,
+  MARKING_INFO,
+  MARKING_KINDS,
   MOUTH_STYLE_INFO,
   MOUTH_STYLES,
   NEUTRAL_TRAITS,
@@ -123,5 +125,36 @@ describe("face and props", () => {
     expect(PROP_TAGS.length).toBeGreaterThanOrEqual(25);
     expect(new Set(PROP_TAGS).size).toBe(PROP_TAGS.length);
     for (const tag of PROP_TAGS) expect(PROP_INFO[tag].description.length).toBeGreaterThan(5);
+  });
+});
+
+describe("markings", () => {
+  test("every marking kind is described for the prompt", () => {
+    expect(new Set(MARKING_KINDS).size).toBe(MARKING_KINDS.length);
+    expect(Object.keys(MARKING_INFO).sort()).toEqual([...MARKING_KINDS].sort());
+    for (const kind of MARKING_KINDS) expect(MARKING_INFO[kind].length).toBeGreaterThan(5);
+  });
+
+  test("clothing kinds are appended, so older sheets keep validating", () => {
+    expect(MARKING_KINDS.slice(0, 7)).toEqual(["stripes", "spots", "band", "belly", "mask", "tip", "panel"]);
+    expect(MARKING_KINDS.slice(7)).toEqual(["suit", "streak"]);
+    expect(MARKING_INFO.suit).toContain("tie");
+    expect(MARKING_INFO.streak).toContain("length");
+  });
+
+  test("the lines never name a held-out probe subject", () => {
+    const text = Object.values(MARKING_INFO).join(" ").toLowerCase();
+    for (const subject of [
+      "skunk",
+      "flamingo",
+      "cheetah",
+      "panda",
+      "chicken",
+      "vending",
+      "hedgehog",
+      "goldfish",
+    ]) {
+      expect(text).not.toContain(subject);
+    }
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
+import { getConvexSize } from "convex/values";
+import { CHAMPIONS, POINTS_PER_DOODLE, STROKES_PER_DOODLE } from "./constants";
 import {
   StrokeBatchSchema,
   StrokeSchema,
@@ -9,6 +11,9 @@ import {
   simplifyStroke,
   strokeBounds,
   strokeRoom,
+  doodleRoom,
+  fitDoodleStroke,
+  strokePointCount,
   strokesByLayer,
   takeStrokeBatch,
   type Stroke,
@@ -17,6 +22,43 @@ import {
 
 const ink = (p: number[], c: Stroke["c"] = 0): Stroke => ({ c, w: 1, p });
 const eraser = (p: number[]): Stroke => ({ c: 6, w: 1, p });
+
+test("the drawing budget clips the last stroke and frees room after undo or clear", () => {
+  const saved = [ink(Array.from({ length: (POINTS_PER_DOODLE - 1) * 2 }, () => 500))];
+  const final = fitDoodleStroke(saved, ink([0, 0, 100, 100, 200, 200]));
+  expect(final?.p).toEqual([0, 0]);
+  const full = [...saved, final!];
+  expect(doodleRoom(full).points).toBe(0);
+  expect(fitDoodleStroke(full, ink([10, 10]))).toBeNull();
+  expect(doodleRoom(full.slice(0, -1)).points).toBe(1);
+  expect(doodleRoom([]).points).toBe(POINTS_PER_DOODLE);
+  expect(
+    fitDoodleStroke(
+      Array.from({ length: STROKES_PER_DOODLE }, () => ink([0, 0])),
+      ink([10, 10]),
+    ),
+  ).toBeNull();
+});
+
+test("every champion's three full layers fit well below Convex's 16 MiB read and return limits", () => {
+  const pointsPerStroke = POINTS_PER_DOODLE / STROKES_PER_DOODLE;
+  const stroke = ink(Array.from({ length: pointsPerStroke * 2 }, () => 1000));
+  const rows = Array.from({ length: CHAMPIONS * 3 * STROKES_PER_DOODLE }, (_, seq) => ({
+    _id: "r".repeat(64),
+    _creationTime: 0,
+    gameId: "g".repeat(64),
+    fighterId: "f".repeat(64),
+    layer: 3,
+    seq,
+    total: STROKES_PER_DOODLE,
+    strokes: [stroke],
+  }));
+  expect(strokePointCount(rows.map((row) => row.strokes[0]!))).toBe(
+    CHAMPIONS * 3 * POINTS_PER_DOODLE,
+  );
+  // Leave at least half the transaction/response budget for sheets and room data.
+  expect(getConvexSize(rows)).toBeLessThan(8 * 1024 * 1024);
+});
 
 /** Samples a circle with polynomial-free math: a polygon walked by rotating a vector. */
 function circle(cx: number, cy: number, r: number, samples: number): number[] {
@@ -51,7 +93,9 @@ describe("stroke validation", () => {
   test("batches hold one to eight strokes", () => {
     expect(StrokeBatchSchema.safeParse([ink([1, 1])]).success).toBe(true);
     expect(StrokeBatchSchema.safeParse([]).success).toBe(false);
-    expect(StrokeBatchSchema.safeParse(Array.from({ length: 9 }, () => ink([1, 1]))).success).toBe(false);
+    expect(StrokeBatchSchema.safeParse(Array.from({ length: 9 }, () => ink([1, 1]))).success).toBe(
+      false,
+    );
   });
 });
 
@@ -69,7 +113,9 @@ describe("simplifyStroke", () => {
   });
 
   test("keeps any stroke within 256 points, as valid integers, endpoints intact", () => {
-    const wobbly = circle(500, 500, 400, 4000).map((value, index) => value + ((index * 7919) % 13) - 6);
+    const wobbly = circle(500, 500, 400, 4000).map(
+      (value, index) => value + ((index * 7919) % 13) - 6,
+    );
     const out = simplifyStroke(wobbly);
     expect(out.length / 2).toBeLessThanOrEqual(256);
     expect(out.length / 2).toBeGreaterThan(8);
@@ -107,7 +153,9 @@ describe("isBlankDoodle", () => {
     expect(isBlankDoodle([ink(circle(500, 500, 15, 24).map(Math.round))])).toBe(true);
     expect(isBlankDoodle([eraser([100, 100, 900, 900])])).toBe(true);
     const scribble = ink([300, 300, 700, 300, 700, 700, 300, 700]);
-    const wipe = Array.from({ length: 30 }, (_, row) => eraser([250, 250 + row * 17, 750, 250 + row * 17]));
+    const wipe = Array.from({ length: 30 }, (_, row) =>
+      eraser([250, 250 + row * 17, 750, 250 + row * 17]),
+    );
     expect(isBlankDoodle([scribble])).toBe(false);
     expect(isBlankDoodle([scribble, ...wipe])).toBe(true);
   });

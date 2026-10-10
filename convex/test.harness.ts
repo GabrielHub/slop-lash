@@ -6,6 +6,7 @@ import { convexTest } from "convex-test";
 import { vi } from "vite-plus/test";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { drainScheduled } from "./test.scheduler";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -26,13 +27,13 @@ export async function view(t: Backend, capability: string) {
 
 /** Runs every scheduled function and job, jumping the clock as far as they need. */
 export async function drainJobs(t: Backend) {
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await drainScheduled(t);
 }
 
 /** Runs what is due within `ms` without jumping to later timers (e.g. the watchdog). */
 export async function runFor(t: Backend, ms: number, step = 100) {
   for (let elapsed = 0; elapsed < ms; elapsed += step) {
-    vi.advanceTimersByTime(step);
+    await vi.advanceTimersByTimeAsync(step);
     await t.finishInProgressScheduledFunctions();
   }
 }

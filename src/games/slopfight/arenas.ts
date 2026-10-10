@@ -155,8 +155,8 @@ export const ARENAS: Readonly<Record<ArenaId, Arena>> = {
       {
         id: "liveWires",
         title: "Live Wires",
-        card: "Electric fighters shock themselves for 15 on every hit they take.",
-        rules: [{ when: { trait: "electric" }, effects: [{ key: "selfDamageOnHitTaken", value: 15 }] }],
+        card: "Electric fighters shock themselves for 5 on every hit they take.",
+        rules: [{ when: { trait: "electric" }, effects: [{ key: "selfDamageOnHitTaken", value: 5 }] }],
         dynamic: null,
       },
       {

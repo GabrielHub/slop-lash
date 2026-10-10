@@ -409,8 +409,8 @@ export const TRAIT_EFFECTS: Readonly<Record<Trait, TraitEffect>> = {
   frosty: { effects: [foe("speed", -8), { key: "speed", value: -5 }] },
   explosive: {
     effects: [
-      { key: "knockbackDealt", value: 25 },
-      { key: "selfDamageOnHitTaken", value: 6 },
+      { key: "knockbackDealt", value: 20 },
+      { key: "selfDamageOnHitTaken", value: 2 },
     ],
   },
   rubbery: {

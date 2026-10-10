@@ -36,6 +36,17 @@ export const heartbeat = mutation({
 });
 
 /**
+ * The server clock alone, for a screen with no seat (a TV opened at
+ * /stage/CODE). It has no heartbeat, but its countdowns and SlopFight's
+ * replayed fights must still run on the server's clock, not the device's.
+ */
+export const clock = mutation({
+  args: {},
+  returns: v.object({ serverNow: v.number() }),
+  handler: async () => ({ serverNow: Date.now() }),
+});
+
+/**
  * Marks a tab as gone. Takes only the opaque token so `navigator.sendBeacon`
  * can call it while the page unloads.
  */

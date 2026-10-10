@@ -42,6 +42,8 @@ const narrationEventType = v.union(
   v.literal("vote_result"),
   v.literal("round_over"),
   v.literal("next_round"),
+  // SlopFight's Voice: lines are written client-side and spoken verbatim.
+  v.literal("slopfight_line"),
 );
 
 function resolveVoice(voice: string, gameId: string): string {

@@ -42,6 +42,8 @@ export const MIN_MOVE_TYPES = 2;
 export const TRAITS_MIN = 2;
 export const TRAITS_MAX = 4;
 export const PARTS_MAX = 40;
+/** Painted markings per champion (at most one per part). */
+export const MARKINGS_MAX = 4;
 /** maxHealth = HEALTH_BASE + HEALTH_PER_HEFT * heft. */
 export const HEALTH_BASE = 80;
 export const HEALTH_PER_HEFT = 10;
@@ -73,6 +75,8 @@ export const STROKE_COALESCE_MS = 250;
 export const STROKES_PER_BATCH = 8;
 export const POINTS_PER_STROKE = 256;
 export const STROKES_PER_DOODLE = 400;
+/** Across one layer: bounds all four champions' three-layer recap below Convex's read/return limits. */
+export const POINTS_PER_DOODLE = 25_600;
 /** Stroke coordinates are integers in a 0..STROKE_GRID square. */
 export const STROKE_GRID = 1000;
 

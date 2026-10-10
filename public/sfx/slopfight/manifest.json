@@ -1,0 +1,485 @@
+{
+  "sampleRate": 44100,
+  "kbps": 96,
+  "loopPre": 4096,
+  "loopPost": 4096,
+  "sounds": [
+    {
+      "name": "ui-tap",
+      "group": "UI",
+      "file": "ui-tap.mp3",
+      "seconds": 0.07,
+      "bytes": 1254,
+      "lufs": -24,
+      "peakDb": -5.5,
+      "loop": null
+    },
+    {
+      "name": "ui-confirm",
+      "group": "UI",
+      "file": "ui-confirm.mp3",
+      "seconds": 0.6473,
+      "bytes": 8150,
+      "lufs": -21,
+      "peakDb": -11.1,
+      "loop": null
+    },
+    {
+      "name": "ui-tick",
+      "group": "UI",
+      "file": "ui-tick.mp3",
+      "seconds": 0.09,
+      "bytes": 1567,
+      "lufs": -24,
+      "peakDb": -3.4,
+      "loop": null
+    },
+    {
+      "name": "ui-bet",
+      "group": "UI",
+      "file": "ui-bet.mp3",
+      "seconds": 0.7477,
+      "bytes": 9404,
+      "lufs": -20,
+      "peakDb": -12,
+      "loop": null
+    },
+    {
+      "name": "ui-hype",
+      "group": "UI",
+      "file": "ui-hype.mp3",
+      "seconds": 0.62,
+      "bytes": 7837,
+      "lufs": -19,
+      "peakDb": -8,
+      "loop": null
+    },
+    {
+      "name": "foundry-pop-1",
+      "group": "Foundry",
+      "file": "foundry-pop-1.mp3",
+      "seconds": 0.1679,
+      "bytes": 2508,
+      "lufs": -19,
+      "peakDb": -3.5,
+      "loop": null
+    },
+    {
+      "name": "foundry-pop-2",
+      "group": "Foundry",
+      "file": "foundry-pop-2.mp3",
+      "seconds": 0.1677,
+      "bytes": 2508,
+      "lufs": -19,
+      "peakDb": -4.1,
+      "loop": null
+    },
+    {
+      "name": "foundry-pop-3",
+      "group": "Foundry",
+      "file": "foundry-pop-3.mp3",
+      "seconds": 0.1717,
+      "bytes": 2508,
+      "lufs": -19,
+      "peakDb": -3.1,
+      "loop": null
+    },
+    {
+      "name": "foundry-inflate",
+      "group": "Foundry",
+      "file": "foundry-inflate.mp3",
+      "seconds": 0.55,
+      "bytes": 7210,
+      "lufs": -21,
+      "peakDb": -15,
+      "loop": null
+    },
+    {
+      "name": "foundry-ding",
+      "group": "Foundry",
+      "file": "foundry-ding.mp3",
+      "seconds": 1.1056,
+      "bytes": 13793,
+      "lufs": -19,
+      "peakDb": -10.8,
+      "loop": null
+    },
+    {
+      "name": "foundry-shimmer",
+      "group": "Foundry",
+      "file": "foundry-shimmer.mp3",
+      "seconds": 1.8929,
+      "bytes": 23197,
+      "lufs": -21,
+      "peakDb": -12.7,
+      "loop": null
+    },
+    {
+      "name": "loop-foundry-conveyor",
+      "group": "Foundry",
+      "file": "loop-foundry-conveyor.mp3",
+      "seconds": 4.1858,
+      "bytes": 50782,
+      "lufs": -27,
+      "peakDb": -14,
+      "loop": {
+        "start": 0.09288,
+        "end": 4.09288
+      }
+    },
+    {
+      "name": "fight-strike-1",
+      "group": "Fight",
+      "file": "fight-strike-1.mp3",
+      "seconds": 0.3154,
+      "bytes": 4389,
+      "lufs": -16.3,
+      "peakDb": -4.5,
+      "loop": null
+    },
+    {
+      "name": "fight-strike-2",
+      "group": "Fight",
+      "file": "fight-strike-2.mp3",
+      "seconds": 0.3174,
+      "bytes": 4389,
+      "lufs": -16,
+      "peakDb": -4.5,
+      "loop": null
+    },
+    {
+      "name": "fight-strike-3",
+      "group": "Fight",
+      "file": "fight-strike-3.mp3",
+      "seconds": 0.44,
+      "bytes": 5642,
+      "lufs": -14.1,
+      "peakDb": -4.5,
+      "loop": null
+    },
+    {
+      "name": "fight-grapple-lift",
+      "group": "Fight",
+      "file": "fight-grapple-lift.mp3",
+      "seconds": 0.4228,
+      "bytes": 5642,
+      "lufs": -19,
+      "peakDb": -10.3,
+      "loop": null
+    },
+    {
+      "name": "fight-grapple-slam",
+      "group": "Fight",
+      "file": "fight-grapple-slam.mp3",
+      "seconds": 0.8743,
+      "bytes": 10971,
+      "lufs": -13,
+      "peakDb": -6.1,
+      "loop": null
+    },
+    {
+      "name": "fight-trick-whiff",
+      "group": "Fight",
+      "file": "fight-trick-whiff.mp3",
+      "seconds": 0.28,
+      "bytes": 3762,
+      "lufs": -19,
+      "peakDb": -3.7,
+      "loop": null
+    },
+    {
+      "name": "fight-trick-bonk",
+      "group": "Fight",
+      "file": "fight-trick-bonk.mp3",
+      "seconds": 0.4422,
+      "bytes": 5642,
+      "lufs": -16,
+      "peakDb": -4.3,
+      "loop": null
+    },
+    {
+      "name": "fight-slowmo",
+      "group": "Fight",
+      "file": "fight-slowmo.mp3",
+      "seconds": 1.5422,
+      "bytes": 19122,
+      "lufs": -18,
+      "peakDb": -6,
+      "loop": null
+    },
+    {
+      "name": "fight-thud-1",
+      "group": "Fight",
+      "file": "fight-thud-1.mp3",
+      "seconds": 0.4,
+      "bytes": 5329,
+      "lufs": -16,
+      "peakDb": -4.8,
+      "loop": null
+    },
+    {
+      "name": "fight-thud-2",
+      "group": "Fight",
+      "file": "fight-thud-2.mp3",
+      "seconds": 0.3996,
+      "bytes": 5329,
+      "lufs": -16,
+      "peakDb": -4.5,
+      "loop": null
+    },
+    {
+      "name": "fight-boing",
+      "group": "Fight",
+      "file": "fight-boing.mp3",
+      "seconds": 0.7,
+      "bytes": 8777,
+      "lufs": -18,
+      "peakDb": -6.5,
+      "loop": null
+    },
+    {
+      "name": "fight-crunch",
+      "group": "Fight",
+      "file": "fight-crunch.mp3",
+      "seconds": 0.1876,
+      "bytes": 2821,
+      "lufs": -17,
+      "peakDb": -2.2,
+      "loop": null
+    },
+    {
+      "name": "fight-edge-alarm",
+      "group": "Fight",
+      "file": "fight-edge-alarm.mp3",
+      "seconds": 0.8989,
+      "bytes": 11285,
+      "lufs": -19,
+      "peakDb": -12.6,
+      "loop": null
+    },
+    {
+      "name": "fight-ringout-scream",
+      "group": "Fight",
+      "file": "fight-ringout-scream.mp3",
+      "seconds": 2,
+      "bytes": 24451,
+      "lufs": -17,
+      "peakDb": -12.6,
+      "loop": null
+    },
+    {
+      "name": "land-splash",
+      "group": "Fight",
+      "file": "land-splash.mp3",
+      "seconds": 0.9884,
+      "bytes": 12225,
+      "lufs": -15.2,
+      "peakDb": -1.5,
+      "loop": null
+    },
+    {
+      "name": "land-clang",
+      "group": "Fight",
+      "file": "land-clang.mp3",
+      "seconds": 0.9537,
+      "bytes": 11912,
+      "lufs": -15,
+      "peakDb": -1.8,
+      "loop": null
+    },
+    {
+      "name": "land-thud",
+      "group": "Fight",
+      "file": "land-thud.mp3",
+      "seconds": 0.7172,
+      "bytes": 9091,
+      "lufs": -15,
+      "peakDb": -7.1,
+      "loop": null
+    },
+    {
+      "name": "fight-ko",
+      "group": "Fight",
+      "file": "fight-ko.mp3",
+      "seconds": 1.6295,
+      "bytes": 20062,
+      "lufs": -13,
+      "peakDb": -4.6,
+      "loop": null
+    },
+    {
+      "name": "fight-win",
+      "group": "Fight",
+      "file": "fight-win.mp3",
+      "seconds": 2.236,
+      "bytes": 27272,
+      "lufs": -15,
+      "peakDb": -2.3,
+      "loop": null
+    },
+    {
+      "name": "fight-lose",
+      "group": "Fight",
+      "file": "fight-lose.mp3",
+      "seconds": 2.847,
+      "bytes": 34482,
+      "lufs": -16,
+      "peakDb": -6.5,
+      "loop": null
+    },
+    {
+      "name": "crowd-cheer",
+      "group": "Fight",
+      "file": "crowd-cheer.mp3",
+      "seconds": 2.6,
+      "bytes": 31660,
+      "lufs": -16,
+      "peakDb": -4.4,
+      "loop": null
+    },
+    {
+      "name": "crowd-gasp",
+      "group": "Fight",
+      "file": "crowd-gasp.mp3",
+      "seconds": 1,
+      "bytes": 12539,
+      "lufs": -18,
+      "peakDb": -6.9,
+      "loop": null
+    },
+    {
+      "name": "loop-crowd-murmur",
+      "group": "Fight",
+      "file": "loop-crowd-murmur.mp3",
+      "seconds": 8.1858,
+      "bytes": 98743,
+      "lufs": -28,
+      "peakDb": -14.9,
+      "loop": {
+        "start": 0.09288,
+        "end": 8.09288
+      }
+    },
+    {
+      "name": "trans-slam",
+      "group": "Transitions",
+      "file": "trans-slam.mp3",
+      "seconds": 0.9421,
+      "bytes": 11912,
+      "lufs": -14,
+      "peakDb": -6.6,
+      "loop": null
+    },
+    {
+      "name": "trans-wipe",
+      "group": "Transitions",
+      "file": "trans-wipe.mp3",
+      "seconds": 0.62,
+      "bytes": 7837,
+      "lufs": -19,
+      "peakDb": -5.5,
+      "loop": null
+    },
+    {
+      "name": "trans-letterbox",
+      "group": "Transitions",
+      "file": "trans-letterbox.mp3",
+      "seconds": 0.3012,
+      "bytes": 4075,
+      "lufs": -20.1,
+      "peakDb": -1.5,
+      "loop": null
+    },
+    {
+      "name": "loop-amb-garage",
+      "group": "Ambience",
+      "file": "loop-amb-garage.mp3",
+      "seconds": 8.1858,
+      "bytes": 98743,
+      "lufs": -29,
+      "peakDb": -10.8,
+      "loop": {
+        "start": 0.09288,
+        "end": 8.09288
+      }
+    },
+    {
+      "name": "loop-amb-kitchen",
+      "group": "Ambience",
+      "file": "loop-amb-kitchen.mp3",
+      "seconds": 8.1858,
+      "bytes": 98743,
+      "lufs": -29,
+      "peakDb": -14.8,
+      "loop": {
+        "start": 0.09288,
+        "end": 8.09288
+      }
+    },
+    {
+      "name": "loop-amb-rooftop",
+      "group": "Ambience",
+      "file": "loop-amb-rooftop.mp3",
+      "seconds": 8.1858,
+      "bytes": 98743,
+      "lufs": -29,
+      "peakDb": -13.5,
+      "loop": {
+        "start": 0.09288,
+        "end": 8.09288
+      }
+    },
+    {
+      "name": "loop-music-build",
+      "group": "Music",
+      "file": "loop-music-build.mp3",
+      "seconds": 9.0746,
+      "bytes": 109401,
+      "lufs": -20,
+      "peakDb": -3,
+      "loop": {
+        "start": 0.09288,
+        "end": 8.981769
+      }
+    },
+    {
+      "name": "loop-music-foundry",
+      "group": "Music",
+      "file": "loop-music-foundry.mp3",
+      "seconds": 9.7858,
+      "bytes": 117865,
+      "lufs": -20,
+      "peakDb": -7.2,
+      "loop": {
+        "start": 0.09288,
+        "end": 9.69288
+      }
+    },
+    {
+      "name": "loop-music-fight",
+      "group": "Music",
+      "file": "loop-music-fight.mp3",
+      "seconds": 12.1858,
+      "bytes": 146704,
+      "lufs": -20,
+      "peakDb": -5.3,
+      "loop": {
+        "start": 0.09288,
+        "end": 12.09288
+      }
+    },
+    {
+      "name": "loop-music-result",
+      "group": "Music",
+      "file": "loop-music-result.mp3",
+      "seconds": 9.7858,
+      "bytes": 117865,
+      "lufs": -20,
+      "peakDb": -4.8,
+      "loop": {
+        "start": 0.09288,
+        "end": 9.69288
+      }
+    }
+  ]
+}

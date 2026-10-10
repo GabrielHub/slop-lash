@@ -45,8 +45,13 @@ export interface RoomContextValue {
 
 const RoomContext = createContext<RoomContextValue | null>(null);
 
+/** The dev labs can provide scene data without mounting a live room. */
+export function useOptionalRoom(): RoomContextValue | null {
+  return useContext(RoomContext);
+}
+
 export function useRoom(): RoomContextValue {
-  const room = useContext(RoomContext);
+  const room = useOptionalRoom();
   if (!room) throw new Error("useRoom must be used inside a room");
   return room;
 }
@@ -197,7 +202,7 @@ export function RoomProvider({
   const seated = useQuery(api.views.room, capability ? { capability } : "skip");
   const watching = useQuery(api.views.watch, capability ? "skip" : { roomCode });
   const view = capability ? seated : watching;
-  const clockOffsetMs = useRoomPresence(capability, capability ? (view?.room.id ?? null) : null);
+  const clockOffsetMs = useRoomPresence(capability, view?.room.id ?? null);
   const run = useCallback<RoomRunner>(
     (mutation, args) =>
       capability

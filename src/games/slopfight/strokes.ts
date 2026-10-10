@@ -7,6 +7,7 @@
 import { z } from "zod";
 import {
   POINTS_PER_STROKE,
+  POINTS_PER_DOODLE,
   STROKE_COALESCE_MS,
   STROKE_GRID,
   STROKES_PER_BATCH,
@@ -107,7 +108,11 @@ function countTrue(flags: readonly boolean[]): number {
 }
 
 /** Iterative Douglas-Peucker over point-to-segment distance (closed loops work). */
-function douglasPeucker(xs: readonly number[], ys: readonly number[], tolerance2: number): boolean[] {
+function douglasPeucker(
+  xs: readonly number[],
+  ys: readonly number[],
+  tolerance2: number,
+): boolean[] {
   const last = xs.length - 1;
   const keep = xs.map((_, index) => index === 0 || index === last);
   const stack: [number, number][] = [[0, last]];
@@ -116,7 +121,14 @@ function douglasPeucker(xs: readonly number[], ys: readonly number[], tolerance2
     let farthest = -1;
     let farthest2 = tolerance2;
     for (let index = start + 1; index < end; index += 1) {
-      const d2 = segmentDistance2(xs[index]!, ys[index]!, xs[start]!, ys[start]!, xs[end]!, ys[end]!);
+      const d2 = segmentDistance2(
+        xs[index]!,
+        ys[index]!,
+        xs[start]!,
+        ys[start]!,
+        xs[end]!,
+        ys[end]!,
+      );
       if (d2 > farthest2) {
         farthest2 = d2;
         farthest = index;
@@ -141,7 +153,8 @@ function segmentDistance2(
   const dx = bx - ax;
   const dy = by - ay;
   const length2 = dx * dx + dy * dy;
-  const t = length2 === 0 ? 0 : Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / length2));
+  const t =
+    length2 === 0 ? 0 : Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / length2));
   const ex = ax + t * dx - px;
   const ey = ay + t * dy - py;
   return ex * ex + ey * ey;
@@ -218,7 +231,13 @@ export function isBlankDoodle(strokes: readonly Stroke[]): boolean {
       const length = Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
       const steps = Math.max(1, Math.ceil(length / (CELL / 2)));
       for (let step = 1; step <= steps; step += 1) {
-        stamp(grid, x0 + ((x1 - x0) * step) / steps, y0 + ((y1 - y0) * step) / steps, radius, value);
+        stamp(
+          grid,
+          x0 + ((x1 - x0) * step) / steps,
+          y0 + ((y1 - y0) * step) / steps,
+          radius,
+          value,
+        );
       }
     }
   }
@@ -288,6 +307,26 @@ export function flattenStrokes(
 /** How many more strokes a layer can take (STROKES_PER_DOODLE per layer). */
 export function strokeRoom(layerStrokeCount: number): number {
   return Math.max(0, STROKES_PER_DOODLE - layerStrokeCount);
+}
+
+/** Saved polyline points (each point is an x/y pair), shared by phone and server. */
+export function strokePointCount(strokes: readonly { p: readonly number[] }[]): number {
+  return strokes.reduce((count, stroke) => count + stroke.p.length / 2, 0);
+}
+
+/** Capacity left on this layer. Earlier upgrade layers have their own allowance. */
+export function doodleRoom(strokes: readonly { p: readonly number[] }[]) {
+  return {
+    strokes: strokeRoom(strokes.length),
+    points: Math.max(0, POINTS_PER_DOODLE - strokePointCount(strokes)),
+  };
+}
+
+/** Stops the last local stroke at the same budget the server enforces. */
+export function fitDoodleStroke(strokes: readonly Stroke[], stroke: Stroke): Stroke | null {
+  const room = doodleRoom(strokes);
+  if (room.strokes === 0 || room.points === 0) return null;
+  return { ...stroke, p: stroke.p.slice(0, room.points * 2) };
 }
 
 /**

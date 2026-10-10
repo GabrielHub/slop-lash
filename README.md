@@ -2,7 +2,20 @@
 
 Slop-Lash is a comedy party game where humans and AI models write responses,
 vote, react, and compete live in shared rooms. The repository also contains
-MatchSlop and QuizSlop modes built on the same room platform.
+MatchSlop, QuizSlop, and SlopFight modes built on the same room platform.
+
+## SlopFight
+
+Two to four players draw or describe a champion on their phones, then watch
+their creations fight on a shared 3D stage. House champions fill the four
+seats. Six fights span three arenas, with drawing or text upgrades between
+rounds, betting, audience hype, a podium, and replayable results.
+
+The server freezes each matchup and computes its deterministic outcome. The
+TV replays that simulation and verifies its hash; phone controllers load no
+Three.js or Rapier. Free Play supports the full game without narration.
+See the [game specification](docs/plans/slopfight.md) and
+[integration runbook](scripts/slopfight/e2e/README.md).
 
 ## How Slop-Lash Works
 

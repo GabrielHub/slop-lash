@@ -1,0 +1,126 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves the recorded outcomes and playback across simulation refactors 1`] = `
+[
+  {
+    "fight": "raccoon-lawyer/octopus/FLOODED_GARAGE/1",
+    "outcome": "b0477b6f937cc3509bb6e2b38e8ac15353d6a5cb91f167182cc5aed3cde642dc",
+    "playback": "e55e3cc41406e493f552fa81452659729407ff86bffe04402ec37927e4fa9134",
+  },
+  {
+    "fight": "raccoon-lawyer/octopus/FLOODED_GARAGE/77",
+    "outcome": "21f81481b06ace170914b029efd8f96503a098c3478c5ef5c5a7f398f097ba6d",
+    "playback": "632f06a6ff52508e483acd464673dec4e11181e569fef41e0c4c1429f635f2d2",
+  },
+  {
+    "fight": "raccoon-lawyer/octopus/KITCHEN_COUNTER/1",
+    "outcome": "9860bac258730b06bed203939b011999ff287d8b45924263e2476f7ce3bc657f",
+    "playback": "4f014c5826ab6c5327f21d22aa21256a3c72f6ac53f9e68bff55424c85b9a38d",
+  },
+  {
+    "fight": "raccoon-lawyer/octopus/KITCHEN_COUNTER/77",
+    "outcome": "08a0129aa0ee30e02baac8d3c8ecb785b695a33c759b12c09b7f99399397fd49",
+    "playback": "4dd90dd03047281e6937cf18b9e26ecd0c2acba8b3b867fa03a4411e4f5e9a4b",
+  },
+  {
+    "fight": "raccoon-lawyer/octopus/ROOFTOP/1",
+    "outcome": "e68621757d943ce63209674ec2a8893cf26e7dec1919b8432b5bd1b34fb262fd",
+    "playback": "47d6cd86e4418a6f40249d4c78ff0db264e943764ff3a7fe981f778a1fe7f0ad",
+  },
+  {
+    "fight": "raccoon-lawyer/octopus/ROOFTOP/77",
+    "outcome": "bddae43f98c04df984aba33e29cc2bc2807d4d5f3bf8953e4f7be1a15a1330b5",
+    "playback": "8e8a5eb4424c6fd440a714fe959f10637b64b68c98224ed68a7cd5e3dce2d29c",
+  },
+  {
+    "fight": "potato-googly/storm-cloud/FLOODED_GARAGE/1",
+    "outcome": "63edd551de93ada28054a9dc165016203f6aa0e8b532a0ba43e9e0003bf4257f",
+    "playback": "2f97ebad32bb6789951c169026bbb29386adbd7240900af5aa3d712376cbc9d8",
+  },
+  {
+    "fight": "potato-googly/storm-cloud/FLOODED_GARAGE/77",
+    "outcome": "d87ecf2e93ff75f73363e27cb0e40c181cbbf42686cc82ba36e4fc3ba34e12b2",
+    "playback": "7a30827dd875138df70bf70480fe1019abb3d77007b33e3d3f8b8fda59a76168",
+  },
+  {
+    "fight": "potato-googly/storm-cloud/KITCHEN_COUNTER/1",
+    "outcome": "27f97246e352a110e1b05e93820162d672851d41edf049723f8ea25aa006c43e",
+    "playback": "c40310f9678f1e78b25c7facfa8acc81ad3bfa25a7ef818129bf82cb0ce5e796",
+  },
+  {
+    "fight": "potato-googly/storm-cloud/KITCHEN_COUNTER/77",
+    "outcome": "b740a45ab7a058f4f90d978494f149656cf0a0050584c587bb8887f734c4b202",
+    "playback": "d359bf0752982d81f4c96760687a234b7e6dc1abffe256a464228278c4d54c38",
+  },
+  {
+    "fight": "potato-googly/storm-cloud/ROOFTOP/1",
+    "outcome": "5b5cdd605cef2321833784c560851a29200ee7366ee4177434273af54bedda49",
+    "playback": "3f5a28f0e1b618b57cc6d678b1d8604176204057b26bd4e8281ca34a93f03206",
+  },
+  {
+    "fight": "potato-googly/storm-cloud/ROOFTOP/77",
+    "outcome": "eda2f863326d5f0033fd03631b03aca0329c44272ef6cd6c5d5d017425a73b9c",
+    "playback": "b5ab7f3b2a94db96864d7c55b75fa94c7917942766a26f745b2ce32a134a04f1",
+  },
+  {
+    "fight": "worm/elephant/FLOODED_GARAGE/1",
+    "outcome": "4211f1c91ec0722d880b86f88225d47960a47c1435541686c3515f217e3a04c6",
+    "playback": "5fa7dac87377da3df214860f697fabc7ca0db5c596d9b69c2d893317eaa1e33e",
+  },
+  {
+    "fight": "worm/elephant/FLOODED_GARAGE/77",
+    "outcome": "be6815d26b5077067e0da9b89c53b29f13728a234ae420bd65f2add1fcef62d5",
+    "playback": "a84398371df48d0e7fdd3157e8197fd2a300fbb9c7852d6ebcc24a8a38906116",
+  },
+  {
+    "fight": "worm/elephant/KITCHEN_COUNTER/1",
+    "outcome": "6c09499a77a1bf114cd9ba0a162ac2dc6b35b4dea86d49dfa9e24a0edbb66130",
+    "playback": "4f225d850e510cbae07b7a07c5733b39a297a147caf7aed3805076a4a4f59fb9",
+  },
+  {
+    "fight": "worm/elephant/KITCHEN_COUNTER/77",
+    "outcome": "0d3b8e10b9249165292f0ebfa657e5981603fcad60c2717802745ac026e46563",
+    "playback": "1cc04ceffe847640745ce7c6eb30073ad575590c9451007210384003ddab8567",
+  },
+  {
+    "fight": "worm/elephant/ROOFTOP/1",
+    "outcome": "1b443a036ac78aeda8a6a877a5fd8cd16e99e3f910c4cf9df0c004edb4b69f2b",
+    "playback": "da62facdb56b96aaf1ba127e34eee60a04abbb20ce7729581a6e15292cae2a30",
+  },
+  {
+    "fight": "worm/elephant/ROOFTOP/77",
+    "outcome": "58233a97c405cafc5dbdbfdf04e7cba83c375e60d26c452321261ab72d5efe64",
+    "playback": "e4e0cc57bac8f7c1d0442e19cb8785400787a65fcd4e6e58e06078397ef4aeaf",
+  },
+  {
+    "fight": "cat/crab/FLOODED_GARAGE/1",
+    "outcome": "809c51452bdcccd380d45165dbe2272566827ce6312d0f4c5334ac469e3a8668",
+    "playback": "8ff609d834c0ed89b9444cc0f47a63e16ed3beaa2666d898bf8f98ae75ef5c64",
+  },
+  {
+    "fight": "cat/crab/FLOODED_GARAGE/77",
+    "outcome": "e166c28edfc37636a98a4b1b75578eca15807c4574686de438361149033467d9",
+    "playback": "f6690112ae582fc55214efc32aeabf48ebf22ffa654d6e283fc945e9466d421b",
+  },
+  {
+    "fight": "cat/crab/KITCHEN_COUNTER/1",
+    "outcome": "e86e3af10f154fdf3b4f8f8a650f7f0d3956734e789f9c8a64b957e19ec5cb74",
+    "playback": "da76555a9b269ff3af56221d9027e8a7b29f9c109eb5edd8d2dc3f0c26b8fa48",
+  },
+  {
+    "fight": "cat/crab/KITCHEN_COUNTER/77",
+    "outcome": "cf400789c95c1b4b0fafd30e93afdac88597ecd3f001ed536399fe9d30e20dd9",
+    "playback": "307f88ba786bce54743791b7e5e388d42089821b68ce3a28e903a3d1d8c303ea",
+  },
+  {
+    "fight": "cat/crab/ROOFTOP/1",
+    "outcome": "c8bb0a72fe3b1b04fd30bab2f90b0418f27d5cb021298db2198061d3d774c054",
+    "playback": "5a6ce6d0636b9800f588d82baa2213afe815516d5a614730c2f5c97ce3d8f3e7",
+  },
+  {
+    "fight": "cat/crab/ROOFTOP/77",
+    "outcome": "5703a4afb8cf99d574a3cd540a94e7bf5839874f4b511e22a89bbaf3b4d96583",
+    "playback": "e782b7a35adacacda74cde8c671b4a0bf6f67ea851351005dbd2604fff1ac2d5",
+  },
+]
+`;

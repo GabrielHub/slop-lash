@@ -4,6 +4,9 @@ Every model call goes through the task layer in `src/lib/ai/`:
 
 - `runStructured(task, options)`: one structured call (`Output.object`,
   `Output.choice`, `Output.array`).
+- `runStructuredStream(task, options & { output, onPartial })`: the same
+  call, streamed, with each partial output passed to `onPartial` (see
+  "Streaming" below).
 - `runText(task, options)`: one plain-text call. It succeeds only when the
   model stopped on its own (`finishReason: 'stop'`) with non-empty text.
 - `decideChoices(questions, state, keys, options)`: one Jev
@@ -39,6 +42,14 @@ with their game.
 | `matchslop.reply` | SENT starts; the persona judges the sent line | `{ level, reply, ...signals }` | `minimal` | critical | 6,000 / 1 | 5–20s |
 | `matchslop.postMortem` | FINAL starts | In-character recap, players named by fixed seat keys | `minimal` | background | 8,000 / 2 | 10–40s |
 | `narrator.line` | Host screen cue (`convex/narrator.ts`) | One spoken line, used only on `stop` | `none` | runs in the action | 1,000 / 0 | 3s |
+| `slopfight.forge` | A champion is submitted (BUILD, UPGRADE), a lenient forge at the deadline, or a house champion; also its one repair call. Streamed | `ForgeResult` (`ForgeResultSchema`): verdict, rejection, champion (body plan and palette, then the parts). Code balances the champion | `high` | critical | 16,000 / 1 | 12–45s |
+| `slopfight.forgeFallback` | The Haiku forge failed, or its repair still had problems: Sonnet 5.5 forges once. Streamed | Same schema object | `medium` | critical | 16,000 / 1 | 12–40s |
+| `slopfight.house` | The game needs house champions | `champions: [{ description }]`, one per empty seat, 280 characters each | `high` | critical | 8,000 / 1 | 8–30s |
+| `slopfight.houseFallback` | The house call failed or came back short | Same schema object | `medium` | critical | 8,000 / 1 | 8–25s |
+| `slopfight.matchup` | A fight is paired | `notes: MatchupNote[]` (2–4), `walkOnA`, `walkOnB`. Code clamps the notes through `resolveModifiers` | `high` | background | 8,000 / 1 | 6–30s |
+| `slopfight.matchupFallback` | The matchup call failed or no note survived | Same schema object | `medium` | background | 8,000 / 1 | 6–25s |
+| `slopfight.recap` | A fight ends; never waited on | `line`, 100 characters or fewer | `high` | background | 6,000 / 1 | 4–20s |
+| `slopfight.recapFallback` | The recap call failed | Same schema object | `medium` | background | 6,000 / 1 | 4–15s |
 
 `P1…Pmax` means a fixed enum sized for the task's maximum, not this call's
 count; see "Keep the schema fixed" below.
@@ -53,10 +64,37 @@ count; see "Keep the schema fixed" below.
 
 Free Play itself needs only `ANTHROPIC_API_KEY`.
 
+**SlopFight** (`src/games/slopfight/ai/`) runs Claude Haiku 5.5 at `high` in
+every room, Free Play included, with Claude Sonnet 5.5 at `medium` as the
+fallback. Sonnet 5.5 is an internal catalog model (`INTERNAL_MODELS` in
+`src/lib/models.ts`): it routes and prices like any Claude model but is in no
+player or persona picker, the leaderboard or `getModelByModelId`.
+- `forgeChampion` streams the forge. A reply with structural problems
+  (`forgeResultProblems`, a REJECT in a lenient or house forge, or a body
+  plan its legs contradict) gets one Haiku repair call; a repair that still
+  fails, or a Haiku call that fails outright, goes to Sonnet. A Haiku refusal on a player's submit or upgrade
+  becomes a kind REJECT instead of a Sonnet retry (the same input would be
+  refused again); on a lenient or house forge it goes to Sonnet. Sonnet is
+  the last model and is not repaired: balancing fixes its structure and a
+  body plan its legs contradict takes the plan the leg count implies, but a
+  body that drifts from the submission (a wrong limb count, a dropped
+  feature) stands. The champion is balanced (`balanceChampion`) before it is
+  returned.
+- Overlong model text is shortened by `modelText` before the sheet's own
+  cleaning: the last whole sentence that fits, else the text up to the last
+  clause break closed with a full stop, else a cut at a word boundary.
+- `inventHouseChampions`, `writeMatchup` and `writeRecapLine` are single
+  structured calls that go to Sonnet on any failure, a refusal included.
+- Each fallback is its own task, because a task has one reasoning level.
+  Each call takes its budget from the deadline and its own cap; they do not
+  share `budgetEndsAt`.
+
 **Reasoning:**
 - `'none'` turns thinking off.
 - `'minimal'` is the lowest effort level the provider has. On Haiku 5.5 that
   is adaptive thinking at low effort.
+- `'medium'` and `'high'` are adaptive thinking at that effort. On Sonnet 5.5,
+  `'none'` still thinks (`between_tools`), so its fallbacks use `'medium'`.
 - Thinking tokens count against `maxOutputTokens`, so every cap leaves room
   for thinking. Hitting a cap fails the call as `length`.
 
@@ -84,6 +122,30 @@ away but still billed.
   reports `timeout`, and the caller aborting reports `aborted`.
 - `timeoutMs` replaces the budget and skips the floor check (tests, or a
   caller that has its own clock).
+
+## Streaming
+
+`runStructuredStream` is `runStructured` over `streamText`, for calls whose
+output the room watches arrive (the SlopFight forge grows the creature from
+the streamed parts).
+
+- `onPartial(partial)` gets each partial output in order, often many times a
+  second. It is not awaited: return quickly, and throttle any database writes
+  on your side. An error it throws is logged and never fails the call.
+- The final output, finish reason and usage are awaited inside the call, so
+  the result is the same `AiRunResult` and the fail reasons mean the same.
+  A `content-filter` finish is reported as `refused` before anything else is
+  checked. A stream that failed before finishing reports the provider's
+  error (`provider-error`, `timeout`, `aborted`), not the SDK's "no output"
+  wrapper.
+- Retries and the budget work as for `runStructured`: the attempt guard wraps
+  the request that opens the stream, which is the part the SDK retries. A
+  timeout mid-stream ends the call as `timeout`, with the partials already
+  delivered.
+- Each call streams from scratch: a repair or fallback call's partials start
+  over, so `forgeChampion` passes `{ attempt, stage, modelId }` with each one.
+- Test with `MockLanguageModelV4({ doStream })` and `simulateReadableStream`
+  from `ai` (see `src/lib/ai/run.test.ts`).
 
 ## Workpools
 
@@ -284,7 +346,8 @@ What to look for:
 3. Call `runStructured` with a zod schema that is the same on every call. Use
    `z.enum` for every choice, with fixed keys (`slotKeys`) where the choices
    vary per call, and never a regex or "respond only with JSON". Use
-   `runText` only for free text.
+   `runStructuredStream` instead when the room watches the output arrive,
+   and `runText` only for free text.
 4. In the job runner, return `jobResult(output, [result.call], result.ok ? null
    : result.failReason)`, and set the handler's
    `pool: getAiTask(task).pool`.

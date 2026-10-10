@@ -106,6 +106,80 @@ export const AI_TASKS = {
     pool: "background",
     timeout: { floorMs: 10_000, capMs: 40_000 },
   },
+  "slopfight.forge": {
+    summary:
+      "A champion is submitted (BUILD, UPGRADE, a lenient or house forge): one streamed Haiku call turns the drawing or description into a ForgeResult; also its one repair call.",
+    reasoning: "high",
+    // Probe (8 full runs, 338 forges, Haiku 5.5 high via the AI Gateway, 4 at
+    // a time): output p50 2.4-2.7k tokens (1.4-1.6k thinking), max 5.2k;
+    // first part p50 10-12s; totals p50 12-14s, p90 18-22s. The slowest was
+    // 33.2s, a 1.7k-token reply that waited 26s for its first part; the
+    // next slowest was 27.7s. One 40-leg house forge (before the eight-leg
+    // rule) wrote 8.5k tokens in 47.5s. 45s clears every normal forge, and a
+    // stuck call still leaves Sonnet time in a 90s BUILD.
+    maxOutputTokens: 16_000,
+    maxRetries: 1,
+    pool: "critical",
+    timeout: { floorMs: 12_000, capMs: 45_000 },
+  },
+  "slopfight.forgeFallback": {
+    summary: "A Haiku forge failed or stayed broken after its repair: Sonnet 5.5 forges once.",
+    reasoning: "medium",
+    // Probe: Sonnet 5.5 at medium forged in 5-12s (first part about 2s).
+    maxOutputTokens: 16_000,
+    maxRetries: 1,
+    pool: "critical",
+    timeout: { floorMs: 12_000, capMs: 40_000 },
+  },
+  "slopfight.house": {
+    summary: "The game starts: one call invents descriptions for the house champions.",
+    reasoning: "high",
+    maxOutputTokens: 8_000,
+    maxRetries: 1,
+    pool: "critical",
+    // Probe: 8s for three descriptions, about 1k output tokens.
+    timeout: { floorMs: 8_000, capMs: 30_000 },
+  },
+  "slopfight.houseFallback": {
+    summary: "The house call failed: Sonnet 5.5 invents the descriptions once.",
+    reasoning: "medium",
+    maxOutputTokens: 8_000,
+    maxRetries: 1,
+    pool: "critical",
+    timeout: { floorMs: 8_000, capMs: 25_000 },
+  },
+  "slopfight.matchup": {
+    summary: "A fight is paired: 2-4 matchup notes and two walk-on lines.",
+    reasoning: "high",
+    maxOutputTokens: 8_000,
+    maxRetries: 1,
+    pool: "background",
+    timeout: { floorMs: 6_000, capMs: 30_000 },
+  },
+  "slopfight.matchupFallback": {
+    summary: "The matchup call failed: Sonnet 5.5 writes the notes and walk-ons once.",
+    reasoning: "medium",
+    maxOutputTokens: 8_000,
+    maxRetries: 1,
+    pool: "background",
+    timeout: { floorMs: 6_000, capMs: 25_000 },
+  },
+  "slopfight.recap": {
+    summary: "A fight ends: one highlight line (100 chars max) for the result card and recap.",
+    reasoning: "high",
+    maxOutputTokens: 6_000,
+    maxRetries: 1,
+    pool: "background",
+    timeout: { floorMs: 4_000, capMs: 20_000 },
+  },
+  "slopfight.recapFallback": {
+    summary: "The recap call failed: Sonnet 5.5 writes the highlight line once.",
+    reasoning: "medium",
+    maxOutputTokens: 6_000,
+    maxRetries: 1,
+    pool: "background",
+    timeout: { floorMs: 4_000, capMs: 15_000 },
+  },
   "narrator.line": {
     summary: "Host screen cue: one short spoken line before text-to-speech.",
     reasoning: "none",

@@ -1,10 +1,13 @@
 import { StageProbe } from "./stage-probe";
 
 export const metadata = {
-  title: "SlopFight stage",
+  title: "SlopFight creature lab",
 };
 
-/** Dev stage route; the Creature workstream replaces the probe with the creature gallery. */
+/**
+ * Dev creature lab: ?mode=gallery|forge|walk|single&sample=<id>&page=<n>
+ * (&hold=<parts> pauses forge playback, &probe=1 adds /dev/slopfight-probe.json).
+ */
 export default function DevSlopfightPage() {
   return <StageProbe />;
 }

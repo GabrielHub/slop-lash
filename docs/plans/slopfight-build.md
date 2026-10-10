@@ -246,6 +246,11 @@ As built:
   `windStrengthAt()` the gusts (axis-aligned direction, ramped envelope, no
   trig).
 
+As built (balance, after the Sim tuner): explosive is knockback +20% and
+self-damage 2 per hit taken (was +25% and 6); the Flooded Garage shocks
+electric fighters for 5 per hit taken (the spec says 15). Both were the main
+reasons electric and explosive champions sat at 6–26% win rates.
+
 ### 3.4 Fight sim (`sim/`)
 
 ```ts
@@ -275,6 +280,16 @@ selfDamage, showboat, suddenDeath, timeout, end`; `hit` carries `move`,
 input produce deep-equal outcomes; the `hash` covers the event log and final
 body transforms.
 
+As built (Sim workstream): contract 3.4 plus `FightSim.layout(side)`. The
+first `step()` also returns `start`; stepping past the end records nothing.
+Throws emit `throw` (with damage), not `hit`. Extra fields: `hit.health`,
+`hit.counter`, `hit.miracle`, `throw.health`, `whiff.reason` (`miss`,
+`dodged`, `immune`, `slipped`, `broken`), `stagger.cause`. Slithers are hard
+to grab (30% slip) rather than immune. Decisions and sudden death go by share
+of the health bar. `createFight` throws on an unknown arena. Hits on a downed
+fighter do 60% damage and never re-stagger. Every limb weighs at least 15% of
+the torso, and downed ragdolls get floor drag (stops long slides).
+
 ### 3.5 AI (`ai/`, `src/lib/ai/`)
 
 - `src/lib/ai/run.ts` gains `runStructuredStream(task, options & { output;
@@ -291,6 +306,25 @@ body transforms.
 - `inventHouseChampions({ arenas, count })` → descriptions;
   `writeMatchup({ a, b, arena })` → `{ notes, walkOn: [lineA, lineB] }`;
   `writeRecapLine({ a, b, outcome })` → one line.
+
+As built (Forge workstream):
+
+- `runStructuredStream` in `src/lib/ai/run.ts` streams partial output through
+  the same attempt guard as `runStructured`; `onPartial` gets a second `info`
+  argument (attempt, stage, model) so the backend restarts growth when a
+  repair or fallback stream begins.
+- Each call has a Haiku task at `high` and a Sonnet fallback task at `medium`
+  (`slopfight.forge`/`forgeFallback`, `house`, `matchup`, `recap`), timeouts
+  set from measured latency (forge 12–45 s). Sonnet 5.5 lives in
+  `INTERNAL_MODELS`, read only by routing and pricing.
+- The repair check runs on the raw reply before balancing; the unrepaired
+  Sonnet path gets the body plan its leg count implies (`planForLegs`).
+  Overlong model text is cut at the last whole sentence or clause.
+- `armCount` rounds 1 arm to 2 and 3 to 4; renderers and the sim build from
+  the actual parts. `writeMatchup` can return a single surviving note.
+- Latency: the first visible part arrives after 10–18 s (Haiku thinks first)
+  and sometimes in one burst at the end, so the stage queues parts and fills
+  the wait with a pre-growth beat.
 
 ### 3.6 Backend data and phases (`convex/slopfight/`)
 
@@ -319,6 +353,60 @@ FOUNDRY? → ROSTER → … → FINAL`. Round 3 plays the third-place fight firs
 the Final last. The FIGHT phase is a watchdog sized to `startsAt + endMs +
 outro`. A forge that fails on both models parks FOUNDRY (no deadline) with a
 host retry.
+
+As built (Backend workstream):
+
+- Fights: round-2 fights are created when STANDINGS opens after round 1;
+  round-3 seeding and fights when STANDINGS opens after round 2. UPGRADE is
+  entered with `round + 1`. With 2 humans, round 2 plays the house fight
+  first and the human fight last as the headliner.
+- FOUNDRY's 60 s watchdog deadline is hidden like every watchdog;
+  `foundryParked` in the view tells the stage it is waiting on the host.
+- The sim runs on the server (`fightSim.ts`, Node action) with one retry; if
+  it still fails, or the host skips FIGHT before an outcome exists, the seed
+  decides (`decidedBySeed`) and the game goes straight to RESULT. A matchup
+  still pending when FIGHT starts is dropped and the fight runs without notes.
+- Forging: a blank drawing is rejected with no model call; a REJECT after
+  BUILD has ended starts an automatic lenient forge. Upgrades always use the
+  `"upgrade"` mode: no addition keeps the champion (version bumped), unsent
+  strokes on the new layer are forged as the addition, and an addition
+  rejected after the clock keeps the champion unchanged. House upgrades pick a
+  seeded addition from `HOUSE_ADDITIONS` with no call. A failed HOUSE call
+  falls back to seeded `HOUSE_FALLBACK_DESCRIPTIONS`, which still go through
+  the forge. Streamed parts are patched at most 4×/s; a fallback that streams
+  from scratch restarts `partial`.
+- Bets and hype: owners may bet on either side. Hype goes to the side given,
+  else the player's bet, else the side with less hype; capped at 20 per call.
+- Views: bets are public (`bets: { A: playerId[], B: playerId[] }` plus
+  `mine`); each player sees their own champion's full sheet; seed, outcome
+  and awards stay hidden until FIGHT. Every fight carries `sheets: { A, B }`
+  frozen when its sim first ran, so the recap re-simulates a round-1 fight
+  with round-1 champions. Recap logs are capped at 500 events and 400 health
+  samples (`truncated: true`); a WebGL recap re-simulates instead of relying
+  on the log. Public stage queries: `stage.strokes({ roomCode, gameNumber? })`
+  and `stage.foundry({ roomCode })`.
+- `ports.ts` exposes the sim lazily as `loadFightSim()` so the job runners do
+  not import Rapier.
+- Review follow-ups, closed (Sonnet review SHIP):
+  - `retryForges` is host-only and a no-op (`{ restarted: 0 }`) outside
+    FOUNDRY. A FAILED fighter in BUILD or UPGRADE can still resubmit, and the
+    deadline forges it leniently.
+  - Strokes are read per fighter through `by_fighterId_and_layer_and_seq`,
+    capped at `MAX_FIGHTER_STROKE_ROWS` (400 strokes × 3 layers = 1,200
+    rows). `stage.strokes` and the recap `doodles` keep their shapes; rows
+    come in slot, layer, seq order.
+  - `play.myStrokes({ capability, layer? })` returns only the caller's rows
+    up to `layer`; the controller restores its canvas from it once on mount.
+  - Each fighter in the view carries `forgeParts: { streamed, target } |
+    null`, filled only for the viewer's own forging fighter. The target is
+    the old part count + 2 for upgrades, else a per-plan median (biped 8,
+    quadruped 9, multiped 11, hopper 4, slither 6, flier 6; 8 before the
+    plan streams). The plan streams into the optional `partialPlan` field.
+  - An identical resubmission (same kind and sanitized text, or the same
+    last stroke row `seq:total`) while that forge runs is a no-op, stored as
+    the optional, server-only `forgeInput`.
+  - The Voice has `slipped` (priority 40) and `broken` (priority 25, 250 ms
+    after the breaking hit) beats, one each per fight.
 
 ### 3.7 Screens
 
@@ -351,23 +439,129 @@ host retry.
 
 ## 5. Checklist
 
-- [ ] Foundation: deps, `SLOPFIGHT` registered end to end with stubs, contracts
+- [x] Foundation: deps, `SLOPFIGHT` registered end to end with stubs, contracts
       (sheet, vocab, arenas, modifiers, constants, strokes), shell flags
-- [ ] Creature: anchors, mesher, toon look, rig and animation, `/dev/slopfight`
-      gallery with growth playback
-- [ ] Forge: streaming call, prompts and few-shots, rasterizer, Sonnet entry,
-      dozens of inputs judged (texts and doodles, bad ones included)
-- [ ] Sim: deterministic ragdolls, brains, moves, damage, hazards, determinism
-      test, pacing stats
-- [ ] Arenas and props in Blender
-- [ ] Backend mode: tables, phases, forge pipeline, house, matchup, recap, sim
+      (commit 410e75b; Sonnet review PASS; `next.config.ts` sets
+      `agentRules: false` so `next dev` stops appending to AGENTS.md)
+- [x] Creature: anchors, mesher, toon look, rig and animation, `/dev/slopfight`
+      gallery with growth playback (surface-nets mesher in a 2-worker pool,
+      growth remesh p50 ~12 ms at 48³; 30 samples, about 20 read clearly;
+      Sonnet review SHIP)
+  - [x] Visual review of real forged champions. Earlier Sonnet judges scored each
+        probe champion 0–3 ("would the player say that's mine?") from two
+        angles against the input and doodle. Round 0 (first real forges):
+        1.34, charm 2.11; cones as onions, items as primitive blobs, clothing
+        as boxes, stick figures as marshmallows. Round 1: 1.69, charm 2.29
+        after an additive optional `markings` field (`MARKINGS_MAX` 4:
+        mask, belly, stripes, spots, band, tip, panel…), a render-layout step
+        (flat-based cones, crisp boxes, tapered wings, same-anchor fans, S-curve
+        slithers, face plates, second-head faces), held items as `props.glb`
+        models, and a `<looks>` section in the forge prompt
+        (`FORGE_PROMPT_VERSION` 2; first part p50 rose from 10.3 s to 12.9 s).
+        Cone, stool, spider, stick cat and panda now read; buried claws,
+        sideways packs, pipe muzzles, blurry markings and upgrade colour
+        drift were open at that point. Round 2 fixes are now implemented and
+        regression-covered: exposed appendages, centered packs, shorter
+        muzzles, crisp marking boundaries, and deterministic upgrade identity
+        carry. The final 51-input probe produced 43 champions, including eight
+        held-out subjects and four upgrades; automatic checks pass. The release
+        review inspected all 43 from two angles, plus the panda separately and
+        the live two-player forges. No new numerical Sonnet recognition score
+        is claimed. See [release review](./slopfight-release-review.md).
+- [x] Forge: streaming call, prompts and few-shots, rasterizer, Sonnet entry,
+      dozens of inputs judged (texts and doodles, bad ones included) (8 probe
+      runs, 338 Haiku forges through the gateway; final 43/43 verdicts
+      correct; first visible part p50 12 s / p90 18 s because Haiku thinks
+      first, full forge p50 13 s / p90 22 s, 45 s cap then Sonnet; Sonnet
+      recheck SHIP. Final Round 2 probe: first-part p50 9.1 s / p90 15.0 s,
+      total p50 11.2 s / p90 19.5 s; 51 inputs, one repair, no fallback;
+      current renderer visually reviewed in the release pass)
+- [x] Sim: deterministic ragdolls, brains, moves, damage, hazards, determinism
+      test, pacing stats (tuner at 6 seeds, 7,830 fights: KO 28% / ring-out
+      34% / decision 37%, first contact median 1.0 s, mean fight 23 s, every
+      plan/stat/move-type win rate within 35–65%, whiff rate and miracles rise
+      with chaos; Chromium and Node hashes match; ~113 ms per 30 s fight;
+      Sonnet recheck SHIP)
+- [x] Arenas and props in Blender (`build_all.py` rebuilds byte-identical GLBs
+      and runs `verify_glb.py`, which checks the node contract, `COLOR_0`, the
+      camera axes, Collision against `platformColliders()` and Floor against
+      `checkFloor()`; 23–25k tris per arena, props under 500; Sonnet review
+      fixes applied. The scoreboard is only in frame from `Cam_Scoreboard` and
+      `Cam_Establish_End`, so anything shown on it needs a cut to one of them)
+- [x] Backend mode: tables, phases, forge pipeline, house, matchup, recap, sim
       action, bets, hype, scoring, seeding, view, cleanup, Free Play, rematch,
-      tests
-- [ ] Stage: canvas root, look, arena, director, in-scene UI, every phase
+      tests (426 tests; Sonnet review SHIP; dev push only; server and local
+      fight hashes match; follow-ups listed in 3.6)
+- [x] Stage: canvas root, look, arena, director, in-scene UI, every phase
       scene, transitions, crowd, podium
-- [ ] Controller: draw, describe, rejection, forge card, bet, hype, result,
-      upgrade, host retry
-- [ ] Sound and narration
-- [ ] Integration: dev Convex E2E with 2 humans and timers on, every signature
-      moment, 60 fps, controller bundle free of three.js
-- [ ] `vp check`, `vp test`, `vp run build` clean
+  - [x] Stage core: canvas, quality tiers, lighting moods, post stack with
+        letterbox/iris/wipe/impact frame, GLB sets with practicals, crowd and
+        hazards, presentation clock (hit stop and slow-mo as a debt repaid on
+        settled cuts and phase covers), shot director, transitions, lit SDF
+        and extruded title text, `PHASE_SCENES` registry, `/dev/slopfight/stage`
+        lab, `stage3d/README.md` (Sonnet recheck SHIP)
+  - [x] Stage scenes and in-scene UI kit: `ui3d` kit (Card, Chip, PipRow,
+        MoveRow, AvatarToken, Bar, ClockRing, Caption, Confetti, NamePlate;
+        text colours picked by contrast ratio), the Voice service
+        (`services.voice`: one `Voice` per game, captions one line at a
+        time, TTS feed), stage feeds that never hit Convex in fixtures or
+        the lab, and scenes for LOBBY (in-scene START, QR, name plates),
+        BUILD (live easels, typing pad, pre-growth lump, growth, name card
+        drop, sketch-to-champion dissolve, reject card, jammed card),
+        FOUNDRY, ROSTER (walk-ons with tracked cuts, rising cards), STANDINGS
+        (in-scene board with occlusion-aware columns), UPGRADE (old vs new)
+        and FINISHED (podium, confetti, final scores, recap reel slot). One
+        persistent canvas across START and rematch (`LobbyBridge` keeps a
+        stable tree). Lab at `/dev/slopfight/scenes`. ~225 fps at 1080p
+        high on the RTX 5090 in BUILD with 4 easels and 4 forges. Sonnet
+        recheck SHIP; left: dim light text on dark chips, rooftop marquee
+        sub-line softened by the arena's string lights and depth of field
+  - [x] Fight scene and recap replays: local re-sim from the fight row
+        (Rapier preloaded in FACE_OFF), recorded ahead in time-boxed steps
+        and played interpolated at `serverNow − startsAt` (catches up, never
+        ahead); a hash mismatch warns and presents the stored health
+        timeline. FACE_OFF owns its direction (match cut, letterboxed Dutch
+        low shot, walk-ons on the Voice, hazard and note cards placed off the
+        fighters' outlines, bettor avatars). FIGHT: health bars on dark plates
+        that stack and hide under title slams, hit stop, impact frame,
+        fringe, slow-mo rationed to one per 4 s, ON THE EDGE forcing the edge
+        shot, ring-out with an iris and a pre-cut to deep landings, KO / RING
+        OUT / DECISION / SUDDEN DEATH slams. RESULT: winner framed by its
+        body, payouts on the scoreboard, the judges' coin. Recap: `RecapReel`
+        replays a picked fight in its arena, and `RecapFallback` (DOM) is
+        mounted by `ui/stage.tsx` for a recap without WebGL2. Additive edits
+        outside the folder: `fight_close` takes an optional `from`
+        (`director/shots.ts`), `creature-view.ts` `dispose()` resets its
+        source (StrictMode), FACE_OFF `ownsDirection: true`. Lab at
+        `/dev/slopfight/fight`. Sonnet recheck SHIP. Release tracing resolved
+        the first-use shader, physics-solver, and skin-bound stalls: owned
+        shader prototypes and title geometry prepare ahead of use, a disposable
+        world warms Rapier during loading, and conservative bone bounds avoid
+        per-vertex skinning on first draw. The captured real-room first entry
+        fell from 112.4 ms to 24.9 ms. See the release review for full live-run
+        evidence. Pacing accepted as tuned: the decision rate depends on the
+        matchup (2–5 of 12–30 seeds in the fixer's scans, 17 of 30 for
+        cat/elephant in the reviewer's); the sim already ramps aggression
+        with time, so revisit after a real playtest
+- [x] Controller: draw, describe, rejection, forge card, bet, hype, result,
+      upgrade, host retry (38 `/dev/ui` fixtures for every phase built on the
+      real scoring and bracket; strokes batched every 250 ms with wall-clock
+      seq; hype batched to ≤4 calls/s; health bars from the stored timeline
+      against the server clock; SVG silhouettes from the skeleton; no three.js
+      in any `/controller` chunk; Sonnet review SHIP). Its follow-ups are
+      closed: the canvas restores from `play.myStrokes`, and the Forging bar
+      follows `forgeParts` ("N parts of about M")
+- [x] Sound and narration (45 synthesized files, 1.29 MB, byte-identical
+      re-renders, seamless padded loops; `sounds.ts` gains buses, loops,
+      ducking and lazy `createSoundBank`; The Voice plans whole fights from the
+      event log with per-beat priorities and caps; TTS via `slopfight_line`
+      verbatim cues, never in Free Play, opening line prefetched at FACE_OFF
+      with `Voice.fightStart`; Sonnet recheck SHIP; mix not yet checked by ear,
+      no real TTS call yet)
+- [x] Integration: dev Convex E2E with 2 human seats and timers on, signature
+      moment captures, 228.9–234.3 fps across all six fights, all replay hashes
+      matched, controller bundles free of Three.js/Rapier. Room `8PCW9B`
+      finished after one phone disconnected; both recap modes passed.
+      See [release review](slopfight-release-review.md) for measurements.
+- [x] `vp check` (zero errors), `vp test --run` (1,139 tests), and
+      `vp run build` passed. Full tests passed three consecutive runs.

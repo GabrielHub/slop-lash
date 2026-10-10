@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
+import { drainScheduled } from "./test.scheduler";
 import { MATCHSLOP_INITIAL_MOOD } from "../src/games/matchslop/types";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -325,6 +326,9 @@ describe("Play again", () => {
   });
 
   test("a MatchSlop rematch dates a fresh persona and leaves the old date alone", async () => {
+    // Room creation schedules the profile job. Keep it queued while this test
+    // stands in for a finished date and verifies only the rematch transaction.
+    vi.useFakeTimers();
     const t = setup();
     const host = await t.action(api.rooms.create, {
       gameType: "MATCHSLOP",
@@ -428,7 +432,7 @@ describe("Play again", () => {
     vi.useFakeTimers();
     const t = setup();
     const { host, ana, bo, previous } = await finishedRoom(t);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
     await t.mutation(api.rooms.playAgain, { capability: host.capability, gameId: previous.id });
     const flags = async () =>
       (await gamesFor(t, host.roomCode))
@@ -439,7 +443,7 @@ describe("Play again", () => {
     for (const seat of [host, ana, bo]) await beat(t, seat);
     await t.mutation(api.engine.start, { capability: host.capability });
     await t.mutation(api.engine.end, { capability: host.capability });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
     expect(await flags()).toEqual([true, true]);
   });
 
@@ -452,7 +456,7 @@ describe("Play again", () => {
 
     vi.advanceTimersByTime(2 * HOUR_MS + 60_000);
     await t.mutation(internal.cleanup.sweep, {});
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
 
     const watched = await t.query(api.views.watch, { roomCode: host.roomCode });
     expect(watched.room).toMatchObject({

@@ -17,6 +17,7 @@ import {
   BIO_MAX,
   HEALTH_BASE,
   HEALTH_PER_HEFT,
+  MARKINGS_MAX,
   MIN_MOVE_TYPES,
   MOVE_COUNT,
   MOVE_NAME_MAX,
@@ -44,6 +45,7 @@ import {
   ELONGATIONS,
   EYE_STYLES,
   LEG_ANCHORS,
+  MARKING_KINDS,
   MOUTH_STYLES,
   MOVE_TYPES,
   NEUTRAL_TRAITS,
@@ -104,6 +106,12 @@ export const MoveSchema = z.object({
   delivery: z.enum(DELIVERIES),
 });
 
+export const MarkingSchema = z.object({
+  part: z.string().describe("Id of the part the marking is painted on"),
+  kind: z.enum(MARKING_KINDS),
+  color: z.enum(PART_COLORS).describe("Palette slot of the paint; never the part's own colour"),
+});
+
 const lines = (count: number, what: string) =>
   z
     .array(z.string())
@@ -130,6 +138,12 @@ export const ChampionSchema = z.object({
     .describe(
       `1-${PARTS_MAX} parts: exactly one torso first, then head, legs, arms, extras. Every part after the torso names an earlier part as its parent`,
     ),
+  markings: z
+    .array(MarkingSchema)
+    .optional()
+    .describe(
+      `Painted patterns: 0-${MARKINGS_MAX}, at most one per part, never in the part's own colour`,
+    ),
   face: z.object({ eyes: z.enum(EYE_STYLES), mouth: z.enum(MOUTH_STYLES) }),
   item: PropTagSchema.nullable().describe("The held item, or null. An item part marks the grip"),
   stats: z
@@ -152,13 +166,26 @@ export const RejectionSchema = z.object({
   suggestion: z.string().describe(`What to try instead, at most ${REJECTION_TEXT_MAX} characters`),
 });
 
+/**
+ * The champion as the model writes it: markings are required, so the model
+ * weighs them every time and writes [] when there are none (and the decoder
+ * never has to handle an optional property). Re-declaring the key keeps its
+ * place right after the parts.
+ */
+export const ForgeChampionSchema = ChampionSchema.extend({
+  markings: z
+    .array(MarkingSchema)
+    .describe(`0-${MARKINGS_MAX} painted markings, at most one per part; [] when none`),
+});
+
 export const ForgeResultSchema = z.object({
   verdict: z.enum(["FORGE", "REJECT"]),
   rejection: RejectionSchema.nullable().describe("Null exactly when the verdict is FORGE"),
-  champion: ChampionSchema.nullable().describe("Null exactly when the verdict is REJECT"),
+  champion: ForgeChampionSchema.nullable().describe("Null exactly when the verdict is REJECT"),
 });
 
 export type Part = z.infer<typeof PartSchema>;
+export type Marking = z.infer<typeof MarkingSchema>;
 export type Move = z.infer<typeof MoveSchema>;
 export type Narration = z.infer<typeof NarrationSchema>;
 export type Champion = z.infer<typeof ChampionSchema>;
@@ -175,6 +202,7 @@ export type {
   Delivery,
   Elongation,
   EyeStyle,
+  MarkingKind,
   MouthStyle,
   MoveType,
   PartColor,
@@ -355,10 +383,14 @@ export function forgeResultProblems(result: ForgeResult): SheetProblem[] {
  * - stats and move powers rescaled to their sums within 1-5 (largest
  *   remainder); moves trimmed or padded to three and forced to two types.
  * - traits deduped, conflicts dropped, 2-4 kept (padded with neutral picks).
+ * - markings (when present) on existing parts only, never in the part's own
+ *   colour, masks only on a head or torso, one per part, at most 4.
  * - temperament clamped to 0-1 (two decimals); every string trimmed to its limit.
  */
 export function balanceChampion(raw: Champion): Champion {
   const parts = balanceParts(raw.parts);
+  // Older sheets have no markings key; leaving it absent keeps their hashes.
+  const markings = raw.markings === undefined ? {} : { markings: balanceMarkings(raw.markings, parts) };
   const [heft, reach, chaos] = rescaleToSum(
     [raw.stats.heft, raw.stats.reach, raw.stats.chaos],
     STAT_SUM,
@@ -370,6 +402,7 @@ export function balanceChampion(raw: Champion): Champion {
     bodyPlan: raw.bodyPlan,
     palette: { ...raw.palette },
     parts,
+    ...markings,
     face: { ...raw.face },
     item: raw.item ?? (parts.some((part) => part.role === "item") ? "thing" : null),
     stats: { heft, reach, chaos },
@@ -586,6 +619,22 @@ function balanceParts(rawParts: readonly Part[]): Part[] {
     pending = next;
   }
   return ordered.slice(0, PARTS_MAX);
+}
+
+function balanceMarkings(rawMarkings: readonly Marking[], parts: readonly Part[]): Marking[] {
+  const byId = new Map(parts.map((part) => [part.id, part]));
+  const painted = new Set<string>();
+  const markings: Marking[] = [];
+  for (const raw of rawMarkings) {
+    if (markings.length >= MARKINGS_MAX) break;
+    const id = normalizePartId(raw.part);
+    const part = byId.get(id);
+    if (!part || painted.has(id) || raw.color === part.color) continue;
+    if (raw.kind === "mask" && part.role !== "head" && part.role !== "torso") continue;
+    painted.add(id);
+    markings.push({ part: id, kind: raw.kind, color: raw.color });
+  }
+  return markings;
 }
 
 /** Retype preference by delivery when all three moves share a type. */

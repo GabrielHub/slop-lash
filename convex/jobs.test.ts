@@ -9,6 +9,7 @@ import type { Id } from "./_generated/dataModel";
 import { aiWorkpools } from "./components";
 import { enqueueJob, jobResult, type AiCallRow, type JobHandler } from "./jobs";
 import schema from "./schema";
+import { drainScheduled } from "./test.scheduler";
 
 // Two fake job kinds, wired into the real job plumbing: a handler (via
 // `getJobHandler`) and a runner (via the runner map in `jobRunner.ts`).
@@ -166,7 +167,7 @@ describe("AI job plumbing", () => {
     const background = vi.spyOn(aiWorkpools.background, "enqueueAction");
 
     await enqueue(t, gameId, fake.FAILED_CALL);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
 
     // The handler's `pool: "critical"` routed it to the critical workpool.
     expect(critical).toHaveBeenCalledTimes(1);
@@ -199,7 +200,7 @@ describe("AI job plumbing", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await enqueue(t, gameId, fake.CRASH);
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await drainScheduled(t);
 
     const { jobs, calls } = await jobRows(t, gameId);
     expect(jobs[0]).toMatchObject({ status: "FAILED", failReason: "action-error" });

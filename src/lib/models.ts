@@ -93,6 +93,29 @@ export const AI_MODELS: AIModel[] = [
 ];
 
 /**
+ * Models the server calls for game work (SlopFight's fallback forge) but that
+ * never play: not in any player or persona picker, the landing page, the
+ * leaderboard, `getModelByModelId` or `selectUniqueModelsByProvider`. Model
+ * routing (`getRoutableModel`) and pricing (`getModelInfo`) read them.
+ */
+export const INTERNAL_MODELS: AIModel[] = [
+  {
+    id: "anthropic/claude-sonnet-5.5",
+    name: "Claude Sonnet 5.5",
+    shortName: "Sonnet",
+    provider: "Anthropic",
+    icon: "/icons/claude-color.svg",
+    // Claude API rates (claude-api skill, cached 2026-10-06): $2 / $10 per
+    // MTok, cache reads 0.1x input, 5-minute cache writes 1.25x input.
+    inputPer1M: 2,
+    outputPer1M: 10,
+    cacheReadPer1M: 0.2,
+    cacheWritePer1M: 2.5,
+    anthropicModelId: "claude-sonnet-5-5",
+  },
+];
+
+/**
  * TypeSafe AI's decision model. It answers typed questions instead of writing
  * text, so it judges but never plays. Output tokens are free.
  */
@@ -108,16 +131,26 @@ export const JEV_MODEL = {
 } as const satisfies ModelInfo;
 
 const AI_MODELS_BY_ID = new Map(AI_MODELS.map((m) => [m.id, m]));
-const MODEL_INFO_BY_ID = new Map<string, ModelInfo>([
+const ROUTABLE_MODELS_BY_ID = new Map([
   ...AI_MODELS_BY_ID,
+  ...INTERNAL_MODELS.map((m) => [m.id, m] as const),
+]);
+const MODEL_INFO_BY_ID = new Map<string, ModelInfo>([
+  ...ROUTABLE_MODELS_BY_ID,
   [JEV_MODEL.id, JEV_MODEL],
 ]);
 
+/** A model that can play (a player or persona seat). Internal models are not players. */
 export function getModelByModelId(modelId: string): AIModel | undefined {
   return AI_MODELS_BY_ID.get(modelId);
 }
 
-/** Looks up any priced model, including judge-only models that cannot play. */
+/** Any model the server may call for text: players plus internal models. Routing reads this. */
+export function getRoutableModel(modelId: string): AIModel | undefined {
+  return ROUTABLE_MODELS_BY_ID.get(modelId);
+}
+
+/** Looks up any priced model, including judge-only and internal models that cannot play. */
 export function getModelInfo(modelId: string): ModelInfo | undefined {
   return MODEL_INFO_BY_ID.get(modelId);
 }

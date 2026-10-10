@@ -342,6 +342,40 @@ export const MOUTH_STYLE_INFO = {
 } as const satisfies Record<MouthStyle, string>;
 
 // ---------------------------------------------------------------------------
+// Markings (patterns painted on a part, not built from parts)
+// ---------------------------------------------------------------------------
+
+export const MARKING_KINDS = [
+  "stripes",
+  "spots",
+  "band",
+  "belly",
+  "mask",
+  "tip",
+  "panel",
+  "suit",
+  "streak",
+] as const;
+export type MarkingKind = (typeof MARKING_KINDS)[number];
+
+/** Prompt-facing lines: what each painted marking looks like. */
+export const MARKING_INFO = {
+  stripes:
+    "Three to five bands around the part, across its length: tigers, bees, zebras, a ringed tail, a striped shirt.",
+  spots:
+    "Five to seven round spots scattered over the part: ladybugs, cows, dalmatians, toadstools.",
+  band: "One band around the middle of the part: a belt, a collar, a hat band, a stripe round a bottle.",
+  belly:
+    "A pale oval on the front and underside: a bird's chest, a shirt front, a tuxedo. On a head it paints the muzzle and chin.",
+  mask: "A band across the eyes that wraps round the head: bandits, superheroes, masked animals. Only on a head or a headless torso.",
+  tip: "The far end of the part in another colour: a tail tip, socks or boots on legs, ear tips, a paintbrush.",
+  panel: "A rounded rectangle on the front of the part: a screen, a window, a door, a chest plate.",
+  suit: "A jacket over the part in the paint colour, open in a V at the chest so the part's own colour shows as the shirt, with a tie down the middle: suits, tuxedos, uniforms, waiters, lawyers.",
+  streak:
+    "One stripe running the length of the part along its top or back: racing stripes, a stripe from nose to tail, a badger's crown.",
+} as const satisfies Record<MarkingKind, string>;
+
+// ---------------------------------------------------------------------------
 // Held items
 // ---------------------------------------------------------------------------
 

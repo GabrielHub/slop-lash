@@ -108,7 +108,7 @@ describe("resolveModifiers", () => {
 
   test("folds in arena hazards keyed by trait and body plan", () => {
     const garage = resolveModifiers(fighter(["electric", "aquatic"]), fighter(["loud", "sneaky"], "HOPPER"), "FLOODED_GARAGE", []);
-    expect(garage.A.selfDamageOnHitTaken).toBe(15);
+    expect(garage.A.selfDamageOnHitTaken).toBe(5);
     expect(garage.A.speed).toBeCloseTo(1.15 * 0.95, 2);
     expect(garage.A.hazards).toEqual([]);
     expect(garage.B.hazards).toEqual(["waterLanding"]);
@@ -128,7 +128,7 @@ describe("resolveModifiers", () => {
 
   test("clamps every key to its range", () => {
     const { A } = resolveModifiers(fighter(["electric", "explosive", "heavy", "armored"]), fighter(["frosty", "stinky"]), "FLOODED_GARAGE", []);
-    expect(A.selfDamageOnHitTaken).toBe(20);
+    expect(A.selfDamageOnHitTaken).toBe(7); // garage electric 5 + explosive 2
     expect(A.speed).toBe(0.6);
   });
 

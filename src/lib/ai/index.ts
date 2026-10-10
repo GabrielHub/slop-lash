@@ -1,6 +1,6 @@
 /**
  * The shared AI task layer. Every model call goes through `runStructured`,
- * `runText` or `decideChoices`; see docs/ai-calls.md.
+ * `runStructuredStream`, `runText` or `decideChoices`; see docs/ai-calls.md.
  *
  * `tasks`, `prompt`, `xml`, `usage` and `deadline` import no SDK runtime
  * code, so queries and mutations can import them directly by path
@@ -32,6 +32,7 @@ export {
 } from "./prompt";
 export {
   runStructured,
+  runStructuredStream,
   runText,
   type AiCallRecord,
   type AiFailReason,
@@ -42,6 +43,7 @@ export {
   type AiRunSuccess,
   type AiTextResult,
   type LanguageModelInstance,
+  type PartialListener,
 } from "./run";
 export { AI_TASKS, getAiTask, type AiPool, type AiTaskId, type AiTaskSpec } from "./tasks";
 export type { AiCallUsage, AiModelUsage } from "./usage";

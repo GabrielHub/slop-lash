@@ -143,7 +143,8 @@ function isCurrent(game: Doc<"games"> | null, job: Doc<"generationJobs">): game 
   return !job.phaseBound || game.phaseGeneration === job.phaseGeneration;
 }
 
-async function recordUsage(ctx: MutationCtx, gameId: Id<"games">, usage: AiModelUsage[]) {
+/** Rolls call usage into `gameModelUsage`, which feeds the leaderboard spend. */
+export async function recordUsage(ctx: MutationCtx, gameId: Id<"games">, usage: AiModelUsage[]) {
   for (const entry of usage) {
     if (!entry.modelId) continue;
     const existing = await ctx.db

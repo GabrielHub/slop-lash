@@ -180,6 +180,12 @@ AI jobs use durable `generationJobs` rows, keyed per game, for idempotency and
 stale-result guards. Workpool executes the external call, and its completion
 callback applies the result, or the fallback, in one guarded mutation.
 
+SlopFight's streaming forge uses the critical Workpool with automatic retries
+disabled. Its forge wrapper owns repair and model fallback; generation tokens
+guard partial updates and final writes to the fighter row. Drawing input is
+bounded by shared stroke and point limits so a full room remains within
+Convex's document and response budgets.
+
 ## AI Boundary
 
 AI SDK 7 provides generation and streaming primitives. Models are selected

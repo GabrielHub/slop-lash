@@ -3,9 +3,11 @@ import {
   LoadAPIKeyError,
   NoObjectGeneratedError,
   NoOutputGeneratedError,
+  streamText,
   wrapLanguageModel,
   type FinishReason,
   type InferGenerateOutput,
+  type InferStreamOutput,
   type LanguageModel,
   type LanguageModelMiddleware,
   type LanguageModelUsage,
@@ -164,12 +166,16 @@ type Generated<Output> = {
   finishReason: FinishReason;
   usage: LanguageModelUsage;
   read: () => Outcome<Output>;
+  /** A provider error reported inside a stream that still finished. */
+  error?: unknown;
 };
 
 /** Routes every model request through `guardAttempt`, so SDK retries are counted and budgeted. */
 function guardModel(model: LanguageModelInstance, log: AttemptLog, policy: AttemptPolicy) {
   const middleware: LanguageModelMiddleware = {
     wrapGenerate: ({ doGenerate }) => guardAttempt(log, policy, doGenerate),
+    // `streamText` retries only the request that opens the stream, so this counts the same way.
+    wrapStream: ({ doStream }) => guardAttempt(log, policy, doStream),
   };
   return wrapLanguageModel({ model, middleware });
 }
@@ -363,6 +369,7 @@ async function execute<Output>(
       usage: normalizeUsage(options.model, generated.usage),
       attempts: log.attempts,
       finishReason: generated.finishReason,
+      ...(generated.error === undefined ? {} : { error: describeAiError(generated.error) }),
     });
   } catch (error) {
     // A malformed request (e.g. a system message inside `messages`) is a bug too.
@@ -417,6 +424,86 @@ export async function runStructured<Spec extends OutputInterface>(
           };
         }
       },
+    };
+  });
+}
+
+/** Receives each partial output; return quickly (it is not awaited) and throttle on your side. */
+export type PartialListener<Partial> = (partial: Partial) => void | PromiseLike<void>;
+
+function deliver<Partial>(task: AiTaskId, listener: PartialListener<Partial>, partial: Partial) {
+  const report = (error: unknown) =>
+    console.warn(`[ai] ${task} onPartial threw: ${describeAiError(error)}`);
+  try {
+    const pending = listener(partial);
+    if (pending && typeof pending.then === "function") pending.then(undefined, report);
+  } catch (error) {
+    report(error);
+  }
+}
+
+/**
+ * `runStructured`, streamed: `onPartial` gets each partial output in order as
+ * the reply arrives (a listener error is logged, never fails the call), and
+ * the result is the same `AiRunResult` once the stream ends. The final
+ * output, finish reason and usage are awaited inside the call, so a refusal
+ * (checked first), a truncated or invalid reply, a timeout or a provider
+ * error comes back as `{ ok: false, failReason }` exactly as in
+ * `runStructured`. A stream that failed before finishing reports the
+ * provider's error, not the SDK's "no output" wrapper.
+ */
+export async function runStructuredStream<Spec extends OutputInterface>(
+  task: AiTaskId,
+  options: AiRunOptions & {
+    output: Spec;
+    onPartial: PartialListener<InferStreamOutput<Spec>>;
+  },
+): Promise<AiRunResult<InferGenerateOutput<Spec>>> {
+  return execute(task, options, async (args) => {
+    let streamError: unknown;
+    const result = streamText({
+      ...args,
+      output: options.output,
+      onError: ({ error }) => {
+        streamError ??= error;
+      },
+    });
+    let finishReason: FinishReason;
+    let usage: LanguageModelUsage;
+    try {
+      for await (const partial of result.partialOutputStream) {
+        deliver(task, options.onPartial, partial);
+      }
+      finishReason = await result.finishReason;
+      usage = await result.usage;
+    } catch (error) {
+      // No step finished: the SDK rejects with "no output" or the abort reason;
+      // the error the stream reported says why (API error, budget stop).
+      throw streamError ?? error;
+    }
+    let outcome: Outcome<InferGenerateOutput<Spec>>;
+    if (finishReason === "content-filter") {
+      outcome = { ok: false, failReason: "refused" };
+    } else {
+      try {
+        outcome = { ok: true, output: await result.output };
+      } catch (error) {
+        if (!NoObjectGeneratedError.isInstance(error) && !NoOutputGeneratedError.isInstance(error)) {
+          throw error;
+        }
+        const text = NoObjectGeneratedError.isInstance(error) ? error.text : undefined;
+        outcome = {
+          ok: false,
+          failReason: failureFor(finishReason),
+          ...(text ? { text } : {}),
+        };
+      }
+    }
+    return {
+      finishReason,
+      usage,
+      read: () => outcome,
+      ...(finishReason === "error" && streamError !== undefined ? { error: streamError } : {}),
     };
   });
 }

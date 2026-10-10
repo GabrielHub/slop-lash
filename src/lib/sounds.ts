@@ -1,3 +1,6 @@
+import { mixedHash } from "./hash";
+import { AudioLoop, rampParam } from "./audio-loop";
+
 const SOUND_MAP = {
   // Shared game sounds
   "game-start": "/sfx/shared/game-start.mp3",
@@ -27,6 +30,76 @@ export const SOUND_NAMES = Object.keys(SOUND_MAP) as SoundName[];
 
 export type AudioStatus = "idle" | "ready" | "blocked" | "error" | "unsupported";
 
+/** Where a sound plays: the compressed SFX bus, or one of the two beds under it. */
+export type BusName = "sfx" | "music" | "ambience";
+/** The beds: their own gains, ducked under the narrator and under big moments. */
+export type BedBus = Exclude<BusName, "sfx">;
+
+/** Per-call playback options. Everything is optional; no options plays the sound as authored. */
+export interface PlayOptions {
+  /** Linear gain on top of the sound's own trim. */
+  gain?: number;
+  /** Stereo position from -1 (left) to 1 (right). */
+  pan?: number;
+  /** Pitch shift in semitones (playback rate, so it changes length too). */
+  semitones?: number;
+  /** Random pitch spread of up to ± this many semitones. */
+  jitter?: number;
+  /** Makes the jitter repeatable: the same seed always picks the same pitch. */
+  seed?: number | string;
+  /** Seconds from now to start, scheduled on the audio clock. */
+  delay?: number;
+  /** Defaults to "sfx". */
+  bus?: BusName;
+}
+
+export interface LoopOptions {
+  /** Linear gain on top of the sound's own trim. */
+  gain?: number;
+  /** Fade-in in seconds. */
+  fadeIn?: number;
+  /** Pitch shift in semitones. */
+  semitones?: number;
+  /** Defaults to "sfx". */
+  bus?: BusName;
+}
+
+/** A running loop. Stopping is final; start a new loop to play it again. */
+export interface LoopHandle {
+  /** Ramps the loop's gain (relative to its starting gain of 1) over `seconds`. */
+  fade(gain: number, seconds?: number): void;
+  /** Fades out over `seconds` and stops. */
+  stop(seconds?: number): void;
+  readonly stopped: boolean;
+}
+
+/** One file in a game's sound bank. */
+export interface SoundAsset {
+  src: string;
+  /** Linear trim. Defaults to 1. */
+  gain?: number;
+  /** Repeats closer together than this many milliseconds are dropped. */
+  cooldownMs?: number;
+  /** Loop window in seconds. Looping files carry padding around the loop. */
+  loop?: { start: number; end: number };
+}
+
+/**
+ * A game's own sounds, registered at the game's import site so its files are
+ * fetched only in that game's rooms (never by `preloadSounds`).
+ */
+export interface SoundBank<N extends string> {
+  readonly id: string;
+  readonly names: readonly N[];
+  /** Fetches every file now and decodes once audio exists. */
+  preload(): void;
+  /** Fetches and decodes one file; rejects when it cannot. */
+  load(name: N): Promise<AudioBuffer>;
+  play(name: N, options?: PlayOptions): void;
+  playAndWait(name: N, options?: PlayOptions): Promise<boolean>;
+  loop(name: N, options?: LoopOptions): LoopHandle;
+}
+
 interface AudioPreferencesV1 {
   version: 1;
   muted: boolean;
@@ -40,6 +113,9 @@ const DEFAULT_VOLUME = 0.5;
 const DEFAULT_FADE_IN_S = 0.02;
 /** Fade-out duration in seconds to reduce abrupt tails. */
 const DEFAULT_FADE_OUT_S = 0.02;
+/** Bank files are authored with their own envelopes; these only guard against edge clicks. */
+const BANK_FADE_IN_S = 0.001;
+const BANK_FADE_OUT_S = 0.005;
 
 // --- Web Audio API state ---
 let audioContext: AudioContext | null = null;
@@ -47,9 +123,14 @@ let masterGain: GainNode | null = null;
 let compressor: DynamicsCompressorNode | null = null;
 let sfxBusGain: GainNode | null = null;
 let narratorBusGain: GainNode | null = null;
-const bufferCache = new Map<SoundName, AudioBuffer>();
-const inflightBufferLoads = new Map<SoundName, Promise<AudioBuffer>>();
-const lastPlayAtMs = new Map<SoundName, number>();
+const busGains: Record<BedBus, GainNode | null> = { music: null, ambience: null };
+/** The beds pass through two duck stages in series: the narrator's and big moments'. */
+let bedNarratorDuck: GainNode | null = null;
+let bedMomentDuck: GainNode | null = null;
+const bufferCache = new Map<string, AudioBuffer>();
+const inflightBufferLoads = new Map<string, Promise<AudioBuffer>>();
+const prefetchedBytes = new Map<string, Promise<ArrayBuffer>>();
+const lastPlayAtMs = new Map<string, number>();
 let resumePromise: Promise<void> | null = null;
 let audioStatus: AudioStatus = "idle";
 let audioIssue: string | null = null;
@@ -59,6 +140,16 @@ let narratorDucking = false;
 const DUCK_GAIN = 0.35;
 const DUCK_ATTACK_S = 0.03;
 const DUCK_RELEASE_S = 0.25;
+/** Music and ambience sit further under the narrator than SFX do. */
+const BED_NARRATOR_DUCK_GAIN = 0.3;
+
+// --- Moment ducking (duck(depth, ms)) ---
+const MOMENT_DUCK_ATTACK_S = 0.04;
+const MOMENT_DUCK_RELEASE_S = 0.35;
+let momentDuck: { depth: number; until: number } | null = null;
+
+const DEFAULT_BUS_GAIN: Record<BedBus, number> = { music: 0.55, ambience: 0.8 };
+const busGainValues: Record<BedBus, number> = { ...DEFAULT_BUS_GAIN };
 
 const SOUND_COOLDOWN_MS: Partial<Record<SoundName, number>> = {
   "vote-cast": 60,
@@ -132,9 +223,10 @@ export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
     masterGain = audioContext.createGain();
     masterGain.gain.value = muted ? 0 : volume;
 
-    // Submix buses under masterGain
+    // Submix buses under masterGain. A duck requested before the context
+    // existed takes effect now instead of being lost.
     sfxBusGain = audioContext.createGain();
-    sfxBusGain.gain.value = 1;
+    sfxBusGain.gain.value = narratorDucking ? DUCK_GAIN : 1;
     narratorBusGain = audioContext.createGain();
     narratorBusGain.gain.value = 1;
 
@@ -143,9 +235,31 @@ export function getAudioContext(): { ctx: AudioContext; gain: GainNode } {
     compressor.connect(masterGain);
     // Narrator bus → master → destination (bypasses compressor)
     narratorBusGain.connect(masterGain);
+
+    // Beds: music and ambience → narrator duck → moment duck → master. They
+    // bypass the SFX compressor so hits never pump the music.
+    bedNarratorDuck = audioContext.createGain();
+    bedNarratorDuck.gain.value = narratorDucking ? BED_NARRATOR_DUCK_GAIN : 1;
+    bedMomentDuck = audioContext.createGain();
+    bedMomentDuck.gain.value = 1;
+    bedNarratorDuck.connect(bedMomentDuck);
+    bedMomentDuck.connect(masterGain);
+    for (const bus of ["music", "ambience"] as const) {
+      const node = audioContext.createGain();
+      node.gain.value = busGainValues[bus];
+      node.connect(bedNarratorDuck);
+      busGains[bus] = node;
+    }
+
     masterGain.connect(audioContext.destination);
     audioContext.addEventListener("statechange", syncAudioContextStatus);
     syncAudioContextStatus();
+    // Banks preloaded before audio existed decode now.
+    for (const src of prefetchedBytes.keys()) {
+      void loadBuffer(src, src).catch(() => {
+        // Surfaced when the sound is actually played.
+      });
+    }
   }
   if (!masterGain) throw new Error("Audio master gain was not initialized");
   return { ctx: audioContext, gain: masterGain };
@@ -383,6 +497,49 @@ export function resetSoundTuning(): void {
   syncGainAndNotify();
 }
 
+// --- Bed buses and ducking ---
+
+export function getBusGain(bus: BedBus): number {
+  return busGainValues[bus];
+}
+
+/** Sets a bed's level (0..1.5), ramped over `seconds`. */
+export function setBusGain(bus: BedBus, gain: number, seconds = 0.05): void {
+  const next = Math.max(0, Math.min(1.5, gain));
+  busGainValues[bus] = next;
+  const node = busGains[bus];
+  if (node && audioContext) rampParam(node.gain, next, audioContext.currentTime, seconds);
+  notifyAudioListeners();
+}
+
+/**
+ * Dips music and ambience to `depth` (a gain, 0..1) for `ms` milliseconds,
+ * then lets them back up. Overlapping calls keep the deepest dip and the
+ * latest end. SFX and the narrator are untouched.
+ */
+export function duck(depth: number, ms: number): void {
+  if (!audioContext || !bedMomentDuck) return;
+  const now = audioContext.currentTime;
+  const target = Math.max(0, Math.min(1, depth));
+  const active = momentDuck && momentDuck.until > now ? momentDuck : null;
+  const next = {
+    depth: active ? Math.min(active.depth, target) : target,
+    until: Math.max(active?.until ?? 0, now + Math.max(0, ms) / 1000),
+  };
+  momentDuck = next;
+  const param = bedMomentDuck.gain;
+  param.cancelScheduledValues(now);
+  param.setValueAtTime(param.value, now);
+  param.linearRampToValueAtTime(next.depth, now + MOMENT_DUCK_ATTACK_S);
+  param.setValueAtTime(next.depth, Math.max(now + MOMENT_DUCK_ATTACK_S, next.until));
+  param.linearRampToValueAtTime(
+    1,
+    Math.max(now + MOMENT_DUCK_ATTACK_S, next.until) + MOMENT_DUCK_RELEASE_S,
+  );
+}
+
+// --- Loading ---
+
 let preloaded = false;
 
 function activateAndPreloadSounds(): Promise<boolean> {
@@ -403,14 +560,13 @@ export function preloadSounds(): void {
   void activateAndPreloadSounds();
 }
 
-function shouldThrottleSound(name: SoundName): boolean {
-  const cooldownMs = SOUND_COOLDOWN_MS[name];
+function shouldThrottle(key: string, cooldownMs: number | undefined): boolean {
   if (!cooldownMs) return false;
 
   const now = performance.now();
-  const last = lastPlayAtMs.get(name) ?? -Infinity;
+  const last = lastPlayAtMs.get(key) ?? -Infinity;
   if (now - last < cooldownMs) return true;
-  lastPlayAtMs.set(name, now);
+  lastPlayAtMs.set(key, now);
   return false;
 }
 
@@ -455,11 +611,19 @@ export async function activateAudio(): Promise<boolean> {
   }
 }
 
-function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
-  const cached = bufferCache.get(name);
+function fetchBytes(src: string, label: string): Promise<ArrayBuffer> {
+  return fetch(src).then((res) => {
+    if (!res.ok) throw new Error(`Failed to load sound: ${label}`);
+    return res.arrayBuffer();
+  });
+}
+
+/** Fetches (or reuses prefetched bytes) and decodes one file, cached by URL. */
+function loadBuffer(src: string, label: string): Promise<AudioBuffer> {
+  const cached = bufferCache.get(src);
   if (cached) return Promise.resolve(cached);
 
-  const inflight = inflightBufferLoads.get(name);
+  const inflight = inflightBufferLoads.get(src);
   if (inflight) return inflight;
 
   let ctx: AudioContext;
@@ -468,27 +632,124 @@ function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
   } catch (cause) {
     return Promise.reject(cause);
   }
-  const request = fetch(SOUND_MAP[name])
-    .then((res) => {
-      if (!res.ok) throw new Error(`Failed to load sound: ${name}`);
-      return res.arrayBuffer();
-    })
+  // Creating the context starts decoding preloaded banks. That may have
+  // already started this exact load while getAudioContext was initializing.
+  const startedWithContext = inflightBufferLoads.get(src);
+  if (startedWithContext) return startedWithContext;
+  // decodeAudioData detaches its input, so prefetched bytes are used once.
+  const bytes = prefetchedBytes.get(src) ?? fetchBytes(src, label);
+  prefetchedBytes.delete(src);
+  const request = bytes
     .then((buf) => ctx.decodeAudioData(buf))
     .then((audioBuffer) => {
-      bufferCache.set(name, audioBuffer);
+      bufferCache.set(src, audioBuffer);
       return audioBuffer;
     })
     .finally(() => {
-      inflightBufferLoads.delete(name);
+      inflightBufferLoads.delete(src);
     });
 
-  inflightBufferLoads.set(name, request);
+  inflightBufferLoads.set(src, request);
   return request;
 }
 
-export async function playSoundAndWait(name: SoundName): Promise<boolean> {
+function loadSoundBuffer(name: SoundName): Promise<AudioBuffer> {
+  return loadBuffer(SOUND_MAP[name], name);
+}
+
+// --- Playback ---
+
+/** The pitch ratio for `options`: semitones plus seeded or random jitter. */
+export function playbackRateFor(
+  options: Pick<PlayOptions, "semitones" | "jitter" | "seed">,
+): number {
+  const jitter = Math.max(0, options.jitter ?? 0);
+  const spread =
+    jitter === 0
+      ? 0
+      : options.seed === undefined
+        ? Math.random() * 2 - 1
+        : seededSpread(options.seed);
+  const semitones = (options.semitones ?? 0) + jitter * spread;
+  return 2 ** (semitones / 12);
+}
+
+/** A value in [-1, 1) from a seed, the same on every runtime. */
+function seededSpread(seed: number | string): number {
+  return (mixedHash(String(seed)) / 4294967296) * 2 - 1;
+}
+
+function busNode(bus: BusName | undefined): AudioNode | null {
+  if (bus === "music" || bus === "ambience") return busGains[bus];
+  return sfxBusGain ?? compressor ?? masterGain;
+}
+
+/** Inserts a stereo panner when the browser has one and the sound is off centre. */
+function panned(ctx: AudioContext, input: AudioNode, pan: number | undefined): AudioNode[] {
+  if (!pan || typeof ctx.createStereoPanner !== "function") return [input];
+  const panner = ctx.createStereoPanner();
+  panner.pan.value = Math.max(-1, Math.min(1, pan));
+  input.connect(panner);
+  return [input, panner];
+}
+
+interface OneShot {
+  key: string;
+  src: string;
+  label: string;
+  trim: number;
+  cooldownMs: number | undefined;
+  fadeIn: number;
+  fadeOut: number;
+}
+
+function startOneShot(ctx: AudioContext, buffer: AudioBuffer, shot: OneShot, options: PlayOptions) {
+  const target = busNode(options.bus);
+  if (!target) return;
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  const rate = playbackRateFor(options);
+  if (rate !== 1 && source.playbackRate) source.playbackRate.value = rate;
+  const soundGain = Math.max(0, shot.trim * (options.gain ?? 1));
+
+  // Per-sound fade-in gain to soften aggressive starts
+  const fadeGain = ctx.createGain();
+  const startAt = ctx.currentTime + Math.max(0, options.delay ?? 0);
+  const duration = buffer.duration / rate;
+  const safeDuration = Math.max(0, duration - 0.001);
+  const effectiveFadeIn = Math.min(Math.max(0, shot.fadeIn), safeDuration);
+  const effectiveFadeOut = Math.min(
+    Math.max(0, shot.fadeOut),
+    Math.max(0, safeDuration - effectiveFadeIn),
+  );
+  const endAt = startAt + duration;
+
+  fadeGain.gain.setValueAtTime(effectiveFadeIn > 0 ? 0 : soundGain, startAt);
+  if (effectiveFadeIn > 0) {
+    fadeGain.gain.linearRampToValueAtTime(soundGain, startAt + effectiveFadeIn);
+  }
+  if (effectiveFadeOut > 0) {
+    const fadeOutStartAt = Math.max(startAt, endAt - effectiveFadeOut);
+    fadeGain.gain.setValueAtTime(soundGain, fadeOutStartAt);
+    fadeGain.gain.linearRampToValueAtTime(0, endAt);
+  }
+
+  // Chain: source → fadeGain → [panner] → bus → … → masterGain → destination
+  source.connect(fadeGain);
+  const chain = panned(ctx, fadeGain, options.pan);
+  chain[chain.length - 1]!.connect(target);
+  source.onended = () => {
+    source.disconnect();
+    for (const node of chain) node.disconnect();
+  };
+  if (startAt > ctx.currentTime) source.start(startAt);
+  else source.start();
+}
+
+async function playOneShot(shot: OneShot, options: PlayOptions = {}): Promise<boolean> {
   if (typeof window === "undefined" || muted) return false;
-  if (shouldThrottleSound(name)) return false;
+  if (shouldThrottle(shot.key, shot.cooldownMs)) return false;
 
   let ctx: AudioContext;
   try {
@@ -501,65 +762,122 @@ export async function playSoundAndWait(name: SoundName): Promise<boolean> {
   // deferring this until after fetch/decode would lose the browser user gesture.
   const readyPromise = ensureAudioContextRunning(ctx);
 
-  function play(buffer: AudioBuffer): void {
-    const target = sfxBusGain ?? compressor ?? masterGain;
-    if (!target) return;
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    const soundGain = Math.max(0, soundGainMultiplier[name] ?? 1);
-    const localFadeInS = fadeInS;
-    const localFadeOutS = fadeOutS;
-
-    // Per-sound fade-in gain to soften aggressive starts
-    const fadeGain = ctx.createGain();
-    const startAt = ctx.currentTime;
-    const duration = buffer.duration;
-    const safeDuration = Math.max(0, duration - 0.001);
-    const effectiveFadeIn = Math.min(Math.max(0, localFadeInS), safeDuration);
-    const effectiveFadeOut = Math.min(
-      Math.max(0, localFadeOutS),
-      Math.max(0, safeDuration - effectiveFadeIn),
-    );
-    const endAt = startAt + duration;
-
-    fadeGain.gain.setValueAtTime(effectiveFadeIn > 0 ? 0 : soundGain, startAt);
-    if (effectiveFadeIn > 0) {
-      fadeGain.gain.linearRampToValueAtTime(soundGain, startAt + effectiveFadeIn);
-    }
-    if (effectiveFadeOut > 0) {
-      const fadeOutStartAt = Math.max(startAt, endAt - effectiveFadeOut);
-      fadeGain.gain.setValueAtTime(soundGain, fadeOutStartAt);
-      fadeGain.gain.linearRampToValueAtTime(0, endAt);
-    }
-
-    // Chain: source → fadeGain → compressor → masterGain → destination
-    source.connect(fadeGain);
-    fadeGain.connect(target);
-    source.onended = () => {
-      source.disconnect();
-      fadeGain.disconnect();
-    };
-    source.start();
-  }
-
   try {
-    const [ready, audioBuffer] = await Promise.all([readyPromise, loadSoundBuffer(name)]);
+    const [ready, audioBuffer] = await Promise.all([
+      readyPromise,
+      loadBuffer(shot.src, shot.label),
+    ]);
     if (!muted && ready && isAudioContextRunning(ctx)) {
-      play(audioBuffer);
+      startOneShot(ctx, audioBuffer, shot, options);
       setAudioIssue(null);
       return true;
     }
     return false;
   } catch (cause) {
-    setAudioIssue(getErrorMessage(cause, `Could not play the ${name} sound.`));
+    setAudioIssue(getErrorMessage(cause, `Could not play the ${shot.label} sound.`));
     return false;
   }
 }
 
+function sharedShot(name: SoundName): OneShot {
+  return {
+    key: name,
+    src: SOUND_MAP[name],
+    label: name,
+    trim: soundGainMultiplier[name] ?? 1,
+    cooldownMs: SOUND_COOLDOWN_MS[name],
+    fadeIn: fadeInS,
+    fadeOut: fadeOutS,
+  };
+}
+
+export async function playSoundAndWait(name: SoundName, options?: PlayOptions): Promise<boolean> {
+  return playOneShot(sharedShot(name), options);
+}
+
 /** Fire-and-forget playback for UI event handlers and effects. */
-export function playSound(name: SoundName): void {
-  void playSoundAndWait(name);
+export function playSound(name: SoundName, options?: PlayOptions): void {
+  void playSoundAndWait(name, options);
+}
+
+/**
+ * Registers a game's sounds without loading any of them: files are fetched on
+ * first use or by `preload()`, so other games' rooms never pay for them.
+ */
+export function createSoundBank<N extends string>(
+  id: string,
+  assets: Readonly<Record<N, SoundAsset>>,
+): SoundBank<N> {
+  const names = Object.keys(assets) as N[];
+  const shot = (name: N): OneShot => {
+    const asset = assets[name];
+    return {
+      key: `${id}:${name}`,
+      src: asset.src,
+      label: name,
+      trim: asset.gain ?? 1,
+      cooldownMs: asset.cooldownMs,
+      fadeIn: BANK_FADE_IN_S,
+      fadeOut: BANK_FADE_OUT_S,
+    };
+  };
+
+  return {
+    id,
+    names,
+    preload() {
+      if (typeof window === "undefined") return;
+      for (const name of names) {
+        const { src } = assets[name];
+        if (bufferCache.has(src) || inflightBufferLoads.has(src)) continue;
+        if (audioContext) {
+          void loadBuffer(src, name).catch(() => {
+            // Surfaced when the sound is played.
+          });
+        } else if (!prefetchedBytes.has(src)) {
+          const bytes = fetchBytes(src, name);
+          bytes.catch(() => {
+            prefetchedBytes.delete(src);
+          });
+          prefetchedBytes.set(src, bytes);
+        }
+      }
+    },
+    load(name) {
+      return loadBuffer(assets[name].src, name);
+    },
+    play(name, options) {
+      void playOneShot(shot(name), options);
+    },
+    playAndWait(name, options) {
+      return playOneShot(shot(name), options);
+    },
+    loop(name, options = {}) {
+      const asset = assets[name];
+      const handle = new AudioLoop(Math.max(0, (asset.gain ?? 1) * (options.gain ?? 1)));
+      if (typeof window === "undefined") {
+        handle.stopped = true;
+        return handle;
+      }
+      let ctx: AudioContext;
+      try {
+        ({ ctx } = getAudioContext());
+      } catch (cause) {
+        setAudioIssue(getErrorMessage(cause, "Could not start audio."));
+        handle.stopped = true;
+        return handle;
+      }
+      // Loops start even while audio is blocked or muted: they become audible
+      // when the context resumes or the room unmutes.
+      void ensureAudioContextRunning(ctx);
+      loadBuffer(asset.src, name)
+        .then((buffer) => handle.attach(ctx, buffer, asset, options, busNode(options.bus)))
+        .catch((cause: unknown) => {
+          setAudioIssue(getErrorMessage(cause, `Could not play the ${name} sound.`));
+        });
+      return handle;
+    },
+  };
 }
 
 let audioUnlockConsumerCount = 0;
@@ -624,18 +942,14 @@ export function getNarratorBusNode(): GainNode | null {
   return narratorBusGain;
 }
 
-/** Duck or unduck the SFX bus when the narrator is actively speaking. */
+/** Duck or unduck the SFX bus, music and ambience when the narrator is actively speaking. */
 export function setNarratorDucking(active: boolean): void {
   if (narratorDucking === active) return;
   narratorDucking = active;
   if (!sfxBusGain || !audioContext) return;
   const now = audioContext.currentTime;
-  sfxBusGain.gain.cancelScheduledValues(now);
-  if (active) {
-    sfxBusGain.gain.setValueAtTime(sfxBusGain.gain.value, now);
-    sfxBusGain.gain.linearRampToValueAtTime(DUCK_GAIN, now + DUCK_ATTACK_S);
-  } else {
-    sfxBusGain.gain.setValueAtTime(sfxBusGain.gain.value, now);
-    sfxBusGain.gain.linearRampToValueAtTime(1, now + DUCK_RELEASE_S);
-  }
+  const seconds = active ? DUCK_ATTACK_S : DUCK_RELEASE_S;
+  rampParam(sfxBusGain.gain, active ? DUCK_GAIN : 1, now, seconds);
+  if (bedNarratorDuck)
+    rampParam(bedNarratorDuck.gain, active ? BED_NARRATOR_DUCK_GAIN : 1, now, seconds);
 }
