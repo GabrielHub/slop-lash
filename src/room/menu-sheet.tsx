@@ -20,7 +20,7 @@ import {
 } from "@/components/icons";
 import { inviteShareData, shareStatusLabel, useShareLink } from "./share-link";
 import { useTheme } from "@/components/theme-provider";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { DUR, EASE, SPRING, collapse } from "@/lib/animations";
 import { useRoom } from "./context";
 import { useHostActions, useTwoTap } from "./host-actions";
@@ -217,7 +217,7 @@ function SettingsRows() {
 function HostRows({ onDone }: { onDone: () => void }) {
   const { view } = useRoom();
   const { room, players } = view;
-  const ui = gameUi(room.gameType);
+  const ui = useGameUi();
   const { skip, end, kick, pending, error } = useHostActions();
   // The sheet stays open across phases: a first tap must not carry into the next phase.
   const { armed, press } = useTwoTap({ resetOn: room.phaseGeneration });

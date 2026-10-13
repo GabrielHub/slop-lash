@@ -7,7 +7,7 @@ import {
   usePhaseCountdown,
   usePhaseDrain,
 } from "./timer";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { Avatar } from "./avatar";
 import { useRoom } from "./context";
 import { MenuButton } from "./menu-sheet";
@@ -58,7 +58,7 @@ export function PhoneBar() {
   const player = players.find((candidate) => candidate.id === me?.playerId);
   const lobby = room.status === "LOBBY";
   const playing = room.status === "PLAYING";
-  const hidden = gameUi(room.gameType).chrome?.(view).phoneBar === false;
+  const hidden = useGameUi().chrome?.(view).phoneBar === false;
 
   if (lobby || hidden) {
     return (

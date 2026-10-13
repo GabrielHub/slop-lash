@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { SpeakerIcon, toggleSound, useAudioState } from "@/components/audio-controls";
 import { CountdownRing } from "./timer";
 import { QrCode } from "@/components/qr-code";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { fade } from "@/lib/animations";
 import { useRoom } from "./context";
 import { useStageKey } from "./host-dock";
@@ -144,7 +144,7 @@ export function StageRail({
 }) {
   const { view } = useRoom();
   const { room } = view;
-  const ui = gameUi(room.gameType);
+  const ui = useGameUi();
   const playing = room.status === "PLAYING";
   const finished = room.status === "FINISHED";
   const lobby = room.status === "LOBBY";

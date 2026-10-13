@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { PlayerList } from "./player-list";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { DUR, EASE, SPRING, pop, press } from "@/lib/animations";
 import { useRoom } from "./context";
 import { NO_FREE_GAMES, useCanPlayAgain, useEndControlsReady } from "./finished";
@@ -139,7 +139,7 @@ function DrainUnderline() {
 export function HostDock({ placement }: { placement: "stage" | "docked" }) {
   const { view, live } = useRoom();
   const { room, me, players } = view;
-  const ui = gameUi(room.gameType);
+  const ui = useGameUi();
   const { skip, end, kick, playAgain, pending, error } = useHostActions();
   const endReady = useEndControlsReady();
   const canPlayAgain = useCanPlayAgain();

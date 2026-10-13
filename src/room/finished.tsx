@@ -10,7 +10,7 @@ import { ErrorBanner } from "@/components/error-banner";
 import { PulsingDot } from "@/components/pulsing-dot";
 import { ShareIcon } from "@/components/icons";
 import { recapShareData, shareStatusLabel, useShareLink } from "./share-link";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { getConvexErrorMessage } from "@/lib/convex-errors";
 import { enter, press } from "@/lib/animations";
 import { useRoom } from "./context";
@@ -91,7 +91,7 @@ function FinishedBarBody() {
 
 function useShareResults() {
   const { room } = useRoom().view;
-  const ui = gameUi(room.gameType);
+  const ui = useGameUi();
   const results = useShareLink();
   return {
     share: () => void results.share(() => recapShareData(room.code, ui.name, room.gameNumber)),

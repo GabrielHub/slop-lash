@@ -203,3 +203,24 @@ invoke Vite itself and are not the Next.js application commands.
 | `vp run convex:dev`         | Run and synchronize the development Convex deployment          |
 | `vp run convex:codegen`     | Regenerate the typed Convex API without starting development   |
 | `vp run check:theme-colors` | Check the theme-color guardrail                                |
+
+### Production room-start smoke test
+
+Build with the development Convex URL, then run `vp run start` and, in a
+second terminal, `vp exec node scripts/room-start-smoke.mjs`. Requires an
+installed Google Chrome and the workspace's transitive `playwright-core`
+(or `PLAYWRIGHT_CORE` pointing to its package directory).
+
+The test creates a Free Play room for each of the four modes, joins two
+phone browsers and a stage, starts play, and checks that every screen survives
+both the transition and a reload. It spends normal AI credits and daily Free
+Play slots, and ends its started games afterward. Reports and screenshots go
+to `output/playwright/room-start/`. Use `--base=http://localhost:3001`,
+`--games=SLOPFIGHT,SLOPLASH`, `--layout=game` for docked players, or
+`--out=output/playwright/another-run` as needed.
+
+Run this against the **production build**, even when development fixtures
+pass. A circular import between the game registry and shared room components
+caused undefined countdown imports in optimized live SlopFight and SlopLash
+builds. The shell now supplies the selected game through `GameUiProvider`, so
+shared components do not import the registry. Production optimizations stay on.

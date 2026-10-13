@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { pulseAmbient } from "@/lib/ambient-events";
 import { DUR, EASE, SPRING, fade, wipe } from "@/lib/animations";
 import { playSound, type SoundName } from "@/lib/sounds";
@@ -61,7 +61,7 @@ export function useTitleCardShowing() {
  */
 export function useStageTransitions(sceneId: string) {
   const { view, live, clockOffsetMs } = useRoom();
-  const ui = gameUi(view.room.gameType);
+  const ui = useGameUi();
   const spec = ui.titleCard?.(view) ?? null;
   const { status, round, phase, id: roomId, gameNumber } = view.room;
   const [card, setCard] = useState<TitleCardSpec | null>(null);

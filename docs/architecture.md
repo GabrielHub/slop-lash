@@ -118,6 +118,12 @@ A game's UI is a `GameUi` (`src/room/game-ui.ts`, registered in
 - `Stage` is the shared big screen.
 - `Controller` is one player's phone.
 
+Only the room shell imports the game UI registry. `RoomFrame` selects the UI
+and supplies it through `GameUiProvider`; shared room components read it with
+`useGameUi`. Games can reuse those components without a circular import back
+through the registry. Keep that boundary intact: the former cycle broke
+countdown imports in optimized production bundles even when dev fixtures passed.
+
 The shared shell (`src/room/shell.tsx`) owns the header, countdown, lobby, host
 controls, reconnects, and final-screen footer. It composes the screens on
 three routes:

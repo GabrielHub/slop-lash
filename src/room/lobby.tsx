@@ -6,7 +6,7 @@ import { AudioUnlockHint } from "@/components/audio-controls";
 import { ErrorBanner } from "@/components/error-banner";
 import { PlayerList } from "./player-list";
 import { QrCode } from "@/components/qr-code";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import { originOf, pulseAmbient } from "@/lib/ambient-events";
 import { STAGGER, SPRING, enter, listParent, pop, press } from "@/lib/animations";
 import { preloadSounds, playSound } from "@/lib/sounds";
@@ -376,8 +376,8 @@ export function JoinPanel() {
  */
 export function StageLobby({ docked = false }: { docked?: boolean }) {
   const { view } = useRoom();
-  const { room, me, players } = view;
-  const ui = gameUi(room.gameType);
+  const { me, players } = view;
+  const ui = useGameUi();
   const Extra = ui.StageLobby;
   const { ref: extraRef, overflowing } = useOverflowing<HTMLDivElement>();
   usePlayerSounds(players);
@@ -489,7 +489,7 @@ export function HostStartBar() {
 export function ControllerLobby() {
   const { view } = useRoom();
   const { room, me, players } = view;
-  const ui = gameUi(room.gameType);
+  const ui = useGameUi();
   const Extra = ui.ControllerLobby;
   const player = players.find((candidate) => candidate.id === me?.playerId);
   // After "Play again" every phone lands here together; each one buzzes as it does.

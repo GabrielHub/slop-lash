@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { usePhaseCountdown } from "./timer";
 import { ErrorBanner } from "@/components/error-banner";
-import { gameUi } from "@/games/ui-registry";
+import { useGameUi } from "./game-ui-context";
 import {
   heldEnergy,
   pulseAmbient,
@@ -35,7 +35,7 @@ export function phaseKey(view: RoomView) {
  */
 export function AmbientDriver({ surface }: { surface: AmbientSurface }) {
   const { view } = useRoom();
-  const ui = gameUi(view.room.gameType);
+  const ui = useGameUi();
   const countdown = usePhaseCountdown();
   const now = useServerNow();
   const { status, phaseStartedAt } = view.room;
@@ -83,7 +83,7 @@ export function StageClockCues() {
  */
 export function YourTurnNudge({ fixed, swell }: { fixed: boolean; swell: boolean }) {
   const { view, live } = useRoom();
-  const ui = gameUi(view.room.gameType);
+  const ui = useGameUi();
   const key = phaseKey(view);
   const needs = ui.needsInput?.(view) ?? false;
   const [seenKey, setSeenKey] = useState(key);
@@ -122,7 +122,7 @@ export function YourTurnNudge({ fixed, swell }: { fixed: boolean; swell: boolean
 export function HostContinueBar({ className = "" }: { className?: string }) {
   const { view } = useRoom();
   const { room, me } = view;
-  const ui = gameUi(room.gameType);
+  const ui = useGameUi();
   const { skip, pending, error } = useHostActions();
   const { armed, press: pressTwice } = useTwoTap({ resetOn: room.phaseGeneration });
   const needs = ui.needsInput?.(view);

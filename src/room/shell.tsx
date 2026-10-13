@@ -11,6 +11,7 @@ import { useRoom } from "./context";
 import { AmbientDriver, HostContinueBar, StageClockCues, YourTurnNudge, phaseKey } from "./cues";
 import { PhoneFinishedBar } from "./finished";
 import { RoomGate } from "./gate";
+import { GameUiProvider, useGameUi } from "./game-ui-context";
 import { HostDock } from "./host-dock";
 import { ControllerLobby, StageLobby } from "./lobby";
 import { MenuButton } from "./menu-sheet";
@@ -52,7 +53,7 @@ function StageColumn({
   enterFirstScene?: boolean;
 }) {
   const { view, live } = useRoom();
-  const ui = gameUi(view.room.gameType);
+  const ui = useGameUi();
   const lobby = view.room.status === "LOBBY";
   const ownsLobby = ui.ownsLobby === true;
   const shellLobby = lobby && !ownsLobby;
@@ -109,7 +110,7 @@ function StageColumn({
 /** One player's phone screen, or the controller half of the docked view. */
 function ControllerColumn({ variant }: { variant: "phone" | "docked" }) {
   const { view, live } = useRoom();
-  const ui = gameUi(view.room.gameType);
+  const ui = useGameUi();
   const { status } = view.room;
   const lobby = status === "LOBBY";
   const phone = variant === "phone";
@@ -139,7 +140,7 @@ function ControllerColumn({ variant }: { variant: "phone" | "docked" }) {
  */
 function GameLayout() {
   const { view } = useRoom();
-  const ui = gameUi(view.room.gameType);
+  const ui = useGameUi();
   const [tab, setTab] = useState<"play" | "watch">("play");
   const needsInput = ui.needsInput?.(view) ?? false;
   const playing = view.room.status === "PLAYING";
@@ -221,21 +222,23 @@ export function RoomFrame({
   useHtmlAttribute("data-surface", stageSurface ? "stage" : null);
 
   return (
-    <TitleCardProvider>
-      <div
-        data-game={ui.theme}
-        data-surface={stageSurface ? "stage" : undefined}
-        className="flex min-h-svh flex-col"
-      >
-        <AmbientDriver surface={effective === "controller" ? "phone" : "stage"} />
-        {effective === "stage" && (
-          <StageColumn variant={recap ? "recap" : "stage"} enterFirstScene={enterFirstScene} />
-        )}
-        {effective === "controller" && <ControllerColumn variant="phone" />}
-        {effective === "game" && <GameLayout />}
-        {stageSurface && <HostDock placement="stage" />}
-      </div>
-    </TitleCardProvider>
+    <GameUiProvider value={ui}>
+      <TitleCardProvider>
+        <div
+          data-game={ui.theme}
+          data-surface={stageSurface ? "stage" : undefined}
+          className="flex min-h-svh flex-col"
+        >
+          <AmbientDriver surface={effective === "controller" ? "phone" : "stage"} />
+          {effective === "stage" && (
+            <StageColumn variant={recap ? "recap" : "stage"} enterFirstScene={enterFirstScene} />
+          )}
+          {effective === "controller" && <ControllerColumn variant="phone" />}
+          {effective === "game" && <GameLayout />}
+          {stageSurface && <HostDock placement="stage" />}
+        </div>
+      </TitleCardProvider>
+    </GameUiProvider>
   );
 }
 
