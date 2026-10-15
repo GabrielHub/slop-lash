@@ -5,8 +5,9 @@
 One node per PROP_TAGS entry in src/games/slopfight/vocab.ts, named
 Prop_<tag> (Prop_leaf_blower, Prop_thing, ...). Every node sits at the world
 origin with its origin AT THE GRIP, scaled for a fighter 1 unit tall (a bat
-is about 0.5 long), chunky soft-vinyl style, under 500 triangles, vertex
-colours only.
+is about 0.5 long), chunky soft-vinyl style, vertex colours only. Most props
+stay under 500 triangles; selected foreground props have explicit budgets
+in verify_glb.py so seams, rounded grips and hollow bells survive close-ups.
 
 Built in Blender (Z up, -Y front) and exported +Y up, so in three.js:
   * the grip is the node origin;
@@ -78,12 +79,17 @@ def star(r0, r1, cx, cz, n=5, rot=90.0):
 
 @prop("knife", "blade", "upright", (0, 0, 1), (0, 0, 0.29))
 def knife(g):
-    g.capsule(0.024, 0.09, loc=(0, 0, 0.0), segs=8, rings=5, color=RED)
+    g.capsule(0.024, 0.09, loc=(0, 0, 0.0), segs=12, rings=7, color=RED)
     for z in (-0.03, 0.03):
-        g.disc(0.007, loc=(0, -0.025, z), normal=(0, -1, 0), segs=5, color=CREAM)
+        for sy in (-1, 1):
+            g.disc(0.006, loc=(0, sy * 0.025, z), normal=(0, sy, 0), segs=8, color=BRASS)
+    g.cyl(0.025, 0.012, base=(0, 0, -0.064), segs=12, color=STEEL_DK)
     g.box((0.07, 0.03, 0.018), loc=(0, 0, 0.068), bevel=0.006, seg=1, color=STEEL_DK)
     flat(g, [(-0.03, 0.076), (0.03, 0.076), (0.03, 0.2), (-0.012, 0.29), (-0.03, 0.25)], 0.012, STEEL)
-    g.box((0.004, 0.0125, 0.16), loc=(0.024, 0, 0.17), bevel=0, color="#ffffff", shade=(1, 1))
+    # Broad cutting bevel follows the actual blade silhouette, not a floating stripe.
+    for sy in (-1, 1):
+        flat(g, [(0.021, 0.08), (0.029, 0.08), (0.029, 0.199), (-0.009, 0.274),
+                 (0.014, 0.195)], 0.001, CREAM, y=sy * 0.0065, bevel=0, shade=(1, 1), jit=0)
 
 
 @prop("sword", "blade", "upright", (0, 0, 1), (0, 0, 0.56))
@@ -161,12 +167,20 @@ def umbrella(g):
 @prop("briefcase", "blunt", "hanging", (1, 0, 0), (0, 0, -0.27))
 def briefcase(g):
     g.tube([(-0.06, 0, -0.04), (-0.055, 0, -0.005), (-0.03, 0, 0.012), (0.03, 0, 0.012), (0.055, 0, -0.005),
-            (0.06, 0, -0.04)], 0.012, segs=6, color=INK)
+            (0.06, 0, -0.04)], 0.012, segs=8, color=INK)
     g.box((0.34, 0.1, 0.24), loc=(0, 0, -0.17), bevel=0.03, seg=2, color="#c98a52", shade=(0.75, 1.05))
     g.box((0.345, 0.105, 0.012), loc=(0, 0, -0.105), bevel=0.004, seg=1, color="#93603c", shade=(1, 1))
+    # Recessed-looking leather panel and a broad seam that reads at fight scale.
+    g.box((0.265, 0.012, 0.125), loc=(0, -0.05, -0.195), bevel=0.018, seg=1, color="#b57746")
+    g.tube([(-0.124, -0.057, -0.14), (-0.124, -0.057, -0.25), (0.124, -0.057, -0.25),
+            (0.124, -0.057, -0.14)], 0.0025, segs=4, color="#efc28a", caps=False, shade=(1, 1), jit=0)
+    g.box((0.055, 0.008, 0.024), loc=(0, -0.06, -0.16), bevel=0.004, seg=1, color=BRASS)
     for sx in (-1, 1):
         g.box((0.04, 0.02, 0.03), loc=(sx * 0.1, -0.052, -0.1), bevel=0.006, seg=1, color=BRASS)
         g.box((0.02, 0.108, 0.24), loc=(sx * 0.155, 0, -0.17), bevel=0.006, seg=1, color="#93603c")
+        g.box((0.026, 0.03, 0.012), loc=(sx * 0.06, 0, -0.042), bevel=0.004, seg=1, color=BRASS)
+        for zz in (-0.13, -0.25):
+            g.disc(0.005, loc=(sx * 0.155, -0.055, zz), normal=(0, -1, 0), segs=6, color=BRASS)
 
 
 @prop("pan", "blunt", "upright", (0, 0, 1), (0, 0, 0.44))
@@ -298,8 +312,13 @@ def baguette(g):
 def boxing_glove(g):
     g.cyl(0.05, 0.075, base=(0, 0, -0.02), segs=12, bevel=0.012, seg=1, color=CREAM)
     g.cyl(0.0515, 0.018, base=(0, 0, 0.012), segs=12, caps=False, color=RED, shade=(1, 1))
-    g.sphere((0.074, 0.07, 0.095), loc=(0, -0.006, 0.14), segs=12, rings=8, color=RED, shade=(0.8, 1.05))
-    g.capsule(0.026, 0.04, loc=(-0.065, -0.02, 0.105), rot=(0, -25, 0), segs=8, rings=5, color=RED)
+    g.sphere((0.074, 0.07, 0.095), loc=(0, -0.006, 0.14), segs=16, rings=10, color=RED, shade=(0.8, 1.05))
+    g.capsule(0.026, 0.04, loc=(-0.065, -0.02, 0.105), rot=(0, -25, 0), segs=10, rings=5, color=RED)
+    # Padded cuff patch and curved finger seam, rather than extra glossy lumps.
+    g.box((0.052, 0.008, 0.026), loc=(0, -0.05, 0.012), bevel=0.006, seg=1, color=INK)
+    g.box((0.027, 0.002, 0.009), loc=(0, -0.055, 0.012), bevel=0, color=CREAM, shade=(1, 1), jit=0)
+    g.tube([(-0.045, 0.046, 0.115), (-0.02, 0.061, 0.108), (0.018, 0.061, 0.108),
+            (0.047, 0.044, 0.115)], 0.0025, segs=4, color="#b83b31", caps=False, shade=(1, 1))
     for k in range(3):
         g.box((0.03, 0.006, 0.006), loc=(0, 0.052, 0.04 + k * 0.022), bevel=0, color=CREAM, shade=(1, 1))
     g.sphere((0.03, 0.01, 0.02), loc=(0.02, -0.07, 0.17), segs=6, rings=4, color="#ff9a8a")
@@ -356,15 +375,19 @@ def wand(g):
 @prop("trumpet", "instrument", "aim", (0, 0, 1), (0, -0.26, 0.05))
 def trumpet(g):
     pts = [(0, 0.14, 0.05), (0, 0.06, 0.05), (0, -0.12, 0.05)]
-    g.tube(pts, 0.011, segs=8, color=BRASS)
+    g.tube(pts, 0.011, segs=10, color=BRASS)
     loop = [(0, 0.05, 0.05), (0, 0.08, 0.02), (0, 0.06, -0.02), (0, -0.02, -0.02), (0, -0.07, 0.0), (0, -0.06, 0.04)]
-    g.tube(loop, 0.01, segs=8, color=BRASS)
-    g.lathe([(0.011, 0.0), (0.016, 0.06), (0.03, 0.1), (0.06, 0.13), (0.064, 0.135), (0.05, 0.13)],
-            base=(0, -0.12, 0.05), rot=(90, 0, 0), segs=12, color=BRASS, shade=(0.8, 1.05))
+    g.tube(loop, 0.01, segs=10, color=BRASS)
+    # Rolled rim and a return wall give the bell a real cavity in face-on shots.
+    g.lathe([(0.011, 0.0), (0.016, 0.06), (0.03, 0.1), (0.06, 0.13), (0.064, 0.135),
+             (0.06, 0.14), (0.053, 0.133), (0.026, 0.099), (0.013, 0.06)],
+            base=(0, -0.12, 0.05), rot=(90, 0, 0), segs=16, color=BRASS, shade=(0.8, 1.05),
+            fn=lambda c, n, col: "#b47825" if n.x * c.x + n.z * (c.z - 0.05) < -0.001 else col)
     g.cyl(0.016, 0.03, base=(0, 0.14, 0.05), rot=(-90, 0, 0), r2=0.008, segs=8, color=STEEL)
     for k in range(3):
         y = -0.01 + k * 0.025
-        g.cyl(0.012, 0.075, base=(0, y, 0.0), segs=8, color="#e0b03a")
+        g.cyl(0.012, 0.06, base=(0, y, 0.0), segs=8, color="#e0b03a")
+        g.cyl(0.005, 0.022, base=(0, y, 0.057), segs=6, color=STEEL)
         g.cyl(0.015, 0.012, base=(0, y, 0.075), segs=8, color=CREAM)
 
 
@@ -486,7 +509,7 @@ def build():
         ob = g.build(origin=(0, 0, 0), props=props)
         report.append((tag, g.tris(), round(length, 3)))
     for tag, t, ln in report:
-        print("PROP %-15s tris=%4d length=%.3f%s" % (tag, t, ln, "  OVER BUDGET" if t >= 500 else ""))
+        print("PROP %-15s tris=%4d length=%.3f" % (tag, t, ln))
     export_glb(os.path.join(OUT_DIR, "props.glb"))
 
 

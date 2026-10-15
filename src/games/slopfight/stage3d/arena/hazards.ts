@@ -59,7 +59,9 @@ export function createHazardAnimators(root: Object3D): HazardAnimator {
   const socks: Rest[] = [];
   root.updateMatrixWorld(true);
   root.traverse((object) => {
-    if (object.name.startsWith("Hazard_Wind_Laundry_")) laundry.push(rest(object));
+    // Outline hulls are children of these nodes and already inherit the sway.
+    // Matching their suffix too rotates them twice, through the fabric.
+    if (/^Hazard_Wind_Laundry_\d+$/.test(object.name)) laundry.push(rest(object));
     else if (/^Hazard_Toaster_Toast_\d+$/.test(object.name)) toast.push(rest(object, extraNumber(object, "pop_height") ?? 0.55));
     else if (object.name === "Hazard_Sink_Drip") {
       // fall_to is a world height (the bottom of the basin).
@@ -74,13 +76,14 @@ export function createHazardAnimators(root: Object3D): HazardAnimator {
     update(t, wind) {
       for (const piece of laundry) {
         // Sway around the line, harder in gusts, with a flutter on top.
-        const gust = 0.12 + wind.strength * 0.5;
-        const flutter = fbm1(t * 2.3 + piece.seed, piece.seed) * 0.08;
-        const swing = Math.sin(t * 1.7 + piece.seed) * 0.05 + flutter;
+        const gust = wind.strength * 0.18;
+        const flutter = fbm1(t * 1.2 + piece.seed, piece.seed) * 0.025;
+        const swing = Math.sin(t * 1.35 + piece.seed) * 0.035 + flutter;
         piece.object.rotation.set(
           piece.rotation.x + (swing + wind.z * gust) * 0.9,
           piece.rotation.y,
-          piece.rotation.z - (swing * 0.5 + wind.x * gust) * 0.9,
+          // Two pegs constrain sideways roll; most movement is about the line.
+          piece.rotation.z - (swing * 0.15 + wind.x * gust * 0.08),
         );
       }
       toast.forEach((piece, index) => {

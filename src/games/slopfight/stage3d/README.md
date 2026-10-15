@@ -26,13 +26,13 @@ readout are the only exceptions).
 | priority | what |
 | --- | --- |
 | -100 | `StageLoop`: `clock.tick`, quality sampling |
-| -5 | contact-shadow depth pass |
 | 0 | scene content (yours goes here) |
 | 0.5 | `CameraRig`: `transitions.update`, `director.update/apply` |
 | 0.55 | `ui3d/FaceCamera` (billboards: plates, health bars) |
 | 0.6 | `SlamTitle` (camera-fixed) |
 | 0.62 | `ui3d/Caption`: `voice.tick()`, The Voice's lower third (camera-fixed) |
 | 0.7 | `PostStack` uniforms |
+| 0.8 | contact-shadow depth pass, after animated transforms |
 | 1 | EffectComposer renders |
 
 Animate with `clock.elapsed` / `clock.delta` (presentation time: freezes in
@@ -210,7 +210,7 @@ The stack runs in this order:
 4. ACES
 5. Grade (contrast, saturation, tint) and vignette
 6. Stage fx (letterbox, iris, wipe, impact frame)
-7. SMAA
+7. SMAA on high; FXAA on every lower rung
 
 Direct control goes through `usePostFx()`: `setLetterbox(0..1, seconds)`,
 `setDof(strength, focus)`, `impactFrame(point, strength)`.
@@ -228,6 +228,13 @@ Auto mode drops one rung after two 2 s windows with a median frame over
 20 ms. It never steps back up. Read `useQuality().meshResolution` /
 `.meshGrid` for creature meshing.
 
+Contact shadows capture only opaque meshes marked `castShadow`, so outline
+hulls, UI overlays and transparent effects never project solid silhouettes.
+The receiver uses the canonical platform's top rectangles: shadows stop at
+the rim and leave the kitchen sink open. Capture runs after animation so it
+tracks the fighters in the same frame; depth testing keeps the nearest
+underside when casters overlap. Capture then restores renderer and mesh state.
+
 ## Arena (`arena/`)
 
 `ArenaSet` loads `/models/slopfight/{garage,kitchen,rooftop}.glb` and
@@ -239,7 +246,36 @@ preloads the next arena. It dresses the set:
 - Collision hidden, and the podium hidden until FINISHED
 
 It also animates the set: laundry and windsock in the wind, toast pops, the
-sink drip, floaters, crowd murmur and cheer jumps, and practical flicker.
+sink drip, floaters, grounded crowd breathing/turning and staggered cheer
+jumps. Cheers use absolute timestamps for anticipation, takeoff and landing,
+so their poses agree across frame rates and freeze with presentation time.
+Only exact garment nodes animate; their outline children inherit the motion.
+
+Practical illumination stays constant. Emissive surfaces can vary slowly by
+at most 10%, without the old abrupt dropouts. Each arena's `Probe_Ambient`
+provides Blender-baked diffuse sky and reflected scenery colour through a
+single SH light probe (`look/irradiance.ts`), replacing its hemisphere on all
+quality tiers and in recap replays. Local baked vertex AO supplies contact
+detail. This is a coarse single-bounce approximation with no extra draw calls
+or textures; arenas without a probe keep their hemisphere.
+
+Authored practicals replace the broad key/rim lights: rooftop ring floods,
+a cool garage fluorescent and a warm kitchen pendant. Softer surrounding light
+keeps attention on the fight while preserving each room's atmosphere. Only the
+main practical casts a shadow (`Light_Ring_Key`, `Light_Tube` or `Light_Pendant`);
+its allocation follows quality changes (2048 to 512). The shared
+`ArenaPracticals` renderer also supplies the same cones to recap replays,
+without replay shadow maps. `light_phases` keeps the smaller build/upgrade and
+foundry work lights off during fights. `StageLighting` receives the phase from
+the canvas so changing phases does not require reloading the set. Garage water
+reflections omit phase-only lights, so inactive station lamps do not glow in
+the water or displace the visible work lamp from the four-light budget.
+If the arena asset fails to load, a basic directional light keeps the canonical
+stand-in and fighters visible until the authored practicals are available.
+
+Blender's `sf_surface` mesh extra selects a shared matte, satin, gloss or toy
+material. These profiles vary the toon uniforms, so concrete, metal and
+enamel can respond differently without adding shader variants.
 
 `useArenaNodes()` gives the typed registry (`arena/nodes.ts`):
 - `cameras.Cam_*`
@@ -413,9 +449,18 @@ that text stays hidden, but nothing else is affected.
 - `at`: freezes the transition there (0..1)
 - `quality`
 - `nopost`: comma list
+- `preview=dof|chromatic|stageFx`: temporarily use a hero shot or hold a hit/wipe for A/B comparisons
 - `drift=0`, `ui=0`, `debug=1`
 
 Keys: `[` and `]` cycle shots, `r` replays.
+
+The lab shows the actual quality rung and disables effect switches that its
+budget withholds. Choosing a tier pins it; choosing auto resumes adaptation
+from that rung. Preview returns to the selected shot when set to Current scene.
+DoF is idle on fight-wide shots, chromatic is normally brief and hit-driven,
+and the slam title is 3D geometry rather than the screen-space stage-FX layer.
+In development, `window.__slopPost()` exposes the composer's active passes and
+effective switches; the renderer's tone mapping is off because the stack owns ACES.
 
 `/dev/slopfight/scenes` renders the real stage (`StageRoot` with every
 registered scene) inside a static room, using a synthetic clock and a dev

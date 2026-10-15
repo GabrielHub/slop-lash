@@ -51,6 +51,8 @@ export interface CreatureSource {
    * cache by `hash`. While false, parts keep a fixed size as they arrive.
    */
   complete?: boolean;
+  /** Mesher grid selected by the stage quality ladder. Standalone views use the full grid. */
+  resolution?: number;
   /** championHash, for the mesh cache. */
   hash?: string;
   /** The held item's tag (champion.item): drawn as a modelled prop once known. */
@@ -115,6 +117,7 @@ export class CreatureView {
   private faceKey = "";
   private paletteKey = "";
   private bodyKey = "";
+  private appliedBodyKey = "";
   private seed: number;
   private growth: boolean;
   private time = 0;
@@ -175,8 +178,9 @@ export class CreatureView {
       source.markings ?? null,
     ]);
     const bodyChanged = !prev || bodyKey !== this.bodyKey;
+    const resolutionChanged = prev?.resolution !== source.resolution;
     this.bodyKey = bodyKey;
-    if (bodyChanged) {
+    if (bodyChanged || resolutionChanged) {
       this.remesh(source);
     } else if (this.skeleton) {
       this.syncFace(source);
@@ -197,7 +201,7 @@ export class CreatureView {
       this.skeleton = null;
       return;
     }
-    const resolution = source.complete ? FINAL_RESOLUTION : GROWTH_RESOLUTION;
+    const resolution = source.resolution ?? (source.complete ? FINAL_RESOLUTION : GROWTH_RESOLUTION);
     // A known item tag is drawn as a modelled prop, so its bones leave the
     // field; while the tag is unknown, or props.glb is missing, the item stays
     // an SDF primitive.
@@ -267,6 +271,10 @@ export class CreatureView {
   ) {
     const old = this.skeleton;
     const oldRig = this.rig;
+    // A quality downgrade changes the surface density, not the creature.
+    // Compare with the last applied body so a pending forge update still grows.
+    const bodyChanged = this.appliedBodyKey !== this.bodyKey;
+    this.appliedBodyKey = this.bodyKey;
     const plan = source.bodyPlan ?? "BIPED";
     const rig = buildRig(skeleton, plan);
     this.skeleton = skeleton;
@@ -334,7 +342,7 @@ export class CreatureView {
     // Growth: new parts pop on with a puff; the old body re-forms into the new one.
     const firstBody = !old;
     const newIds = skeleton.bones.filter((b) => !old || !old.bones.some((o) => o.id === b.id));
-    if (this.growth && old && oldRig) {
+    if (this.growth && bodyChanged && old && oldRig) {
       const oldTorso = old.bones.find((b) => b.id === old.torso);
       const newTorso = skeleton.bones.find((b) => b.id === skeleton.torso);
       if (oldTorso && newTorso && newTorso.radius > 1e-6) {
@@ -349,7 +357,7 @@ export class CreatureView {
       }
       this.events.push({ kind: "reform", parts: source.parts.length });
     }
-    if (this.growth && (!firstBody || !source.complete)) {
+    if (this.growth && bodyChanged && (!firstBody || !source.complete)) {
       // Group new bones by part (a mirrored pair lands together).
       const byPart = new Map<string, string[]>();
       for (const bone of newIds) {

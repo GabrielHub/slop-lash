@@ -144,7 +144,11 @@ export function uiToon(color: string, options: UiToonOptions = {}): ToonMaterial
     material.emissiveIntensity = glow;
     if (options.doubleSide) material.side = DoubleSide;
     if (options.overlay) {
+      // renderOrder only sorts within a render queue. Keep the caption in the
+      // transparent queue so water, contact shadows and FX draw underneath it.
+      material.transparent = true;
       material.depthTest = false;
+      material.depthWrite = false;
       material.fog = false;
     }
     toonCache.set(key, material);
@@ -159,7 +163,9 @@ export function uiOutline(color: string, width = 2.2, options: { overlay?: boole
   if (!material) {
     material = createOutlineMaterial({ color: darkOf(color, 0.62), width });
     if (options.overlay) {
+      material.transparent = true;
       material.depthTest = false;
+      material.depthWrite = false;
       material.fog = false;
     }
     outlineCache.set(key, material);

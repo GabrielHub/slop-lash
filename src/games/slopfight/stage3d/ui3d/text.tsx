@@ -139,8 +139,9 @@ export function StageText({
           emissive={color}
           emissiveIntensity={glow}
           shadowSide={DoubleSide}
-          transparent={opacity < 1}
+          transparent={overlay || opacity < 1}
           depthTest={!overlay}
+          depthWrite={!overlay}
           fog={!overlay}
         />
       </Text>

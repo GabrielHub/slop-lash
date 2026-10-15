@@ -5,11 +5,11 @@
 // It hosts, in frame order:
 //
 //   -100  StageLoop      presentation clock + quality sampling
-//     -5  contact shadows depth pass
 //      0  scene: lighting, arena set, phase scene (+ caller's children)
 //    0.5  CameraRig      transitions, director, camera
 //    0.6  SlamTitle      camera-fixed title
 //    0.7  PostStack      post-fx uniforms
+//    0.8  contact shadows depth pass (after animated transforms)
 //      1  EffectComposer renders the frame
 //
 // The arena swaps under a deferred value, so the old set stays up while the
@@ -183,7 +183,7 @@ function StageContents({
       <ProgramKeeper />
       <CameraRig />
       <DprFollower />
-      <StageLighting mood={mood} platformHalf={ARENAS[arena].geometry.halfSize} />
+      <StageLighting mood={mood} geometry={ARENAS[arena].geometry} phase={input.phase} />
       <Suspense fallback={null}>
         <ArenaSet
           arena={arena}

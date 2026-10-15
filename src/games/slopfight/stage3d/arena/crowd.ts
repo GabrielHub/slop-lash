@@ -1,126 +1,144 @@
-// The crowd: twenty blob spectators (Crowd_01..20) that murmur-bounce while
-// idle and jump when the room cheers. `cheer(strength)` is the API scenes and
-// Hype call. Animation moves each member's own node (position + squash), so
-// it costs no draw calls and no shader work.
+// Grounded breathing and weight shifts at rest; anticipation, a hop, and a
+// soft landing when the room cheers. Each authored node keeps its own facing.
+// Absolute reaction times make the motion identical at 30, 60 and 120 Hz.
 
-import { Vector3, type Object3D } from "three";
+import { Euler, Quaternion, Vector3, type Object3D } from "three";
 import { hash01 } from "../director/noise";
+
+interface Reaction {
+  at: number;
+  height: number;
+  anticipation: number;
+  flight: number;
+  recovery: number;
+}
 
 interface Member {
   object: Object3D;
   base: Vector3;
   baseScale: Vector3;
+  facing: Quaternion;
   phase: number;
   rate: number;
-  /** Seconds of cheer delay for this member (the wave travels). */
   delay: number;
-  height: number;
-  /** Jump state: time into the current jump, or -1 when grounded. */
-  jumpT: number;
-  jumpHeight: number;
-  /** Squash on landing, decays. */
-  squash: number;
+  reactions: Reaction[];
 }
 
 const GRAVITY = 14;
+const TAU = Math.PI * 2;
+const smooth = (t: number) => t * t * (3 - 2 * t);
+const endOf = (r: Reaction) => r.at + r.anticipation + r.flight + r.recovery;
 
 export class CrowdController {
-  /** 0..1, how excited the room is; decays. Raises idle bounce and jump rate. */
+  /** 0..1 excitement, available to presentation consumers. */
   energy = 0;
   private members: Member[] = [];
-  private pendingCheers: Array<{ at: number; strength: number }> = [];
   private time = 0;
+  private cheerIndex = 0;
+  private tilt = new Euler();
+  private rotation = new Quaternion();
 
-  /** Bind to a set's Crowd_NN nodes (replaces any previous set's crowd). */
   bind(objects: readonly Object3D[]): void {
     this.reset();
     this.members = objects.map((object, index) => ({
       object,
       base: object.position.clone(),
       baseScale: object.scale.clone(),
-      phase: hash01(index, 11) * Math.PI * 2,
-      rate: 1.3 + hash01(index, 12) * 1.1,
-      delay: hash01(index, 13) * 0.28,
-      height: 0.012 + hash01(index, 14) * 0.02,
-      jumpT: -1,
-      jumpHeight: 0,
-      squash: 0,
+      facing: object.quaternion.clone(),
+      phase: hash01(index, 11) * TAU,
+      rate: 0.22 + hash01(index, 12) * 0.16,
+      delay: hash01(index, 13) * 0.32,
+      reactions: [],
     }));
   }
 
-  /** Put every member back where the set placed them. */
   reset(): void {
-    for (const member of this.members) {
-      member.object.position.copy(member.base);
-      member.object.scale.copy(member.baseScale);
+    for (const m of this.members) {
+      m.object.position.copy(m.base);
+      m.object.scale.copy(m.baseScale);
+      m.object.quaternion.copy(m.facing);
     }
     this.members = [];
-    this.pendingCheers = [];
+    this.time = 0;
+    this.energy = 0;
+    this.cheerIndex = 0;
   }
 
   get size(): number {
     return this.members.length;
   }
 
-  /** The crowd erupts: 0..1. Members jump in a ragged wave. */
+  /** A staggered response, with a second smaller hop from a few enthusiasts. */
   cheer(strength = 1): void {
     const s = Math.min(1, Math.max(0, strength));
+    if (s === 0) return;
     this.energy = Math.min(1, this.energy + s * 0.6);
-    this.pendingCheers.push({ at: this.time, strength: s });
+    const sequence = this.cheerIndex++;
+    this.members.forEach((m, index) => {
+      const roll = hash01(index + sequence * 97, 21);
+      if (roll > 0.3 + 0.7 * s) return;
+      // Do not interrupt an airborne spectator or queue an endless celebration.
+      if (m.reactions.some((r) => endOf(r) > this.time)) return;
+      const reaction: Reaction = {
+        at: this.time + m.delay,
+        height: (0.12 + 0.22 * s) * (0.75 + roll * 0.5),
+        anticipation: 0.14 + hash01(index, 22) * 0.07,
+        flight: 0,
+        recovery: 0.22 + hash01(index, 23) * 0.1,
+      };
+      reaction.flight = 2 * Math.sqrt((2 * reaction.height) / GRAVITY);
+      m.reactions = [reaction];
+      if (s > 0.75 && roll < 0.3) {
+        const height = reaction.height * 0.55;
+        m.reactions.push({
+          ...reaction,
+          at: endOf(reaction) + 0.15 + roll * 0.5,
+          height,
+          flight: 2 * Math.sqrt((2 * height) / GRAVITY),
+        });
+      }
+    });
   }
 
-  /** Advance by `delta` presentation seconds (freezes in hit stop with the world). */
+  /** Presentation seconds: a hit stop also freezes the audience. */
   update(delta: number): void {
     if (delta <= 0) return;
     this.time += delta;
-    const t = this.time;
-    const cheers = this.pendingCheers;
-
-    this.members.forEach((member, index) => {
-      // Cheers launch members once their delay has passed.
-      for (const cheer of cheers) {
-        if (t - cheer.at >= member.delay && t - cheer.at - delta <= member.delay) {
-          const roll = hash01(index + Math.floor(cheer.at * 100), 21);
-          if (roll < 0.35 + 0.65 * cheer.strength) this.launch(member, (0.18 + 0.32 * cheer.strength) * (0.7 + roll * 0.6));
-        }
-      }
-      // Excited idle: occasional small hops.
-      if (member.jumpT < 0 && this.energy > 0.15 && hash01(Math.floor(t * 3) * 97 + index, 31) < this.energy * delta * 2.4) {
-        this.launch(member, 0.08 + 0.12 * this.energy);
-      }
-
-      let y = 0;
-      if (member.jumpT >= 0) {
-        member.jumpT += delta;
-        const v0 = Math.sqrt(2 * GRAVITY * member.jumpHeight);
-        y = v0 * member.jumpT - 0.5 * GRAVITY * member.jumpT * member.jumpT;
-        if (y <= 0) {
-          y = 0;
-          member.jumpT = -1;
-          member.squash = Math.min(1, member.jumpHeight * 3);
-        }
-      }
-      // Murmur: a soft bob, faster with energy.
-      const bob = Math.max(0, Math.sin(t * member.rate * (1 + this.energy) * Math.PI * 2 + member.phase));
-      y += bob * member.height * (1 + this.energy * 2);
-      member.squash = Math.max(0, member.squash - delta * 5);
-
-      const stretch = member.jumpT >= 0 ? 0.08 : -0.18 * member.squash;
-      member.object.position.set(member.base.x, member.base.y + y, member.base.z);
-      member.object.scale.set(
-        member.baseScale.x * (1 - stretch * 0.5),
-        member.baseScale.y * (1 + stretch),
-        member.baseScale.z * (1 - stretch * 0.5),
-      );
-    });
-
-    this.pendingCheers = cheers.filter((cheer) => t - cheer.at < 0.5);
     this.energy = Math.max(0, this.energy - delta * 0.18);
-  }
-
-  private launch(member: Member, height: number): void {
-    if (member.jumpT >= 0) return;
-    member.jumpT = 0;
-    member.jumpHeight = height;
+    for (const m of this.members) {
+      const phase = this.time * m.rate * TAU + m.phase;
+      const breath = Math.sin(phase) * 0.009;
+      let y = 0;
+      let stretch = 0;
+      let cheerLean = 0;
+      const r = m.reactions.find((reaction) => this.time >= reaction.at && this.time <= endOf(reaction));
+      if (r) {
+        const age = this.time - r.at;
+        const crouch = 0.07 + r.height * 0.15;
+        if (age < r.anticipation) {
+          stretch = -crouch * smooth(age / r.anticipation);
+        } else if (age < r.anticipation + r.flight) {
+          const u = (age - r.anticipation) / r.flight;
+          y = 4 * r.height * u * (1 - u);
+          stretch = -crouch * (1 - smooth(Math.min(1, u / 0.32))) + 0.075 * Math.sin(Math.PI * u);
+        } else {
+          const u = (age - r.anticipation - r.flight) / r.recovery;
+          stretch = -crouch * Math.sin(Math.PI * u) ** 2;
+        }
+        cheerLean = Math.sin((Math.PI * age) / (endOf(r) - r.at)) * 0.035;
+      }
+      // Feet stay at their authored height at rest. Breathing changes the body
+      // about its foot origin instead of making everyone hover or pogo.
+      const sy = 1 + breath + stretch;
+      const width = 1 / Math.sqrt(sy);
+      m.object.position.set(m.base.x, m.base.y + y, m.base.z);
+      m.object.scale.set(m.baseScale.x * width, m.baseScale.y * sy, m.baseScale.z * width);
+      this.tilt.set(
+        Math.sin(phase * 0.73) * 0.012 - cheerLean,
+        Math.sin(phase * 0.47) * 0.035,
+        Math.sin(phase * 0.61) * 0.018,
+      );
+      m.object.quaternion.copy(m.facing).multiply(this.rotation.setFromEuler(this.tilt));
+    }
   }
 }

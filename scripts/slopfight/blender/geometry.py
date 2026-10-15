@@ -160,7 +160,14 @@ class Geo:
         return self.ingest(bm, mat(loc, rot), color, **kw)
 
     def slab(self, x0, x1, y0, y1, z0, z1, bevel=0.06, seg=2, color="#ff00ff", **kw):
-        """Axis-aligned box from bounds."""
+        """Axis-aligned box from bounds, including panels extruded toward -X/-Y.
+
+        Negative scale flips a primitive's winding and gives bevel a negative
+        width. Normalise the bounds so every face still points outwards.
+        """
+        x0, x1 = sorted((x0, x1))
+        y0, y1 = sorted((y0, y1))
+        z0, z1 = sorted((z0, z1))
         return self.box((x1 - x0, y1 - y0, z1 - z0), ((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2),
                         bevel=bevel, seg=seg, color=color, **kw)
 
@@ -389,6 +396,16 @@ class Geo:
         ob = bpy.data.objects.new(self.name, me)
         bpy.context.scene.collection.objects.link(ob)
         ob.data.materials.append(get_material(material))
+        if smooth_angle and any(self.S):
+            # Broad panels should read as flat planes, with the bevel carrying
+            # the highlight. Equal corner weighting made thin bevels bend the
+            # lighting across an entire tile, cabinet door or sign face.
+            weighted = ob.modifiers.new("Face-area normals", "WEIGHTED_NORMAL")
+            weighted.mode = "FACE_AREA_WITH_ANGLE"
+            weighted.keep_sharp = True
+            bpy.context.view_layer.objects.active = ob
+            with bpy.context.temp_override(object=ob, active_object=ob):
+                bpy.ops.object.modifier_apply(modifier=weighted.name)
         place(ob, mat(origin, q), parent)
         for k, v in (props or {}).items():
             ob[k] = v

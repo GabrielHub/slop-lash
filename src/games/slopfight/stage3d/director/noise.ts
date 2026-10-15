@@ -10,7 +10,7 @@ export function hash01(n: number, seed = 0): number {
   h ^= h >>> 15;
   h = Math.imul(h, 0x846ca68b) >>> 0;
   h ^= h >>> 16;
-  return h / 4294967296;
+  return (h >>> 0) / 4294967296;
 }
 
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -40,21 +40,13 @@ export function seedOf(text: string): number {
 }
 
 /**
- * Practical-light flicker multiplier in [0, 1] at time `t` seconds. `amount`
- * is the glTF `light_flicker` / `flicker` extra (0 = steady). Low amounts hum;
- * high amounts stutter and drop out like a dying tube or a sparking wire.
- * Lights and emissive meshes with the same amount share a `channel`, so a
- * tube and its glow flicker together.
+ * Gentle emissive variation at time `t` seconds (0 = steady). Never drops out:
+ * rapid tube stutters read as rendering defects, especially behind the crowd.
+ * Incident light stays constant; only the visible emissive surface breathes.
  */
 export function flickerAt(amount: number, t: number, channel = 0): number {
   if (amount <= 0) return 1;
-  const hum = 1 - amount * 0.08 * (0.5 + 0.5 * noise1(t * 6, channel));
-  // Stutter slots: short dropouts at a rate that grows with the amount.
-  const slot = Math.floor(t * 14);
-  const roll = hash01(slot, channel + 101);
-  const burst = hash01(Math.floor(t * 0.7), channel + 202) < amount * 0.75;
-  const dropout = burst && roll < amount * 0.55 ? 0.15 + 0.5 * hash01(slot, channel + 303) : 1;
-  return Math.max(0, Math.min(1, hum * dropout));
+  return 1 - Math.min(1, amount) * 0.1 * (0.5 + 0.5 * noise1(t * 0.65, channel));
 }
 
 /** Critically damped spring step toward a target (scalar). Returns [value, velocity]. */

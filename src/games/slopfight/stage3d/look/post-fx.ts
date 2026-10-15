@@ -5,6 +5,7 @@
 // Plain mutable state, no React: it changes every frame.
 
 import { Color, Vector2, Vector3, type Camera } from "three";
+import type { PostLevel } from "./quality";
 
 export interface PostToggles {
   bloom: boolean;
@@ -26,6 +27,16 @@ export const ALL_POST_ON: PostToggles = {
   vignette: true,
   stageFx: true,
 };
+
+/** Effective switches after the quality budget, shared by the renderer and lab controls. */
+export function effectivePostToggles(toggles: PostToggles, post: PostLevel): PostToggles {
+  return {
+    ...toggles,
+    bloom: toggles.bloom && post !== "minimal",
+    dof: toggles.dof && post === "full",
+    chromatic: toggles.chromatic && post === "full",
+  };
+}
 
 /** Frames the radial lines stay up after an impact (the hit stop's four frozen frames). */
 export const IMPACT_LINE_FRAMES = 4;

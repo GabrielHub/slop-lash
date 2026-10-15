@@ -11,6 +11,10 @@ bmesh primitives with vertex colours.
 | `build_rooftop.py` | `public/models/slopfight/rooftop.glb` (ROOFTOP) |
 | `build_props.py` | `public/models/slopfight/props.glb` (one `Prop_<tag>` per `PROP_TAGS`) |
 | `verify_glb.py` | re-imports the GLBs in a fresh Blender and checks the contract |
+| `verify_geometry.py` | checks outward slab winding and planar bevel normals without added triangles |
+| `ambient.py` | deterministic local ambient shading baked into vertex colours at export |
+| `irradiance.py` | per-arena single-bounce diffuse lighting baked into a spherical-harmonic probe |
+| `verify_ambient.py` | checks shading boundaries, self-intersection safety, prop isolation and repeat exports |
 | `render_previews.py` | EEVEE toon previews of every `Cam_*` plus the props |
 | `build_all.py` | runs all of the above |
 | `common.py` | shared geometry, painting, markers, arena parsing, export |
@@ -131,6 +135,8 @@ becomes (x, z, -y) in three.js. Blender -Y is the front of the set (three.js
     - optionally `light_distance`, `light_angle` (degrees), and
       `light_width` / `light_height` (rect)
     - `light_target` / `light_dir` (three.js world)
+    - `light_shadow: true` on each arena's main practical only (one shadow map)
+    - `light_phases` optionally restricts work lights to BUILD/UPGRADE or FOUNDRY
   - Spot and rect lights point down local -Z, the same as the cams.
   - `Light_Moon` (rooftop) is meant to be read as a directional light.
 
@@ -143,13 +149,48 @@ becomes (x, z, -y) in three.js. Blender -Y is the front of the set (three.js
 - **Material names are hints:** `SF_Vertex` (toon-lit), `SF_Emissive` (unlit
   glow) and `SF_Collision` (never drawn). The stage replaces them with its own
   toon material.
+- **Surface finish is authored in `sf_surface`:** `matte` for floors, room
+  shells, wood and masonry; `satin` for painted trim and sign frames; `gloss`
+  for the kitchen enamel, ceramics and faucet. This chooses the stage's toon
+  highlight profile. Merged dressing uses its dominant finish; spectators
+  retain the default toy finish. These tags need no extra meshes or textures.
+- **Face-area corner normals** are baked before export, keeping broad panels
+  planar under lighting and concentrating highlights on their bevels without
+  adding triangles. The sharp-angle boundary is preserved.
+- **Local ambient shading** is baked into the existing `Color` attribute at
+  export: 24 deterministic cosine-weighted rays, a 0.45-unit radius, quadratic
+  distance falloff and at most 18% sRGB darkening. It adds no runtime pass,
+  texture, mesh, triangle or exported vertex. Smooth and coincident vertices
+  share shading to avoid seams. Large faces stay authored rather than spreading
+  a corner shadow across an entire wall. Collision, emissive/backdrop surfaces,
+  water, the hidden podium and animated set pieces neither receive nor cast
+  this shading. Each held prop bakes in isolation with a radius of 22% of its
+  largest dimension (capped at 0.45), so overlapping library items never shade
+  one another. The exporter restores source colours after writing the GLB;
+  repeated exports cannot accumulate darkness. `export_glb(path, bake_ao=False)`
+  produces a same-geometry diagnostic comparison. Baked meshes carry
+  `sf_ao_bake: "local-v1"` and `sf_ao_radius` extras; each export prints AO timing
+  and per-object attenuation statistics.
+- **Diffuse probe:** every arena's `Probe_Ambient.sf_probe_sh` contains 27 linear RGB
+  coefficients in glTF Y-up world space. `irradiance.py` traces 1,024 fixed
+  directions at each of three positions, averaging sky and ground radiance,
+  visible emissives, and one diffuse reflection from static painted scenery
+  lit by its authored practicals. Each arena supplies its own sky/ground colour,
+  sample positions and practical scale; the rooftop also includes a dim moon.
+  Spot cones, falloff
+  and occlusion match the authored rig; phase-only work lights stay out of the
+  fight's bake. Moving cloth and crowd do not enter the
+  bake. This coarse global approximation complements local AO; it is not a
+  spatial lightmap or dynamic GI. The stage and recap use one `LightProbe`,
+  replacing the hemisphere with no new render pass, draw call or texture.
 - **Emissive parts** have a name ending in `_Emissive` and extras
   `emissive: true`, `emissive_color`, and sometimes `emissive_strength`.
-  - Big panels such as windows and the sky card use a low strength (1 to 2.5)
-    so they read as colour rather than bloom.
-  - `Backdrop_Sky_Emissive` also has `unlit: true`.
-  - `flicker` and `chase` extras ask for animation: `Neon_Emissive` flickers,
-    and `Marquee_Bulbs_Emissive` and `Festoon_Emissive` chase.
+  - Rooftop windows use `unlit: true` and strengths 0.4/0.55, preserving warm
+    window colour without competing with the ring. The sky card is also unlit.
+    Garage windows use 0.35 and the kitchen window uses 0.38 with the same flag.
+  - `flicker` now gives a slow, bounded emissive variation (at most 10% at
+    amount 1). Incident practical lighting stays steady. `chase` animates
+    `Marquee_Bulbs_Emissive` and `Festoon_Emissive` without pulsing illumination.
 - **`Collision`** has extras `collision: true`, `visible: false` and `boxes`
   (the count). Hide it.
 
@@ -217,9 +258,11 @@ Notes on the shots. The anchors are framed for what
   - `Hazard_Wire` is a live cable sparking in the water, with child
     `Spark_Emissive`.
 - Practicals:
-  - `Tube_Emissive` and `Light_Tube` (rect light, flicker 0.35), plus
-    `TubeL_Emissive` and `TubeR_Emissive`.
-  - `Light_Spark`, and `Light_Worklamp` with `Lamp_Emissive`.
+  - `Tube_Emissive` and `Light_Tube`: a cool, aimed spot over the ring, with
+    steady illumination and one shadow map. `TubeL_Emissive` and
+    `TubeR_Emissive` supply the build/upgrade and foundry work lights.
+  - `Light_Spark`, warm `Light_Worklamp` with `Lamp_Emissive`, and a soft
+    rearward `Light_Marquee` wash over the audience.
 - Dressing:
   - Floaters `Floater_1..5`.
   - The half-sunk sedan, oil drums, tool wall, pillars and garage door are
@@ -236,8 +279,12 @@ Notes on the shots. The anchors are framed for what
     `pop_height` along local +Y, and `Toaster_Glow_Emissive`.
 - Practicals:
   - `Light_Toaster`.
-  - `Window_Emissive` and `Light_Window` (rect).
-  - `Pendant_Emissive` and `Light_Pendant`.
+  - `Window_Emissive` and `Light_Window`: subdued evening colour and a broad
+    aimed spot toward the counter.
+  - `Pendant_Emissive` and `Light_Pendant`: warm light over the fight, with one
+    shadow map. The main open-bell shade and two smaller station pendants share
+    the existing shade/bulb batches. `Light_Work_Build` and `Light_Work_Foundry`
+    illuminate their stations only during the corresponding phases.
 - Dressing:
   - `Clock` has `Clock_Hand_Hour` and `Clock_Hand_Minute`, which spin about
     local Z in three.js (local Y in Blender).
@@ -257,6 +304,11 @@ Notes on the shots. The anchors are framed for what
     `Light_Neon` (flicker 0.3).
   - `Festoon_Emissive` and `Light_Festoon`.
   - `Light_Billboard` and `Light_Moon`.
+  - `Light_Ring_Key` and `Light_Ring_Fill`: two visible roof-mounted floodlights
+    aimed at the platform, replacing the broad directional key and rim.
+  - `Light_Work_Build` and `Light_Work_Foundry`: smaller heads on the same
+    masts, active only while their station is in use. All heads share two mesh
+    batches. The masts stand clear of the easel/foundry camera sightlines.
 - Dressing:
   - `AC_1..3_Fan` spin.
   - The water tower, AC units and fire escape are in `Set_City`.
@@ -270,7 +322,8 @@ There is one node per `PROP_TAGS` entry, `Prop_<tag>`, including `Prop_thing`.
 - **Placement:** every node sits at the world origin with its origin **at the
   grip**.
 - **Scale:** sized for a 1-unit fighter (the bat is about 0.55).
-- **Budget:** under 500 tris each.
+- **Budget:** under 500 tris each; the close-up briefcase, boxing glove and
+  trumpet have explicit limits of 800, enforced by `verify_glb.py`.
 - **Extras:**
   - `prop` (the tag)
   - `kind` (PROP_INFO kind)
@@ -297,12 +350,41 @@ There is one node per `PROP_TAGS` entry, `Prop_<tag>`, including `Prop_thing`.
   undersides on the ground, the far side of skyline cut-outs.
 - Set `Geo.max_seg` to cap bevel segments for every later part of a node. The
   sedan, for example, caps its detail parts at 1.
+- `Geo.slab()` sorts each pair of bounds. Panels extruded toward negative axes
+  keep outward face winding and a positive bevel width. Do not use negative
+  box dimensions to flip a panel: they expose its back face and can z-fight
+  against the cabinet beneath it.
+- Adjacent shells must meet without coplanar overlap. The rooftop's tower ends
+  at the platform slab's bottom (`topY - thickness`), so its facade does not
+  overlap the slab's side faces.
 
 ## Budgets (last build)
 
 | GLB | Tris | Headroom to 30k |
 |---|---|---|
-| garage | 25,122 | 4,878 |
-| kitchen | 23,518 | 6,482 |
-| rooftop | 25,464 | 4,536 |
-| props | 8,472 total, largest 472 (trumpet), leaf blower 468 | each under 500 |
+| garage | 25,354 | 4,646 |
+| kitchen | 25,904 | 4,096 |
+| rooftop | 26,912 | 3,088 |
+| props | 9,330 total; trumpet 712, briefcase/glove 636, knife 344 | three explicit 800 limits; all others under 500 |
+
+The corrected kitchen door bevels add 736 triangles (3.1%). The normal and
+ambient-shading passes add none; node and mesh counts are unchanged across all
+four GLBs. The later close-up detail pass adds 232 garage, 778 kitchen, 744
+rooftop and 858 held-prop triangles.
+
+The subsequent cloth repair removes 24 rooftop triangles by replacing seven
+closed towel slabs with a continuous shell. Matte garments have two pegs on
+their top edge, and the line sits ahead of the cheering crowd's jump envelope.
+The probe adds one empty; mesh count and existing anchor/collision data stay
+unchanged. The runtime animates only exact `Hazard_Wind_Laundry_N` names so
+outline children inherit one transform instead of swaying independently.
+
+The stadium-lighting pass adds 728 rooftop triangles and two mesh batches for
+the floodlight masts and lenses. Existing floor, collision and camera anchors
+are unchanged. The rebaked probe remains nine RGB coefficients with no textures.
+
+The indoor lighting pass adds 872 kitchen triangles for the open pendant shades
+and station fixtures in the same two mesh batches; garage geometry is unchanged.
+Both rooms use a baked probe and one shadow-casting practical. Phase-only work
+lights are excluded from the fight bake and the garage's static water reflections.
+No additional shadow map or texture is allocated.

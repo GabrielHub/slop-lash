@@ -2,10 +2,9 @@
 
 // Contact shadows so nothing floats (spec 7): a soft dark pool under anything
 // standing on the platform, rendered from below by an orthographic depth pass
-// and blurred. Adapted from drei's ContactShadows with two stage-specific
-// changes: the depth pass does not re-render the key light's shadow map (a
-// second shadow-map render per frame for nothing), and the size comes from the
-// quality rung.
+// and blurred. Only solid shadow casters enter the capture, after animation;
+// the receiver follows the actual platform (including the kitchen sink hole).
+// The depth pass skips the key light's shadow map and follows the quality rung.
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
@@ -22,10 +21,13 @@ import {
 } from "three";
 import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
+import type { ArenaGeometry } from "../../arenas";
+import { ContactShadowCasters, createContactShadowReceiver } from "./contact-shadow-geometry";
 
 const clearColor = new Color();
 
 export interface ContactShadowsProps {
+  geometry: ArenaGeometry;
   /** Footprint, world units (square). */
   size?: number;
   /** Height of the plane (just above the floor top so the floor itself is not captured). */
@@ -39,6 +41,7 @@ export interface ContactShadowsProps {
 }
 
 export function ContactShadows({
+  geometry,
   size = 7,
   y = 0.012,
   far = 1.3,
@@ -57,10 +60,12 @@ export function ContactShadows({
     target.texture.generateMipmaps = false;
     targetBlur.texture.generateMipmaps = false;
     const plane = new PlaneGeometry(size, size).rotateX(Math.PI / 2);
+    const receiver = createContactShadowReceiver(geometry, size);
+    const casters = new ContactShadowCasters();
     const blurPlane = new Mesh(plane);
+    // Keep normal depth testing/writing: the nearest underside must win when
+    // casters overlap, regardless of their draw order or material sorting.
     const depth = new MeshDepthMaterial();
-    depth.depthTest = false;
-    depth.depthWrite = false;
     const tint = new Color(color);
     depth.onBeforeCompile = (shader) => {
       shader.uniforms.ucolor = { value: tint };
@@ -89,14 +94,15 @@ export function ContactShadows({
       opacity,
       depthWrite: false,
     });
-    return { target, targetBlur, plane, blurPlane, depth, horizontal, vertical, camera, material };
-  }, [resolution, size, far, color, opacity]);
+    return { target, targetBlur, plane, receiver, casters, blurPlane, depth, horizontal, vertical, camera, material };
+  }, [geometry, resolution, size, far, color, opacity]);
 
   useEffect(
     () => () => {
       kit.target.dispose();
       kit.targetBlur.dispose();
       kit.plane.dispose();
+      kit.receiver.dispose();
       kit.depth.dispose();
       kit.horizontal.dispose();
       kit.vertical.dispose();
@@ -111,49 +117,61 @@ export function ContactShadows({
     const { target, targetBlur, blurPlane, depth, horizontal, vertical, camera } = kit;
     camera.position.set(0, y, 0);
     camera.updateMatrixWorld();
+    // The camera looks up from y; a quad left at y=0 sits behind its near plane.
+    blurPlane.position.y = y + far / 2;
 
     const background = scene.background;
     const override = scene.overrideMaterial;
     const autoUpdate = gl.shadowMap.autoUpdate;
-    root.visible = false;
-    scene.background = null;
-    scene.overrideMaterial = depth;
-    gl.shadowMap.autoUpdate = false;
+    const shadowNeedsUpdate = gl.shadowMap.needsUpdate;
+    const renderTarget = gl.getRenderTarget();
+    const cubeFace = gl.getActiveCubeFace();
+    const mipLevel = gl.getActiveMipmapLevel();
+    const visible = root.visible;
     gl.getClearColor(clearColor);
     const clearAlpha = gl.getClearAlpha();
-    gl.setClearColor(0x000000, 0);
-    gl.setRenderTarget(target);
-    gl.clear();
-    gl.render(scene, camera);
-    gl.setClearColor(clearColor, clearAlpha);
-    gl.shadowMap.autoUpdate = autoUpdate;
-
-    const pass = (amount: number) => {
-      blurPlane.visible = true;
-      blurPlane.material = horizontal;
-      horizontal.uniforms.tDiffuse!.value = target.texture;
-      horizontal.uniforms.h!.value = amount / 256;
-      gl.setRenderTarget(targetBlur);
-      gl.render(blurPlane, camera);
-      blurPlane.material = vertical;
-      vertical.uniforms.tDiffuse!.value = targetBlur.texture;
-      vertical.uniforms.v!.value = amount / 256;
+    try {
+      root.visible = false;
+      scene.background = null;
+      scene.overrideMaterial = depth;
+      gl.shadowMap.autoUpdate = false;
+      gl.shadowMap.needsUpdate = false;
+      gl.setClearColor(0x000000, 0);
       gl.setRenderTarget(target);
-      gl.render(blurPlane, camera);
-      blurPlane.visible = false;
-    };
-    pass(blur);
-    pass(blur * 0.4);
+      gl.clear();
+      kit.casters.render(scene, () => gl.render(scene, camera));
 
-    gl.setRenderTarget(null);
-    root.visible = true;
-    scene.overrideMaterial = override;
-    scene.background = background;
-  }, -5);
+      const pass = (amount: number) => {
+        blurPlane.visible = true;
+        blurPlane.material = horizontal;
+        horizontal.uniforms.tDiffuse!.value = target.texture;
+        horizontal.uniforms.h!.value = amount / 256;
+        gl.setRenderTarget(targetBlur);
+        gl.render(blurPlane, camera);
+        blurPlane.material = vertical;
+        vertical.uniforms.tDiffuse!.value = targetBlur.texture;
+        vertical.uniforms.v!.value = amount / 256;
+        gl.setRenderTarget(target);
+        gl.render(blurPlane, camera);
+        blurPlane.visible = false;
+      };
+      pass(blur);
+      pass(blur * 0.4);
+    } finally {
+      blurPlane.visible = false;
+      gl.setRenderTarget(renderTarget, cubeFace, mipLevel);
+      gl.setClearColor(clearColor, clearAlpha);
+      gl.shadowMap.autoUpdate = autoUpdate;
+      gl.shadowMap.needsUpdate = shadowNeedsUpdate;
+      root.visible = visible;
+      scene.overrideMaterial = override;
+      scene.background = background;
+    }
+  }, 0.8);
 
   return (
     <group ref={group} position={[0, y, 0]}>
-      <mesh geometry={kit.plane} material={kit.material} scale={[1, -1, 1]} renderOrder={1} />
+      <mesh geometry={kit.receiver} material={kit.material} renderOrder={1} />
     </group>
   );
 }

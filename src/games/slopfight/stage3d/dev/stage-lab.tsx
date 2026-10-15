@@ -7,11 +7,12 @@
 //   ?arena=garage|kitchen|rooftop (or the ArenaId)  ?phase=LOBBY..FINISHED
 //   ?shot=fight_wide  ?transition=wipe  ?at=0.5 (freeze the transition there)
 //   ?quality=high|medium|low  ?nopost=bloom,dof,...  ?drift=0  ?ui=0  ?debug=1
+//   ?preview=dof|chromatic|stageFx holds a contextual effect for comparison
 //
 // Two stand-in fighters (toon capsules) give the shots something to frame.
 
 import { useFrame } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CapsuleGeometry, Group, Vector3 } from "three";
 import { ARENA_IDS, ARENAS, type ArenaId } from "../../arenas";
 import { CAMERA_ANCHORS, type CameraAnchorName } from "../arena/nodes";
@@ -20,7 +21,7 @@ import type { ShotRequest, TargetLike } from "../director/director";
 import { SHOT_IDS, type ShotId } from "../director/shots";
 import type { TransitionKind } from "../events";
 import { createOutlineMaterial } from "../look/outline";
-import { ALL_POST_ON, type PostToggles } from "../look/post-fx";
+import { ALL_POST_ON, effectivePostToggles, type PostToggles } from "../look/post-fx";
 import { parseQualityParam, QUALITY_TIERS, type QualityTier } from "../look/quality";
 import { createToonMaterial } from "../look/toon";
 import { PHASE_DIRECTION, PlaceholderScene } from "../scenes/phase-scene";
@@ -40,6 +41,8 @@ const ARENA_SHORT: Record<ArenaId, string> = {
 };
 const TRANSITIONS: readonly TransitionKind[] = ["slam", "wipe", "letterboxIn", "letterboxOut", "iris", "matchCut", "cut"];
 const POST_KEYS = Object.keys(ALL_POST_ON) as Array<keyof PostToggles>;
+const POST_PREVIEWS = ["dof", "chromatic", "stageFx"] as const;
+type PostPreview = (typeof POST_PREVIEWS)[number] | null;
 
 interface LabState {
   arena: ArenaId;
@@ -51,6 +54,7 @@ interface LabState {
   at: number | null;
   quality: QualityTier | null;
   post: PostToggles;
+  preview: PostPreview;
   drift: number;
   ui: boolean;
   debug: boolean;
@@ -82,6 +86,7 @@ function readState(): LabState {
     at,
     quality: parseQualityParam(params),
     post,
+    preview: POST_PREVIEWS.find((key) => key === params.get("preview")) ?? null,
     drift: params.get("drift") === "0" ? 0 : 1,
     ui: params.get("ui") !== "0",
     debug: params.get("debug") === "1" || params.get("ui") !== "0",
@@ -97,9 +102,12 @@ function writeUrl(state: LabState) {
   if (state.transition) params.set("transition", state.transition);
   if (state.at !== null) params.set("at", String(state.at));
   if (state.quality) params.set("quality", state.quality);
+  if (state.preview) params.set("preview", state.preview);
   const off = POST_KEYS.filter((key) => !state.post[key]);
   if (off.length > 0) params.set("nopost", off.join(","));
   if (state.drift === 0) params.set("drift", "0");
+  if (!state.ui) params.set("ui", "0");
+  if (state.debug && !state.ui) params.set("debug", "1");
   window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 }
 
@@ -195,6 +203,24 @@ function StandInFighters({ fighters, shot }: { fighters: React.MutableRefObject<
 // ---------------------------------------------------------------------------
 // the scene inside the canvas
 
+/** Hold brief effects long enough to compare switches, without changing game defaults. */
+function HeldPostPreview({ preview }: { preview: PostPreview }) {
+  const services = useStage();
+  useEffect(() => () => {
+    if (preview === "chromatic") services.fx.chromatic = 0;
+    if (preview === "stageFx") services.fx.wipe.progress = 0;
+  }, [services, preview]);
+  useFrame(() => {
+    // oxlint-disable-next-line react/immutability -- R3F intentionally mutates the shared FX state each frame.
+    if (preview === "chromatic") services.fx.chromatic = 1;
+    if (preview === "stageFx") {
+      services.fx.wipe.progress = 0.62;
+      services.fx.wipe.color.copy(services.transitions.accent);
+    }
+  }, 0.65);
+  return null;
+}
+
 function shotRequest(shot: ShotId, fighters: Partial<Fighters>): ShotRequest {
   const a: TargetLike | undefined = fighters.torsoA;
   const b: TargetLike | undefined = fighters.torsoB;
@@ -228,6 +254,7 @@ function LabScene({
 }) {
   const services = useStage();
   const nodes = useArenaNodes();
+  const shot = state.preview === "dof" ? "winner_pose" : state.shot;
   const input = useMemo(() => standaloneStageInput({ phase: state.phase, arena: state.arena }), [state.phase, state.arena]);
 
   useEffect(() => {
@@ -238,10 +265,10 @@ function LabScene({
   useEffect(() => {
     if (!nodes) return;
     services.clock.resync();
-    const request = shotRequest(state.shot, fighters.current);
+    const request = shotRequest(shot, fighters.current);
     if (state.anchor) request.anchor = state.anchor;
-    services.director.setBase(state.shot, request);
-  }, [services, nodes, state.shot, state.anchor, fighters, replay]);
+    services.director.setBase(shot, request);
+  }, [services, nodes, shot, state.anchor, fighters, replay]);
 
   // The chosen transition, once the set (and the fonts) are up.
   useEffect(() => {
@@ -290,7 +317,8 @@ function LabScene({
       <Suspense fallback={null}>
         <PlaceholderScene input={input} nodes={nodes} />
       </Suspense>
-      <StandInFighters fighters={fighters} shot={state.shot} />
+      <StandInFighters fighters={fighters} shot={shot} />
+      <HeldPostPreview preview={state.preview} />
     </>
   );
 }
@@ -311,6 +339,8 @@ function Panel({
   onReplay: () => void;
   fighters: React.MutableRefObject<Partial<Fighters>>;
 }) {
+  const quality = useSyncExternalStore(services.quality.subscribe, services.quality.getSnapshot, services.quality.getSnapshot);
+  const supportedPost = effectivePostToggles(ALL_POST_ON, quality.post);
   const shotIndex = SHOT_IDS.indexOf(state.shot);
   const cycle = (delta: number) => set({ shot: SHOT_IDS[(shotIndex + delta + SHOT_IDS.length) % SHOT_IDS.length]! });
   const impact = (big: boolean) => {
@@ -322,7 +352,7 @@ function Panel({
   const button = "rounded-lg border-2 border-edge bg-surface px-[0.6rem] py-[0.2rem] text-[0.8rem] font-bold text-ink hover:bg-surface-2";
   const select = "rounded-lg border-2 border-edge bg-surface px-[0.4rem] py-[0.15rem] text-[0.8rem] text-ink";
   return (
-    <div className="absolute top-[2.25rem] left-[0.5rem] z-10 flex w-[min(22rem,calc(100%-1rem))] flex-col gap-[0.5rem] rounded-xl border-2 border-edge bg-canvas/90 p-[0.75rem] text-[0.8rem] text-ink">
+    <div className="absolute top-[2.25rem] left-[0.5rem] z-10 flex max-h-[calc(100%-3rem)] w-[min(22rem,calc(100%-1rem))] flex-col gap-[0.5rem] overflow-y-auto rounded-xl border-2 border-edge bg-canvas/90 p-[0.75rem] text-[0.8rem] text-ink">
       <div className="flex flex-wrap items-center gap-[0.4rem]">
         <span className="w-[3.5rem] font-bold">Arena</span>
         <select className={select} value={state.arena} onChange={(e) => set({ arena: e.target.value as ArenaId })}>
@@ -378,7 +408,7 @@ function Panel({
             className={`${button} ${state.quality === tier ? "ring-2 ring-punch" : ""}`}
             onClick={() => {
               set({ quality: tier });
-              if (tier) services.quality.set(tier, performance.now());
+              services.quality.set(tier, performance.now());
             }}
           >
             {tier ?? "auto"}
@@ -388,16 +418,32 @@ function Panel({
       <div className="flex flex-wrap items-center gap-[0.5rem]">
         <span className="w-[3.5rem] font-bold">Post</span>
         {POST_KEYS.map((key) => (
-          <label key={key} className="flex items-center gap-[0.2rem]">
+          <label key={key} className={`flex items-center gap-[0.2rem] ${supportedPost[key] ? "" : "opacity-45"}`} title={key === "smaa" ? "SMAA on high; FXAA on lower tiers" : supportedPost[key] ? key : `${key} is unavailable at this quality tier`}>
             <input
               type="checkbox"
               checked={state.post[key]}
+              disabled={!supportedPost[key]}
               onChange={(e) => set({ post: { ...state.post, [key]: e.target.checked } })}
             />
-            {key}
+            {key === "smaa" ? "AA" : key}
           </label>
         ))}
       </div>
+      <p className="text-ink-dim" data-post-quality>
+        Rendering {quality.tier} L{quality.level} · {quality.post} post · {services.quality.auto ? "automatic" : "pinned"}
+      </p>
+      <div className="flex items-center gap-[0.4rem]">
+        <label htmlFor="post-preview" className="w-[3.5rem] font-bold">Preview</label>
+        <select id="post-preview" className={select} value={state.preview ?? ""} onChange={(event) => set({ preview: (event.target.value || null) as PostPreview })}>
+          <option value="">Current scene</option>
+          <option value="dof" disabled={!supportedPost.dof}>DoF hero shot</option>
+          <option value="chromatic" disabled={!supportedPost.chromatic}>Hold chromatic hit</option>
+          <option value="stageFx">Hold screen wipe</option>
+        </select>
+      </div>
+      <p className="text-ink-dim">
+        DoF appears on hero shots; chromatic appears on hits. Stage FX controls screen wipes, bars and flashes. The slam title is 3D geometry.
+      </p>
       <div className="flex flex-wrap items-center gap-[0.3rem]">
         <span className="w-[3.5rem] font-bold">Poke</span>
         <button className={button} onClick={() => impact(false)}>
@@ -445,10 +491,12 @@ export default function StageLab() {
     setState((current) => {
       const next = { ...current, ...patch };
       if (patch.phase && !patch.shot) next.shot = PHASE_DIRECTION[patch.phase].shot;
-      writeUrl(next);
       return next;
     });
   }, []);
+
+  // Next observes history changes, so synchronize only after React commits.
+  useEffect(() => writeUrl(state), [state]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

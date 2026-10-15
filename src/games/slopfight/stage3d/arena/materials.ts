@@ -9,7 +9,22 @@ import { BufferGeometry, Color, MeshBasicMaterial, type IUniform, type Material 
 import { createOutlineMaterial, type OutlineMaterial } from "../look/outline";
 import { createToonMaterial, type ToonMaterial } from "../look/toon";
 
+export type ArenaSurface = "toy" | "matte" | "satin" | "gloss";
+
+/** Authored Blender extras select a finish without adding shader variants. */
+export function arenaSurface(value: unknown): ArenaSurface {
+  return value === "matte" || value === "satin" || value === "gloss" ? value : "toy";
+}
+
+const SURFACE_FINISH = {
+  toy: { specular: 0.18, specularSize: 0.99, rim: 0.22, translucency: 0.18 },
+  matte: { specular: 0.025, specularSize: 0.97, rim: 0.06, translucency: 0 },
+  satin: { specular: 0.12, specularSize: 0.985, rim: 0.12, translucency: 0 },
+  gloss: { specular: 0.24, specularSize: 0.994, rim: 0.16, translucency: 0.03 },
+} satisfies Record<ArenaSurface, Partial<Parameters<typeof createToonMaterial>[0]>>;
+
 export interface ArenaToonOptions {
+  surface?: ArenaSurface;
   vertexColors?: boolean;
   color?: string;
   rimColor?: string;
@@ -27,10 +42,9 @@ export function createArenaToon(options: ArenaToonOptions = {}): ToonMaterial {
     shade: options.shade ?? 0.42,
     shadeTint: options.shadeTint ?? "#8f86c4",
     softness: 0.08,
-    translucency: 0.18,
-    specular: 0.18,
-    specularSize: 0.99,
-    rim: 0.22,
+    ...SURFACE_FINISH[options.surface ?? "toy"],
+    // Tiny practical bulbs must not stamp a polka-dot highlight on every tile.
+    specularMinLight: 1.2,
     rimColor: options.rimColor ?? "#ffb877",
   });
 }

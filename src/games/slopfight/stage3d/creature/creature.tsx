@@ -18,6 +18,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "rea
 import type { Vector3 } from "three";
 import { championHash, championScale, type Champion, type Face, type Palette, type Part } from "../../sheet";
 import type { BodyPlan } from "../../vocab";
+import { useQuality } from "../services";
 import { createDriver, type CreatureDriver } from "./animator";
 import { CreatureView, type CreatureEvent, type CreatureSource } from "./creature-view";
 
@@ -71,6 +72,7 @@ export interface CreatureHandle {
 }
 
 export const Creature = forwardRef<CreatureHandle, CreatureProps>(function Creature(props, ref) {
+  const { meshGrid } = useQuality();
   const {
     champion,
     parts,
@@ -103,6 +105,7 @@ export const Creature = forwardRef<CreatureHandle, CreatureProps>(function Creat
   const source: CreatureSource | null = useMemo(() => {
     const list = parts ?? champion?.parts;
     if (!list) return null;
+    const isComplete = complete ?? (!!champion && !parts);
     return {
       parts: list,
       bodyPlan: bodyPlan ?? champion?.bodyPlan,
@@ -111,12 +114,13 @@ export const Creature = forwardRef<CreatureHandle, CreatureProps>(function Creat
       heft: heft ?? champion?.stats.heft ?? 3,
       scale: scale ?? (champion ? championScale(champion) : 1),
       deliveries: champion?.moves.map((move) => move.delivery),
-      complete: complete ?? (!!champion && !parts),
+      complete: isComplete,
+      resolution: isComplete ? meshGrid.final : meshGrid.growing,
       hash: champion && !parts ? championHash(champion) : undefined,
       item: champion?.item ?? null,
       markings: champion?.markings,
     };
-  }, [champion, parts, bodyPlan, palette, face, heft, scale, complete]);
+  }, [champion, parts, bodyPlan, palette, face, heft, scale, complete, meshGrid.final, meshGrid.growing]);
 
   useEffect(() => {
     if (source) view.setSource(source);

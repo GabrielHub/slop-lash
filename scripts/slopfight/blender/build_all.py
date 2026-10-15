@@ -19,12 +19,13 @@ STEPS = {"garage": "build_garage.py", "kitchen": "build_kitchen.py", "rooftop": 
 
 
 def blender(script, *args):
-    cmd = [BLENDER, "--background", "--factory-startup", "--python", os.path.join(HERE, script)]
+    cmd = [BLENDER, "--background", "--factory-startup", "--python-exit-code", "1",
+           "--python", os.path.join(HERE, script)]
     if args:
         cmd += ["--"] + list(args)
     print(">>", " ".join(os.path.basename(c) if c.endswith(".py") else c for c in cmd[1:]), flush=True)
     out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    keep = ("ARENA", "EXPORTED", "TRIS", "PROP ", "SHEET", "RENDERED", "VERIFY", "FAIL", "Error", "Traceback",
+    keep = ("ARENA", "EXPORTED", "TRIS", "PROP ", "AO ", "SHEET", "RENDERED", "VERIFY", "FAIL", "Error", "Traceback",
             "CONTRACT", "  -")
     for line in out.stdout.splitlines() + out.stderr.splitlines():
         if line.startswith(keep) or any(k in line for k in ("Error", "Traceback", "FAIL")):
@@ -37,7 +38,8 @@ def main():
     only = list(STEPS)
     if "--only" in argv:
         only = argv[argv.index("--only") + 1].split(",")
-    bad = 0
+    bad = blender("verify_geometry.py") != 0
+    bad |= blender("verify_ambient.py") != 0
     for name in only:
         bad |= blender(STEPS[name]) != 0
     out_dir = os.path.normpath(os.path.join(HERE, "..", "..", "..", "public", "models", "slopfight"))

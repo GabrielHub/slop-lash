@@ -75,14 +75,14 @@ P = {
     "marquee": "#5a2140",
     "marquee_rim": "#ffcf5a",
     "bulb": "#fff2c2",
-    "sky_top": "#3b2b63",
-    "sky_mid": "#8a4c86",
-    "sky_low": "#ff9e6b",
-    "sky_horizon": "#ffc07a",
+    "sky_top": "#101526",
+    "sky_mid": "#1c263d",
+    "sky_low": "#302834",
+    "sky_horizon": "#51404a",
     "moon": "#fff1c8",
-    "sky1": "#6a4580",
-    "sky2": "#7d5290",
-    "sky3": "#9a64a0",
+    "sky1": "#161b2b",
+    "sky2": "#1b2234",
+    "sky3": "#242c40",
     "street": "#3d3050",
     "kerb": "#7a6a7a",
     "ink": "#4b3a5e",
@@ -166,7 +166,7 @@ def platform():
     for sx in (-1, 1):
         sp = b_from_t(GEO["spawns"]["A" if sx < 0 else "B"])
         g.box((0.5, 0.14, 0.01), loc=(sp[0], sp[1], TOP_Z + 0.004), bevel=0, color=P["ring"], shade=(1, 1), flat=True)
-    floor = g.build(props={"surface": "pavers"})
+    floor = g.build(props={"surface": "pavers", "sf_surface": "matte"})
 
     # Edge: a low coping on the rim, tangerine/cream dashes on top, wrapping
     # down the facade. Visual only: every rooftop edge is open.
@@ -181,7 +181,7 @@ def platform():
         return C(P["coping"]) if c.z > -0.05 else C(P["cream"])
 
     rect_sweep(e, prof, dash, nseg=12, shade=(0.85, 1.05), jit=0, noise=0)
-    edge = e.build(props={"lip": False, "coping": True, "edges": "all open"})
+    edge = e.build(props={"lip": False, "coping": True, "edges": "all open", "sf_surface": "satin"})
     edge_lights(edge, color="#ffcf6a", n_per_side=6, inset=COPING_W / 2, z=TOP_Z + COPING_H, size=0.03,
                 edges=GEO["edges"])
     return floor, edge
@@ -223,9 +223,20 @@ def ac_unit(set_g, idx, base, yaw=0.0):
               shade=(0.7, 1.05))
     set_g.box((1.55, 1.1, 0.08), loc=(x, y, z + 0.06), rot=(0, 0, yaw), bevel=0.03, seg=1, color=P["ac_dk"])
     set_g.cyl(0.4, 0.04, base=(x - 0.25, y, z + 0.97), segs=12, color=P["ink"], shade=(1, 1))
+    # A raised safety grille leaves the existing animated fan visible below it.
+    set_g.torus(0.39, 0.018, loc=(x - 0.25, y, z + 1.09), segs=16, rsegs=4, color=P["ac"])
+    for offset in (-0.2, 0, 0.2):
+        reach = math.sqrt(0.37 ** 2 - offset ** 2)
+        set_g.stick((x - 0.25 - reach, y + offset, z + 1.09),
+                    (x - 0.25 + reach, y + offset, z + 1.09), 0.012, segs=5, color=P["ac"])
     for k in range(4):
         set_g.box((1.3, 0.04, 0.03), loc=(x, y - 0.54, z + 0.3 + k * 0.14), rot=(0, 0, yaw), bevel=0, color=P["ac_dk"],
                   shade=(1, 1))
+    for sx in (-1, 1):
+        set_g.box((0.14, 0.12, 0.1), loc=(x + sx * 0.58, y - 0.42, z + 0.025), bevel=0.025, seg=1, color=P["ink"])
+        for zz in (0.21, 0.85):
+            set_g.disc(0.022, loc=(x + sx * 0.66, y - 0.527, z + zz), normal=(0, -1, 0),
+                       segs=6, color=P["steel"])
     fan = Geo("AC_%d_Fan" % idx, seed=idx)
     for k in range(3):
         a = math.radians(k * 120)
@@ -269,7 +280,7 @@ def city(rng):
     lit = Geo("Windows_Emissive", seed=6)
     # the platform's own tower, straight down to the street
     # no cornice: a band under the coping reads as a second ledge to land on
-    building(g, lit, (-HALF, HALF, -HALF, HALF, TOP_Z - 0.3), P["brick"], ("-y", "+y", "-x", "+x"), rng,
+    building(g, lit, (-HALF, HALF, -HALF, HALF, TOP_Z - THICK), P["brick"], ("-y", "+y", "-x", "+x"), rng,
              cornice=None, step_x=1.9, top_gap=0.9)
     building(g, lit, B1, P["brick2"], ("-y", "+x", "-x"), rng, cornice=P["cream"], parapet=0.55)
     building(g, lit, B2, P["brick4"], ("-y", "-x", "+x"), rng, cornice=P["cream"], parapet=0.55)
@@ -418,11 +429,53 @@ def backdrop():
     _skyline_layer(sil, wins, "+x", -38.0, -40, 30, P["sky2"], (-6.0, 10.0), 0.14, rng)
     _skyline_layer(sil, wins, "-x", 38.0, -40, 30, P["sky2"], (-6.0, 10.0), 0.14, rng)
     _skyline_layer(sil, wins, "+y", -38.0, -40, 40, P["sky2"], (-6.0, 10.0), 0.12, rng)
-    sil.build(props={"backdrop": True})
-    wins.build(material="SF_Emissive", props={"emissive": True, "emissive_strength": 2.0, "backdrop": True})
+    sil.build(props={"backdrop": True, "sf_surface": "matte"})
+    wins.build(material="SF_Emissive", props={"emissive": True, "emissive_strength": 0.4, "backdrop": True, "unlit": True})
 
 
 # ---------------------------------------------------------------- set pieces
+
+
+def ring_floodlights():
+    """Two roof-mounted floodlights aimed into the ring, with one shadow map.
+
+    Heads share mesh/material batches; the light empties are also the bake's
+    sources, so visible fixtures, direct light and indirect light stay aligned.
+    """
+    frames, lenses = Geo("Set_Ring_Floodlights"), Geo("Ring_Floodlights_Emissive")
+    target = Vector((0, 0, 0.35))
+    lamps = [
+        ("Key", (-6.0, -4.8, B1[4]), (-4.7, -2.8, 6.1), "#fff0d5", 130.0, 68),
+        ("Fill", (6.0, 4.8, B2[4]), (4.7, 2.4, 5.9), "#c6d5ff", 105.0, 70),
+    ]
+    for name, base, head, color, power, angle in lamps:
+        p = Vector(head)
+        direction = (target - p).normalized()
+        q = direction.to_track_quat("Z", "Y")
+        top = (base[0], base[1], p.z + 0.35)
+        frames.cyl(0.2, 0.12, base=base, segs=8, color=P["steel"])
+        frames.stick(base, top, 0.065, segs=8, color="#444b61")
+        frames.stick(top, p - direction * 0.12, 0.055, segs=8, color="#444b61")
+        frames.box((0.92, 0.6, 0.22), loc=p, rot=q, bevel=0.065, seg=1, color="#32394b")
+        frames.box((0.79, 0.47, 0.025), loc=p + direction * 0.12, rot=q, bevel=0.025, seg=1, color="#111722")
+        lenses.box((0.7, 0.38, 0.018), loc=p + direction * 0.14, rot=q, bevel=0, color=color, shade=(1, 1), jit=0, ao=1)
+        light_empty("Light_Ring_" + name, p + direction * 0.16, "spot", color, power,
+                    target=target, angle=angle, distance=18, extra={"light_shadow": name == "Key"})
+        # A smaller head on each mast lights its workshop only in that phase.
+        # Its dim pilot lens does not compete with the ring during fights.
+        work_pos = Vector((base[0], head[1], 4.0))
+        work_target = Vector((-STATION_X if name == "Key" else STATION_X, 0, 0.9))
+        work_dir = (work_target - work_pos).normalized()
+        work_q = work_dir.to_track_quat("Z", "Y")
+        frames.stick((base[0], base[1], 4.0), work_pos, 0.04, segs=8, color="#444b61")
+        frames.box((0.6, 0.42, 0.18), loc=work_pos, rot=work_q, bevel=0.04, seg=1, color="#32394b")
+        lenses.box((0.48, 0.3, 0.015), loc=work_pos + work_dir * 0.1, rot=work_q, color="#675641", shade=(1, 1), jit=0, ao=1)
+        station = "Build" if name == "Key" else "Foundry"
+        light_empty("Light_Work_" + station, work_pos + work_dir * 0.12, "spot", "#ffe5c7", 25,
+                    target=work_target, angle=100, distance=9,
+                    extra={"light_phases": ["BUILD", "UPGRADE"] if name == "Key" else ["FOUNDRY"]})
+    frames.build(props={"static": True, "sf_surface": "satin"})
+    lenses.build(material="SF_Emissive", props={"emissive": True, "emissive_strength": 3.0})
 
 
 def neon_sign():
@@ -436,7 +489,7 @@ def neon_sign():
     for sx in (-1, 1):
         board.stick((cx + sx * 1.2, cy + 0.2, base), (cx + sx * 1.2, cy + 0.2, bz + 0.2), 0.06, segs=5, color=P["steel"])
         board.stick((cx + sx * 1.2, cy + 0.9, base), (cx + sx * 1.2, cy + 0.2, bz + 1.0), 0.05, segs=5, color=P["steel"])
-    board.build(props={"static": True})
+    board.build(props={"static": True, "sf_surface": "satin"})
     n = Geo("Neon_Emissive", seed=10)
     stroke_text(n, "EAT", (cx - 0.25, cy, bz + 0.62), 0.85, P["neon"], 0.055, spacing=0.45, segs=6, shade=(1, 1), jit=0)
     ay = cy - 0.02
@@ -468,7 +521,7 @@ def festoon():
         p = pts[k]
         bulbs.sphere((0.1, 0.1, 0.13), loc=(p.x, p.y, p.z - 0.15), segs=6, rings=4,
                      color="#fff2c2" if k % 3 else "#ffcf73", shade=(1, 1), jit=0)
-    wire.build(props={"static": True})
+    wire.build(props={"static": True, "sf_surface": "matte"})
     bulbs.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#fff2c2", "chase": True})
     return (pts[n // 2].x, pts[n // 2].y, pts[n // 2].z - 0.2)
 
@@ -488,7 +541,8 @@ def laundry():
     Hazard_Wind_Laundry_N with its origin on the line so code can swing it
     about local X (and flutter about local Z) in the wind's direction."""
     set_g = Geo("Set_Laundry_Line", max_seg=1)
-    y = BC[2] + 0.5
+    # Hang in front of the audience's jump envelope, including wind sway.
+    y = BC[2] + 0.1
     z0 = BC[4]
     a, b = Vector((-4.4, y, z0 + 2.45)), Vector((4.4, y, z0 + 2.45))
     for p in (a, b):
@@ -501,7 +555,7 @@ def laundry():
 
     pts = [Vector((a.x + (b.x - a.x) * k / 12, y, line_z(a.x + (b.x - a.x) * k / 12))) for k in range(13)]
     set_g.tube(pts, 0.016, segs=4, color="#fff1d6", caps=False)
-    set_g.build(props={"static": True})
+    set_g.build(props={"static": True, "sf_surface": "matte"})
     obs = []
     for i, (kind, x, col, acc) in enumerate(LAUNDRY):
         g = Geo("Hazard_Wind_Laundry_%d" % (i + 1), seed=50 + i, max_seg=1)
@@ -528,22 +582,34 @@ def laundry():
                 g.disc(0.045, loc=(x + dx, yy - 0.03, zt + dz - 0.04), normal=(0, -1, 0), segs=6, color=acc,
                        shade=(1, 1))
         elif kind == "towel":
-            def stripes(c, nrm, cc):
-                return C(acc) if int(math.floor((zt - c.z) / 0.16)) % 4 == 2 else C(col)
+            # One continuous folded shell. Separate closed slabs left internal
+            # faces and gaps that their expanded outline exposed as dotted seams.
+            rows = [(yy - 0.03 + 0.03 * math.sin(k * 1.3), zt - 0.05 - k * 0.16) for k in range(8)]
             for k in range(7):
-                z1 = zt - 0.05 - k * 0.16
-                g.slab(x - 0.4, x + 0.4, yy - 0.03 + 0.03 * math.sin(k * 1.3), yy + 0.01 + 0.03 * math.sin(k * 1.3),
-                       z1 - 0.16, z1, bevel=0.0, color=acc if k % 4 == 2 else col, shade=(0.92, 1.0))
+                y0, z0 = rows[k]
+                y1, z1 = rows[k + 1]
+                paint = dict(color=acc if k % 4 == 2 else col, shade=(1, 1), jit=0, noise=0, ao=1)
+                front = [(x - 0.4, y0, z0), (x - 0.4, y1, z1), (x + 0.4, y1, z1), (x + 0.4, y0, z0)]
+                back = [(px, py + 0.035, pz) for px, py, pz in front]
+                g.quad(front, **paint)
+                g.quad(list(reversed(back)), **paint)
+                g.quad([front[0], back[0], back[1], front[1]], **paint)
+                g.quad([front[2], back[2], back[3], front[3]], **paint)
+                if k == 0:
+                    g.quad([front[3], back[3], back[0], front[0]], **paint)
+                if k == 6:
+                    g.quad([front[1], back[1], back[2], front[2]], **paint)
         else:  # dress
             dr = [(-0.18, 0.0), (0.18, 0.0), (0.22, -0.3), (0.5, -1.05), (-0.5, -1.05), (-0.22, -0.3)]
             g.prism([(x + px, zt + pz - 0.04) for px, pz in reversed(dr)], 0.05, loc=(0, yy - 0.025, 0), bevel=0.02,
                     seg=1, color=col)
             g.box((0.5, 0.06, 0.08), loc=(x, yy - 0.01, zt - 0.36), bevel=0, color=acc, shade=(1, 1))
         # clothespins
-        for dx in ((-0.3, 0.3) if kind not in ("socks",) else (-0.18, 0.18)):
+        pegs = (-0.14, 0.14) if kind == "dress" else (-0.18, 0.18) if kind == "socks" else (-0.3, 0.3)
+        for dx in pegs:
             g.box((0.05, 0.07, 0.16), loc=(x + dx, yy - 0.02, zt - 0.02), bevel=0.015, seg=1, color="#e8b36a")
         obs.append(g.build(origin=(x, y, zt), props={"hazard": "wind", "laundry": kind, "swing_axis": "local X",
-                                                    "rest_rad": 0.0}))
+                                                    "rest_rad": 0.0, "sf_surface": "matte"}))
     return obs
 
 
@@ -554,7 +620,7 @@ def windsock():
     pole = Geo("Set_Windsock_Pole", max_seg=1)
     pole.stick((px, py, pz), (px, py, pz + 3.2), 0.05, segs=6, color=P["steel"])
     pole.sphere(0.1, loc=(px, py, pz + 3.25), segs=6, rings=4, color=P["neon2"])
-    pole.build(props={"static": True})
+    pole.build(props={"static": True, "sf_surface": "satin"})
     g = Geo("Hazard_Wind_Sock", seed=12)
     top = Vector((px, py, pz + 3.1))
     g.torus(0.26, 0.035, loc=top + Vector((0.08, 0, 0)), rot=(0, 90, 0), segs=12, rsegs=4, color=P["steel"])
@@ -579,7 +645,7 @@ def marquee():
         g.stick((lx, cy + 1.3, base), (lx, cy + 0.2, cz), 0.06, segs=6, color=P["steel"])
         g.stick((lx - sx * 0.9, cy + 0.1, base + 0.4), (lx, cy + 0.1, cz - h / 2 - 0.4), 0.04, segs=5, color=P["steel"])
     g.box((w + 0.8, 0.5, 0.08), loc=(cx, cy - 0.15, cz - h / 2 - 0.32), bevel=0.02, seg=1, color=P["steel"])
-    ob = g.build(origin=(cx, cy, cz), props={"ui": "marquee"})
+    ob = g.build(origin=(cx, cy, cz), props={"ui": "marquee", "sf_surface": "satin"})
     bulbs = Geo("Marquee_Bulbs_Emissive")
     nb = 11
     for k in range(nb):
@@ -605,7 +671,7 @@ def scoreboard():
         lx = cx + sx * 2.2
         g.stick((lx, cy - 0.1, cz + h / 2 + 0.25), (lx, cy - 0.7, cz + h / 2 + 0.7), 0.035, segs=5, color=P["ink"])
         g.cyl(0.18, 0.22, base=(lx, cy - 0.75, cz + h / 2 + 0.75), rot=(140, 0, 0), r2=0.08, segs=8, color=P["ink"])
-    ob = g.build(origin=(cx, cy, cz), props={"ui": "scoreboard"})
+    ob = g.build(origin=(cx, cy, cz), props={"ui": "scoreboard", "sf_surface": "matte"})
     plane_marker("Scoreboard_Text", (cx, cy - 0.18, cz), (0, -1, 0), w - 0.3, h - 0.25, parent=ob,
                  props={"text_color": "#f4f0e0", "bg_color": "#2f4a3c"})
     return ob, (cx, cy, cz)
@@ -658,8 +724,8 @@ def build():
     fans = [ac_unit(set_g, 1, (-3.4, 11.8, BC[4])), ac_unit(set_g, 2, (3.4, 12.2, BC[4])),
             ac_unit(set_g, 3, (9.2, 3.8, B2[4]))]
     water_tower(set_g, (-10.2, 10.4, BL[4]))
-    set_g.build(props={"static": True})
-    lit.build(material="SF_Emissive", props={"emissive": True, "emissive_color": P["win_lit"], "emissive_strength": 2.5})
+    set_g.build(props={"static": True, "sf_surface": "matte"})
+    lit.build(material="SF_Emissive", props={"emissive": True, "emissive_color": P["win_lit"], "emissive_strength": 0.55, "unlit": True})
     emis.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#ffc46a"})
     for f, hub in fans:
         f.build(origin=hub, props={"spin": True, "spin_axis": "local Y (three.js)"})
@@ -668,6 +734,7 @@ def build():
     fest = festoon()
     laundry()
     windsock()
+    ring_floodlights()
     marquee()
     sb, sb_pos = scoreboard()
 
@@ -695,11 +762,11 @@ def build():
 
     podium({"body": "#fff1d6", "trim": ["#ffcf5a", "#ece8f4", "#e08a4a"], "pip": "#ff8a3d"}, center=(0.0, 0.4, TOP_Z))
 
-    light_empty("Light_Neon", neon_pos, "point", P["neon"], 5.0, flicker=0.3, distance=9)
-    light_empty("Light_Festoon", fest, "point", "#ffd08a", 3.0, flicker=0.05, distance=10)
+    light_empty("Light_Neon", neon_pos, "point", P["neon"], 3.0, flicker=0.3, distance=7)
+    light_empty("Light_Festoon", fest, "point", "#ffd08a", 1.4, flicker=0.05, distance=7)
     light_empty("Light_Billboard", (sb_pos[0], sb_pos[1] - 2.0, sb_pos[2] + 2.4), "spot", "#ffe2b0", 6.0,
                 target=sb_pos, angle=55, distance=8)
-    light_empty("Light_Moon", (-30.0, 60.0, 34.0), "spot", "#c9c4ff", 2.0, target=(0.0, 0.0, 0.0), angle=14,
+    light_empty("Light_Moon", (-30.0, 60.0, 34.0), "spot", "#c9c4ff", 0.18, target=(0.0, 0.0, 0.0), angle=14,
                 extra={"note": "moonlight; treat as directional (no falloff)"})
 
     for i, x in enumerate((-2.25, -0.75, 0.75, 2.25)):
@@ -709,6 +776,8 @@ def build():
     empty("Wind_Origin", (0.0, 0.0, TOP_Z + 1.5), size=0.4,
           props={"note": "wind direction comes from the fight seed (windFor); laundry and sock follow it"})
     cams(sb_pos)
+    from irradiance import bake_rooftop_probe
+    bake_rooftop_probe()
     export_glb(os.path.join(OUT_DIR, "rooftop.glb"))
 
 

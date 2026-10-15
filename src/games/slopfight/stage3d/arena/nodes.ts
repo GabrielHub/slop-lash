@@ -69,6 +69,10 @@ export interface LightMarker extends NodeTransform {
   width: number;
   height: number;
   target: Vector3 | null;
+  /** Only the authored key practical casts a shadow (one map per arena). */
+  castShadow?: boolean;
+  /** Work lights are on only while players use their station. */
+  phases?: readonly string[];
 }
 
 export interface EaselNodes {
@@ -197,6 +201,8 @@ export function readLight(object: Object3D): LightMarker | null {
     width: num(extras.light_width, 1),
     height: num(extras.light_height, 1),
     target: target ?? (dir ? base.position.clone().add(dir) : null),
+    castShadow: extras.light_shadow === true,
+    phases: Array.isArray(extras.light_phases) ? extras.light_phases.filter((phase): phase is string => typeof phase === "string") : undefined,
   };
 }
 

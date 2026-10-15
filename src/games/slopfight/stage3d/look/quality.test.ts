@@ -74,6 +74,27 @@ describe("FrameBudget", () => {
 });
 
 describe("QualityController", () => {
+  test("manual selection pins an automatic controller even on the same rung, and auto resumes", () => {
+    const quality = new QualityController({ budget: { warmupMs: 0, windowMs: 500, strikes: 1 } });
+    quality.set("high");
+    expect(quality.auto).toBe(false);
+    for (let t = 0; t < 2_000; t += 40) quality.sampleFrame(40, t);
+    expect(quality.level).toBe(0);
+    quality.set(null, 2_000);
+    expect(quality.auto).toBe(true);
+    for (let t = 2_000; t < 2_600; t += 40) quality.sampleFrame(40, t);
+    expect(quality.level).toBe(1);
+  });
+
+  test("auto resumes a previously pinned controller without resetting its quality", () => {
+    const quality = new QualityController({ tier: "medium", budget: { warmupMs: 0, windowMs: 500, strikes: 1 } });
+    quality.set(null);
+    expect(quality.auto).toBe(true);
+    expect(quality.level).toBe(1);
+    for (let t = 0; t < 600; t += 40) quality.sampleFrame(40, t);
+    expect(quality.level).toBe(2);
+  });
+
   test("auto mode steps down one rung at a time and stops at the bottom", () => {
     const quality = new QualityController({ budget: { warmupMs: 0, windowMs: 500, strikes: 1 } });
     let changes = 0;

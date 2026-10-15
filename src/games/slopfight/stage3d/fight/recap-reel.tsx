@@ -23,8 +23,11 @@ import type { Champion } from "../../sheet";
 import { loadRapier, type FightEvent, type FightInput } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import { ARENA_FILES, prepareSet } from "../arena/arena";
+import { CrowdController } from "../arena/crowd";
 import { copyPose, createPose, createShotState, SHOTS, type ShotId, type ShotParams } from "../director/shots";
 import { moodFor } from "../look/moods";
+import { readIrradianceProbe } from "../look/irradiance";
+import { ArenaPracticals } from "../look/lighting";
 import type { PhaseSceneProps } from "../scenes/phase-scene";
 import { useStage } from "../services";
 import { Bar, type BarHandle } from "../ui3d/bar";
@@ -529,6 +532,15 @@ function ReplayWorld({
   const mood = moodFor(arena);
   const gltf = useGLTF(ARENA_FILES[arena]);
   const prepared = useMemo(() => prepareSet(arena, gltf.scene, mood), [arena, gltf.scene, mood]);
+  const probe = useMemo(() => readIrradianceProbe(prepared.nodes.get("Probe_Ambient")?.userData.sf_probe_sh), [prepared]);
+  const crowd = useMemo(() => new CrowdController(), []);
+  useEffect(() => {
+    crowd.bind(prepared.nodes.crowd);
+    return () => {
+      crowd.reset();
+      prepared.hazards.reset();
+    };
+  }, [crowd, prepared]);
   useEffect(() => () => prepared.materials.forEach((material) => material.dispose()), [prepared]);
   const fx = useMemo(() => new FxSystem(), []);
   const camera = useRef<ThreePerspectiveCamera>(null);
@@ -603,6 +615,7 @@ function ReplayWorld({
       }
       case "end":
         c.finished = true;
+        crowd.cheer(1);
         onState({ done: false, method: METHOD_TEXT[event.method] });
         play("crowdCheer", { intensity: 1 });
         break;
@@ -633,6 +646,8 @@ function ReplayWorld({
       rate = 0.3;
     }
     const quantized = Math.round(rate * 10) / 10;
+    crowd.update(dt * rate);
+    prepared.hazards.update(Math.max(0, c.ms) / 1000, { x: 1, z: 0, strength: 0 });
     if (quantized !== scaleRef.current) {
       scaleRef.current = quantized;
       setTimeScale(quantized);
@@ -675,22 +690,11 @@ function ReplayWorld({
       <PerspectiveCamera ref={camera} makeDefault manual aspect={ASPECT} fov={40} near={0.1} far={200} position={[0, 3, 9]} />
       <color attach="background" args={[mood.fog.color]} />
       <fog attach="fog" args={[mood.fog.color, mood.fog.near, mood.fog.far]} />
-      <hemisphereLight args={[mood.bounce.sky, mood.bounce.ground, mood.bounce.intensity]} />
-      <directionalLight color={mood.key.color} intensity={mood.key.intensity} position={mood.key.position as [number, number, number]} />
-      <directionalLight color={mood.fill.color} intensity={mood.fill.intensity} position={mood.fill.position as [number, number, number]} />
-      <directionalLight color={mood.rim.color} intensity={mood.rim.intensity} position={mood.rim.position as [number, number, number]} />
-      {prepared.nodes.lights
-        .filter((light) => light.kind === "point")
-        .map((light) => (
-          <pointLight
-            key={light.name}
-            position={light.position.toArray() as [number, number, number]}
-            color={light.color}
-            intensity={light.intensity * mood.practicalScale}
-            distance={light.distance || 0}
-            decay={2}
-          />
-        ))}
+      {probe ? <primitive object={probe} /> : <hemisphereLight args={[mood.bounce.sky, mood.bounce.ground, mood.bounce.intensity]} />}
+      {mood.key.intensity > 0 && <directionalLight color={mood.key.color} intensity={mood.key.intensity} position={mood.key.position as [number, number, number]} />}
+      {mood.fill.intensity > 0 && <directionalLight color={mood.fill.color} intensity={mood.fill.intensity} position={mood.fill.position as [number, number, number]} />}
+      {mood.rim.intensity > 0 && <directionalLight color={mood.rim.color} intensity={mood.rim.intensity} position={mood.rim.position as [number, number, number]} />}
+      <ArenaPracticals lights={prepared.nodes.lights} scale={mood.practicalScale} />
       <primitive object={prepared.root} />
       {ready && (
         <>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { CHARS_PER_LINE, wrapCaption } from "./caption-layout";
-import { contrastRatio, isLightColor, luminance, onCardTone, textGlowOn, textOn, UI_COLORS } from "./materials";
+import { contrastRatio, isLightColor, luminance, onCardTone, textGlowOn, textOn, UI_COLORS, uiOutline, uiToon } from "./materials";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import { clamp01, createPose, ENTER_SECONDS, enterPose, exitPose, EXIT_SECONDS, ringDown, springTo1 } from "./motion";
 import { sanitizeStageText } from "./sanitize";
@@ -106,5 +106,23 @@ describe("card colours", () => {
     const cream = "#f7ecd2";
     expect(luminance(onCardTone(cream))).toBeLessThan(luminance(cream) * 0.75);
     expect(onCardTone("#2f4a9c")).toBe("#2f4a9c");
+  });
+});
+
+describe("caption overlay materials", () => {
+  it("renders above transparent world surfaces without changing world-material depth behavior", () => {
+    for (const create of [uiToon, (color: string, options: { overlay?: boolean }) => uiOutline(color, 2.4, options)]) {
+      const world = create(UI_COLORS.plum, {});
+      const overlay = create(UI_COLORS.plum, { overlay: true });
+
+      expect(overlay).not.toBe(world);
+      expect(overlay.transparent).toBe(true);
+      expect(overlay.depthTest).toBe(false);
+      expect(overlay.depthWrite).toBe(false);
+      expect(overlay.fog).toBe(false);
+      expect(world.transparent).toBe(false);
+      expect(world.depthTest).toBe(true);
+      expect(world.depthWrite).toBe(true);
+    }
   });
 });

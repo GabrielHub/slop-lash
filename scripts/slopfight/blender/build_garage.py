@@ -5,7 +5,7 @@
 A painted concrete pad (the 6 x 6 platform) stands in murky flood water inside
 a cinder-block garage. Easels stand on a pallet deck to the left, pedestals
 (tyre stacks) on a pallet deck to the right, the crowd perches on crates, a
-pallet bleacher and the roof of a half-sunk sedan. Practicals: a flickering
+pallet bleacher and the roof of a half-sunk sedan. Practicals: a steady
 fluorescent tube over the pad, a sparking live wire, a caged work lamp.
 """
 
@@ -105,7 +105,7 @@ def floor_and_edge():
                color=P["paint_ring"], shade=(1, 1), jit=0, flat=True)
     for sx in (-1, 1):
         g.box((0.5, 0.14, 0.01), loc=(sx * 1.4, 0, 0.004), bevel=0, color="#fff1d6", shade=(1, 1), flat=True)
-    floor = g.build(props={"surface": "concrete"})
+    floor = g.build(props={"surface": "concrete", "sf_surface": "matte"})
 
     e = Geo("Edge")
     # the arenas.ts lip: a curb lip.width wide and lip.height tall on the rim,
@@ -120,7 +120,7 @@ def floor_and_edge():
         return C(P["stripe_y"]) if k % 2 == 0 else C(P["stripe_k"])
 
     rect_sweep(e, prof, stripe, nseg=24, shade=(0.8, 1.05), jit=0)
-    edge = e.build(props={"lip": True})
+    edge = e.build(props={"lip": True, "sf_surface": "satin"})
     edge_lights(edge, color="#ffd27a", n_per_side=8, inset=lw / 2, z=lh, size=0.04)
     return floor, edge
 
@@ -414,7 +414,7 @@ def marquee():
     for sx in (-1, 1):
         g.stick((cx + sx * 2.6, cy, cz + h / 2 + 0.22), (cx + sx * 2.2, cy, CEIL - 0.6), 0.03, segs=5,
                 color="#3a2a3c")
-    ob = g.build(origin=(cx, cy, cz), props={"ui": "marquee"})
+    ob = g.build(origin=(cx, cy, cz), props={"ui": "marquee", "sf_surface": "satin"})
     bulbs = Geo("Marquee_Bulbs_Emissive")
     nb = 11
     for k in range(nb):
@@ -443,7 +443,7 @@ def scoreboard():
         for sz in (-1, 1):
             g.cyl(0.1, 0.08, base=(cx + sx * (w / 2 + 0.08), cy - 0.2, cz + sz * (h / 2 + 0.08)), rot=(90, 0, 0),
                   segs=8, color=P["chrome"])
-    ob = g.build(origin=(cx, cy, cz), props={"ui": "scoreboard"})
+    ob = g.build(origin=(cx, cy, cz), props={"ui": "scoreboard", "sf_surface": "matte"})
     plane_marker("Scoreboard_Text", (cx, cy - 0.22, cz), (0, -1, 0), w - 0.3, h - 0.2, parent=ob,
                  props={"text_color": "#f4f0e0", "bg_color": P["board"]})
     return ob
@@ -517,7 +517,7 @@ def build():
         p.z = max(p.z, WATER_Z + 0.04)
         pts.append(p)
     wire.tube(pts, 0.05, segs=6, color="#5c2a3c")
-    wire_ob = wire.build(props={"hazard": "electric"})
+    wire_ob = wire.build(props={"hazard": "electric", "sf_surface": "matte"})
     spark = Geo("Spark_Emissive")
     for k in range(5):
         spark.cyl(0.03, 0.35, base=(4.3, 4.2, WATER_Z + 0.08), rot=(60, 0, k * 72), segs=5, r2=0.0,
@@ -527,7 +527,7 @@ def build():
                                                                "flicker": 0.9})
 
     # fluorescent tubes: the practical over the pad, dimmer ones over the decks
-    tube_fixture(set_g, (0.0, 0.4, 5.3), 3.4, "Tube_Emissive").build(
+    tube_fixture(set_g, (0.0, -1.2, 6.4), 3.4, "Tube_Emissive").build(
         material="SF_Emissive", props={"emissive": True, "emissive_color": P["tube"], "flicker": 0.35})
     for x, nm in ((-STATION_X, "TubeL_Emissive"), (STATION_X, "TubeR_Emissive")):
         tube_fixture(set_g, (x, 0.0, 4.7), 2.6, nm).build(
@@ -535,11 +535,21 @@ def build():
     # caged work lamp over the pedestals
     set_g.stick((STATION_X, 4.6, CEIL - 0.6), (STATION_X, 4.6, 4.1), 0.02, segs=5, color="#3a2a3c")
     set_g.cyl(0.32, 0.4, base=(STATION_X, 4.6, 3.75), segs=10, r2=0.12, bevel=0.03, color="#d9483b")
+    # A real guard around the bulb gives the forge's hanging lamp a readable silhouette.
+    for radius, zz in ((0.29, 3.75), (0.12, 3.47)):
+        set_g.torus(radius, 0.018, loc=(STATION_X, 4.6, zz), segs=12, rsegs=4, color=P["frame"])
+    for k in range(4):
+        a = k * math.pi / 2
+        set_g.tube([(STATION_X + math.cos(a) * 0.29, 4.6 + math.sin(a) * 0.29, 3.76),
+                    (STATION_X + math.cos(a) * 0.25, 4.6 + math.sin(a) * 0.25, 3.58),
+                    (STATION_X + math.cos(a) * 0.12, 4.6 + math.sin(a) * 0.12, 3.47)],
+                   0.014, segs=5, color=P["frame"])
     lamp = Geo("Lamp_Emissive")
     lamp.sphere(0.16, loc=(STATION_X, 4.6, 3.72), segs=8, rings=6, color="#ffd27a", shade=(1, 1), jit=0)
     lamp.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#ffd27a"})
-    set_g.build(props={"static": True})
-    win.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#ffb070"})
+    set_g.build(props={"static": True, "sf_surface": "matte"})
+    win.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#ffb070",
+                                           "emissive_strength": 0.35, "unlit": True})
 
     marquee()
     scoreboard()
@@ -567,11 +577,16 @@ def build():
 
     podium({"body": "#fff1d6", "trim": ["#f3bf3f", "#d9d4e6", "#e08a4a"], "pip": "#3a2a3c"}, center=(0, 0.4, 0.0))
 
-    light_empty("Light_Tube", (0.0, 0.4, 5.15), "rect", P["tube"], 9.0, flicker=0.35, target=(0.0, 0.4, 0.0),
-                width=3.4, height=0.2)
-    light_empty("Light_Spark", (4.3, 4.2, WATER_Z + 0.35), "point", "#ffe27a", 4.0, flicker=0.9, distance=5.0)
+    light_empty("Light_Tube", (0.0, -1.2, 6.25), "spot", "#e8fff1", 65, flicker=0.35, target=(0.0, 0.0, 0.2),
+                angle=86, distance=13, extra={"light_shadow": True})
+    light_empty("Light_Marquee", (0, 6.5, 2.0), "spot", "#ffe9b5", 3,
+                target=(0, 8.5, 0.5), angle=135, distance=7)
+    light_empty("Light_Spark", (4.3, 4.2, WATER_Z + 0.35), "point", "#ffe27a", 1.2, flicker=0.9, distance=4.0)
     light_empty("Light_Worklamp", (STATION_X, 4.6, 3.6), "spot", "#ffc070", 10.0, flicker=0.05,
                 target=(STATION_X, 0.0, 0.0), angle=55, distance=12)
+    for x, station, phases in ((-STATION_X, "Build", ["BUILD", "UPGRADE"]), (STATION_X, "Foundry", ["FOUNDRY"])):
+        light_empty("Light_Work_" + station, (x, 0, 4.55), "spot", "#ecfff0", 12,
+                    target=(x, 0, 0.7), angle=105, distance=9, extra={"light_phases": phases})
 
     for i, x in enumerate((-2.25, -0.75, 0.75, 2.25)):
         empty("Mark_Roster_%d" % (i + 1), (x, 0.4, 0.0), size=0.2)
@@ -579,6 +594,9 @@ def build():
     empty("Mark_FaceOff_B", b_from_t(GEO["spawns"]["B"]), size=0.2)
 
     cams()
+    from irradiance import bake_probe
+    bake_probe(label="garage-practical-bounce-v1", sky=("#9bc8b5", 0.32), ground=("#496550", 0.1),
+               origins=((0, 0, 1.4), (0, 6.8, 1.5), (-6, 1, 1.8)), practical_scale=2.4)
     export_glb(os.path.join(OUT_DIR, "garage.glb"))
 
 

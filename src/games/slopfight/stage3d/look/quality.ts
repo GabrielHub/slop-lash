@@ -169,19 +169,23 @@ type Listener = () => void;
 
 /** The live quality state: the current rung, pinned or auto, with change notifications. */
 export class QualityController {
-  readonly auto: boolean;
+  private autoValue: boolean;
   private levelValue: number;
   private readonly budget: FrameBudget;
   private readonly listeners = new Set<Listener>();
 
   constructor(options: { tier?: QualityTier | null; budget?: FrameBudgetOptions } = {}) {
-    this.auto = !options.tier;
+    this.autoValue = !options.tier;
     this.levelValue = options.tier ? TIER_LEVEL[options.tier] : 0;
     this.budget = new FrameBudget(options.budget);
   }
 
   get level(): number {
     return this.levelValue;
+  }
+
+  get auto(): boolean {
+    return this.autoValue;
   }
 
   get settings(): QualitySettings {
@@ -192,11 +196,13 @@ export class QualityController {
     return this.settings.tier;
   }
 
-  /** Pin a tier or rung (dev controls). */
-  set(target: QualityTier | number, nowMs = 0): void {
-    const level = typeof target === "number" ? target : TIER_LEVEL[target];
+  /** Pin a tier or rung; null resumes automatic adaptation from the current rung. */
+  set(target: QualityTier | number | null, nowMs = 0): void {
+    const auto = target === null;
+    const level = auto ? this.levelValue : typeof target === "number" ? target : TIER_LEVEL[target];
     const clamped = settingsForLevel(level).level;
-    if (clamped === this.levelValue) return;
+    if (clamped === this.levelValue && auto === this.autoValue) return;
+    this.autoValue = auto;
     this.levelValue = clamped;
     this.budget.reset(nowMs);
     this.emit();

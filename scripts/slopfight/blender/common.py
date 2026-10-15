@@ -11,6 +11,7 @@ where the TV camera lives). The glTF export converts to three.js (Y up):
 ``three = (x, z, -y)``. See README.md for the node contract.
 """
 
+import json
 import math
 import os
 import random
@@ -24,6 +25,7 @@ from mathutils import Euler, Matrix, Quaternion, Vector
 # Keep the build scripts' common import surface while the primitive kernel
 # remains independent of the authored scene helpers below.
 from geometry import C, Geo, get_material, hexc, mat, mix, place, rot_of, shade, shade_c, to_hex
+from ambient import baked_ambient
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
@@ -223,30 +225,32 @@ def apply_transforms(ob, location=False, rotation=True, scale=True):
                                          None if scale else sca)
 
 
-def export_glb(path):
+def export_glb(path, bake_ao=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     bpy.context.view_layer.update()
-    bpy.ops.export_scene.gltf(
-        filepath=path,
-        export_format="GLB",
-        export_yup=True,
-        export_extras=True,
-        export_apply=True,
-        export_vertex_color="ACTIVE",
-        export_all_vertex_colors=False,
-        export_texcoords=False,
-        export_normals=True,
-        export_tangents=False,
-        export_materials="EXPORT",
-        export_image_format="NONE",
-        export_cameras=False,
-        export_lights=False,
-        export_animations=False,
-        export_morph=False,
-        export_skins=False,
-        use_selection=False,
-        use_visible=False,
-    )
+    with baked_ambient(bpy.context.scene.objects, enabled=bake_ao) as report:
+        bpy.ops.export_scene.gltf(
+            filepath=path,
+            export_format="GLB",
+            export_yup=True,
+            export_extras=True,
+            export_apply=True,
+            export_vertex_color="ACTIVE",
+            export_all_vertex_colors=False,
+            export_texcoords=False,
+            export_normals=True,
+            export_tangents=False,
+            export_materials="EXPORT",
+            export_image_format="NONE",
+            export_cameras=False,
+            export_lights=False,
+            export_animations=False,
+            export_morph=False,
+            export_skins=False,
+            use_selection=False,
+            use_visible=False,
+        )
+        print("AO", json.dumps(report, separators=(",", ":")))
     print("EXPORTED", path, "tris=%d" % count_tris())
     rows = sorted(((count_tris([o]), o.name) for o in bpy.data.objects if o.type == "MESH"), reverse=True)
     print("TRIS BY NODE:", ", ".join("%s=%d" % (n, t) for t, n in rows[:25]))

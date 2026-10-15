@@ -17,12 +17,11 @@ import { ARENA_IDS, ARENAS, platformColliders, type ArenaId } from "../../arenas
 import { StageBoundary } from "../boundary";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import { flickerAt, hash01 } from "../director/noise";
-import { flickerChannel } from "../look/lighting";
 import type { ArenaMood } from "../look/moods";
 import { useStage } from "../services";
 import { checkFloor, type GeometryCheck } from "./geometry-check";
 import { createHazardAnimators, type HazardAnimator } from "./hazards";
-import { createArenaToon, createEmissiveMaterial, OutlinePalette, type EmissiveUniforms } from "./materials";
+import { arenaSurface, createArenaToon, createEmissiveMaterial, OutlinePalette, type ArenaSurface, type EmissiveUniforms } from "./materials";
 import { buildArenaNodes, isEmissiveNode, missingContractNodes, type ArenaNodes, type EdgeSideCode } from "./nodes";
 import { createRippleMaterial, createWaterMaterial } from "./water";
 
@@ -108,17 +107,29 @@ export function prepareSet(arena: ArenaId, source: Object3D, mood: ArenaMood): P
   const nodes = buildArenaNodes(arena, root);
   const glows: Glow[] = [];
   const timed: ShaderMaterial[] = [];
-  const toon = createArenaToon({
-    vertexColors: true,
-    rimColor: mood.rim.color,
-    shadeTint: mood.fill.color,
-    shade: mood.toonShade,
-  });
+  const finishes = new Map<ArenaSurface, ReturnType<typeof createArenaToon>>();
   const outlines = new OutlinePalette(2);
-  const own: Material[] = [toon];
+  const own: Material[] = [];
+
+  const materialFor = (surface: ArenaSurface) => {
+    let material = finishes.get(surface);
+    if (!material) {
+      material = createArenaToon({
+        surface,
+        vertexColors: true,
+        rimColor: mood.rim.color,
+        shadeTint: mood.fill.color,
+        shade: mood.toonShade,
+      });
+      finishes.set(surface, material);
+      own.push(material);
+    }
+    return material;
+  };
 
   const practicals = nodes.lights
-    .filter((light) => light.kind !== "directional")
+    // Static reflections must not include work lights that are off in fights.
+    .filter((light) => light.kind !== "directional" && !light.phases)
     .map((light) => ({ position: light.position, color: light.color, intensity: light.intensity }));
   const meshes: MeshLike[] = [];
   root.traverse((object) => {
@@ -159,12 +170,12 @@ export function prepareSet(arena: ArenaId, source: Object3D, mood: ArenaMood): P
       glows.push({
         uniforms: glow.userData.uniforms,
         flicker,
-        channel: flickerChannel(flicker),
+        channel: Math.round(flicker * 1000),
         edgeSide: entry?.edgeSide ?? null,
       });
       continue;
     }
-    mesh.material = toon;
+    mesh.material = materialFor(arenaSurface(extras.sf_surface));
     mesh.receiveShadow = true;
     if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
     const radius = (mesh.geometry.boundingSphere?.radius ?? 0) * mesh.getWorldScale(new Vector3()).x;

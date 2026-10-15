@@ -34,9 +34,11 @@ COMMON = (["Floor", "Collision", "Edge", "Pit", "Crowd"] + ["Crowd_%02d" % i for
           + ["Easel_%d" % i for i in range(1, 5)] + ["Easel_%d_Canvas" % i for i in range(1, 5)]
           + ["Pedestal_%d" % i for i in range(1, 5)] + ["Pedestal_%d_Top" % i for i in range(1, 5)] + CAMS)
 PER_ARENA = {
-    "garage": ["Hazard_Water", "Light_Tube", "Tube_Emissive"],
-    "kitchen": ["Hazard_Sink", "Hazard_Toaster", "Light_Window", "Window_Emissive", "Clock"],
-    "rooftop": ["Hazard_Wind_Laundry_1", "Light_Neon", "Neon_Emissive"],
+    "garage": ["Hazard_Water", "Light_Tube", "Tube_Emissive", "Probe_Ambient", "Light_Work_Build", "Light_Work_Foundry"],
+    "kitchen": ["Hazard_Sink", "Hazard_Toaster", "Light_Window", "Window_Emissive", "Clock", "Probe_Ambient",
+                "Light_Pendant", "Pendant_Emissive", "Light_Work_Build", "Light_Work_Foundry"],
+    "rooftop": ["Hazard_Wind_Laundry_1", "Light_Neon", "Neon_Emissive", "Probe_Ambient",
+                "Light_Ring_Key", "Light_Ring_Fill", "Light_Work_Build", "Light_Work_Foundry"],
 }
 PARENTS = {"Marquee_Text": "Marquee", "Scoreboard_Text": "Scoreboard", "Podium_1": "Podium", "Podium_2": "Podium",
            "Podium_3": "Podium"}
@@ -46,6 +48,7 @@ PARENTS.update({"Pedestal_%d_Top" % i: "Pedestal_%d" % i for i in range(1, 5)})
 
 FAILS = []
 FLOOR_TOL = 0.02  # GEOMETRY_TOLERANCE in stage3d/arena/geometry-check.ts
+PROP_LIMITS = {"briefcase": 800, "boxing_glove": 800, "trumpet": 800}
 
 
 def fail(msg):
@@ -94,6 +97,21 @@ def json_checks(path, base):
     print("  primitives: %d, with COLOR_0: %d" % (len(prims), len(prims) - len(no_col)))
     if no_col:
         fail("%s: primitives without COLOR_0: %s" % (base, no_col[:8]))
+    for node in nodes:
+        if node.get("name") == "Probe_Ambient":
+            coefficients = node.get("extras", {}).get("sf_probe_sh", [])
+            if len(coefficients) != 27 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in coefficients):
+                fail("%s: invalid baked irradiance coefficients" % base)
+        surface = node.get("extras", {}).get("sf_surface")
+        if surface is not None and surface not in ("matte", "satin", "gloss"):
+            fail("%s: %s has unknown sf_surface %r" % (base, node.get("name"), surface))
+        if node.get("name") == "Floor" and surface != "matte":
+            fail("%s: Floor must keep a matte finish for fight readability" % base)
+        bake = node.get("extras", {}).get("sf_ao_bake")
+        if bake is not None:
+            radius = node.get("extras", {}).get("sf_ao_radius")
+            if bake != "local-v1" or not isinstance(radius, (int, float)) or not 0 < radius <= 0.45:
+                fail("%s: %s has invalid ambient bake metadata" % (base, node.get("name")))
     # emissive tagging
     emis = [n["name"] for n in nodes if n.get("name", "").endswith("_Emissive") or n.get("extras", {}).get("emissive")]
     untagged = [n["name"] for n in nodes if n.get("name", "").endswith("_Emissive")
@@ -260,8 +278,9 @@ def check_props(path):
         loc = o.matrix_world.translation
         rows.append("  %-20s tris=%3d kind=%-10s hold=%-8s size=(%.2f x %.2f x %.2f) origin=(%.2f, %.2f, %.2f)" % (
             name, t, o.get("kind"), o.get("hold"), hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], loc.x, loc.z, -loc.y))
-        if t >= 500:
-            fail("props: %s has %d tris" % (name, t))
+        limit = PROP_LIMITS.get(tag, 500)
+        if t >= limit:
+            fail("props: %s has %d tris (limit %d)" % (name, t, limit))
     print("\n".join(rows))
     print("  CONTRACT: %d/%d Prop_<tag> nodes present" % (sum(1 for t in tags if "Prop_" + t in obs), len(tags)))
 

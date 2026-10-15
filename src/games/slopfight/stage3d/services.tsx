@@ -160,9 +160,11 @@ export const usePostFx = () => useStage().fx;
 export const useStageEvents = () => useStage().events;
 export const useVoice = () => useStage().voice;
 
-/** The current quality rung; re-renders when it changes. */
+const standaloneQuality = new QualityController({ tier: "high" });
+
+/** The current quality rung; standalone creature labs use the full-quality preset. */
 export function useQuality(): QualitySettings {
-  const { quality } = useStage();
+  const quality = useContext(StageContext)?.quality ?? standaloneQuality;
   return useSyncExternalStore(quality.subscribe, quality.getSnapshot, quality.getSnapshot);
 }
 

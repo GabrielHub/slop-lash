@@ -152,7 +152,7 @@ def countertop():
                 pts.reverse()
             g.quad([tuple(v) for v in pts], color=col, shade=(1, 1), jit=0.02, noise=0)
         placed += 1
-    floor = g.build(props={"surface": "laminate"})
+    floor = g.build(props={"surface": "laminate", "sf_surface": "matte"})
     # crumbs: their own node, because Floor's top must stay at y = 0 (the
     # stage's geometry check allows 0.02, and a crumb stands ~0.035 proud)
     crumbs = Geo("Set_Crumbs", seed=22, max_seg=1)
@@ -161,7 +161,7 @@ def countertop():
         r = rng.uniform(0.035, 0.07)
         crumbs.sphere((r, r * 0.8, r * 0.42), loc=(x, y, TOP_Z + r * 0.08), rot=(0, 0, rng.uniform(0, 90)), segs=5,
                       rings=3, color=rng.choice(["#d99a52", "#c27d3c", "#e8b26a"]), shade=(0.8, 1.05))
-    crumbs.build(props={"static": True, "decor": "crumbs on the counter; not walkable geometry"})
+    crumbs.build(props={"static": True, "sf_surface": "matte", "decor": "crumbs on the counter; not walkable geometry"})
 
     # Edge: chrome banding round the open sides with a tomato rim stripe on
     # top; along the back the stripe gives way to a cove into the backsplash.
@@ -179,7 +179,7 @@ def countertop():
         return C(P["edge"])
 
     rect_sweep(e, prof, band, nseg=6, shade=(0.85, 1.05), jit=0, noise=0)
-    edge = e.build(props={"lip": False, "edges": "front/left/right open, back wall"})
+    edge = e.build(props={"lip": False, "edges": "front/left/right open, back wall", "sf_surface": "satin"})
     edge_lights(edge, color="#ffd27a", n_per_side=8, inset=0.055, z=TOP_Z + 0.004, size=0.032,
                 edges=GEO["edges"])
     return floor, edge
@@ -236,13 +236,13 @@ def backsplash():
         g.slab(xa, xb, y0 - 0.04, y1 + 0.02, bottom, top, bevel=0.02, seg=1, color=P["chrome"])
     # back face (seen from behind): mint panelling
     g.slab(-HALF, HALF, y1, y1 + 0.02, bottom, top, bevel=0.0, color=P["cab"], shade=(0.8, 1.0))
-    ob = g.build(props={"edge_side": "back", "edge_kind": "wall", "collider": "wall"})
+    ob = g.build(props={"edge_side": "back", "edge_kind": "wall", "collider": "wall", "sf_surface": "gloss"})
     # spice jars at the ledge ends (decor)
     jars = Geo("Set_Ledge_Jars", seed=4, max_seg=1)
     for k, (x, c) in enumerate(((-2.75, "#e4523f"), (-2.4, "#f1c24a"), (2.45, "#7fc45a"), (2.8, "#b35ac8"))):
         jars.cyl(0.13, 0.32, base=(x, y1 + 0.18, top + 0.1), segs=8, color="#fff6e4", shade=(0.85, 1.05))
         jars.cyl(0.14, 0.09, base=(x, y1 + 0.18, top + 0.42), segs=8, bevel=0.03, seg=1, color=c)
-    jars.build(props={"static": True})
+    jars.build(props={"static": True, "sf_surface": "gloss"})
     return ob
 
 
@@ -279,7 +279,7 @@ def sink():
         for (a0, a1, b0, b1) in ((x0, x1, y0, y0 + t + 0.004), (x0, x1, y1 - t - 0.004, y1),
                                  (x0, x0 + t + 0.004, y0, y1), (x1 - t - 0.004, x1, y0, y1)):
             g.slab(a0, a1, b0, b1, TOP_Z - 0.09, TOP_Z - 0.001, bevel=0.0, color=P["basin_dk"], shade=(1, 1), jit=0)
-    pit = g.build(props={"pit": True, "ring_out": "sink", "pits_three": [
+    pit = g.build(props={"pit": True, "ring_out": "sink", "sf_surface": "satin", "pits_three": [
         [p["minX"], p["maxX"], p["minZ"], p["maxZ"], p["depth"]] for p in GEO["pits"]]})
 
     # faucet on the backsplash face, spout over the basin
@@ -287,19 +287,27 @@ def sink():
     fx, wy = (x0 + x1) / 2, HALF - 0.03
     mz = TOP_Z + 0.95
     h = Geo("Hazard_Sink", seed=2)
-    h.cyl(0.17, 0.08, base=(fx, wy, mz), rot=(90, 0, 0), segs=12, bevel=0.025, seg=1, color=P["chrome"])
+    h.cyl(0.18, 0.018, base=(fx, wy + 0.01, mz), rot=(90, 0, 0), segs=16, color=P["chrome_dk"])
+    h.cyl(0.17, 0.08, base=(fx, wy, mz), rot=(90, 0, 0), segs=16, bevel=0.025, seg=2, color=P["chrome"])
     tip = Vector((fx, (y0 + y1) / 2 - 0.05, mz + 0.05))
-    pts = [Vector((fx, wy - 0.05, mz)), Vector((fx, wy - 0.3, mz + 0.06)), Vector((fx, wy - 0.55, mz + 0.24)),
-           Vector((fx, tip.y + 0.12, mz + 0.3)), Vector((fx, tip.y, mz + 0.2)), tip]
-    h.tube(pts, 0.06, segs=8, color=P["chrome"])
-    h.cyl(0.075, 0.07, base=tip + Vector((0, 0, -0.06)), segs=8, color=P["chrome_dk"])
+    # Smooth gooseneck, still ending at the original animated drip marker.
+    p0, p1 = Vector((fx, wy - 0.05, mz)), Vector((fx, wy - 0.2, mz + 0.38))
+    p2 = Vector((fx, tip.y, mz + 0.52))
+    pts = []
+    for i in range(13):
+        t = i / 12
+        pts.append(p0 * (1 - t) ** 3 + p1 * (3 * (1 - t) ** 2 * t) + p2 * (3 * (1 - t) * t ** 2) + tip * t ** 3)
+    h.tube(pts, 0.06, segs=12, color=P["chrome"])
+    h.cyl(0.075, 0.07, base=tip + Vector((0, 0, -0.06)), segs=12, bevel=0.008, seg=1, color=P["chrome_dk"])
+    h.disc(0.049, loc=tip + Vector((0, 0, -0.061)), normal=(0, 0, -1), segs=12, color=P["ink"])
     for sx, col in ((-1, P["edge"]), (1, "#5a9be6")):
         hx = fx + sx * 0.5
         h.cyl(0.09, 0.14, base=(hx, wy, mz + 0.05), rot=(90, 0, 0), segs=8, color=P["chrome"])
         for a in (0, 90):
             h.box((0.34, 0.07, 0.07), loc=(hx, wy - 0.17, mz + 0.05), rot=(0, a, 0), bevel=0.025, seg=1, color=col)
         h.sphere(0.06, loc=(hx, wy - 0.2, mz + 0.05), segs=7, rings=4, color=P["chrome"])
-    sink_ob = h.build(origin=(fx, wy, mz), props={"hazard": "sink"})
+        h.disc(0.033, loc=(hx, wy - 0.261, mz + 0.05), normal=(0, -1, 0), segs=10, color=col)
+    sink_ob = h.build(origin=(fx, wy, mz), props={"hazard": "sink", "sf_surface": "gloss"})
     sink_ob["spout_tip"] = [tip.x, tip.z, -tip.y]  # three.js world
     drip = Geo("Hazard_Sink_Drip")
     drip.sphere((0.045, 0.045, 0.07), loc=(tip.x, tip.y, tip.z - 0.16), segs=7, rings=5, color="#bfe6ff",
@@ -454,7 +462,7 @@ def room():
     win.disc(1.25, loc=(1.6, ROOM_BACK - 0.05, wz0 + 2.4), normal=(0, -1, 0), segs=20, color="#fff2b8",
              shade=(1, 1), jit=0)
     win.build(material="SF_Emissive", props={"emissive": True, "emissive_color": P["glass_lo"],
-                                             "emissive_strength": 1.3})
+                                             "emissive_strength": 0.38, "unlit": True})
     # skyline silhouettes in front of the glass, a few warm windows
     rng = random.Random(4)
     x = wx0
@@ -545,9 +553,23 @@ def toaster():
           color=P["chrome"])
     g.box((0.08, 0.05, 0.22), loc=(cx - 0.9, cy - d / 2 - 0.16, TOP_Z + h * 0.42 + 0.12), bevel=0.02, seg=1,
           color=P["ink"])
+    # Front controls stay readable behind the fighters: broad dial ticks and
+    # a small inset badge, all merged with the existing toaster shell.
+    for angle in (-65, -32, 0, 32, 65):
+        a = math.radians(angle)
+        g.box((0.045, 0.016, 0.08), loc=(cx - 0.9 + math.sin(a) * 0.39, cy - d / 2 - 0.025,
+              TOP_Z + h * 0.42 + math.cos(a) * 0.39), rot=(0, angle, 0), bevel=0,
+              color=P["chrome_dk"], shade=(1, 1))
+    g.box((0.64, 0.04, 0.22), loc=(cx + 0.45, cy - d / 2 - 0.02, TOP_Z + h * 0.57),
+          bevel=0.07, seg=2, color=P["chrome"])
+    g.box((0.4, 0.006, 0.045), loc=(cx + 0.45, cy - d / 2 - 0.043, TOP_Z + h * 0.57),
+          bevel=0, color=P["toaster"], shade=(1, 1))
+    for zz in (0.55, 0.67, 0.79):
+        g.box((0.68, 0.014, 0.032), loc=(cx + 0.5, cy - d / 2 - 0.018, TOP_Z + zz), bevel=0,
+              color=P["chrome_dk"], shade=(1, 1))
     for sx in (-1, 1):
         g.box((0.36, 0.3, 0.18), loc=(cx + sx * (w / 2 - 0.5), cy, TOP_Z + 0.07), bevel=0.06, seg=1, color=P["ink"])
-    ob = g.build(origin=(cx, cy, TOP_Z), props={"hazard": "toaster"})
+    ob = g.build(origin=(cx, cy, TOP_Z), props={"hazard": "toaster", "sf_surface": "gloss"})
     glow = Geo("Toaster_Glow_Emissive")
     for sx in (-1, 1):
         glow.slab(cx + sx * 0.55 - 0.22, cx + sx * 0.55 + 0.22, cy - 0.55, cy + 0.55, TOP_Z + h + 0.045,
@@ -559,7 +581,12 @@ def toaster():
         tx = cx + sx * 0.55
         t.box((0.46, 1.12, 1.2), loc=(tx, cy, TOP_Z + h - 0.3), bevel=0.18, seg=2, color=P["toast_crust"])
         t.box((0.48, 0.96, 1.04), loc=(tx, cy, TOP_Z + h - 0.35), bevel=0.14, seg=2, color=P["toast"])
-        t.build(origin=(tx, cy, TOP_Z + h - 0.9), parent=ob, props={"pop_height": 1.3, "pop_axis": "local +Y"})
+        for side in (-1, 1):
+            for yy, zz, rr in ((-0.23, -0.3, 0.04), (0.18, -0.12, 0.035), (0.03, -0.48, 0.045),
+                               (0.28, -0.36, 0.025), (-0.12, -0.03, 0.025)):
+                t.disc(rr, loc=(tx + side * 0.241, cy + yy, TOP_Z + h + zz), normal=(side, 0, 0),
+                       segs=7, color=P["toast_crust"], shade=(1, 1), jit=0)
+        t.build(origin=(tx, cy, TOP_Z + h - 0.9), parent=ob, props={"pop_height": 1.3, "pop_axis": "local +Y", "sf_surface": "matte"})
     return ob
 
 
@@ -581,7 +608,7 @@ def clock():
     for sx in (-1, 1):  # bells on top: alarm-clock charm
         g.sphere((0.42, 0.3, 0.32), loc=(cx + sx * 0.95, cy, cz + r + 0.3), rot=(0, sx * 30, 0), segs=10, rings=5,
                  color="#5a9be6")
-    ob = g.build(origin=(cx, cy, cz), props={"clock": True})
+    ob = g.build(origin=(cx, cy, cz), props={"clock": True, "sf_surface": "satin"})
     for name, length, wdt, ang in (("Clock_Hand_Hour", 0.8, 0.13, 300), ("Clock_Hand_Minute", 1.15, 0.08, 60)):
         hg = Geo(name)
         hg.box((wdt, 0.03, length), loc=(cx, cy - 0.45, cz + length / 2 - 0.1), bevel=0.02, seg=1, color=P["ink"])
@@ -605,7 +632,7 @@ def marquee():
     # little chef-hat crest on top
     g.sphere((0.5, 0.2, 0.32), loc=(cx, cy, cz + h / 2 + 0.42), segs=10, rings=5, color="#fff6e4")
     g.box((0.62, 0.22, 0.18), loc=(cx, cy, cz + h / 2 + 0.22), bevel=0.06, seg=1, color="#fff6e4")
-    ob = g.build(origin=(cx, cy, cz), props={"ui": "marquee"})
+    ob = g.build(origin=(cx, cy, cz), props={"ui": "marquee", "sf_surface": "satin"})
     bulbs = Geo("Marquee_Bulbs_Emissive")
     nb = 10
     for k in range(nb):
@@ -630,7 +657,7 @@ def scoreboard():
     g.cyl(0.05, 0.4, base=(cx + 1.5, cy - 0.25, cz - h / 2 - 0.12), rot=(0, 90, 0), segs=6, color="#fff6e4")
     g.box((0.7, 0.04, 0.12), loc=(cx - w / 2 + 0.6, cy - 0.22, cz + h / 2 - 0.3), bevel=0.0, color="#f4f0e0",
           shade=(1, 1))
-    ob = g.build(origin=(cx, cy, cz), props={"ui": "scoreboard"})
+    ob = g.build(origin=(cx, cy, cz), props={"ui": "scoreboard", "sf_surface": "matte"})
     plane_marker("Scoreboard_Text", (cx, cy - 0.18, cz), (0, -1, 0), w - 0.3, h - 0.25, parent=ob,
                  props={"text_color": "#f4f0e0", "bg_color": P["board"]})
     return ob
@@ -685,14 +712,23 @@ def dressing(g):
 
 
 def pendant():
-    pend = Geo("Pendant_Emissive")
-    pend.sphere(0.3, loc=(0.0, -0.4, 7.4), segs=10, rings=6, color="#fff2c8", shade=(1, 1), jit=0)
-    pend.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#fff2c8"})
-    sg = Geo("Set_Pendant", seed=23)
-    sg.lathe([(0.0, 8.3), (0.25, 8.3), (0.4, 8.0), (1.0, 7.35), (1.05, 7.25), (0.0, 7.25)],
-             base=(0.0, -0.4, 0.0), segs=16, color=P["edge"], shade=(0.7, 1.05))
-    sg.stick((0.0, -0.4, 8.3), (0.0, -0.4, CEIL), 0.03, segs=5, color=P["ink"])
-    sg.build(props={"static": True})
+    # Open enamel shades with a visible bulb; the old closed bottom hid it.
+    sg, bulbs = Geo("Set_Pendant", seed=23), Geo("Pendant_Emissive")
+    for x, y, z, size, station, phases in ((0, -1.8, 6.25, 1, None, None),
+                                         (-STATION_X, 0, 4.8, 0.6, "Build", ["BUILD", "UPGRADE"]),
+                                         (STATION_X, 0, 4.8, 0.6, "Foundry", ["FOUNDRY"])):
+        profile = [(0, 1.05), (0.25, 1.05), (0.4, 0.75), (1, 0.1), (1.05, 0),
+                   (0.98, 0), (0.94, 0.1), (0.34, 0.73), (0.19, 1), (0, 1)]
+        sg.lathe([(r * size, h * size) for r, h in profile], base=(x, y, z), segs=16,
+                 color=P["edge"], shade=(0.7, 1.05))
+        sg.stick((x, y, z + 1.05 * size), (x, y, CEIL), 0.03, segs=5, color=P["ink"])
+        bulbs.sphere(0.3 * size, loc=(x, y, z + 0.15 * size), segs=10, rings=6,
+                     color="#fff2c8" if station is None else "#8e7655", shade=(1, 1), jit=0)
+        if station:
+            light_empty("Light_Work_" + station, (x, y, z - 0.05), "spot", "#ffe2b0", 25,
+                        target=(x, y, 0.7), angle=105, distance=9, extra={"light_phases": phases})
+    bulbs.build(material="SF_Emissive", props={"emissive": True, "emissive_color": "#fff2c8"})
+    sg.build(props={"static": True, "sf_surface": "gloss"})
 
 
 def build():
@@ -707,7 +743,7 @@ def build():
     shelf(set_g, sh_l[0], -2.8, 2.6, sh_l[1], 1)
     shelf(set_g, sh_r[0], -2.8, 2.6, sh_r[1], -1)
     dressing(set_g)
-    set_g.build(props={"static": True})
+    set_g.build(props={"static": True, "sf_surface": "matte"})
     toaster()
     clock()
     marquee()
@@ -739,17 +775,20 @@ def build():
     podium({"body": "#fff6e4", "trim": ["#ffd56a", "#ece8f4", "#e08a4a"], "pip": P["edge"]},
            center=(0.0, 0.2, TOP_Z))
 
-    light_empty("Light_Window", (0.0, ROOM_BACK - 0.6, 5.6), "rect", "#ffa560", 14.0, flicker=0.0,
-                target=(0.0, 0.0, 0.0), width=WINDOW[1] - WINDOW[0], height=WINDOW[3] - WINDOW[2])
-    light_empty("Light_Pendant", (0.0, -0.4, 7.2), "spot", "#ffe2b0", 12.0, flicker=0.0, target=(0.0, -0.4, 0.0),
-                angle=70, distance=14)
-    light_empty("Light_Toaster", (-8.4, 9.2, TOP_Z + 2.9), "point", "#ff9a3c", 2.5, flicker=0.15, distance=5)
+    light_empty("Light_Window", (0.0, ROOM_BACK - 0.6, 5.6), "spot", "#ffa560", 25.0,
+                target=(0.0, 0.0, 0.5), angle=85, distance=18)
+    light_empty("Light_Pendant", (0.0, -1.8, 6.2), "spot", "#ffe2b0", 80.0, target=(0.0, 0.0, 0.2),
+                angle=88, distance=15, extra={"light_shadow": True})
+    light_empty("Light_Toaster", (-8.4, 9.2, TOP_Z + 2.9), "point", "#ff9a3c", 1.4, flicker=0.15, distance=4)
 
     for i, x in enumerate((-2.25, -0.75, 0.75, 2.25)):
         empty("Mark_Roster_%d" % (i + 1), (x, -0.4, TOP_Z), size=0.2)
     empty("Mark_FaceOff_A", b_from_t(GEO["spawns"]["A"]), size=0.2)
     empty("Mark_FaceOff_B", b_from_t(GEO["spawns"]["B"]), size=0.2)
     cams()
+    from irradiance import bake_probe
+    bake_probe(label="kitchen-practical-bounce-v1", sky=("#e2bfa9", 0.32), ground=("#c08858", 0.1),
+               origins=((0, -0.4, 1.4), (0, 6.8, 2), (-6, 1, 1.8)), practical_scale=1.1)
     export_glb(os.path.join(OUT_DIR, "kitchen.glb"))
 
 
