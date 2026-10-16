@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Sequence, useCues } from "@/tutorial/clock";
+import { Sequence, useCues, useLocalCues, useLocalTime } from "@/tutorial/clock";
 import { Burst, Shake, TypeOn } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, hash01, mix, progress, spring, springTo, wobble } from "@/tutorial/timeline";
-import { FREDOKA, INK, NIGHT, SLAM_IMPACT, Slam, Spotlight, TOY, jiggle, useBeat } from "../look";
+import { FREDOKA, INK, NIGHT, SLAM_IMPACT, Slam, Spotlight, TOY, jiggle } from "../look";
 import { Glove, Toy, TrophyShape, type Mood, type ToyKind } from "../toys";
 
 // The promo's cold open. "Tonight. Live from this living room. Four
@@ -123,7 +123,7 @@ function Push({ t, length, to = 1.07, origin = "960px 540px", children }: { t: n
 
 /** The ident: a spot snaps on and two gloves touch. */
 function Ident() {
-  const { t } = useBeat();
+  const t = useLocalTime();
   const spot = t < 0.4 ? 0 : t < 0.46 ? 1 : t < 0.54 ? 0.12 : progress(t, 0.54, 0.16, ease.out);
   const touch = 1.45;
   const approach = progress(t, 0.55, touch - 0.55, ease.inOutSine);
@@ -154,7 +154,7 @@ function Ident() {
 
 /** "Tonight." */
 function Tonight() {
-  const { t } = useBeat();
+  const t = useLocalTime();
   return (
     <Push t={t} length={1.2} to={1.08}>
       <Spotlight width={1300} floor={860} />
@@ -165,7 +165,7 @@ function Tonight() {
 
 /** A living room with a boxing ring on the coffee table, in silhouette but for the ring. */
 function LivingRoom() {
-  const { t } = useBeat();
+  const t = useLocalTime();
   const shade = "var(--sft-crowd)";
   const rim = "var(--sf-tangerine)";
   const ropes = [TOY.tomato.hex, TOY.butter.hex, TOY.ocean.hex];
@@ -219,7 +219,7 @@ function LivingRoom() {
 
 /** The date-line burn-in, typed like a broadcast slate. */
 function Burnin() {
-  const { t } = useBeat();
+  const t = useLocalTime();
   return (
     <div
       className="pointer-events-none absolute left-[110px] top-[150px] flex items-center gap-[16px]"
@@ -245,7 +245,7 @@ const LINEUP: { kind: ToyKind; x: number; flip?: boolean; mood?: Mood }[] = [
 
 /** "Four champions.": four silhouettes, lit one by one on "champions". */
 function FourChampions({ lit }: { lit: number }) {
-  const { t, local } = useBeat();
+  const { t, local } = useLocalCues();
   const at = local(lit);
   return (
     <Push t={t} length={1.4} to={1.06} origin="960px 780px">
@@ -274,7 +274,7 @@ function FourChampions({ lit }: { lit: number }) {
 
 /** "One trophy.": the trophy turns under the spot with a sweeping glint. */
 function OneTrophy({ word }: { word: number }) {
-  const { t, local } = useBeat();
+  const { t, local } = useLocalCues();
   const at = local(word);
   const glint = progress(t, 0.2, 0.8, ease.inOut);
   return (
@@ -313,7 +313,7 @@ function OneTrophy({ word }: { word: number }) {
 
 /** "Ladies and gentlemen...": the ring mic drops, the cameras go off. */
 function Announce({ until }: { until: number }) {
-  const { t, local } = useBeat();
+  const { t, local } = useLocalCues();
   const end = local(until);
   const drop = springTo(t, -0.1, -760, 0, { stiffness: 140, damping: 11 });
   const swing = Math.sin(t * 2.6) * 6 * Math.exp(-Math.max(0, t) * 0.8) + wobble(t, 2) * 1.6;
@@ -343,7 +343,7 @@ const POSTER: { kind: ToyKind; x: number; y: number; scale: number; flip?: boole
 
 /** The fight-night poster: four champions, the band, and the logo slammed on `logo`. */
 export function Poster({ logo, still = false }: { logo: number; still?: boolean }) {
-  const { t, local } = useBeat();
+  const { t, local } = useLocalCues();
   const at = local(logo);
   const settled = still ? 10 : t;
   return (

@@ -1,10 +1,9 @@
 "use client";
 
 import { Avatar } from "@/room/avatar";
-import { useLocalTime } from "@/tutorial/clock";
+import { useLocalCues, useLocalTime } from "@/tutorial/clock";
 import { Burst, Words, shakeOffset } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
-import { useBeats, type Beats } from "../beats";
+import { SPRINGS, clamp, ease, mix, progress, spring, type LocalCues } from "@/tutorial/timeline";
 import { KIT, RAFI, YOU, type CastMember } from "../content";
 import { PixelText, pixelSize } from "../pixel";
 import { Crown } from "../parts";
@@ -24,7 +23,7 @@ const PODIUM: { member: CastMember; place: 1 | 2 | 3; x: number; block: number; 
   { member: KIT, place: 3, x: 1300, block: 125, avatar: 116, score: "2,600" },
 ];
 
-export function finaleBeats(b: Beats) {
+export function finaleBeats(b: LocalCues) {
   const most = b.word("outro", "most");
   const grab = b.word("outro", "grab");
   const sloppy = b.word("outro", "sloppy!");
@@ -38,9 +37,9 @@ export function finaleBeats(b: Beats) {
   };
 }
 
-export function FinaleShot({ from }: { from: number }) {
+export function FinaleShot() {
   const t = useLocalTime();
-  const b = useBeats(from);
+  const b = useLocalCues();
   const k = finaleBeats(b);
   const shake = shakeOffset(t, k.sloppy, 16, 0.5);
   const crownShake = shakeOffset(t, k.wins + 0.12, 8, 0.3);

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useCues, useLocalTime, useTime } from "@/tutorial/clock";
+import { useLocalTime, useTime } from "@/tutorial/clock";
 import { BOARD } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, hash01, mix, progress, spring } from "@/tutorial/timeline";
 import { DRAWING_CANVAS_HEX, TOY_COLOR_VALUES } from "../vocab";
@@ -88,35 +88,8 @@ export function SceneTokens() {
 }
 
 // ---------------------------------------------------------------------------
-// Beats
+// Impact
 // ---------------------------------------------------------------------------
-
-export interface Beat {
-  /** Local seconds in the enclosing Sequence. */
-  t: number;
-  /** A global time (a cue) in local seconds. */
-  local: (global: number) => number;
-  at: (id: string, offset?: number) => number;
-  end: (id: string, offset?: number) => number;
-  word: (id: string, word: string, nth?: number) => number;
-  wordEnd: (id: string, word: string, nth?: number) => number;
-}
-
-/** The voice's cues, in the local time of the enclosing Sequence. */
-export function useBeat(): Beat {
-  const cues = useCues();
-  const global = useTime();
-  const t = useLocalTime();
-  const origin = global - t;
-  return {
-    t,
-    local: (time) => time - origin,
-    at: (id, offset = 0) => cues.at(id, offset) - origin,
-    end: (id, offset = 0) => cues.end(id, offset) - origin,
-    word: (id, word, nth) => cues.word(id, word, nth) - origin,
-    wordEnd: (id, word, nth) => cues.wordEnd(id, word, nth) - origin,
-  };
-}
 
 /** A bump that peaks at `at` and decays like a struck jelly: for squash on impact. */
 export function jiggle(t: number, at: number, decay = 8, frequency = 24): number {

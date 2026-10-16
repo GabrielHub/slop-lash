@@ -1,9 +1,10 @@
 "use client";
 
-import { PhoneMock, STAMP_IMPACT, Stamp, Tap, shakeOffset } from "@/tutorial/kit";
+import { useLocalCues } from "@/tutorial/clock";
+import { PhoneMock, STAMP_IMPACT, Stamp, Tap, phonePoint, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { DEMO, ROUND_QUESTIONS, type PlayerName } from "../content";
-import { At, Token, TvFrame, phonePoint, useShot } from "../parts";
+import { At, Token, TvFrame } from "../parts";
 import { AnswerScreen, CheckMark, Pill, choiceButton } from "../screens";
 
 /**
@@ -19,7 +20,7 @@ const WIDE = { width: 290, top: 168, xs: [300, 740, 1180, 1620] };
 const CLOSE = { width: 360, left: 300, top: 118 };
 
 export function AnswerShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const everybody = shot.word("answer", "everybody");
   const questionAt = shot.word("answer", "question");

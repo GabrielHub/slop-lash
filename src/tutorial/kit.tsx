@@ -3,6 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { STAMP_IMPACT_MS } from "@/lib/animations";
 import { playSound, type SoundName } from "@/lib/sounds";
+import { WORN_MASK } from "@/room/moment/stamp";
 import { useLocalTime } from "./clock";
 import type { SoundCue } from "./spec";
 import {
@@ -177,6 +178,47 @@ export interface CameraKey {
   rotate?: number;
 }
 
+/** Where a camera is: the board point it centres on, its zoom and roll. */
+export interface CameraPose {
+  x: number;
+  y: number;
+  zoom: number;
+  rotate: number;
+}
+
+/** The pose of a camera on `keys` at local time `t`. */
+export function cameraPose(
+  t: number,
+  keys: readonly CameraKey[],
+  easing: Easing = ease.inOut,
+): CameraPose {
+  const times = keys.map((key) => key.at);
+  const track = (pick: (key: CameraKey) => number | undefined, fallback: number) => {
+    const values = keys.map((key) => pick(key) ?? fallback);
+    return keys.length === 1 ? values[0] : interpolate(t, times, values, easing);
+  };
+  return {
+    x: track((key) => key.x, BOARD.width / 2),
+    y: track((key) => key.y, BOARD.height / 2),
+    zoom: track((key) => key.zoom, 1),
+    rotate: track((key) => key.rotate, 0),
+  };
+}
+
+/** Where a board point inside a `Camera` shows on screen, for the camera at `pose`. */
+export function toScreen(point: { x: number; y: number }, pose: CameraPose): { x: number; y: number } {
+  const dx = pose.zoom * (point.x - pose.x);
+  const dy = pose.zoom * (point.y - pose.y);
+  if (pose.rotate === 0) return { x: BOARD.width / 2 + dx, y: BOARD.height / 2 + dy };
+  const angle = (pose.rotate * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return {
+    x: BOARD.width / 2 + dx * cos - dy * sin,
+    y: BOARD.height / 2 + dx * sin + dy * cos,
+  };
+}
+
 /**
  * A camera over its children: keyframes of focus point, zoom and roll, eased
  * between. Put everything that should move together inside one camera.
@@ -190,16 +232,7 @@ export function Camera({
   easing?: Easing;
   children?: ReactNode;
 }) {
-  const t = useLocalTime();
-  const times = keys.map((key) => key.at);
-  const track = (pick: (key: CameraKey) => number | undefined, fallback: number) => {
-    const values = keys.map((key) => pick(key) ?? fallback);
-    return keys.length === 1 ? values[0] : interpolate(t, times, values, easing);
-  };
-  const x = track((key) => key.x, BOARD.width / 2);
-  const y = track((key) => key.y, BOARD.height / 2);
-  const zoom = track((key) => key.zoom, 1);
-  const rotate = track((key) => key.rotate, 0);
+  const { x, y, zoom, rotate } = cameraPose(useLocalTime(), keys, easing);
   return (
     <div
       className="absolute inset-0"
@@ -398,10 +431,33 @@ const TONE_COLOR: Record<Tone, string> = {
   ink: "var(--ink)",
 };
 
+/** How a stamp is thrown: from `scale` and `wind` degrees past its rotation; `exit` seconds to leave, shrinking by `shrink`. */
+const STAMP_THROW = {
+  plain: { scale: 2.6, wind: 0, exit: 0.25, shrink: 0.15 },
+  worn: { scale: 2.6, wind: 9, exit: 0.28, shrink: 0.12 },
+  heavy: { scale: 3.4, wind: 20, exit: 0.28, shrink: 0.12 },
+} as const;
+
+/** The worn stamp's face, as the app's (`room/moment/stamp.tsx`). */
+const WORN_FACE: CSSProperties = {
+  padding: "0.42em 0.8em 0.36em",
+  border: "0.14em solid currentColor",
+  borderRadius: "0.2em",
+  outline: "0.045em solid currentColor",
+  outlineOffset: "-0.3em",
+  background: "color-mix(in srgb, currentColor 13%, var(--surface))",
+  maskImage: WORN_MASK,
+  WebkitMaskImage: WORN_MASK,
+  maskSize: "180px 180px",
+  WebkitMaskSize: "180px 180px",
+};
+
 /**
  * A rubber stamp slamming down at `at`: it drops from 2.6x, lands on the
  * slam spring, and leaves a faint ink ring. Pair it with a "stamp-slam" sound
- * at `at + STAMP_IMPACT` and a `Shake`.
+ * at `at + STAMP_IMPACT` and a `Shake`. `worn` draws the game's own stamp
+ * (worn rubber, winding in over-tilted); `heavy` throws that from higher and
+ * harder.
  */
 export function Stamp({
   text,
@@ -409,45 +465,104 @@ export function Stamp({
   tone = "punch",
   rotate = -3,
   size = 96,
+  worn = false,
+  heavy = false,
   out,
+  peel,
+  reserve = false,
   className = "",
+  style,
 }: {
-  text: string;
+  text: ReactNode;
   at?: number;
   tone?: Tone;
   rotate?: number;
   /** Font size in px. */
   size?: number;
+  worn?: boolean;
+  /** A worn stamp thrown from higher and harder. */
+  heavy?: boolean;
+  /** Fades out from here. */
   out?: number;
+  /** Peels off from here (rotates, drops, fades). */
+  peel?: number;
+  /** Keeps its place in the layout (invisible) before it lands. */
+  reserve?: boolean;
   className?: string;
+  style?: CSSProperties;
 }) {
   const t = useLocalTime();
-  if (t < at) return null;
-  const drop = spring(t - at, SPRINGS.slam);
-  const scale = mix(2.6, 1, drop);
-  const leaving = out === undefined ? 0 : progress(t, out, 0.25, ease.in);
-  const ring = progress(t, at + STAMP_IMPACT, 0.5, ease.out);
   const color = TONE_COLOR[tone];
+  const face = worn ? (
+    <span
+      className="block whitespace-nowrap text-center font-display font-black uppercase leading-none tracking-[0.1em]"
+      style={WORN_FACE}
+    >
+      {text}
+    </span>
+  ) : (
+    <div
+      className="rounded-[0.3em] border-[0.09em] px-[0.4em] py-[0.08em] font-display font-black uppercase leading-none tracking-[0.04em]"
+      style={{ fontSize: size, color, borderColor: color, background: "var(--surface)" }}
+    >
+      {text}
+    </div>
+  );
+  // A worn face sizes in em from its box, so the ring scales with it; a plain face sizes itself.
+  const box = worn
+    ? "relative inline-flex items-center justify-center"
+    : "relative inline-block";
+  const boxSize = worn ? size : undefined;
+  const placeholder = reserve ? (
+    <div className={`invisible ${box} ${className}`} style={{ fontSize: boxSize, ...style }}>
+      {face}
+    </div>
+  ) : null;
+  if (t < at) return placeholder;
+
+  const thrown = STAMP_THROW[worn ? (heavy ? "heavy" : "worn") : "plain"];
+  const drop = spring(t - at, SPRINGS.slam);
+  const scale = mix(thrown.scale, 1, drop);
+  const turn = mix(rotate - thrown.wind, rotate, drop);
+  const leaving = out === undefined ? 0 : progress(t, out, thrown.exit, ease.in);
+  const peeling = peel === undefined ? 0 : progress(t, peel, 0.55, ease.in);
+  const opacity = progress(t, at, 0.06) * (1 - leaving) * (1 - peeling);
+  if (opacity <= 0.001) return placeholder;
+  const ring = progress(t, at + STAMP_IMPACT, 0.5, ease.out);
   return (
     <div
-      className={`relative inline-block ${className}`}
+      className={`${box} ${className}`}
       style={{
-        transform: `rotate(${rotate}deg) scale(${scale * (1 - leaving * 0.15)})`,
-        opacity: progress(t, at, 0.06) * (1 - leaving),
+        color,
+        fontSize: boxSize,
+        opacity,
+        transform: `translate(${peeling * 40}px, ${peeling * 140}px) rotate(${turn + peeling * 28}deg) scale(${scale * (1 - leaving * thrown.shrink)})`,
+        ...style,
       }}
     >
-      <div
-        className="pointer-events-none absolute inset-0 rounded-[0.3em]"
-        style={{
-          boxShadow: `0 0 0 ${ring * 0.6}em color-mix(in srgb, ${color} ${Math.round((1 - ring) * 30)}%, transparent)`,
-        }}
-      />
-      <div
-        className="rounded-[0.3em] border-[0.09em] px-[0.4em] py-[0.08em] font-display font-black uppercase leading-none tracking-[0.04em]"
-        style={{ fontSize: size, color, borderColor: color, background: "var(--surface)" }}
-      >
-        {text}
-      </div>
+      {worn ? (
+        ring > 0 &&
+        ring < 1 && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              border: "0.14em solid currentColor",
+              borderRadius: "0.2em",
+              opacity: 0.6 * (1 - ring),
+              transform: `scale(${1 + ring * 0.38})`,
+            }}
+          />
+        )
+      ) : (
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[0.3em]"
+          style={{
+            boxShadow: `0 0 0 ${ring * 0.6}em color-mix(in srgb, ${color} ${Math.round((1 - ring) * 30)}%, transparent)`,
+          }}
+        />
+      )}
+      {face}
     </div>
   );
 }
@@ -721,6 +836,40 @@ export function Wipe({
 
 /** The phone mock's screen size in its own px; draw controller UI at this size. */
 export const PHONE_SCREEN = { width: 390, height: 844 } as const;
+/** The phone mock's bezel around its screen, in its own px. */
+export const PHONE_BEZEL = 14;
+const PHONE_BODY = {
+  width: PHONE_SCREEN.width + PHONE_BEZEL * 2,
+  height: PHONE_SCREEN.height + PHONE_BEZEL * 2,
+} as const;
+
+/** Where a `PhoneMock` sits on the board: its top-left corner and device width. */
+export interface PhoneFrame {
+  left: number;
+  top: number;
+  width: number;
+}
+
+/** Board px per screen px for a `PhoneMock` `width` board px wide. */
+export function phoneScale(width: number): number {
+  return width / PHONE_BODY.width;
+}
+
+/** The board height of a `PhoneMock` `width` board px wide. */
+export function phoneHeight(width: number): number {
+  return PHONE_BODY.height * phoneScale(width);
+}
+
+/** The frame of a `PhoneMock` `width` wide centred on board point (x, y). */
+export function centredPhone(x: number, y: number, width: number): PhoneFrame {
+  return { left: x - width / 2, top: y - phoneHeight(width) / 2, width };
+}
+
+/** Where point (u, v) on a `PhoneMock`'s screen (screen px) lands on the board. */
+export function phonePoint(phone: PhoneFrame, u: number, v: number): { x: number; y: number } {
+  const scale = phoneScale(phone.width);
+  return { x: phone.left + (PHONE_BEZEL + u) * scale, y: phone.top + (PHONE_BEZEL + v) * scale };
+}
 
 /**
  * A phone to show what players do on theirs. Draw its screen at
@@ -741,20 +890,15 @@ export function PhoneMock({
   style?: CSSProperties;
   glare?: boolean;
 }) {
-  const bezel = 14;
-  const body = { width: PHONE_SCREEN.width + bezel * 2, height: PHONE_SCREEN.height + bezel * 2 };
-  const scale = width / body.width;
   return (
-    <div
-      className={`relative ${className}`}
-      style={{ width, height: body.height * scale, ...style }}
-    >
+    <div className={`relative ${className}`} style={{ width, height: phoneHeight(width), ...style }}>
       <div
-        className="absolute left-0 top-0 origin-top-left rounded-[68px] p-[14px]"
+        className="absolute left-0 top-0 origin-top-left rounded-[68px]"
         style={{
-          width: body.width,
-          height: body.height,
-          transform: `scale(${scale})`,
+          width: PHONE_BODY.width,
+          height: PHONE_BODY.height,
+          padding: PHONE_BEZEL,
+          transform: `scale(${phoneScale(width)})`,
           background: "linear-gradient(145deg, #3a3744, #121019 45%, #26232f)",
           boxShadow:
             "0 40px 80px -20px rgba(0,0,0,0.55), 0 0 0 2px rgba(255,255,255,0.07) inset, 0 0 0 1px rgba(0,0,0,0.6)",

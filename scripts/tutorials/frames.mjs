@@ -3,11 +3,13 @@
 //
 //   node scripts/tutorials/frames.mjs <game> [times...] [--every 2] [--out dir]
 //        [--sheet] [--theme dark|light] [--width 960] [--base http://localhost:3000]
-//        [--no-captions] [--query live=4]
+//        [--no-captions] [--no-ambient] [--query live=4]
 //
 // <game> is the slug (sloplash, matchslop, quizslop, slopfight). Times are
 // seconds; --every samples the whole tutorial. --sheet also writes one
 // contact sheet (sheet.png) with every frame labelled by its time.
+// --no-ambient hides the page's live background, which runs on the wall
+// clock, so two captures of the same code match pixel for pixel.
 
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -37,6 +39,7 @@ const width = Number(option("width", "960"));
 const every = option("every", null);
 const sheet = flag("sheet");
 const captions = !flag("no-captions");
+const ambient = !flag("no-ambient");
 // Extra page parameters, e.g. `--query live=4` for a pretend lobby.
 const query = option("query", "");
 const [game, ...rest] = args;
@@ -75,7 +78,9 @@ if (failed) {
 }
 await page.evaluate(() => document.fonts.ready);
 // Hide the page's own controls so frames show only the board.
-await page.addStyleTag({ content: "[data-tutorial-controls] { display: none !important; }" });
+await page.addStyleTag({
+  content: `[data-tutorial-controls] { display: none !important; }${ambient ? "" : " .ambient { visibility: hidden !important; }"}`,
+});
 
 const duration = await page.evaluate(() => {
   const ms = Number(document.querySelector("[data-tutorial-duration]")?.getAttribute("data-tutorial-duration"));

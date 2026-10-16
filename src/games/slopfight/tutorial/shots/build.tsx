@@ -1,9 +1,10 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Camera, PhoneMock, Tap, Words } from "@/tutorial/kit";
 import { SPRINGS, ease, mix, progress, spring, springTo, wobble } from "@/tutorial/timeline";
 import { Doodle, Easel, SHARK_DOODLE, TOASTER_BROWS, TOASTER_DOODLE, TOASTER_STEAM, TUX_DOODLE } from "../doodles";
-import { FREDOKA, INK, NIGHT, Slam, Spotlight, TOY, useBeat } from "../look";
+import { FREDOKA, INK, NIGHT, Slam, Spotlight, TOY } from "../look";
 import { ChoiceScreen, DescribeScreen, DrawScreen } from "../phone";
 
 // "Every champion starts on your phone. Draw it, or just describe it."
@@ -32,7 +33,7 @@ function Scorecard({ x, y, rotate }: { x: number; y: number; rotate: number }) {
 }
 
 export function BuildShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const build = b.at("build");
   const champion = b.word("build", "champion");

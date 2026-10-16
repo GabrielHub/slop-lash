@@ -1,8 +1,9 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst, STAMP_IMPACT, Stamp, shakeOffset } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, interpolate, mix, progress, spring } from "@/tutorial/timeline";
-import { At, Chip, useShot, type Shot } from "../parts";
+import { SPRINGS, clamp, ease, interpolate, mix, progress, spring, type LocalCues } from "@/tutorial/timeline";
+import { At, Chip } from "../parts";
 import { StageLights, TitleSign } from "../title";
 
 /**
@@ -15,7 +16,7 @@ const ARM = 560;
 const STRING = 268;
 
 /** The intro's beats, in local seconds. */
-export function openBeats(shot: Shot) {
+export function openBeats(shot: LocalCues) {
   return {
     sign: 0.2,
     welcome: shot.word("intro", "QuizSlop!"),
@@ -29,7 +30,7 @@ export function openBeats(shot: Shot) {
 }
 
 export function OpenShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const beats = openBeats(shot);
 

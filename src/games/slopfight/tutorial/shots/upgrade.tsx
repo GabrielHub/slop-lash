@@ -1,9 +1,10 @@
 "use client";
 
-import { Burst, PhoneMock, flight } from "@/tutorial/kit";
+import { useLocalCues } from "@/tutorial/clock";
+import { Burst, PhoneMock, flight, phonePoint } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, interpolate, mix, progress, spring } from "@/tutorial/timeline";
 import { Doodle, HAT_DOODLE, HEAD_DOODLE, JETPACK_DOODLE, SHARK_DOODLE, TUX_DOODLE, type Ink } from "../doodles";
-import { CREAM, FREDOKA, INK, NIGHT, Slam, Spotlight, TOY, jiggle, useBeat } from "../look";
+import { CREAM, FREDOKA, INK, NIGHT, Slam, Spotlight, TOY, jiggle } from "../look";
 import { UpgradeScreen } from "../phone";
 import { Toy } from "../toys";
 
@@ -13,9 +14,8 @@ import { Toy } from "../toys";
 // the last: one thing only.
 
 const PHONE_W = 380;
-const PHONE = { left: 170, top: 292 };
-const PHONE_SCALE = PHONE_W / 418;
-const CANVAS = { x: PHONE.left + (14 + 195) * PHONE_SCALE, y: PHONE.top + (14 + 70 + 52 + 173) * PHONE_SCALE };
+const PHONE = { left: 170, top: 292, width: PHONE_W };
+const CANVAS = phonePoint(PHONE, 195, 70 + 52 + 173);
 const TOY_AT = { x: 1290, y: 880 };
 const TOY_SCALE = 1.3;
 
@@ -54,7 +54,7 @@ function RingCard({ t, from, to }: { t: number; from: number; to: number }) {
 }
 
 export function UpgradeShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const add = b.word("upgrade", "add");
   const thing = b.word("upgrade", "thing");

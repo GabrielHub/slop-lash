@@ -1,10 +1,11 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst, Shake } from "@/tutorial/kit";
 import { SPRINGS, ease, mix, progress, spring, wobble } from "@/tutorial/timeline";
 import { ArenaStage, FLOOR_Y } from "../arenas";
 import { FloatingHealth, OnTheEdge, healthAt } from "../fightkit";
-import { FREDOKA, NIGHT, Slam, TOY, jiggle, useBeat } from "../look";
+import { FREDOKA, NIGHT, Slam, TOY, jiggle } from "../look";
 import { Toy } from "../toys";
 
 // "...or knock them off the edge, for bonus points." Round 1 in the Flooded
@@ -18,7 +19,7 @@ const SPLASH = { x: 1790, y: 930 };
 const VIEW = { x: 1150, y: 560 };
 
 export function RingOutShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const knock = b.word("finish", "knock", 1);
   const off = b.word("finish", "off");

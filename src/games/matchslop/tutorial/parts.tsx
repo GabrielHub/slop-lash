@@ -3,8 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Avatar } from "@/room/avatar";
 import { useTime } from "@/tutorial/clock";
-import { STAMP_IMPACT } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
+import { SPRINGS, clamp, ease, mix, spring } from "@/tutorial/timeline";
 import { MATCHSLOP_DATE_LINE, MATCHSLOP_MOOD_THRESHOLD_UNMATCH } from "../types";
 import { COPY } from "../ui/copy";
 import { MATCH, type Cast } from "./data";
@@ -18,124 +17,11 @@ import { C, Heart, alpha, blend, fin } from "./fx";
  */
 
 // ---------------------------------------------------------------------------
-// Stamps
-// ---------------------------------------------------------------------------
-
-export type MsTone = "punch" | "win" | "fail" | "ink" | "gold";
-
-export const TONE_VAR: Record<MsTone, string> = {
-  punch: "var(--punch)",
-  win: "var(--win)",
-  fail: "var(--fail)",
-  ink: "var(--ink)",
-  gold: "var(--gold)",
-};
-
-/** Worn rubber, as the app's stamp (`room/moment/stamp.tsx`). */
-const WORN =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.7 1.75'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E\")";
-
-/**
- * The game's rubber stamp, slamming down at `at` (impact `STAMP_IMPACT`
- * later). `heavy` throws it from higher and harder. `peel` lifts it off.
- */
-export function MsStamp({
-  text,
-  at,
-  tone = "punch",
-  tilt = -8,
-  size = 64,
-  heavy = false,
-  out,
-  peel,
-  reserve = false,
-  className = "",
-  style,
-}: {
-  text: ReactNode;
-  at: number;
-  tone?: MsTone;
-  tilt?: number;
-  /** Font size, px. */
-  size?: number;
-  heavy?: boolean;
-  /** Fades out from here. */
-  out?: number;
-  /** Peels off from here (rotates, drops, fades). */
-  peel?: number;
-  /** Keeps its place in the layout (invisible) before it lands. */
-  reserve?: boolean;
-  className?: string;
-  style?: CSSProperties;
-}) {
-  const t = useTime();
-  const placeholder = reserve ? (
-    <div className={`invisible relative inline-block ${className}`} style={{ fontSize: size, ...style }}>
-      <span
-        className="block whitespace-nowrap font-display font-black uppercase leading-none tracking-[0.1em]"
-        style={{ padding: "0.42em 0.8em 0.36em", border: "0.14em solid transparent" }}
-      >
-        {text}
-      </span>
-    </div>
-  ) : null;
-  if (t < at) return placeholder;
-  const drop = spring(t - at, SPRINGS.slam);
-  const scale = mix(heavy ? 3.4 : 2.6, 1, drop);
-  const rotate = mix(tilt - (heavy ? 20 : 9), tilt, drop);
-  const ring = progress(t, at + STAMP_IMPACT, 0.5, ease.out);
-  const leaving = out === undefined ? 0 : progress(t, out, 0.28, ease.in);
-  const peeling = peel === undefined ? 0 : progress(t, peel, 0.55, ease.in);
-  const color = TONE_VAR[tone];
-  const opacity = progress(t, at, 0.06) * (1 - leaving) * (1 - peeling);
-  if (opacity <= 0.001) return placeholder;
-  return (
-    <div
-      className={`relative inline-block ${className}`}
-      style={{
-        color,
-        fontSize: size,
-        opacity,
-        transform: `translate(${peeling * 40}px, ${peeling * 140}px) rotate(${rotate + peeling * 28}deg) scale(${scale * (1 - leaving * 0.12)})`,
-        ...style,
-      }}
-    >
-      <span
-        className="block whitespace-nowrap font-display font-black uppercase leading-none tracking-[0.1em]"
-        style={{
-          padding: "0.42em 0.8em 0.36em",
-          border: "0.14em solid currentColor",
-          borderRadius: "0.2em",
-          outline: "0.045em solid currentColor",
-          outlineOffset: "-0.3em",
-          background: "color-mix(in srgb, currentColor 13%, var(--surface))",
-          maskImage: WORN,
-          WebkitMaskImage: WORN,
-          maskSize: "180px 180px",
-          WebkitMaskSize: "180px 180px",
-        }}
-      >
-        {text}
-      </span>
-      {ring > 0 && ring < 1 && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            border: "0.14em solid currentColor",
-            borderRadius: "0.2em",
-            opacity: 0.6 * (1 - ring),
-            transform: `scale(${1 + ring * 0.38})`,
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Small pieces
 // ---------------------------------------------------------------------------
+
+/** The kit `Stamp` tones this game uses. */
+export type MsTone = "punch" | "win" | "fail" | "ink" | "gold";
 
 /** Three dots bobbing as someone types (the app's `ms-typing-dot`, as a function of time). */
 export function Dots({ size = 14, className = "text-ink-dim" }: { size?: number; className?: string }) {

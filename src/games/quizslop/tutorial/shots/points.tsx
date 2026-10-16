@@ -1,9 +1,10 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Count } from "@/tutorial/kit";
 import { SPRINGS, clamp, mix, progress, spring } from "@/tutorial/timeline";
 import { LETTERS, type PlayerName } from "../content";
-import { At, JudgeHead, Tile, useShot } from "../parts";
+import { At, JudgeHead, Tile } from "../parts";
 import { practice } from "../practice";
 
 /**
@@ -14,7 +15,7 @@ import { practice } from "../practice";
 const WRONG = 0;
 
 export function PointsShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const right = shot.word("points", "right");
   const hundred = shot.word("points", "hundred");

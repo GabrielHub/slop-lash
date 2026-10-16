@@ -1,9 +1,10 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst, STAMP_IMPACT, Stamp, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { SLATE, VOTES, VOTE_WINNER } from "../content";
-import { At, BulbRing, Token, useShot } from "../parts";
+import { At, BulbRing, Token } from "../parts";
 
 /**
  * `final`: the last round's topic is a vote. Three cards, everyone drops a
@@ -13,7 +14,7 @@ import { At, BulbRing, Token, useShot } from "../parts";
 const CARD = { width: 470, height: 250, y: 540 };const XS = [440, 960, 1480];
 
 export function FinalShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const last = shot.word("final", "last");
   const everyone = shot.word("final", "everyone");

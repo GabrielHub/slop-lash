@@ -1,9 +1,10 @@
 "use client";
 
-import { Count, PhoneMock, Tap, flight, shakeOffset } from "@/tutorial/kit";
+import { useLocalCues } from "@/tutorial/clock";
+import { Count, PhoneMock, Tap, flight, phonePoint, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, interpolate, mix, progress, spring } from "@/tutorial/timeline";
 import { MINUS } from "../content";
-import { At, Chip, Token, TvFrame, phonePoint, useShot } from "../parts";
+import { At, Chip, Token, TvFrame } from "../parts";
 import { BetScreen, BetTv, CheckMark, betButton } from "../screens";
 
 /**
@@ -19,7 +20,7 @@ const TOKEN_HOME = { x: 1250, y: 430 };
 const TOKEN_PAYOUT = { x: 960, y: 268 };
 
 export function BetsShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const fun = shot.word("bets", "fun");
   const every = shot.word("bets", "Every");

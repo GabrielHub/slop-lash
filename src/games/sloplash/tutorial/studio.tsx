@@ -2,8 +2,17 @@
 
 import { useLocalTime } from "@/tutorial/clock";
 import { STAMP_IMPACT } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, hash01, mix, progress, spring, wobble } from "@/tutorial/timeline";
-import type { Beats } from "./beats";
+import {
+  SPRINGS,
+  clamp,
+  ease,
+  hash01,
+  mix,
+  progress,
+  spring,
+  wobble,
+  type LocalCues,
+} from "@/tutorial/timeline";
 import { ledGrid } from "./pixel";
 
 /**
@@ -29,7 +38,7 @@ export interface CrowdMoment {
 
 /** Every studio beat on the global clock, from the voice and the shots' own beats. */
 export function studioBeats(
-  b: Beats,
+  b: LocalCues,
   marks: { lock: number; flawless: number; sloppy: number },
 ) {
   const flawless = marks.flawless + STAMP_IMPACT;

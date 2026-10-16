@@ -5,6 +5,7 @@ import {
   chaptersOf,
   cuesFor,
   interpolate,
+  localCues,
   progress,
   spring,
   SPRINGS,
@@ -66,6 +67,15 @@ describe("tutorial timing", () => {
     expect(cues.lineAt(cues.at("rules") + 0.01)?.id).toBe("rules");
     expect(() => cues.word("rules", "twice")).toThrow(/no word/);
     expect(() => cues.at("missing")).toThrow(/not in the timing/);
+  });
+
+  test("local cues read from a shot's start", () => {
+    const shot = localCues(cuesFor(TIMING), 3);
+    expect(shot.at("rules")).toBeCloseTo(0.6);
+    expect(shot.word("rules", "that's")).toBeCloseTo(1.6);
+    expect(shot.wordEnd("hello", "everyone")).toBeCloseTo(0.1);
+    expect(shot.local(5)).toBe(2);
+    expect(shot.duration).toBe(6);
   });
 
   test("chapters start with their first line", () => {

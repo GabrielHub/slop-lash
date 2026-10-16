@@ -128,6 +128,33 @@ export function cuesFor(timing: TutorialTiming): Cues {
   };
 }
 
+/** The cues in a shot's local seconds: global minus `origin`, the shot's start. */
+export interface LocalCues {
+  cues: Cues;
+  origin: number;
+  /** A global time in local seconds. */
+  local: (global: number) => number;
+  at: (id: string, offset?: number) => number;
+  end: (id: string, offset?: number) => number;
+  word: (id: string, word: string, nth?: number) => number;
+  wordEnd: (id: string, word: string, nth?: number) => number;
+  /** When the tutorial ends, in local seconds. */
+  duration: number;
+}
+
+export function localCues(cues: Cues, origin: number): LocalCues {
+  return {
+    cues,
+    origin,
+    local: (global) => global - origin,
+    at: (id, offset = 0) => cues.at(id, offset) - origin,
+    end: (id, offset = 0) => cues.end(id, offset) - origin,
+    word: (id, word, nth) => cues.word(id, word, nth) - origin,
+    wordEnd: (id, word, nth) => cues.wordEnd(id, word, nth) - origin,
+    duration: cues.duration - origin,
+  };
+}
+
 /** The chapters of a script, each starting where its first line starts. */
 export function chaptersOf(
   script: TutorialScript,

@@ -1,9 +1,8 @@
 "use client";
 
-import { useLocalTime } from "@/tutorial/clock";
-import { Camera, PHONE_SCREEN, flight, shakeOffset } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
-import { useBeats, type Beats } from "../beats";
+import { useLocalCues, useLocalTime } from "@/tutorial/clock";
+import { Camera, PHONE_SCREEN, centredPhone, flight, phonePoint, shakeOffset } from "@/tutorial/kit";
+import { SPRINGS, clamp, ease, mix, progress, spring, type LocalCues } from "@/tutorial/timeline";
 import {
   COUNT_FROM,
   MAX_CHARS,
@@ -16,12 +15,12 @@ import {
 import { PixelText, pixelSize } from "../pixel";
 import {
   PHONE_SCALE,
+  PHONE_WIDTH,
   Phone,
   Sticker,
   Touch,
   WRITER,
   WriterScreen,
-  onPhone,
 } from "../parts";
 
 /**
@@ -31,6 +30,7 @@ import {
 
 const PX = 700;
 const PY = 510;
+const FRAME = centredPhone(PX, PY, PHONE_WIDTH);
 
 /** How much of `text` is typed between `start` and `end`. */
 export function typed(t: number, text: string, start: number, end: number): string {
@@ -44,7 +44,7 @@ export function keyAt(t: number, text: string, start: number, end: number): stri
   return shown.at(-1) ?? null;
 }
 
-export function writeBeats(b: Beats) {
+export function writeBeats(b: LocalCues) {
   const dealOne = b.word("prompts", "gets") - 0.08;
   const dealTwo = b.word("prompts", "two");
   const deliver = Math.max(dealTwo + 0.45, b.word("prompts", "prompts.") + 0.1);
@@ -58,7 +58,7 @@ export function writeBeats(b: Beats) {
 
 export function WriteShot({ from, until }: { from: number; until: number }) {
   const t = useLocalTime();
-  const b = useBeats(from);
+  const b = useLocalCues();
   const beats = writeBeats(b);
   const { send, shortStart, cap } = beats;
   const leave = until - from;
@@ -68,8 +68,8 @@ export function WriteShot({ from, until }: { from: number; until: number }) {
   const exit = progress(t, leave - 0.05, 0.5, ease.in);
   const capShake = t >= cap ? Math.sin((t - cap) * 60) * 14 * Math.max(0, 1 - (t - cap) / 0.5) : 0;
 
-  const sendTouch = onPhone(PX, PY, PHONE_SCREEN.width / 2, WRITER.send.top + WRITER.send.height / 2);
-  const keysTouch = onPhone(PX, PY, PHONE_SCREEN.width / 2 + 60, 720);
+  const sendTouch = phonePoint(FRAME, PHONE_SCREEN.width / 2, WRITER.send.top + WRITER.send.height / 2);
+  const keysTouch = phonePoint(FRAME, PHONE_SCREEN.width / 2 + 60, 720);
 
   return (
     <div className="absolute inset-0">
@@ -163,7 +163,7 @@ function Screen({ beats }: { beats: ReturnType<typeof writeBeats> }) {
 function Deal({ beats }: { beats: ReturnType<typeof writeBeats> }) {
   const t = useLocalTime();
   const { dealOne, dealTwo, deliver } = beats;
-  const target = onPhone(PX, PY, PHONE_SCREEN.width / 2, WRITER.prompt + 70);
+  const target = phonePoint(FRAME, PHONE_SCREEN.width / 2, WRITER.prompt + 70);
   const cards = [
     { text: PROMPT, tag: "1/2", at: dealOne, x: 1320, y: 330, rotate: 4, fly: deliver + 0.12 },
     { text: PROMPT_2, tag: "2/2", at: dealTwo, x: 1390, y: 610, rotate: -3, fly: deliver },
@@ -222,7 +222,7 @@ function LiftOff({ beats }: { beats: ReturnType<typeof writeBeats> }) {
   const local = t - go;
   if (local < 0 || local > 0.75) return null;
   const width = (PHONE_SCREEN.width - WRITER.pad * 2) * PHONE_SCALE;
-  const topLeft = onPhone(PX, PY, WRITER.pad, WRITER.prompt - 12);
+  const topLeft = phonePoint(FRAME, WRITER.pad, WRITER.prompt - 12);
   const height = (WRITER.box.top + WRITER.box.height - WRITER.prompt + 24) * PHONE_SCALE;
   const p = progress(local, 0.08, 0.55, ease.in);
   const pop = spring(local, SPRINGS.pop);

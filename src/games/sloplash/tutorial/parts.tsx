@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { CheckIcon, CrownIcon } from "@/components/icons";
 import { Avatar } from "@/room/avatar";
 import { useLocalTime } from "@/tutorial/clock";
-import { PHONE_SCREEN, PhoneMock, STAMP_IMPACT, type Tone } from "@/tutorial/kit";
+import { PhoneMock, centredPhone, phoneHeight, phoneScale } from "@/tutorial/kit";
 import {
   SPRINGS,
   clamp,
@@ -20,7 +20,7 @@ import { colorOf, type CastMember } from "./content";
 
 /**
  * The tutorial's props: players, phones and their screens, the TV's answer
- * cards and rubber stamps. Mocks of the real SlopLash screens, simplified and
+ * cards and crowns. Mocks of the real SlopLash screens, simplified and
  * set bigger so they read from the couch. Every value that moves is passed
  * in, so the shots own the choreography.
  */
@@ -90,91 +90,8 @@ export function Sticker({ member, rotate = -6 }: { member: CastMember; rotate?: 
 }
 
 // ---------------------------------------------------------------------------
-// Stamps, crowns, touches
+// Crowns, touches
 // ---------------------------------------------------------------------------
-
-const TONE_TEXT: Record<Tone, string> = {
-  punch: "text-punch",
-  teal: "text-teal",
-  gold: "text-gold",
-  win: "text-win",
-  fail: "text-fail",
-  ink: "text-ink",
-};
-
-/** Worn rubber: the same noise mask as the game's own stamp. */
-const WORN =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.7 1.75'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E\")";
-
-/**
- * The game's rubber stamp, slammed at `at`: it winds in big and over-tilted,
- * lands on its tilt about STAMP_IMPACT later and throws one ink ring.
- */
-export function RubberStamp({
-  children,
-  at,
-  tone = "punch",
-  tilt = -3,
-  size = 72,
-  out,
-  className = "",
-}: {
-  children: ReactNode;
-  at: number;
-  tone?: Tone;
-  tilt?: number;
-  /** Font size in px. */
-  size?: number;
-  out?: number;
-  className?: string;
-}) {
-  const t = useLocalTime();
-  if (t < at) return null;
-  const drop = spring(t - at, SPRINGS.slam);
-  const leave = out === undefined ? 0 : progress(t, out, 0.22, ease.in);
-  if (leave >= 1) return null;
-  const ring = progress(t, at + STAMP_IMPACT, 0.45, ease.out);
-  return (
-    <span
-      className={`relative inline-flex items-center justify-center whitespace-nowrap font-display font-black uppercase leading-[0.95] tracking-[0.12em] ${TONE_TEXT[tone]} ${className}`}
-      style={{
-        fontSize: size,
-        opacity: progress(t, at, 0.06) * (1 - leave),
-        transform: `rotate(${mix(tilt - 9, tilt, drop)}deg) scale(${mix(2.4, 1, drop) * (1 - leave * 0.1)})`,
-      }}
-    >
-      <span
-        className="block text-center"
-        style={{
-          padding: "0.42em 0.8em 0.36em",
-          border: "0.14em solid currentColor",
-          borderRadius: "0.2em",
-          outline: "0.045em solid currentColor",
-          outlineOffset: "-0.3em",
-          background: "color-mix(in srgb, currentColor 12%, var(--surface))",
-          maskImage: WORN,
-          WebkitMaskImage: WORN,
-          maskSize: "180px 180px",
-          WebkitMaskSize: "180px 180px",
-        }}
-      >
-        {children}
-      </span>
-      {ring > 0 && ring < 1 && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            border: "0.14em solid currentColor",
-            borderRadius: "0.2em",
-            opacity: (1 - ring) * 0.6,
-            transform: `scale(${1 + ring * 0.35})`,
-          }}
-        />
-      )}
-    </span>
-  );
-}
 
 /** A gold crown dropping on its slam spring at `at`. */
 export function Crown({ at, size = 96, tilt = -12 }: { at: number; size?: number; tilt?: number }) {
@@ -257,17 +174,7 @@ export function Touch({
 
 export const PHONE_WIDTH = 380;
 /** Board px per phone-screen px for a `PHONE_WIDTH` phone. */
-export const PHONE_SCALE = PHONE_WIDTH / (PHONE_SCREEN.width + 28);
-
-/** Where a point on the phone screen (screen px) sits on the board, for a phone centred at (cx, cy). */
-export function onPhone(cx: number, cy: number, sx: number, sy: number, width = PHONE_WIDTH) {
-  const scale = width / (PHONE_SCREEN.width + 28);
-  const height = (PHONE_SCREEN.height + 28) * scale;
-  return {
-    x: cx - width / 2 + (14 + sx) * scale,
-    y: cy - height / 2 + (14 + sy) * scale,
-  };
-}
+export const PHONE_SCALE = phoneScale(PHONE_WIDTH);
 
 /** A phone centred on (x, y) with a pose, holding a screen. */
 export function Phone({
@@ -294,15 +201,15 @@ export function Phone({
   sticker?: ReactNode;
 }) {
   if (opacity <= 0.001) return null;
-  const height = (PHONE_SCREEN.height + 28) * (width / (PHONE_SCREEN.width + 28));
+  const frame = centredPhone(x, y, width);
   return (
     <div
       className="absolute"
       style={{
-        left: x - width / 2,
-        top: y - height / 2,
+        left: frame.left,
+        top: frame.top,
         width,
-        height,
+        height: phoneHeight(width),
         opacity,
         transform: `translate(${dx}px, ${dy}px) rotate(${rotate}deg) scale(${scale})`,
       }}

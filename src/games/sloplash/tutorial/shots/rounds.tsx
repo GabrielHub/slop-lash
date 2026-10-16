@@ -1,10 +1,9 @@
 "use client";
 
 import { Avatar } from "@/room/avatar";
-import { useLocalTime } from "@/tutorial/clock";
+import { useLocalCues, useLocalTime } from "@/tutorial/clock";
 import { shakeOffset } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
-import { useBeats, type Beats } from "../beats";
+import { SPRINGS, clamp, ease, mix, progress, spring, type LocalCues } from "@/tutorial/timeline";
 import { KIT, RAFI, ROUND_VALUES, YOU, type CastMember } from "../content";
 import { PixelText, pixelSize } from "../pixel";
 
@@ -22,7 +21,7 @@ const ROWS = [2, 4, 8] as const;
 const TONES = ["var(--teal)", "var(--gold)", "var(--punch)"] as const;
 const LABEL = pixelSize("400", 11, 3);
 
-export function roundsBeats(b: Beats) {
+export function roundsBeats(b: LocalCues) {
   const columns = [
     b.at("double") + 0.12,
     b.word("double", "round,") + 0.12,
@@ -44,7 +43,7 @@ const STANDINGS: { member: CastMember; before: number; after: number }[] = [
 
 export function RoundsShot({ from, until }: { from: number; until: number }) {
   const t = useLocalTime();
-  const b = useBeats(from);
+  const b = useLocalCues();
   const k = roundsBeats(b);
   // Clear the floor a beat before the finale cut, so the podium rises on an empty stage.
   const leave = until - from - 0.38;

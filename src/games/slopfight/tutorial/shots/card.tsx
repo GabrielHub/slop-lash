@@ -1,9 +1,10 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { ArenaPostcard, type ArenaId } from "../arenas";
-import { FREDOKA, NIGHT, Spotlight, TOY, jiggle, useBeat } from "../look";
+import { FREDOKA, NIGHT, Spotlight, TOY, jiggle } from "../look";
 import { Plate } from "../phone";
 import { CAST, Toy, TrophyShape, type ToyKind } from "../toys";
 
@@ -163,7 +164,7 @@ function HouseDrop({ kind, x, land, t }: { kind: ToyKind; x: number; land: numbe
 }
 
 export function CardShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const three = b.word("fight", "three");
   const arenas = b.word("fight", "arenas");

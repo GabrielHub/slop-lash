@@ -2,13 +2,13 @@
 
 import type { ReactNode } from "react";
 import { useCues, useTime } from "@/tutorial/clock";
-import { STAMP_IMPACT, flight, shakeOffset } from "@/tutorial/kit";
+import { STAMP_IMPACT, Stamp, flight, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { COPY, signedPoints } from "../../ui/copy";
 import { CAST, POINTS, REACTIONS, TEXTS, WINNER, type CastId } from "../data";
 import { C, alpha, fin, sp, stepped, tf } from "../fx";
 import { Sticker } from "../friend";
-import { BallotCard, MsStamp, Tapback, Token } from "../parts";
+import { BallotCard, Tapback, Token } from "../parts";
 
 const CARD = { x: 560, y: 430, width: 780, height: 280 };
 const PANEL = { left: 1030, top: 214, width: 730 };
@@ -176,7 +176,7 @@ export function ScoreShot() {
         {/* "Sent +50". */}
         <div className="absolute left-[150px] top-[40px]">
           <div className="-translate-x-1/2 -translate-y-1/2">
-            <MsStamp text={COPY.sentBonus} at={stampAt} size={56} tilt={-8} />
+            <Stamp worn text={COPY.sentBonus} at={stampAt} size={56} rotate={-8} />
           </div>
         </div>
       </div>

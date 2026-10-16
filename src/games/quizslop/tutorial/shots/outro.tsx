@@ -1,9 +1,10 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst, Count } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { STANDINGS } from "../content";
-import { At, Token, useShot } from "../parts";
+import { At, Token } from "../parts";
 import { StageLights, TitleSign } from "../title";
 
 /**
@@ -15,7 +16,7 @@ const BAR = { width: 210, gap: 44, floor: 790, tall: 350 };
 const LEFT = (1920 - (STANDINGS.length * BAR.width + (STANDINGS.length - 1) * BAR.gap)) / 2;
 
 export function OutroShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const points = shot.word("outro", "points");
   const wins = shot.word("outro", "wins.");

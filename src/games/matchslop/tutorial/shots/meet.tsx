@@ -1,13 +1,13 @@
 "use client";
 
 import { useCues, useTime } from "@/tutorial/clock";
-import { Burst, STAMP_IMPACT, shakeOffset } from "@/tutorial/kit";
+import { Burst, STAMP_IMPACT, Stamp, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { COPY } from "../../ui/copy";
 import { CAST, MATCH, type CastId } from "../data";
 import { FRIEND, FriendText, GroupHeader, Sticker } from "../friend";
 import { C, Heart, alpha, fin, fout, heartbeat, sp, tf } from "../fx";
-import { MatchCard, MsStamp, PromptCard, Token } from "../parts";
+import { MatchCard, PromptCard, Token } from "../parts";
 import { SignHeart, SignKicker, SignWord } from "../sign";
 
 /** Where each swiper's fingertip lands on the card, relative to its centre. */
@@ -191,7 +191,7 @@ export function MeetShot() {
 
           {/* "It's a match", across the photo. */}
           <div className="absolute left-0 top-[-20px] -translate-x-1/2 -translate-y-1/2">
-            <MsStamp text={COPY.itsAMatch} at={stampAt} size={70} out={profile - 0.05} />
+            <Stamp worn text={COPY.itsAMatch} at={stampAt} rotate={-8} size={70} out={profile - 0.05} />
           </div>
           {/* All of you. At once. */}
           <div className="absolute left-[150px] top-[-330px]">

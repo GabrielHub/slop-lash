@@ -1,10 +1,11 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst, Shake } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring, wobble } from "@/tutorial/timeline";
 import { ArenaStage } from "../arenas";
 import { InkPaths, type Ink } from "../doodles";
-import { FREDOKA, INK, Letterbox, Slam, Spotlight, TOY, jiggle, mixHex, useBeat } from "../look";
+import { FREDOKA, INK, Letterbox, Slam, Spotlight, TOY, jiggle, mixHex } from "../look";
 import { Toy, TrophyShape, type Mood, type ToyKind } from "../toys";
 import { Poster } from "./open";
 
@@ -40,7 +41,7 @@ function Podium() {
 const ROSETTE_COLORS = [TOY.teal.hex, TOY.bubblegum.hex, TOY.ocean.hex];
 
 export function WinShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const final = b.word("win", "final");
   const champion = b.word("win", "champion");
@@ -181,7 +182,7 @@ function Bell({ t, at, x, y }: { t: number; at: number; x: number; y: number }) 
 }
 
 export function OutroShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const now = b.word("outro", "now");
   const drawing = b.word("outro", "drawing");

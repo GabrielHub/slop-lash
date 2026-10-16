@@ -1,12 +1,21 @@
 "use client";
 
-import { useLocalTime } from "@/tutorial/clock";
-import { Camera, STAMP_IMPACT, Words, shakeOffset } from "@/tutorial/kit";
-import { SPRINGS, clamp, ease, hash01, mix, progress, spring, springTo } from "@/tutorial/timeline";
-import { useBeats, type Beats } from "../beats";
+import { useLocalCues, useLocalTime } from "@/tutorial/clock";
+import { Camera, STAMP_IMPACT, Stamp, Words, shakeOffset } from "@/tutorial/kit";
+import {
+  SPRINGS,
+  clamp,
+  ease,
+  hash01,
+  mix,
+  progress,
+  spring,
+  springTo,
+  type LocalCues,
+} from "@/tutorial/timeline";
 import { BOT, HUMANS, type CastMember } from "../content";
 import { PixelText, pixelSize } from "../pixel";
-import { RubberStamp, Token } from "../parts";
+import { Token } from "../parts";
 
 /**
  * Sting, intro and robots: the wordmark rains in pixel by pixel and locks with
@@ -26,7 +35,7 @@ const BOT_X = 1530;
 const VS_X = 1335;
 
 /** When the sting's rain lands and locks, from the intro line's start. */
-export function stingBeats(b: Beats) {
+export function stingBeats(b: LocalCues) {
   const intro = b.at("intro");
   const lock = Math.max(1.1, intro - 0.8);
   return { rainStart: Math.min(0.3, lock * 0.2), rainEnd: lock - 0.08, lock, intro };
@@ -34,7 +43,7 @@ export function stingBeats(b: Beats) {
 
 export function TitleShot() {
   const t = useLocalTime();
-  const b = useBeats(0);
+  const b = useLocalCues();
   const { rainStart, rainEnd, lock } = stingBeats(b);
 
   // The wordmark: centre stage for the sting, then up and smaller for the intro.
@@ -103,11 +112,19 @@ export function TitleShot() {
           <Brackets b={b} />
           <div className="absolute" style={{ left: BOT_X, top: ROW_Y - 10 }}>
             <div className="-translate-x-1/2 -translate-y-1/2">
-              <RubberStamp at={stampAt} tone="punch" size={66}>
-                Don&apos;t let
-                <br />
-                them win
-              </RubberStamp>
+              <Stamp
+                worn
+                at={stampAt}
+                tone="punch"
+                size={66}
+                text={
+                  <>
+                    Don&apos;t let
+                    <br />
+                    them win
+                  </>
+                }
+              />
             </div>
           </div>
           <Laughs at={laugh} />
@@ -128,7 +145,7 @@ function flashGlow(t: number, lock: number): number {
 }
 
 /** "Out-funny the AI." on the intro's words, "AI" in the AI's purple. */
-function Tagline({ b }: { b: Beats }) {
+function Tagline({ b }: { b: LocalCues }) {
   const start = b.word("intro", "out-funny");
   const last = b.word("intro", "AI.");
   return (
@@ -146,7 +163,7 @@ function Tagline({ b }: { b: Beats }) {
 }
 
 /** The table: you, four friends, a VS, and the AI. */
-function Table({ b }: { b: Beats }) {
+function Table({ b }: { b: LocalCues }) {
   const t = useLocalTime();
   const you = b.word("intro", "you");
   const friends = b.word("intro", "friends");
@@ -214,7 +231,7 @@ function laughHop(t: number, at: number) {
 }
 
 /** How hard the AI token glitches at `t`: bursts on its beats, and the odd tick while watched. */
-function glitchAt(t: number, b: Beats): number {
+function glitchAt(t: number, b: LocalCues): number {
   const bursts = [b.word("intro", "AI."), b.word("robots", "robots."), b.word("robots", "might")];
   let amount = 0;
   for (const at of bursts) {
@@ -228,7 +245,7 @@ function glitchAt(t: number, b: Beats): number {
 }
 
 /** The AI's token: it arrives glitching and keeps flickering while the camera watches it. */
-function GlitchToken({ member, at, b }: { member: CastMember; at: number; b: Beats }) {
+function GlitchToken({ member, at, b }: { member: CastMember; at: number; b: LocalCues }) {
   const t = useLocalTime();
   const pop = spring(t - at, SPRINGS.pop);
   const glitch = glitchAt(t, b);
@@ -297,7 +314,7 @@ function Ghost({ tone }: { tone: string }) {
 }
 
 /** Corner brackets that close in on the AI while the camera pushes in: target found. */
-function Brackets({ b }: { b: Beats }) {
+function Brackets({ b }: { b: LocalCues }) {
   const t = useLocalTime();
   const start = b.at("robots") + 0.5;
   const found = b.word("robots", "robots.");

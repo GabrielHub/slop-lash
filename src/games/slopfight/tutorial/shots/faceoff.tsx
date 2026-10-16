@@ -1,8 +1,9 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { PhoneMock, Tap } from "@/tutorial/kit";
 import { SPRINGS, ease, mix, progress, spring, springTo, wobble } from "@/tutorial/timeline";
-import { FREDOKA, INK, Letterbox, NIGHT, Slam, TOY, jiggle, mixHex, useBeat } from "../look";
+import { FREDOKA, INK, Letterbox, NIGHT, Slam, TOY, jiggle, mixHex } from "../look";
 import { BetScreen } from "../phone";
 import { CAST, Toy } from "../toys";
 import { Flashes } from "./open";
@@ -80,7 +81,7 @@ function NameBar({ side, t, at }: { side: "A" | "B"; t: number; at: number }) {
 }
 
 export function FaceOffShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const before = b.word("bet", "before");
   const fight = b.word("bet", "fight", 0);

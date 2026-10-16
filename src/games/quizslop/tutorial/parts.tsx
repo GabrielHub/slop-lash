@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useCues, useLocalTime, useTime } from "@/tutorial/clock";
+import { useLocalTime } from "@/tutorial/clock";
 import { BOARD } from "@/tutorial/kit";
 import { getPlayerColor } from "@/lib/player-colors";
 import { clamp, ease, hash01, mix, progress, wobble } from "@/tutorial/timeline";
@@ -12,30 +12,6 @@ import { PLAYER_COLOR, type PlayerName } from "./content";
  * light, spotlights, the stage curtain, bet chips, player tokens and answer
  * tiles. Each is a pure function of the time it is given or reads.
  */
-
-// ---------------------------------------------------------------------------
-// Shot time
-// ---------------------------------------------------------------------------
-
-/**
- * The voice cues in the enclosing `Sequence`'s local seconds, so a shot keys
- * every beat on what is said and follows the recording when it re-times.
- */
-export function useShot() {
-  const cues = useCues();
-  const t = useLocalTime();
-  const origin = useTime() - t;
-  return {
-    t,
-    at: (id: string, offset = 0) => cues.at(id, offset) - origin,
-    end: (id: string, offset = 0) => cues.end(id, offset) - origin,
-    word: (id: string, word: string, nth?: number) => cues.word(id, word, nth) - origin,
-    wordEnd: (id: string, word: string, nth?: number) => cues.wordEnd(id, word, nth) - origin,
-    duration: cues.duration - origin,
-  };
-}
-
-export type Shot = ReturnType<typeof useShot>;
 
 /** Absolutely positions children with their centre (or top-left) on a board point. */
 export function At({
@@ -697,16 +673,6 @@ export function TvFrame({
       </div>
     </div>
   );
-}
-
-/** Where a point on a `PhoneMock` screen (screen px) lands on the board, for a phone at `left, top` of `width`. */
-export function phonePoint(
-  phone: { left: number; top: number; width: number },
-  u: number,
-  v: number,
-) {
-  const scale = phone.width / 418;
-  return { x: phone.left + (14 + u) * scale, y: phone.top + (14 + v) * scale };
 }
 
 // ---------------------------------------------------------------------------

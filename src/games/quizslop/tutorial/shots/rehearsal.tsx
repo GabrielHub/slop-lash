@@ -1,10 +1,11 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { STAMP_IMPACT, Stamp, flight, shakeOffset } from "@/tutorial/kit";
 import { useTutorialLive, type LivePlayer } from "@/tutorial/live";
 import { SPRINGS, clamp, ease, hash01, mix, progress, spring } from "@/tutorial/timeline";
 import { LETTERS, REHEARSAL_CAST } from "../content";
-import { At, BulbRing, MarqueeSign, Tile, Token, useShot } from "../parts";
+import { At, BulbRing, MarqueeSign, Tile, Token } from "../parts";
 import { practice } from "../practice";
 import { CheckMark } from "../screens";
 import { StageLights } from "../title";
@@ -94,7 +95,7 @@ function chipLayout(count: number) {
 }
 
 export function RehearsalShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const live = useTutorialLive();
   const rehearse = shot.word("practice", "rehearse.");

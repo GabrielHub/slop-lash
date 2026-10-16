@@ -1,9 +1,10 @@
 "use client";
 
-import { Burst, PhoneMock, Shake, Tap, flight } from "@/tutorial/kit";
+import { useLocalCues } from "@/tutorial/clock";
+import { Burst, PhoneMock, Shake, Tap, flight, phonePoint } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, hash01, mix, progress, spring, springTo, wobble } from "@/tutorial/timeline";
 import { Doodle, SHARK_DOODLE, TUX_DOODLE } from "../doodles";
-import { CREAM, FACE, FREDOKA, Flash, INK, NIGHT, Slam, Spotlight, StarBurst, TOY, jiggle, mixHex, useBeat } from "../look";
+import { CREAM, FACE, FREDOKA, Flash, INK, NIGHT, Slam, Spotlight, StarBurst, TOY, jiggle, mixHex } from "../look";
 import { DrawScreen, Plate } from "../phone";
 import { Toy } from "../toys";
 
@@ -12,10 +13,9 @@ import { Toy } from "../toys";
 // Chaotic ones... do whatever they want."
 
 const PHONE_W = 330;
-const PHONE_SCALE = PHONE_W / 418;
-const PHONE = { left: 230, top: 170 };
+const PHONE = { left: 230, top: 170, width: PHONE_W };
 /** The phone canvas centre on the board. */
-const CANVAS = { x: PHONE.left + (14 + 195) * PHONE_SCALE, y: PHONE.top + (14 + 70 + 52 + 173) * PHONE_SCALE };
+const CANVAS = phonePoint(PHONE, 195, 70 + 52 + 173);
 const MACHINE = { x: 1180, floor: 830 };
 const HOPPER = { x: MACHINE.x, y: MACHINE.floor - 640 + 60 };
 const PEDESTAL = { x: 640, y: 800 };
@@ -320,7 +320,7 @@ function Poof({ t, at, x, y }: { t: number; at: number; x: number; y: number }) 
 }
 
 export function FoundryShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const send = b.word("foundry", "send");
   const into = b.word("foundry", "foundry");

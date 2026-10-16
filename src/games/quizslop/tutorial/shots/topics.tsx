@@ -1,9 +1,10 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Stamp, flight, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { LOBBY, PLAYER_COLOR, RUNDOWN, type PlayerName } from "../content";
-import { BulbRow, Token, useShot } from "../parts";
+import { BulbRow, Token } from "../parts";
 
 /**
  * `topics`: the lobby lists the topic each player picked before the show;
@@ -34,7 +35,7 @@ function slotCentre(row: number) {
 const ROW_OF: Record<PlayerName, number> = { Ana: 1, Sam: 2, Jo: 3, Max: 4 };
 
 export function TopicsShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const picked = shot.word("topics", "picked");
   const gets = shot.word("topics", "gets");

@@ -1,13 +1,13 @@
 "use client";
 
 import { useCues, useTime } from "@/tutorial/clock";
-import { Burst, STAMP_IMPACT, TypeOn, flight, shakeOffset } from "@/tutorial/kit";
+import { Burst, STAMP_IMPACT, Stamp, TypeOn, flight, shakeOffset } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
 import { COPY, UNMATCHED, endingOf, heartDelta } from "../../ui/copy";
 import { MATCH, REACTIONS, REPLY, TEXTS, WINNER, type Reaction } from "../data";
 import { Sticker } from "../friend";
 import { C, alpha, fin, fout, sp, stepped, tf } from "../fx";
-import { Dots, HerBubble, MatchFace, Meter, MsStamp, OurBubble, Tapback, type MsTone } from "../parts";
+import { Dots, HerBubble, MatchFace, Meter, OurBubble, Tapback, type MsTone } from "../parts";
 
 const METER = { left: 260, top: 520, width: 1400 };
 /** The heart marker's centre for `mood`. */
@@ -239,11 +239,12 @@ export function MoodShot() {
                         transform: tf(0, -leave * 120, 1 - leave * 0.3),
                       }}
                     >
-                      <MsStamp
+                      <Stamp
+                        worn
                         text={`${entry.emoji} ${entry.word}`}
                         at={words[index] - STAMP_IMPACT + 0.02}
                         tone={toneOf(entry)}
-                        tilt={[-7, 4, -3, 5, -5, -9][index]}
+                        rotate={[-7, 4, -3, 5, -5, -9][index]}
                         size={heavy ? 56 : 46}
                         heavy={heavy}
                         reserve
@@ -334,7 +335,7 @@ export function MoodShot() {
         {/* "It's a date". */}
         <div className="absolute left-[960px] top-[450px]">
           <div className="-translate-x-1/2 -translate-y-1/2">
-            <MsStamp text={endingOf("DATE").text} at={dateW - STAMP_IMPACT + 0.03} tone="win" size={84} peel={unmatchAt + 0.05} />
+            <Stamp worn text={endingOf("DATE").text} at={dateW - STAMP_IMPACT + 0.03} tone="win" rotate={-8} size={84} peel={unmatchAt + 0.05} />
           </div>
         </div>
 
@@ -345,7 +346,7 @@ export function MoodShot() {
         <LastShotBand at={unless + 0.05} />
         <div className="absolute left-0 top-0 origin-top-left" style={{ transform: tf(comebackStamp.x, comebackStamp.y) }}>
           <div className="-translate-x-1/2 -translate-y-1/2">
-            <MsStamp text={`${great.emoji} ${great.word}`} at={wins - STAMP_IMPACT + 0.03} tone="win" size={60} tilt={-6} />
+            <Stamp worn text={`${great.emoji} ${great.word}`} at={wins - STAMP_IMPACT + 0.03} tone="win" size={60} rotate={-6} />
           </div>
         </div>
 
@@ -423,7 +424,7 @@ function UnmatchStamp({ they, slam, unless, peel }: { they: number; slam: number
         </div>
       )}
       <div className="-translate-x-1/2 -translate-y-1/2">
-        <MsStamp text={UNMATCHED.text} at={slam} tone="fail" size={84} heavy peel={peel} />
+        <Stamp worn heavy text={UNMATCHED.text} at={slam} tone="fail" rotate={-8} size={84} peel={peel} />
       </div>
     </div>
   );

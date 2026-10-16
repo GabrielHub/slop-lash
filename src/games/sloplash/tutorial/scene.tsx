@@ -3,9 +3,9 @@
 import { Sequence, useCues, useTime } from "@/tutorial/clock";
 import { STAMP_IMPACT, soundCue } from "@/tutorial/kit";
 import type { SoundCue, TutorialScene } from "@/tutorial/spec";
-import { ease, progress, type Cues } from "@/tutorial/timeline";
+import { ease, localCues, progress, type Cues } from "@/tutorial/timeline";
 import { LAUGH_LEAD, crowdBank } from "./audio";
-import { beatsFor, shotTimes } from "./beats";
+import { shotTimes } from "./beats";
 import { PixelSweep } from "./pixel";
 import { ArenaShot, arenaBeats } from "./shots/arena";
 import { FinaleShot, finaleBeats } from "./shots/finale";
@@ -24,7 +24,7 @@ import { Audience, OnAir, Sign, StageLights, studioBeats } from "./studio";
 const SWEEP = 0.9;
 
 function allBeats(cues: Cues) {
-  const b = beatsFor(cues, 0);
+  const b = localCues(cues, 0);
   const sting = stingBeats(b);
   const arena = arenaBeats(b);
   const finale = finaleBeats(b);
@@ -46,13 +46,13 @@ function Scene() {
         <WriteShot from={shots.writeFrom} until={shots.writeTo} />
       </Sequence>
       <Sequence from={shots.arenaFrom} to={shots.arenaTo}>
-        <ArenaShot from={shots.arenaFrom} />
+        <ArenaShot />
       </Sequence>
       <Sequence from={shots.roundsFrom} to={shots.roundsTo} post={0.8}>
         <RoundsShot from={shots.roundsFrom} until={shots.roundsTo} />
       </Sequence>
       <Sequence from={shots.finaleFrom}>
-        <FinaleShot from={shots.finaleFrom} />
+        <FinaleShot />
       </Sequence>
       <Audience studio={studio} />
       <Sign signs={studio.signs} />

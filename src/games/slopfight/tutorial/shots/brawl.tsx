@@ -1,10 +1,11 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { Burst, Camera, PhoneMock, Shake, Stamp, Tap } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring, wobble } from "@/tutorial/timeline";
 import { ArenaStage, FLOOR_Y } from "../arenas";
 import { FloatingHealth, HypeMeter, healthAt } from "../fightkit";
-import { FREDOKA, Flash, INK, Slam, StarBurst, TOY, jiggle, useBeat } from "../look";
+import { FREDOKA, Flash, INK, Slam, StarBurst, TOY, jiggle } from "../look";
 import { HypeScreen } from "../phone";
 import { Toy } from "../toys";
 import { Flashes } from "./open";
@@ -58,7 +59,7 @@ function Bonk({ t, at, x, y, word }: { t: number; at: number; x: number; y: numb
 }
 
 export function BrawlShot() {
-  const b = useBeat();
+  const b = useLocalCues();
   const t = b.t;
   const fight = b.word("bet", "fight", 1);
   const smash = b.word("bet", "smash");

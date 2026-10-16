@@ -1,7 +1,14 @@
 "use client";
 
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
-import { cuesFor, type Cues, type TutorialScript, type TutorialTiming } from "./timeline";
+import {
+  cuesFor,
+  localCues,
+  type Cues,
+  type LocalCues,
+  type TutorialScript,
+  type TutorialTiming,
+} from "./timeline";
 
 /**
  * The tutorial's playhead. The player writes `t` once per animation frame;
@@ -79,6 +86,18 @@ export function useLocalTime(): number {
 /** When each line and word is said. */
 export function useCues(): Cues {
   return useTutorialContext().cues;
+}
+
+/**
+ * The cues in the nearest enclosing `Sequence`'s local seconds, plus its local
+ * time `t`, so a shot keys its beats on what is said.
+ */
+export function useLocalCues(): LocalCues & { t: number } {
+  const { cues } = useTutorialContext();
+  const origin = useContext(OriginContext);
+  const t = useLocalTime();
+  const local = useMemo(() => localCues(cues, origin), [cues, origin]);
+  return { ...local, t };
 }
 
 export function useTutorial(): Pick<TutorialContextValue, "script" | "timing" | "cues"> {

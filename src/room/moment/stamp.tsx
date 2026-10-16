@@ -24,7 +24,7 @@ const SIZE: Record<StampSize, string> = {
 };
 
 /** Worn rubber: a fixed noise mask takes a little ink out of the stamp. */
-const WORN =
+export const WORN_MASK =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.7 1.75'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E\")";
 
 const FACE: CSSProperties = {
@@ -34,8 +34,8 @@ const FACE: CSSProperties = {
   outline: "0.045em solid currentColor",
   outlineOffset: "-0.3em",
   background: "color-mix(in srgb, currentColor 9%, transparent)",
-  maskImage: WORN,
-  WebkitMaskImage: WORN,
+  maskImage: WORN_MASK,
+  WebkitMaskImage: WORN_MASK,
   maskSize: "180px 180px",
   WebkitMaskSize: "180px 180px",
 };

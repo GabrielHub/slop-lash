@@ -3,19 +3,34 @@
 import type { ReactNode } from "react";
 import { CheckIcon } from "@/components/icons";
 import { Avatar } from "@/room/avatar";
-import { useLocalTime } from "@/tutorial/clock";
-import { BOARD, Burst, PHONE_SCREEN, STAMP_IMPACT, flight, shakeOffset } from "@/tutorial/kit";
+import { useLocalCues, useLocalTime } from "@/tutorial/clock";
+import {
+  BOARD,
+  Burst,
+  Camera,
+  PHONE_SCREEN,
+  STAMP_IMPACT,
+  Stamp,
+  cameraPose,
+  centredPhone,
+  flight,
+  phonePoint,
+  phoneScale,
+  shakeOffset,
+  toScreen,
+  type CameraKey,
+  type CameraPose,
+} from "@/tutorial/kit";
 import {
   SPRINGS,
   clamp,
   ease,
   hash01,
-  interpolate,
   mix,
   progress,
   spring,
+  type LocalCues,
 } from "@/tutorial/timeline";
-import { useBeats, type Beats } from "../beats";
 import {
   KIT,
   MY_ANSWER,
@@ -34,13 +49,11 @@ import {
   Float,
   Phone,
   REACTIONS,
-  RubberStamp,
   Sticker,
   Touch,
   VotedScreen,
   WRITER,
   WriterScreen,
-  onPhone,
 } from "../parts";
 import { keyAt, typed } from "./write";
 
@@ -71,8 +84,10 @@ const TV_SHOT = { x: 442, y: 647, zoom: 0.56 } as const;
 // Phones in front of the TV.
 const PHONE = { x: 390, y: 540, width: 360 } as const;
 const RIVAL_PHONE = { x: 1370, y: 570, width: 330 } as const;
+const PHONE_FRAME = centredPhone(PHONE.x, PHONE.y, PHONE.width);
+const RIVAL_FRAME = centredPhone(RIVAL_PHONE.x, RIVAL_PHONE.y, RIVAL_PHONE.width);
 
-export function arenaBeats(b: Beats) {
+export function arenaBeats(b: LocalCues) {
   const someone = b.word("rival", "somebody");
   const same = b.word("rival", "same");
   const make = b.word("rival", "make");
@@ -122,44 +137,27 @@ export function arenaBeats(b: Beats) {
 
 type ArenaBeats = ReturnType<typeof arenaBeats>;
 
-interface CameraState {
-  x: number;
-  y: number;
-  zoom: number;
-}
-
-function cameraAt(t: number, k: ArenaBeats): CameraState {
+function cameraKeys(k: ArenaBeats): CameraKey[] {
   const full = { x: BOARD.width / 2, y: BOARD.height / 2, zoom: 1 };
   const push = { x: 860, y: 548, zoom: 1.06 };
-  const keys: [number, CameraState][] = [
-    [0, full],
-    [k.big - 0.05, full],
-    [k.big + 0.85, TV_SHOT],
-    [k.points - 0.1, TV_SHOT],
-    [k.points + 0.7, full],
-    [k.flawless - 0.2, full],
-    [k.flawless + 0.5, push],
-    [k.bonus + 1.5, push],
+  return [
+    { at: 0, ...full },
+    { at: k.big - 0.05, ...full },
+    { at: k.big + 0.85, ...TV_SHOT },
+    { at: k.points - 0.1, ...TV_SHOT },
+    { at: k.points + 0.7, ...full },
+    { at: k.flawless - 0.2, ...full },
+    { at: k.flawless + 0.5, ...push },
+    { at: k.bonus + 1.5, ...push },
   ];
-  const times = keys.map(([at]) => at);
-  const pick = (get: (state: CameraState) => number) =>
-    interpolate(t, times, keys.map(([, state]) => get(state)), ease.inOut);
-  return { x: pick((s) => s.x), y: pick((s) => s.y), zoom: pick((s) => s.zoom) };
 }
 
-/** A world (TV) point on the board under the camera. */
-function toScreen(point: { x: number; y: number }, camera: CameraState) {
-  return {
-    x: BOARD.width / 2 + camera.zoom * (point.x - camera.x),
-    y: BOARD.height / 2 + camera.zoom * (point.y - camera.y),
-  };
-}
-
-export function ArenaShot({ from }: { from: number }) {
+export function ArenaShot() {
   const t = useLocalTime();
-  const b = useBeats(from);
+  const b = useLocalCues();
   const k = arenaBeats(b);
-  const camera = cameraAt(t, k);
+  const keys = cameraKeys(k);
+  const camera = cameraPose(t, keys);
   const slam = shakeOffset(t, k.head2, 12, 0.4);
   const stampShake = shakeOffset(t, k.flawless + STAMP_IMPACT, 10, 0.4);
   const tvFill = clamp((1 - camera.zoom) / 0.3);
@@ -169,13 +167,7 @@ export function ArenaShot({ from }: { from: number }) {
       className="absolute inset-0"
       style={{ transform: `translate(${slam.x + stampShake.x}px, ${slam.y + stampShake.y}px)` }}
     >
-      <div
-        className="absolute inset-0"
-        style={{
-          transformOrigin: `${BOARD.width / 2}px ${BOARD.height / 2}px`,
-          transform: `scale(${camera.zoom}) translate(${BOARD.width / 2 - camera.x}px, ${BOARD.height / 2 - camera.y}px)`,
-        }}
-      >
+      <Camera keys={keys}>
         <Television fill={tvFill} />
         <Pills k={k} />
         <TopPrompt k={k} />
@@ -184,7 +176,7 @@ export function ArenaShot({ from }: { from: number }) {
         <Plates k={k} />
         <RivalLink k={k} />
         <Reactions k={k} />
-      </div>
+      </Camera>
       <RivalPhone k={k} />
       <VoterPhones k={k} camera={camera} />
     </div>
@@ -290,14 +282,8 @@ function Cards({ k }: { k: ArenaBeats }) {
   // Rival: yours drops in from above; theirs leaves the rival's phone on Send.
   const drop = spring(t - k.drop, SPRINGS.slam);
   const out = spring(t - k.rivalOut, SPRINGS.smooth);
-  const box = onPhone(
-    RIVAL_PHONE.x,
-    RIVAL_PHONE.y,
-    PHONE_SCREEN.width / 2,
-    WRITER.box.top + WRITER.box.height / 2,
-    RIVAL_PHONE.width,
-  );
-  const boxScale = ((PHONE_SCREEN.width - WRITER.pad * 2) * (RIVAL_PHONE.width / 418)) / CARD.width;
+  const box = phonePoint(RIVAL_FRAME, PHONE_SCREEN.width / 2, WRITER.box.top + WRITER.box.height / 2);
+  const boxScale = ((PHONE_SCREEN.width - WRITER.pad * 2) * phoneScale(RIVAL_PHONE.width)) / CARD.width;
 
   // Head to head: the cards pull back, then slam together.
   const pull = progress(t, k.head1, 0.3, ease.out) * 46;
@@ -356,9 +342,7 @@ function Cards({ k }: { k: ArenaBeats }) {
               <Crown at={k.sweep + 0.05} size={104} />
             </div>
             <div className="absolute -top-[30px] right-[36px]">
-              <RubberStamp at={k.flawless} tone="teal" size={46}>
-                Flawless
-              </RubberStamp>
+              <Stamp worn text="Flawless" at={k.flawless} tone="teal" size={46} />
             </div>
           </>
         }
@@ -760,13 +744,7 @@ function RivalPhone({ k }: { k: ArenaBeats }) {
   const leave = progress(t, k.rivalOut + 0.05, 0.5, ease.in);
   const glow = sameGlow(t, k);
   const text = typed(t, RIVAL_ANSWER, k.typeFrom, k.typeTo);
-  const send = onPhone(
-    RIVAL_PHONE.x,
-    RIVAL_PHONE.y,
-    PHONE_SCREEN.width / 2,
-    WRITER.send.top + WRITER.send.height / 2,
-    RIVAL_PHONE.width,
-  );
+  const send = phonePoint(RIVAL_FRAME, PHONE_SCREEN.width / 2, WRITER.send.top + WRITER.send.height / 2);
   return (
     <>
       <Phone
@@ -818,7 +796,7 @@ function RivalLink({ k }: { k: ArenaBeats }) {
   const draw = progress(t, k.same, 0.5, ease.out);
   const fade = 1 - progress(t, k.rivalOut, 0.3);
   const from = { x: LEFT.x + 250, y: LEFT.y - CARD.height / 2 + 34 };
-  const phonePrompt = onPhone(RIVAL_PHONE.x, RIVAL_PHONE.y, 30, WRITER.prompt + 20, RIVAL_PHONE.width);
+  const phonePrompt = phonePoint(RIVAL_FRAME, 30, WRITER.prompt + 20);
   const to = { x: phonePrompt.x - 10, y: phonePrompt.y };
   const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 150 };
   const label = spring(t - k.same - 0.25, SPRINGS.pop);
@@ -856,7 +834,7 @@ function RivalLink({ k }: { k: ArenaBeats }) {
 // Voters' phones and reactions
 // ---------------------------------------------------------------------------
 
-function VoterPhones({ k, camera }: { k: ArenaBeats; camera: CameraState }) {
+function VoterPhones({ k, camera }: { k: ArenaBeats; camera: CameraPose }) {
   const t = useLocalTime();
   // Kit's ballot, then your phone (you can't vote), then Kit's again to react.
   const kitIn = spring(t - k.tap + 0.1, SPRINGS.smooth);
@@ -867,24 +845,22 @@ function VoterPhones({ k, camera }: { k: ArenaBeats; camera: CameraState }) {
   const backOut = progress(t, k.points - 0.15, 0.4, ease.in);
 
   const buttons = [0, 1].map((index) =>
-    onPhone(
-      PHONE.x,
-      PHONE.y,
+    phonePoint(
+      PHONE_FRAME,
       PHONE_SCREEN.width / 2,
       BALLOT.first + index * (BALLOT.height + BALLOT.gap) + BALLOT.height / 2,
-      PHONE.width,
     ),
   );
   const pick = progress(t, k.tapAt, 0.25, ease.out);
   const voted = progress(t, k.voted, 0.35, ease.out);
 
-  const answerBox = onPhone(PHONE.x, PHONE.y, PHONE_SCREEN.width / 2, 250, PHONE.width);
+  const answerBox = phonePoint(PHONE_FRAME, PHONE_SCREEN.width / 2, 250);
   const lock = progress(t, k.tryAt + 0.02, 0.35, ease.out);
   const shake =
     t >= k.tryAt ? Math.sin((t - k.tryAt) * 48) * 18 * Math.max(0, 1 - (t - k.tryAt) / 0.55) : 0;
 
   const strip = (index: number) =>
-    onPhone(PHONE.x, PHONE.y, 18 + 32 + index * ((PHONE_SCREEN.width - 36 - 64) / 4), PHONE_SCREEN.height - 92, PHONE.width);
+    phonePoint(PHONE_FRAME, 18 + 32 + index * ((PHONE_SCREEN.width - 36 - 64) / 4), PHONE_SCREEN.height - 92);
   const lit = REACTIONS.map((_, index) => {
     const at = k.throws[index];
     return at === undefined ? 0 : progress(t, at, 0.3, ease.out);
@@ -945,9 +921,7 @@ function VoterPhones({ k, camera }: { k: ArenaBeats; camera: CameraState }) {
             style={{ left: PHONE.x, top: PHONE.y - 10, transform: `translateY(${youOut * 1300}px)` }}
           >
             <div className="-translate-x-1/2 -translate-y-1/2">
-              <RubberStamp at={k.nice} tone="fail" size={70}>
-                Nice try
-              </RubberStamp>
+              <Stamp worn text="Nice try" at={k.nice} tone="fail" size={70} />
             </div>
           </div>
         </>

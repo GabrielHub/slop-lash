@@ -1,8 +1,9 @@
 "use client";
 
+import { useLocalCues } from "@/tutorial/clock";
 import { flight } from "@/tutorial/kit";
 import { SPRINGS, clamp, ease, mix, progress, spring } from "@/tutorial/timeline";
-import { At, Chip, Spotlight, useShot } from "../parts";
+import { At, Chip, Spotlight } from "../parts";
 
 /**
  * `two`: two chips for the whole game. One gets spent; the other hovers over
@@ -23,7 +24,7 @@ const FIRST_SLOT = 1;
 const SECOND_SLOT = 4;
 
 export function TwoShot() {
-  const shot = useShot();
+  const shot = useLocalCues();
   const { t } = shot;
   const two = shot.word("two", "two");
   const allGame = shot.word("two", "all");
