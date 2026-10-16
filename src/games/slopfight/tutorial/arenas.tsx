@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { hash01 } from "@/tutorial/timeline";
 import { FREDOKA, INK, NIGHT, TOY, mixHex } from "./look";
 
@@ -205,7 +205,8 @@ function Platform({ top, edge, face, speckle, children }: { top: string; edge: s
   );
 }
 
-function KitchenStage() {
+/** Static, so memo keeps it out of the per-frame render. */
+const KitchenStage = memo(function KitchenStage() {
   return (
     <>
       <rect width={1920} height={1080} fill="#5A1F1A" />
@@ -238,7 +239,7 @@ function KitchenStage() {
       <Platform top={TOY.bone.hex} edge="#ffffff" face={TOY.bone.dark} speckle={TOY.sand.dark} />
     </>
   );
-}
+});
 
 function GarageStage({ t }: { t: number }) {
   const light = flicker(t, 3);
@@ -283,45 +284,60 @@ function GarageStage({ t }: { t: number }) {
   );
 }
 
+/** The rooftop behind its laundry: sky, skyline, water tower, washing line. Built once; only the laundry moves. */
+const ROOFTOP_BACK = (
+  <>
+    <defs>
+      <linearGradient id="sft-st-roof" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#1A1129" />
+        <stop offset="0.5" stopColor="#6B2738" />
+        <stop offset="0.72" stopColor={TOY.tangerine.hex} />
+      </linearGradient>
+    </defs>
+    <rect width={1920} height={1080} fill="url(#sft-st-roof)" />
+    {[
+      [0, 520, 220],
+      [200, 430, 160],
+      [340, 560, 240],
+      [560, 470, 150],
+      [700, 380, 200],
+      [880, 540, 170],
+      [1040, 450, 230],
+      [1260, 500, 160],
+      [1400, 400, 220],
+      [1610, 520, 180],
+      [1780, 460, 160],
+    ].map(([x, y, w]) => (
+      <g key={x}>
+        <rect x={x} y={y} width={w} height={800 - y} fill="#120A18" />
+        {Array.from({ length: 4 }, (_, index) => (
+          <rect key={index} x={x + 24 + (index % 2) * 60} y={y + 40 + Math.floor(index / 2) * 70} width={26} height={34} fill={TOY.butter.hex} opacity={hash01(x + index) > 0.5 ? 0.55 : 0.12} />
+        ))}
+      </g>
+    ))}
+    {/* The water tower. */}
+    <g transform="translate(180 220)">
+      <path d="M 20 420 L 40 200 M 220 420 L 200 200 M 80 420 L 86 200 M 160 420 L 154 200" stroke="#0E0712" strokeWidth={16} />
+      <path d="M 10 200 L 230 200 L 220 60 C 180 30 60 30 20 60 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} />
+      <path d="M 4 62 L 120 -20 L 236 62 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} strokeLinejoin="round" />
+    </g>
+    <path d="M 1240 300 Q 1520 380 1800 290" fill="none" stroke="#0E0712" strokeWidth={6} />
+  </>
+);
+
+/** The roof deck and platform, in front of the laundry. */
+const ROOFTOP_FRONT = (
+  <>
+    <rect x={0} y={700} width={1920} height={380} fill="#2A2830" />
+    <Platform top={TOY.charcoal.hex} edge="#6A6873" face="#26252A" speckle="#77757F" />
+  </>
+);
+
 function RooftopStage({ t }: { t: number }) {
   return (
     <>
-      <defs>
-        <linearGradient id="sft-st-roof" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#1A1129" />
-          <stop offset="0.5" stopColor="#6B2738" />
-          <stop offset="0.72" stopColor={TOY.tangerine.hex} />
-        </linearGradient>
-      </defs>
-      <rect width={1920} height={1080} fill="url(#sft-st-roof)" />
-      {[
-        [0, 520, 220],
-        [200, 430, 160],
-        [340, 560, 240],
-        [560, 470, 150],
-        [700, 380, 200],
-        [880, 540, 170],
-        [1040, 450, 230],
-        [1260, 500, 160],
-        [1400, 400, 220],
-        [1610, 520, 180],
-        [1780, 460, 160],
-      ].map(([x, y, w]) => (
-        <g key={x}>
-          <rect x={x} y={y} width={w} height={800 - y} fill="#120A18" />
-          {Array.from({ length: 4 }, (_, index) => (
-            <rect key={index} x={x + 24 + (index % 2) * 60} y={y + 40 + Math.floor(index / 2) * 70} width={26} height={34} fill={TOY.butter.hex} opacity={hash01(x + index) > 0.5 ? 0.55 : 0.12} />
-          ))}
-        </g>
-      ))}
-      {/* The water tower. */}
-      <g transform="translate(180 220)">
-        <path d="M 20 420 L 40 200 M 220 420 L 200 200 M 80 420 L 86 200 M 160 420 L 154 200" stroke="#0E0712" strokeWidth={16} />
-        <path d="M 10 200 L 230 200 L 220 60 C 180 30 60 30 20 60 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} />
-        <path d="M 4 62 L 120 -20 L 236 62 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} strokeLinejoin="round" />
-      </g>
+      {ROOFTOP_BACK}
       {/* Laundry, in the night wind. */}
-      <path d="M 1240 300 Q 1520 380 1800 290" fill="none" stroke="#0E0712" strokeWidth={6} />
       {[
         [1330, TOY.butter.hex],
         [1480, TOY.teal.hex],
@@ -333,8 +349,7 @@ function RooftopStage({ t }: { t: number }) {
           <rect key={x} x={Number(x) - 50} y={y} width={100} height={120} rx={18} fill={String(color)} stroke={INK} strokeWidth={6} transform={`rotate(${sway} ${x} ${y})`} />
         );
       })}
-      <rect x={0} y={700} width={1920} height={380} fill="#2A2830" />
-      <Platform top={TOY.charcoal.hex} edge="#6A6873" face="#26252A" speckle="#77757F" />
+      {ROOFTOP_FRONT}
     </>
   );
 }

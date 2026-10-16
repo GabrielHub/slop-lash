@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type CSSProperties, type ReactNode } from "react";
+import { useId, useMemo, type CSSProperties, type ReactNode } from "react";
 import { INK, TOY, mixHex } from "./look";
 
 // The cast, drawn flat as soft-vinyl toys: a chunky ink outline, a lit-from-
@@ -21,25 +21,40 @@ const OUT = 7;
 
 interface Gradients {
   fill(hex: string): string;
-  defs: ReactNode[];
+  /** The `<defs>` holding every gradient. */
+  defs: ReactNode;
 }
 
+/** Every colour drawn in vinyl, with its gradient's highlight and shade stops. */
+const VINYL = [
+  TOY.ocean.hex,
+  TOY.tomato.hex,
+  TOY.bone.hex,
+  TOY.butter.hex,
+  TOY.tangerine.hex,
+  TOY.charcoal.hex,
+  TOY.rust.hex,
+  mixHex(TOY.moss.hex, TOY.lime.hex, 0.35),
+].map((hex) => ({ hex, light: mixHex(hex, "#ffffff", 0.42), shade: mixHex(hex, INK, 0.38) }));
+
 /** Vinyl gradients for one toy drawing, unique to this instance. */
-function useVinyl(colors: readonly string[]): Gradients {
+function useVinyl(): Gradients {
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const ids = new Map<string, string>();
-  const defs = colors.map((hex, index) => {
-    const id = `${base}v${index}`;
-    ids.set(hex, id);
-    return (
-      <radialGradient key={id} id={id} cx="0.36" cy="0.28" r="0.8">
-        <stop offset="0" stopColor={mixHex(hex, "#ffffff", 0.42)} />
-        <stop offset="0.45" stopColor={hex} />
-        <stop offset="1" stopColor={mixHex(hex, INK, 0.38)} />
-      </radialGradient>
-    );
-  });
-  return { fill: (hex) => `url(#${ids.get(hex) ?? ""})`, defs };
+  return useMemo(() => {
+    const ids = new Map<string, string>();
+    const gradients = VINYL.map(({ hex, light, shade }, index) => {
+      const id = `${base}v${index}`;
+      ids.set(hex, id);
+      return (
+        <radialGradient key={id} id={id} cx="0.36" cy="0.28" r="0.8">
+          <stop offset="0" stopColor={light} />
+          <stop offset="0.45" stopColor={hex} />
+          <stop offset="1" stopColor={shade} />
+        </radialGradient>
+      );
+    });
+    return { fill: (hex) => `url(#${ids.get(hex) ?? ""})`, defs: <defs>{gradients}</defs> };
+  }, [base]);
 }
 
 function Shine({ x, y, rx = 22, ry = 11, rotate = -32 }: { x: number; y: number; rx?: number; ry?: number; rotate?: number }) {
@@ -542,16 +557,7 @@ export function ToyArt({
   style?: CSSProperties;
   className?: string;
 }) {
-  const v = useVinyl([
-    TOY.ocean.hex,
-    TOY.tomato.hex,
-    TOY.bone.hex,
-    TOY.butter.hex,
-    TOY.tangerine.hex,
-    TOY.charcoal.hex,
-    TOY.rust.hex,
-    mixHex(TOY.moss.hex, TOY.lime.hex, 0.35),
-  ]);
+  const v = useVinyl();
   const extra = extras;
   return (
     <svg
@@ -562,7 +568,7 @@ export function ToyArt({
       style={{ overflow: "visible", ...style }}
       aria-hidden="true"
     >
-      <defs>{v.defs}</defs>
+      {v.defs}
       {kind === "shark" && <Shark mood={mood} look={look} extras={extra} v={v} />}
       {kind === "toaster" && <Toaster mood={mood} look={look} extras={extra} v={v} />}
       {kind === "duck" && <Duck mood={mood} look={look} v={v} />}

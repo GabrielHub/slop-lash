@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { memo, type CSSProperties } from "react";
 import { SPRINGS, clamp, ease, hash01, progress, spring } from "@/tutorial/timeline";
 import { FACE, FREDOKA, INK, NIGHT, StarBurst, TOY } from "../tutorial/look";
 import { ToyArt, type ToyKind } from "../tutorial/toys";
@@ -225,17 +225,15 @@ export function HealthBar({ kind, side, health, ghost, x, y, width = 640 }: {
   const low = health <= 0.3;
   const fill = low ? "#E5322D" : kind === "shark" ? TOY.teal.hex : TOY.butter.hex;
   const anchor = side === "left" ? "left" : "right";
-  const height = 52;
-  const face = 132;
   return (
     <div className="pointer-events-none absolute" style={{ left: x, top: y, width }}>
       <div
         className="absolute overflow-hidden"
         style={{
-          [anchor]: face * 0.62,
+          [anchor]: FACE_DISC * 0.62,
           top: 0,
-          width: width - face * 0.62,
-          height,
+          width: width - FACE_DISC * 0.62,
+          height: BAR_HEIGHT,
           background: NIGHT,
           border: `6px solid ${INK}`,
           borderRadius: 14,
@@ -247,35 +245,44 @@ export function HealthBar({ kind, side, health, ghost, x, y, width = 640 }: {
         <div className="absolute inset-y-0" style={{ [anchor]: 0, width: `${clamp(health) * 100}%`, background: fill }} />
         <div className="absolute inset-x-0 top-[6px] h-[8px]" style={{ background: "rgba(255,255,255,0.35)" }} />
       </div>
-      <div
-        className="absolute overflow-hidden rounded-full"
-        style={{
-          [anchor]: 0,
-          top: height / 2 - face / 2,
-          width: face,
-          height: face,
-          background: kind === "shark" ? mixWith(TOY.ocean.hex) : mixWith(TOY.tomato.hex),
-          border: `7px solid ${INK}`,
-          boxShadow: `0 6px 0 ${INK}`,
-        }}
-      >
-        <ToyArt
-          kind={kind}
-          size={FACE_ART}
-          mood="angry"
-          look={0.5}
-          className="absolute"
-          style={{
-            left: (face - 14 - FACE_ART) / 2,
-            top: (face - 14) / 2 - ((EYES_Y[kind] + 360) / 380) * FACE_ART * (380 / 360),
-            transform: side === "right" ? "scaleX(-1)" : undefined,
-          }}
-        />
-      </div>
+      <HealthFace kind={kind} side={side} />
     </div>
   );
 }
 
+/** The fighter's face disc at the bar's outer end. Constant, so memo keeps it out of the per-frame render. */
+const HealthFace = memo(function HealthFace({ kind, side }: { kind: ToyKind; side: "left" | "right" }) {
+  return (
+    <div
+      className="absolute overflow-hidden rounded-full"
+      style={{
+        [side]: 0,
+        top: BAR_HEIGHT / 2 - FACE_DISC / 2,
+        width: FACE_DISC,
+        height: FACE_DISC,
+        background: kind === "shark" ? mixWith(TOY.ocean.hex) : mixWith(TOY.tomato.hex),
+        border: `7px solid ${INK}`,
+        boxShadow: `0 6px 0 ${INK}`,
+      }}
+    >
+      <ToyArt
+        kind={kind}
+        size={FACE_ART}
+        mood="angry"
+        look={0.5}
+        className="absolute"
+        style={{
+          left: (FACE_DISC - 14 - FACE_ART) / 2,
+          top: (FACE_DISC - 14) / 2 - ((EYES_Y[kind] + 360) / 380) * FACE_ART * (380 / 360),
+          transform: side === "right" ? "scaleX(-1)" : undefined,
+        }}
+      />
+    </div>
+  );
+});
+
+const BAR_HEIGHT = 52;
+const FACE_DISC = 132;
 const FACE_ART = 210;
 /** Where each toy's eyes sit, in toy units (its feet are at 0). */
 const EYES_Y: Record<ToyKind, number> = { shark: -224, toaster: -180, duck: -214, cactus: -216 };

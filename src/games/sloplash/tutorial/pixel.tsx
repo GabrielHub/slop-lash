@@ -40,8 +40,13 @@ export interface PixelCell {
   char: number;
 }
 
+/** Laid-out text, by text: PixelText renders every frame, its text rarely changes. */
+const LAYOUTS = new Map<string, { cells: readonly PixelCell[]; cols: number }>();
+
 /** The lit cells of `text`, one blank column between characters. */
-export function pixelCells(text: string): { cells: PixelCell[]; cols: number } {
+export function pixelCells(text: string): { cells: readonly PixelCell[]; cols: number } {
+  const cached = LAYOUTS.get(text);
+  if (cached) return cached;
   const cells: PixelCell[] = [];
   const chars = text.toUpperCase().split("");
   chars.forEach((char, index) => {
@@ -52,7 +57,9 @@ export function pixelCells(text: string): { cells: PixelCell[]; cols: number } {
       }
     });
   });
-  return { cells, cols: Math.max(0, chars.length * (COLS + 1) - 1) };
+  const layout = { cells, cols: Math.max(0, chars.length * (COLS + 1) - 1) };
+  LAYOUTS.set(text, layout);
+  return layout;
 }
 
 /** The size of `text` set at `cell` px with `gap` px between cells. */
@@ -128,6 +135,12 @@ export function PixelText({
   const flash = flashAt === undefined ? 0 : 1 - progress(t, flashAt, 0.45, ease.out);
   const flashOn = flashAt !== undefined && t >= flashAt ? flash : 0;
   const radius = Math.max(2, cell * 0.16);
+  const rainUp = rain?.direction === -1;
+  // Every lit pixel shares one shadow.
+  const bevel = `inset 0 ${-Math.max(2, Math.round(cell * 0.14))}px 0 color-mix(in srgb, ${color} 72%, var(--bg))`;
+  const boxShadow = glow
+    ? `0 0 ${Math.round(cell * (0.7 + flashOn))}px color-mix(in srgb, ${color} ${Math.round(40 + flashOn * 40)}%, transparent), ${bevel}`
+    : bevel;
 
   return (
     <div className={`relative ${className}`} style={{ width, height, ...style }}>
@@ -180,7 +193,6 @@ export function PixelText({
         const shine = shimmer !== undefined && landed ? shineAt(t - shimmer, pixel, cols) : 0;
         const fill =
           shine > 0 ? `color-mix(in srgb, var(--gold) ${Math.round(shine * 70)}%, ${lit})` : lit;
-        const rainUp = rain?.direction === -1;
         if (tail > 0) {
           return (
               <div
@@ -212,9 +224,7 @@ export function PixelText({
                   transformOrigin: "50% 100%",
                   transform:
                     squash > 0 ? `scale(${1 + squash * 0.3}, ${1 - squash * 0.4})` : undefined,
-                  boxShadow: glow
-                    ? `0 0 ${Math.round(cell * (0.7 + flashOn))}px color-mix(in srgb, ${color} ${Math.round(40 + flashOn * 40)}%, transparent), inset 0 ${-Math.max(2, Math.round(cell * 0.14))}px 0 color-mix(in srgb, ${color} 72%, var(--bg))`
-                    : `inset 0 ${-Math.max(2, Math.round(cell * 0.14))}px 0 color-mix(in srgb, ${color} 72%, var(--bg))`,
+                  boxShadow,
                 }}
               />
         );

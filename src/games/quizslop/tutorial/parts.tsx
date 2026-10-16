@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useLocalTime } from "@/tutorial/clock";
 import { BOARD } from "@/tutorial/kit";
 import { getPlayerColor } from "@/lib/player-colors";
@@ -89,15 +89,26 @@ function perimeter(width: number, height: number, radius: number) {
   return 2 * (width - 2 * r) + 2 * (height - 2 * r) + 2 * Math.PI * r;
 }
 
+/** Bulb fills by their two rounded percentages; the chase keeps revisiting the same few. */
+const BULB_FILLS = new Map<number, string>();
+
 /** One bulb's look at brightness `lit` (0 dark, 1 full). */
 function bulbStyle(x: number, y: number, size: number, lit: number): CSSProperties {
   const glow = clamp(lit);
+  const core = Math.round(glow * 100);
+  const body = Math.round(8 + glow * 92);
+  const key = core * 1000 + body;
+  let background = BULB_FILLS.get(key);
+  if (background === undefined) {
+    background = `radial-gradient(circle at 38% 34%, color-mix(in srgb, #fffbea ${core}%, transparent) 0 22%, transparent 48%), color-mix(in srgb, ${BULB_LIT} ${body}%, var(--edge-strong))`;
+    BULB_FILLS.set(key, background);
+  }
   return {
     left: x - size / 2,
     top: y - size / 2,
     width: size,
     height: size,
-    background: `radial-gradient(circle at 38% 34%, color-mix(in srgb, #fffbea ${Math.round(glow * 100)}%, transparent) 0 22%, transparent 48%), color-mix(in srgb, ${BULB_LIT} ${Math.round(8 + glow * 92)}%, var(--edge-strong))`,
+    background,
     boxShadow: `0 0 ${size * (0.5 + glow * 1.1)}px ${size * 0.3 * glow}px rgba(${BULB_GLOW}, ${(0.8 * glow).toFixed(3)}), inset 0 0 0 ${Math.max(1.5, size * 0.1)}px rgba(120, 72, 0, ${(0.35 - glow * 0.15).toFixed(3)})`,
   };
 }
@@ -139,8 +150,10 @@ export function BulbRing({
   size?: number;
 } & BulbLight) {
   const t = useLocalTime();
-  const count = Math.max(8, Math.round(perimeter(width, height, radius) / spacing));
-  const points = outline(width, height, radius, count);
+  const { count, points } = useMemo(() => {
+    const count = Math.max(8, Math.round(perimeter(width, height, radius) / spacing));
+    return { count, points: outline(width, height, radius, count) };
+  }, [width, height, radius, spacing]);
   return (
     <div className="pointer-events-none absolute left-0 top-0">
       {points.map((point, index) => (
