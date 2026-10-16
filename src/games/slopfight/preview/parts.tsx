@@ -224,13 +224,12 @@ export function HealthBar({ kind, side, health, ghost, x, y, width = 640 }: {
 }) {
   const low = health <= 0.3;
   const fill = low ? "#E5322D" : kind === "shark" ? TOY.teal.hex : TOY.butter.hex;
-  const anchor = side === "left" ? "left" : "right";
   return (
     <div className="pointer-events-none absolute" style={{ left: x, top: y, width }}>
       <div
         className="absolute overflow-hidden"
         style={{
-          [anchor]: FACE_DISC * 0.62,
+          [side]: FACE_DISC * 0.62,
           top: 0,
           width: width - FACE_DISC * 0.62,
           height: BAR_HEIGHT,
@@ -241,8 +240,8 @@ export function HealthBar({ kind, side, health, ghost, x, y, width = 640 }: {
           boxShadow: `0 6px 0 ${INK}`,
         }}
       >
-        <div className="absolute inset-y-0" style={{ [anchor]: 0, width: `${clamp(ghost) * 100}%`, background: FACE, opacity: 0.75 }} />
-        <div className="absolute inset-y-0" style={{ [anchor]: 0, width: `${clamp(health) * 100}%`, background: fill }} />
+        <div className="absolute inset-y-0" style={{ [side]: 0, width: `${clamp(ghost) * 100}%`, background: FACE, opacity: 0.75 }} />
+        <div className="absolute inset-y-0" style={{ [side]: 0, width: `${clamp(health) * 100}%`, background: fill }} />
         <div className="absolute inset-x-0 top-[6px] h-[8px]" style={{ background: "rgba(255,255,255,0.35)" }} />
       </div>
       <HealthFace kind={kind} side={side} />
@@ -250,7 +249,7 @@ export function HealthBar({ kind, side, health, ghost, x, y, width = 640 }: {
   );
 }
 
-/** The fighter's face disc at the bar's outer end. Constant, so memo keeps it out of the per-frame render. */
+/** The fighter's face disc at the bar's outer end. Static, so memo keeps it out of the per-frame render. */
 const HealthFace = memo(function HealthFace({ kind, side }: { kind: ToyKind; side: "left" | "right" }) {
   return (
     <div

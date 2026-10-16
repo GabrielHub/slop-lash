@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { useLocalTime } from "@/tutorial/clock";
 import { BOARD } from "@/tutorial/kit";
 import { clamp, ease, hash01, mix, progress } from "@/tutorial/timeline";
@@ -40,13 +40,8 @@ export interface PixelCell {
   char: number;
 }
 
-/** Laid-out text, by text: PixelText renders every frame, its text rarely changes. */
-const LAYOUTS = new Map<string, { cells: readonly PixelCell[]; cols: number }>();
-
 /** The lit cells of `text`, one blank column between characters. */
-export function pixelCells(text: string): { cells: readonly PixelCell[]; cols: number } {
-  const cached = LAYOUTS.get(text);
-  if (cached) return cached;
+export function pixelCells(text: string): { cells: PixelCell[]; cols: number } {
   const cells: PixelCell[] = [];
   const chars = text.toUpperCase().split("");
   chars.forEach((char, index) => {
@@ -57,9 +52,7 @@ export function pixelCells(text: string): { cells: readonly PixelCell[]; cols: n
       }
     });
   });
-  const layout = { cells, cols: Math.max(0, chars.length * (COLS + 1) - 1) };
-  LAYOUTS.set(text, layout);
-  return layout;
+  return { cells, cols: Math.max(0, chars.length * (COLS + 1) - 1) };
 }
 
 /** The size of `text` set at `cell` px with `gap` px between cells. */
@@ -128,7 +121,7 @@ export function PixelText({
   style?: CSSProperties;
 }) {
   const t = useLocalTime();
-  const { cells, cols } = pixelCells(text);
+  const { cells, cols } = useMemo(() => pixelCells(text), [text]);
   const pitch = cell + gap;
   const width = cols * pitch - gap;
   const height = ROWS * pitch - gap;
@@ -136,6 +129,11 @@ export function PixelText({
   const flashOn = flashAt !== undefined && t >= flashAt ? flash : 0;
   const radius = Math.max(2, cell * 0.16);
   const rainUp = rain?.direction === -1;
+  // A falling pixel's trail varies only by its tone.
+  const trails = useMemo(
+    () => RAIN_TONES.map((tone) => stepTrail(tone, cell, pitch, rainUp ? "to top" : "to bottom")),
+    [cell, pitch, rainUp],
+  );
   // Every lit pixel shares one shadow.
   const bevel = `inset 0 ${-Math.max(2, Math.round(cell * 0.14))}px 0 color-mix(in srgb, ${color} 72%, var(--bg))`;
   const boxShadow = glow
@@ -166,7 +164,7 @@ export function PixelText({
         let dy = 0;
         let landed = 1;
         let tone = color;
-        let tail = 0;
+        let trail: string | undefined;
         let squash = 0;
         if (rain) {
           const { start, end, drop = 900, speed = 2600, direction = 1, seed = 3 } = rain;
@@ -181,8 +179,7 @@ export function PixelText({
             const raw = (land - t) * speed;
             dy = -direction * Math.round(raw / pitch) * pitch;
             landed = 0;
-            tail = 1;
-            tone = RAIN_TONES[Math.floor(hash01(seed * 5 + index * 1.9) * RAIN_TONES.length)]!;
+            trail = trails[Math.floor(hash01(seed * 5 + index * 1.9) * RAIN_TONES.length)];
           } else {
             const blink = progress(t, land, 0.3, ease.out);
             tone = `color-mix(in srgb, var(--gold) ${Math.round((1 - blink) * 100)}%, ${color})`;
@@ -193,7 +190,7 @@ export function PixelText({
         const shine = shimmer !== undefined && landed ? shineAt(t - shimmer, pixel, cols) : 0;
         const fill =
           shine > 0 ? `color-mix(in srgb, var(--gold) ${Math.round(shine * 70)}%, ${lit})` : lit;
-        if (tail > 0) {
+        if (trail !== undefined) {
           return (
               <div
                 key={index}
@@ -204,7 +201,7 @@ export function PixelText({
                   top: rainUp ? y + dy : y + dy - pitch * 3,
                   height: cell + pitch * 3,
                   borderRadius: radius,
-                  background: stepTrail(tone, cell, pitch, rainUp ? "to top" : "to bottom"),
+                  background: trail,
                   opacity: 0.85,
                 }}
               />

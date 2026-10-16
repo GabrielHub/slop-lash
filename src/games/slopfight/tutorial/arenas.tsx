@@ -62,7 +62,8 @@ function GarageArt({ t }: { t: number }) {
   );
 }
 
-function KitchenArt() {
+/** Static, so memo keeps it out of the per-frame render. */
+const KitchenArt = memo(function KitchenArt() {
   return (
     <>
       <rect width={440} height={250} fill="#6E2620" />
@@ -85,7 +86,7 @@ function KitchenArt() {
       ))}
     </>
   );
-}
+});
 
 function RooftopArt({ t }: { t: number }) {
   return (
@@ -241,8 +242,8 @@ const KitchenStage = memo(function KitchenStage() {
   );
 });
 
-function GarageStage({ t }: { t: number }) {
-  const light = flicker(t, 3);
+/** The garage behind its lamp and ripples. Static, so memo keeps it out of the per-frame render. */
+const GarageBack = memo(function GarageBack() {
   return (
     <>
       <defs>
@@ -255,13 +256,35 @@ function GarageStage({ t }: { t: number }) {
       {Array.from({ length: 9 }, (_, index) => (
         <rect key={index} x={240} y={120 + index * 56} width={1440} height={30} rx={8} fill="#0C272B" />
       ))}
-      <ellipse cx={960} cy={90} rx={520} ry={120} fill="#BFFFF1" opacity={0.14 * light} />
-      <rect x={700} y={62} width={520} height={26} rx={13} fill="#E8FFF9" opacity={light} />
       {/* The dead sedan. */}
       <path d="M 1300 690 C 1306 610 1380 580 1470 574 L 1540 510 C 1590 484 1720 484 1770 516 L 1830 574 C 1890 580 1920 610 1920 690 Z" fill="#06171A" />
       <circle cx={1440} cy={690} r={56} fill="#030C0D" />
       {/* Ankle-deep water, everywhere. */}
       <rect x={0} y={700} width={1920} height={380} fill={mixHex("#174347", TOY.teal.hex, 0.55)} />
+    </>
+  );
+});
+
+/** The garage's platform, over the ripples. Static, so memo keeps it out of the per-frame render. */
+const GarageFront = memo(function GarageFront() {
+  return (
+    <Platform top={TOY.cocoa.hex} edge={mixHex(TOY.cocoa.hex, "#ffffff", 0.3)} face={TOY.cocoa.dark}>
+      {Array.from({ length: 6 }, (_, index) => {
+        const v = (index + 1) / 7;
+        const y = PLATFORM.back + v * (PLATFORM.front - PLATFORM.back);
+        return <path key={index} d={`M ${PLATFORM.backLeft + (PLATFORM.frontLeft - PLATFORM.backLeft) * v + 6} ${y} L ${PLATFORM.backRight + (PLATFORM.frontRight - PLATFORM.backRight) * v - 6} ${y}`} stroke={TOY.cocoa.dark} strokeWidth={4} />;
+      })}
+    </Platform>
+  );
+});
+
+function GarageStage({ t }: { t: number }) {
+  const light = flicker(t, 3);
+  return (
+    <>
+      <GarageBack />
+      <ellipse cx={960} cy={90} rx={520} ry={120} fill="#BFFFF1" opacity={0.14 * light} />
+      <rect x={700} y={62} width={520} height={26} rx={13} fill="#E8FFF9" opacity={light} />
       {Array.from({ length: 10 }, (_, index) => (
         <path
           key={index}
@@ -273,70 +296,68 @@ function GarageStage({ t }: { t: number }) {
           opacity={0.5}
         />
       ))}
-      <Platform top={TOY.cocoa.hex} edge={mixHex(TOY.cocoa.hex, "#ffffff", 0.3)} face={TOY.cocoa.dark}>
-        {Array.from({ length: 6 }, (_, index) => {
-          const v = (index + 1) / 7;
-          const y = PLATFORM.back + v * (PLATFORM.front - PLATFORM.back);
-          return <path key={index} d={`M ${PLATFORM.backLeft + (PLATFORM.frontLeft - PLATFORM.backLeft) * v + 6} ${y} L ${PLATFORM.backRight + (PLATFORM.frontRight - PLATFORM.backRight) * v - 6} ${y}`} stroke={TOY.cocoa.dark} strokeWidth={4} />;
-        })}
-      </Platform>
+      <GarageFront />
     </>
   );
 }
 
-/** The rooftop behind its laundry: sky, skyline, water tower, washing line. Built once; only the laundry moves. */
-const ROOFTOP_BACK = (
-  <>
-    <defs>
-      <linearGradient id="sft-st-roof" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#1A1129" />
-        <stop offset="0.5" stopColor="#6B2738" />
-        <stop offset="0.72" stopColor={TOY.tangerine.hex} />
-      </linearGradient>
-    </defs>
-    <rect width={1920} height={1080} fill="url(#sft-st-roof)" />
-    {[
-      [0, 520, 220],
-      [200, 430, 160],
-      [340, 560, 240],
-      [560, 470, 150],
-      [700, 380, 200],
-      [880, 540, 170],
-      [1040, 450, 230],
-      [1260, 500, 160],
-      [1400, 400, 220],
-      [1610, 520, 180],
-      [1780, 460, 160],
-    ].map(([x, y, w]) => (
-      <g key={x}>
-        <rect x={x} y={y} width={w} height={800 - y} fill="#120A18" />
-        {Array.from({ length: 4 }, (_, index) => (
-          <rect key={index} x={x + 24 + (index % 2) * 60} y={y + 40 + Math.floor(index / 2) * 70} width={26} height={34} fill={TOY.butter.hex} opacity={hash01(x + index) > 0.5 ? 0.55 : 0.12} />
-        ))}
+/** The rooftop behind its laundry. Static, so memo keeps it out of the per-frame render. */
+const RooftopBack = memo(function RooftopBack() {
+  return (
+    <>
+      <defs>
+        <linearGradient id="sft-st-roof" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#1A1129" />
+          <stop offset="0.5" stopColor="#6B2738" />
+          <stop offset="0.72" stopColor={TOY.tangerine.hex} />
+        </linearGradient>
+      </defs>
+      <rect width={1920} height={1080} fill="url(#sft-st-roof)" />
+      {[
+        [0, 520, 220],
+        [200, 430, 160],
+        [340, 560, 240],
+        [560, 470, 150],
+        [700, 380, 200],
+        [880, 540, 170],
+        [1040, 450, 230],
+        [1260, 500, 160],
+        [1400, 400, 220],
+        [1610, 520, 180],
+        [1780, 460, 160],
+      ].map(([x, y, w]) => (
+        <g key={x}>
+          <rect x={x} y={y} width={w} height={800 - y} fill="#120A18" />
+          {Array.from({ length: 4 }, (_, index) => (
+            <rect key={index} x={x + 24 + (index % 2) * 60} y={y + 40 + Math.floor(index / 2) * 70} width={26} height={34} fill={TOY.butter.hex} opacity={hash01(x + index) > 0.5 ? 0.55 : 0.12} />
+          ))}
+        </g>
+      ))}
+      {/* The water tower. */}
+      <g transform="translate(180 220)">
+        <path d="M 20 420 L 40 200 M 220 420 L 200 200 M 80 420 L 86 200 M 160 420 L 154 200" stroke="#0E0712" strokeWidth={16} />
+        <path d="M 10 200 L 230 200 L 220 60 C 180 30 60 30 20 60 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} />
+        <path d="M 4 62 L 120 -20 L 236 62 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} strokeLinejoin="round" />
       </g>
-    ))}
-    {/* The water tower. */}
-    <g transform="translate(180 220)">
-      <path d="M 20 420 L 40 200 M 220 420 L 200 200 M 80 420 L 86 200 M 160 420 L 154 200" stroke="#0E0712" strokeWidth={16} />
-      <path d="M 10 200 L 230 200 L 220 60 C 180 30 60 30 20 60 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} />
-      <path d="M 4 62 L 120 -20 L 236 62 Z" fill="#26162A" stroke="#0E0712" strokeWidth={8} strokeLinejoin="round" />
-    </g>
-    <path d="M 1240 300 Q 1520 380 1800 290" fill="none" stroke="#0E0712" strokeWidth={6} />
-  </>
-);
+      <path d="M 1240 300 Q 1520 380 1800 290" fill="none" stroke="#0E0712" strokeWidth={6} />
+    </>
+  );
+});
 
-/** The roof deck and platform, in front of the laundry. */
-const ROOFTOP_FRONT = (
-  <>
-    <rect x={0} y={700} width={1920} height={380} fill="#2A2830" />
-    <Platform top={TOY.charcoal.hex} edge="#6A6873" face="#26252A" speckle="#77757F" />
-  </>
-);
+/** The roof deck and platform, in front of the laundry. Static, so memo keeps it out of the per-frame render. */
+const RooftopFront = memo(function RooftopFront() {
+  return (
+    <>
+      <rect x={0} y={700} width={1920} height={380} fill="#2A2830" />
+      <Platform top={TOY.charcoal.hex} edge="#6A6873" face="#26252A" speckle="#77757F" />
+    </>
+  );
+});
 
 function RooftopStage({ t }: { t: number }) {
   return (
     <>
-      {ROOFTOP_BACK}
+      <RooftopBack />
       {/* Laundry, in the night wind. */}
       {[
         [1330, TOY.butter.hex],
@@ -349,7 +370,7 @@ function RooftopStage({ t }: { t: number }) {
           <rect key={x} x={Number(x) - 50} y={y} width={100} height={120} rx={18} fill={String(color)} stroke={INK} strokeWidth={6} transform={`rotate(${sway} ${x} ${y})`} />
         );
       })}
-      {ROOFTOP_FRONT}
+      <RooftopFront />
     </>
   );
 }

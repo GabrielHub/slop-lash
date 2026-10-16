@@ -25,6 +25,8 @@ interface Gradients {
   defs: ReactNode;
 }
 
+const CACTUS_GREEN = mixHex(TOY.moss.hex, TOY.lime.hex, 0.35);
+
 /** Every colour drawn in vinyl, with its gradient's highlight and shade stops. */
 const VINYL = [
   TOY.ocean.hex,
@@ -34,7 +36,7 @@ const VINYL = [
   TOY.tangerine.hex,
   TOY.charcoal.hex,
   TOY.rust.hex,
-  mixHex(TOY.moss.hex, TOY.lime.hex, 0.35),
+  CACTUS_GREEN,
 ].map((hex) => ({ hex, light: mixHex(hex, "#ffffff", 0.42), shade: mixHex(hex, INK, 0.38) }));
 
 /** Vinyl gradients for one toy drawing, unique to this instance. */
@@ -410,7 +412,7 @@ function Duck({ mood, look, v }: { mood: Mood; look: number; v: Gradients }) {
 }
 
 function Cactus({ mood, look, v }: { mood: Mood; look: number; v: Gradients }) {
-  const green = mixHex(TOY.moss.hex, TOY.lime.hex, 0.35);
+  const green = CACTUS_GREEN;
   const outline = { stroke: INK, strokeWidth: OUT, strokeLinejoin: "round" as const };
   const spikes: [number, number][] = [
     [-40, -250], [36, -262], [-44, -150], [44, -170], [-20, -110], [26, -130], [0, -200],
