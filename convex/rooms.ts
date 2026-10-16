@@ -90,6 +90,8 @@ export const create = action({
     aiModelIds: v.optional(v.array(v.string())),
     totalRounds: v.optional(v.number()),
     timersDisabled: v.optional(v.boolean()),
+    /** Play the how-to-play video when the host starts. */
+    tutorial: v.optional(v.boolean()),
     ttsMode: v.optional(ttsModeValidator),
     ttsVoice: v.optional(v.string()),
     settings: v.optional(roomSettingsValidator),
@@ -151,6 +153,7 @@ export const create = action({
         aiPlayers,
         totalRounds: args.totalRounds ?? (args.gameType === "MATCHSLOP" ? 5 : 3),
         timersDisabled: args.timersDisabled ?? false,
+        tutorial: args.tutorial ?? false,
         ttsMode,
         ttsVoice: ttsMode === "ON" ? args.ttsVoice?.trim() || "RANDOM" : "RANDOM",
         settings,
@@ -186,7 +189,8 @@ type LobbyGameFields = Pick<
   | "timersDisabled"
   | "ttsMode"
   | "ttsVoice"
->;
+> &
+  Partial<Pick<Doc<"games">, "tutorial">>;
 
 /** Inserts a room's next game as an empty lobby: a new room, or a "Play again". */
 function insertLobbyGame(ctx: MutationCtx, fields: LobbyGameFields, now: number) {
@@ -215,6 +219,7 @@ export const insertRoom = internalMutation({
     ),
     totalRounds: v.number(),
     timersDisabled: v.boolean(),
+    tutorial: v.boolean(),
     ttsMode: ttsModeValidator,
     ttsVoice: v.string(),
     settings: roomSettingsValidator,
@@ -234,6 +239,7 @@ export const insertRoom = internalMutation({
         displayHost: args.host === null,
         freePlay: args.freePlay,
         timersDisabled: args.timersDisabled,
+        ...(args.tutorial ? { tutorial: true } : {}),
         ttsMode: args.ttsMode,
         ttsVoice: args.ttsVoice,
       },

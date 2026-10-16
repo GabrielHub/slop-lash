@@ -89,6 +89,10 @@ async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer |
       /** The phase waits on an AI call (its deadline is a hidden watchdog), so it has no clock but is not host-paced. */
       awaitingAi: game.deadlineHidden === true,
       timersDisabled: game.timersDisabled,
+      /** The how-to-play video plays when the host starts. */
+      tutorial: game.tutorial === true,
+      /** When the lobby's how-to-play video began (server ms), while it is still the lobby. */
+      tutorialStartedAt: game.status === "LOBBY" ? (game.tutorialStartedAt ?? null) : null,
       freePlay: game.freePlay,
       ttsMode: game.ttsMode,
       ttsVoice: game.ttsVoice,
@@ -114,6 +118,13 @@ async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer |
         score: candidate.score,
         online: candidate.type === "AI" || presence.get(candidate._id)?.online === true,
         joinedAt: candidate.joinedAt,
+        /** Their answer to the how-to-play video's practice question, while the video plays. */
+        tutorialPick:
+          game.status === "LOBBY" &&
+          game.tutorialStartedAt !== undefined &&
+          candidate.tutorialPick?.startedAt === game.tutorialStartedAt
+            ? candidate.tutorialPick.choice
+            : null,
       })),
     usage,
     mode,

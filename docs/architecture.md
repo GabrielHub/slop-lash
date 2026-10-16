@@ -167,6 +167,41 @@ Shared parts draw with the base color tokens (`surface`, `edge`, `ink`, `win`,
 and so on). A game's theme (`data-game` on the shell) remaps those tokens to
 its own palette, so one component renders in each game's colors.
 
+### How-to-play videos
+
+Each game has a narrated how-to-play "video" that is drawn in code rather than
+encoded: a scene is a pure function of the playhead `t`, so every screen in a
+room shows the same frame. Each game's video is a different kind of piece with
+its own narrator: SlopLash is a live studio taping, MatchSlop is a voice note
+from the match's best friend, QuizSlop is a rehearsal round the phones play
+along with, and SlopFight is a fight-night promo.
+
+- `src/tutorial/` is the engine. `timeline.ts` holds the script and timing
+  types, cues (`cues.word("type", "send")` is when that word is said), easings
+  and closed-form springs. `clock.tsx` and `kit.tsx` hold sequences, camera,
+  stamps, phones and wipes. `player.tsx` runs the playhead, captions, chapters,
+  voice and sound cues. `registry.ts` maps each game to its entry.
+- `src/games/<game>/tutorial/` holds each game's `script.ts` (the voice-over,
+  one id per line), `timing.ts` (when every word is said) and `scene.tsx`
+  (loaded only where it draws). Scenes key every beat off cues, never off
+  typed-in seconds, so a re-recorded voice moves the picture with it.
+- The voice is pre-recorded with ElevenLabs: `vp run tutorials:voice [game]`
+  (`scripts/tutorials/voice.ts`) renders the script as one performance, cuts
+  and paces the lines, forced-aligns every word to the final MP3, and writes
+  `public/tutorials/<game>/voice.mp3` plus `timing.ts`. Re-run it after editing
+  a script; takes are cached, so re-cutting costs nothing.
+- In a room, the host's "How-to-play video" option (`games.tutorial`) makes
+  the first Start play it in the lobby (`tutorialStartedAt`); the engine starts
+  the game when it ends (`startAfterTutorial`), and a second Start skips it.
+  The TV plays it with sound. Phones show where to look, the chapter, and the
+  host's skip, and can play it themselves when there is no TV. A game's
+  `practice` question (QuizSlop's) appears on phones mid-video; answers go
+  through `tutorial.pick` and reach the scene through `useTutorialLive`.
+- `/how-to-play/<game>` plays any video on its own, with a scrubber;
+  `?live=4` fills a pretend lobby so a practice question plays as in a room.
+  `node scripts/tutorials/frames.mjs <game> --every 1 --sheet` captures frames
+  for review (`--query live=4` passes that on).
+
 ### Convex data and functions
 
 Convex stores rooms, sessions, players, rounds, prompts, responses, votes,

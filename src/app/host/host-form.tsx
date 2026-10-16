@@ -42,10 +42,16 @@ import {
 import { useClientValue } from "@/hooks/use-hydrated";
 
 const ACCESS_STORAGE_KEY = "slop-lash:host-access";
+const TUTORIAL_STORAGE_KEY = "slop-lash:host-tutorial";
 
 function readStoredAccess(): HostAccess | null {
   const stored = readStored(ACCESS_STORAGE_KEY);
   return stored === "FREE" || stored === "HOST" ? stored : null;
+}
+
+/** The how-to-play video is on until a host turns it off, then stays off. */
+function readStoredTutorial(): boolean {
+  return readStored(TUTORIAL_STORAGE_KEY) !== "OFF";
 }
 
 const SECTION_HEADING = "font-display text-lg font-bold text-ink";
@@ -75,6 +81,8 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
   const [personaModelId, setPersonaModelId] = useState<string | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [timersDisabled, setTimersDisabled] = useState(false);
+  const storedTutorial = useClientValue(readStoredTutorial, true);
+  const [chosenTutorial, setChosenTutorial] = useState<boolean | null>(null);
   const [ttsMode, setTtsMode] = useState<TtsMode>("OFF");
   const [ttsVoice, setTtsVoice] = useState("RANDOM");
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -93,6 +101,7 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
       ? "HOST"
       : (chosenAccess ?? storedAccess ?? "FREE");
   const freePlay = access === "FREE";
+  const tutorial = chosenTutorial ?? storedTutorial;
   const freeBotLimit = getFreePlayAiPlayerLimit(gameType);
   // Mode-specific constraints are applied here rather than written back to
   // state, so switching to a mode and back restores the host's prior choices.
@@ -132,6 +141,11 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
     setChosenAccess(next);
     writeStored(ACCESS_STORAGE_KEY, next);
     setError("");
+  }
+
+  function setTutorial(next: boolean) {
+    setChosenTutorial(next);
+    writeStored(TUTORIAL_STORAGE_KEY, next ? "ON" : "OFF");
   }
 
   function unlockWithPassword() {
@@ -195,6 +209,7 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
         hostName: effectiveParticipation === "PLAYER" ? hostName.trim() : undefined,
         aiModelIds: activeAiModels,
         timersDisabled: effectiveTimersDisabled,
+        tutorial,
         ttsMode: narratorAvailable ? effectiveTtsMode : undefined,
         ttsVoice: narratorAvailable && effectiveTtsMode === "ON" ? ttsVoice : undefined,
         settings:
@@ -401,6 +416,11 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
                     className="overflow-hidden"
                   >
                     <div className="mt-1 divide-y divide-edge rounded-xl border-2 border-edge bg-surface/70">
+                      <OptionSwitch
+                        label="How-to-play video"
+                        checked={tutorial}
+                        onChange={setTutorial}
+                      />
                       {timerToggle && (
                         <OptionSwitch
                           label={timerToggle.label}

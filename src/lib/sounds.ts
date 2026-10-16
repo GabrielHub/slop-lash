@@ -618,8 +618,28 @@ function fetchBytes(src: string, label: string): Promise<ArrayBuffer> {
   });
 }
 
+/**
+ * Starts loading one file ahead of its first play: decoded now if audio is
+ * running, otherwise fetched so the decode can start when it is.
+ */
+export function preloadAudio(src: string, label: string): void {
+  if (typeof window === "undefined") return;
+  if (bufferCache.has(src) || inflightBufferLoads.has(src)) return;
+  if (audioContext) {
+    void loadBuffer(src, label).catch(() => {
+      // Surfaced when the sound is played.
+    });
+  } else if (!prefetchedBytes.has(src)) {
+    const bytes = fetchBytes(src, label);
+    bytes.catch(() => {
+      prefetchedBytes.delete(src);
+    });
+    prefetchedBytes.set(src, bytes);
+  }
+}
+
 /** Fetches (or reuses prefetched bytes) and decodes one file, cached by URL. */
-function loadBuffer(src: string, label: string): Promise<AudioBuffer> {
+export function loadBuffer(src: string, label: string): Promise<AudioBuffer> {
   const cached = bufferCache.get(src);
   if (cached) return Promise.resolve(cached);
 
@@ -826,22 +846,7 @@ export function createSoundBank<N extends string>(
     id,
     names,
     preload() {
-      if (typeof window === "undefined") return;
-      for (const name of names) {
-        const { src } = assets[name];
-        if (bufferCache.has(src) || inflightBufferLoads.has(src)) continue;
-        if (audioContext) {
-          void loadBuffer(src, name).catch(() => {
-            // Surfaced when the sound is played.
-          });
-        } else if (!prefetchedBytes.has(src)) {
-          const bytes = fetchBytes(src, name);
-          bytes.catch(() => {
-            prefetchedBytes.delete(src);
-          });
-          prefetchedBytes.set(src, bytes);
-        }
-      }
+      for (const name of names) preloadAudio(assets[name].src, name);
     },
     load(name) {
       return loadBuffer(assets[name].src, name);

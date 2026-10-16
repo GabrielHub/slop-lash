@@ -45,6 +45,10 @@ export default defineSchema({
     /** Created without the host password: Haiku writes, Jev judges. */
     freePlay: v.boolean(),
     timersDisabled: v.boolean(),
+    /** The host asked for the how-to-play video before the game. A rematch skips it. */
+    tutorial: v.optional(v.boolean()),
+    /** When the how-to-play video began. The game starts when it ends, or when the host skips. */
+    tutorialStartedAt: v.optional(v.number()),
     ttsMode: ttsModeValidator,
     ttsVoice: v.string(),
     finishedAt: v.optional(v.number()),
@@ -88,6 +92,8 @@ export default defineSchema({
     score: v.number(),
     kickedAt: v.optional(v.number()),
     joinedAt: v.number(),
+    /** Their answer to the how-to-play video's practice question, for the run that began at `startedAt`. */
+    tutorialPick: v.optional(v.object({ startedAt: v.number(), choice: v.number() })),
   })
     .index("by_gameId", ["gameId"])
     .index("by_gameId_and_normalizedName", ["gameId", "normalizedName"]),

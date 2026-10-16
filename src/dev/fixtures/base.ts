@@ -27,6 +27,7 @@ export function fixturePlayer(
     score: 0,
     online: true,
     joinedAt: FIXTURE_NOW - 60_000,
+    tutorialPick: null,
     ...overrides,
   };
 }
@@ -61,6 +62,8 @@ export function fixtureView(
       phaseStartedAt: FIXTURE_NOW - 10_000,
       phaseDeadline: playing ? FIXTURE_NOW + 50_000 : null,
       timersDisabled: false,
+      tutorial: false,
+      tutorialStartedAt: null,
       awaitingAi: false,
       freePlay: false,
       ttsMode: "OFF",

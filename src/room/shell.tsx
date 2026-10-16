@@ -21,6 +21,7 @@ import { CountdownPill, PhoneBar } from "./phone-bar";
 import { Scene } from "./scene";
 import { StageRail, StageSoundButton, useMuteKey, type StageVariant } from "./stage-rail";
 import { TitleCard, TitleCardProvider, useStageTransitions } from "./title-card";
+import { PhoneTutorial, StageTutorial, useTutorialRun, useTutorialWarmup } from "./tutorial";
 
 export { phaseKey };
 
@@ -57,9 +58,16 @@ function StageColumn({
   const lobby = view.room.status === "LOBBY";
   const ownsLobby = ui.ownsLobby === true;
   const shellLobby = lobby && !ownsLobby;
-  const sceneId = shellLobby
-    ? "lobby"
-    : (ui.sceneKey?.(view) ?? (ownsLobby ? "game" : phaseKey(view)));
+  // The how-to-play video takes the lobby's place; over a game-drawn lobby it
+  // plays on top, so that scene (a 3D canvas) stays mounted into the game.
+  const tutorial = useTutorialRun();
+  useTutorialWarmup(live);
+  const tutorialScene = tutorial !== null && !ownsLobby;
+  const sceneId = tutorialScene
+    ? "tutorial"
+    : shellLobby
+      ? "lobby"
+      : (ui.sceneKey?.(view) ?? (ownsLobby ? "game" : phaseKey(view)));
   const { card, dismiss } = useStageTransitions(sceneId);
   const Effects = live ? ui.StageEffects : undefined;
   const docked = variant === "docked";
@@ -96,8 +104,17 @@ function StageColumn({
         {/* Inside the provider, so the game's stage-wide moments can shake and flash. */}
         {Effects && <Effects />}
         <Scene id={sceneId} surface="stage" enterFirst={enterFirstScene}>
-          {shellLobby ? <StageLobby docked={docked} /> : <ui.Stage />}
+          {tutorialScene ? (
+            <StageTutorial run={tutorial} sound={live} keys={variant === "stage"} />
+          ) : shellLobby ? (
+            <StageLobby docked={docked} />
+          ) : (
+            <ui.Stage />
+          )}
         </Scene>
+        {tutorial && ownsLobby && (
+          <StageTutorial run={tutorial} sound={live} keys={variant === "stage"} opaque />
+        )}
         {cornerMenu && (
           <div className="absolute right-[1rem] top-[1rem] z-40 flex items-center">{menu}</div>
         )}
@@ -114,13 +131,20 @@ function ControllerColumn({ variant }: { variant: "phone" | "docked" }) {
   const { status } = view.room;
   const lobby = status === "LOBBY";
   const phone = variant === "phone";
+  const tutorial = useTutorialRun();
 
   return (
     <SurfaceProvider value="phone">
       {phone && <PhoneBar />}
       <div className="relative flex flex-1 flex-col">
-        <Scene id={lobby ? "lobby" : phaseKey(view)} surface="phone">
-          {lobby && !ui.ownsLobby ? <ControllerLobby /> : <ui.Controller />}
+        <Scene id={tutorial ? "tutorial" : lobby ? "lobby" : phaseKey(view)} surface="phone">
+          {tutorial ? (
+            <PhoneTutorial run={tutorial} docked={!phone} />
+          ) : lobby && !ui.ownsLobby ? (
+            <ControllerLobby />
+          ) : (
+            <ui.Controller />
+          )}
         </Scene>
         {status === "FINISHED" && live && <PhoneFinishedBar />}
         {/* Docked, the host dock carries Continue from lg up. */}

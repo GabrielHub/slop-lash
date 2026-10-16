@@ -10,29 +10,10 @@ import { NO_FREE_GAMES, useCanPlayAgain, useEndControlsReady } from "./finished"
 import { TWO_TAP_MS, isHostClocked, useHostActions, useTwoTap } from "./host-actions";
 import { PeopleIcon, SkipIcon, StopIcon } from "@/components/icons";
 import { useTitleCardShowing } from "./title-card";
+import { useAwake } from "@/hooks/use-awake";
 
 /** The dock hides after this long without the pointer or keyboard, so the room sees a clean screen. */
 const IDLE_MS = 3_000;
-
-/** True while the pointer or keyboard has been used in the last `IDLE_MS`. */
-function useAwake() {
-  const [awake, setAwake] = useState(true);
-  useEffect(() => {
-    let timer = window.setTimeout(() => setAwake(false), IDLE_MS);
-    const wake = () => {
-      setAwake(true);
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => setAwake(false), IDLE_MS);
-    };
-    const events = ["pointermove", "pointerdown", "keydown", "wheel"] as const;
-    events.forEach((name) => window.addEventListener(name, wake, { passive: true }));
-    return () => {
-      window.clearTimeout(timer);
-      events.forEach((name) => window.removeEventListener(name, wake));
-    };
-  }, []);
-  return awake;
-}
 
 /** A key press that belongs to a form field or a focused control, not to the stage's shortcuts. */
 export function belongsToControl(event: KeyboardEvent) {
@@ -145,7 +126,7 @@ export function HostDock({ placement }: { placement: "stage" | "docked" }) {
   const canPlayAgain = useCanPlayAgain();
   // A new phase disarms any pending press.
   const { armed, press: pressTwice } = useTwoTap({ resetOn: room.phaseGeneration });
-  const awake = useAwake();
+  const awake = useAwake(IDLE_MS);
   const cardShowing = useTitleCardShowing();
   const [playersOpen, setPlayersOpen] = useState(false);
   const [focused, setFocused] = useState(false);

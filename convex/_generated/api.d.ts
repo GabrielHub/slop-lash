@@ -55,6 +55,7 @@ import type * as sloplash_reactions from "../sloplash/reactions.js";
 import type * as sloplash_runners from "../sloplash/runners.js";
 import type * as sloplash_tables from "../sloplash/tables.js";
 import type * as sloplash_view from "../sloplash/view.js";
+import type * as tutorial from "../tutorial.js";
 import type * as validators from "../validators.js";
 import type * as views from "../views.js";
 
@@ -112,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   "sloplash/runners": typeof sloplash_runners;
   "sloplash/tables": typeof sloplash_tables;
   "sloplash/view": typeof sloplash_view;
+  tutorial: typeof tutorial;
   validators: typeof validators;
   views: typeof views;
 }>;

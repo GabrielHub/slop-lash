@@ -70,7 +70,7 @@ export const GAME_META = {
     supportsNarrator: false,
     supportsAiPlayers: false,
     // Untimed QuizSlop is its tutorial: it explains each beat and waits for the host.
-    timerToggle: { label: "Tutorial mode", onWhenDisabled: true },
+    timerToggle: { label: "No timers", onWhenDisabled: true },
     minPlayers: QUIZSLOP_MIN_PLAYERS,
     maxPlayers: QUIZSLOP_MAX_PLAYERS,
   },

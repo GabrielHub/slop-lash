@@ -10,6 +10,7 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { FORFEIT_MARKER } from "../src/games/core/constants";
 import { scoreMatchup } from "../src/games/sloplash/scoring";
+import { TUTORIAL_DURATION_MS } from "../src/tutorial/durations";
 
 const modules = import.meta.glob("./**/*.ts");
 const TAB = "0123456789abcdef0123";
@@ -145,6 +146,91 @@ describe("rooms", () => {
     await expect(t.action(api.rooms.join, { roomCode: host.roomCode, name: "Bo" })).rejects.toThrow(
       "removed",
     );
+  });
+});
+
+describe("how-to-play video", () => {
+  test("the first Start plays the video and the game begins when it ends", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const host = await createRoom(t, { tutorial: true });
+    await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Ana" });
+    await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Bo" });
+    await t.mutation(api.engine.start, { capability: host.capability });
+
+    const watching = await room(t, host.capability);
+    expect(watching.status).toBe("LOBBY");
+    expect(watching.tutorialStartedAt).toBe(Date.now());
+
+    vi.advanceTimersByTime(TUTORIAL_DURATION_MS.SLOPLASH + 1);
+    await t.finishInProgressScheduledFunctions();
+    const playing = await room(t, host.capability);
+    expect(playing.status).toBe("PLAYING");
+    expect(playing.tutorialStartedAt).toBeNull();
+  });
+
+  test("Start during the video skips it, and the video's own start does nothing", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const host = await createRoom(t, { tutorial: true });
+    await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Ana" });
+    await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Bo" });
+    await t.mutation(api.engine.start, { capability: host.capability });
+    await t.mutation(api.engine.start, { capability: host.capability });
+    const skipped = await room(t, host.capability);
+    expect(skipped.status).toBe("PLAYING");
+
+    vi.advanceTimersByTime(TUTORIAL_DURATION_MS.SLOPLASH + 1);
+    await t.finishInProgressScheduledFunctions();
+    expect((await room(t, host.capability)).phaseGeneration).toBe(skipped.phaseGeneration);
+  });
+
+  test("phones answer the practice question once, only while the video plays", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const host = await createRoom(t, { gameType: "QUIZSLOP", tutorial: true });
+    const ana = await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Ana" });
+    await expect(
+      t.mutation(api.tutorial.pick, { capability: ana.capability, choice: 1 }),
+    ).rejects.toThrow(/isn't playing/);
+
+    await t.mutation(api.engine.start, { capability: host.capability });
+    await t.mutation(api.tutorial.pick, { capability: ana.capability, choice: 1 });
+    // The first tap locks it.
+    await t.mutation(api.tutorial.pick, { capability: ana.capability, choice: 3 });
+    await expect(
+      t.mutation(api.tutorial.pick, { capability: host.capability, choice: 9 }),
+    ).rejects.toThrow(/Pick one/);
+    const picks = (await view(t, host.capability)).players.map((player) => [
+      player.name,
+      player.tutorialPick,
+    ]);
+    expect(picks).toEqual([
+      ["Host", null],
+      ["Ana", 1],
+    ]);
+
+    await t.mutation(api.engine.start, { capability: host.capability });
+    const playing = await view(t, host.capability);
+    expect(playing.room.status).toBe("PLAYING");
+    expect(playing.players.every((player) => player.tutorialPick === null)).toBe(true);
+  });
+
+  test("the video needs a full lobby too, and is off unless the host asks for it", async () => {
+    const t = setup();
+    const host = await createRoom(t, { tutorial: true });
+    await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Ana" });
+    await expect(t.mutation(api.engine.start, { capability: host.capability })).rejects.toThrow(
+      /at least/,
+    );
+    expect((await room(t, host.capability)).tutorialStartedAt).toBeNull();
+
+    const plain = await createRoom(t);
+    await t.action(api.rooms.join, { roomCode: plain.roomCode, name: "Ana" });
+    await t.action(api.rooms.join, { roomCode: plain.roomCode, name: "Bo" });
+    expect((await room(t, plain.capability)).tutorial).toBe(false);
+    await t.mutation(api.engine.start, { capability: plain.capability });
+    expect((await room(t, plain.capability)).status).toBe("PLAYING");
   });
 });
 

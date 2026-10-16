@@ -6,6 +6,7 @@ import { requireHost } from "./capabilities";
 import { cancelGameJobs } from "./jobs";
 import { getMode } from "./modes";
 import type { RoomSettings } from "./rooms";
+import { TUTORIAL_DURATION_MS } from "../src/tutorial/durations";
 import {
   findGameByCode,
   HOST_FAILOVER_MS,
@@ -362,18 +363,68 @@ export const sweep = internalMutation({
 // Host controls
 // ---------------------------------------------------------------------------
 
+/** The lobby's active players, or null when there are too few to start. */
+async function startingLineup(ctx: MutationCtx, game: Doc<"games">) {
+  const players = await loadActivePlayers(ctx, game._id);
+  return players.length < getMode(game.gameType).minPlayers ? null : players;
+}
+
+async function requireLineup(ctx: MutationCtx, game: Doc<"games">) {
+  const players = await startingLineup(ctx, game);
+  if (!players) {
+    throw new ConvexError(`Need at least ${getMode(game.gameType).minPlayers} players`);
+  }
+  return players;
+}
+
+/** Enters the mode's first phase with the players starting it. */
+async function beginGame(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  players: Doc<"players">[],
+): Promise<void> {
+  const first = await getMode(game.gameType).start(ctx, game, players);
+  await enterPhase(ctx, await reload(ctx, game._id), { round: 1, ...first });
+}
+
+/**
+ * The host's Start. With the how-to-play video on, the first press plays it
+ * in the lobby and the game begins when it ends; a press during it skips
+ * straight to the game.
+ */
 export const start = mutation({
   args: { capability: v.string() },
   handler: async (ctx, args) => {
     const { game } = await requireHost(ctx, args.capability);
     if (game.status !== "LOBBY") throw new ConvexError("The game already started");
-    const mode = getMode(game.gameType);
-    const players = await loadActivePlayers(ctx, game._id);
-    if (players.length < mode.minPlayers) {
-      throw new ConvexError(`Need at least ${mode.minPlayers} players`);
+    if (game.tutorial && game.tutorialStartedAt === undefined) {
+      await requireLineup(ctx, game);
+      const now = Date.now();
+      await ctx.db.patch("games", game._id, { tutorialStartedAt: now, updatedAt: now });
+      await ctx.scheduler.runAt(
+        now + TUTORIAL_DURATION_MS[game.gameType],
+        internal.engine.startAfterTutorial,
+        { gameId: game._id, tutorialStartedAt: now },
+      );
+      return;
     }
-    const first = await mode.start(ctx, game, players);
-    await enterPhase(ctx, await reload(ctx, game._id), { round: 1, ...first });
+    await beginGame(ctx, game, await requireLineup(ctx, game));
+  },
+});
+
+/** The how-to-play video ended: start the game, unless the host already did or the lobby emptied. */
+export const startAfterTutorial = internalMutation({
+  args: { gameId: v.id("games"), tutorialStartedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get("games", args.gameId);
+    if (!game || game.status !== "LOBBY" || game.tutorialStartedAt !== args.tutorialStartedAt) {
+      return null;
+    }
+    // Too few left: stay in the lobby; the host's next Start begins without the video.
+    const players = await startingLineup(ctx, game);
+    if (players) await beginGame(ctx, game, players);
+    return null;
   },
 });
 

@@ -9,12 +9,10 @@
 //
 // See README.md. Needs no secrets: the room is Free Play.
 
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { CAT, HAT_AND_SWORD } from "./doodles.mjs";
 import {
-  ROOT,
   ARGS,
   BASE,
   OUT,
@@ -34,34 +32,11 @@ import {
 } from "./config.mjs";
 import { instrument, tvInitScript, Tv, pickFrames, newPhone } from "./browser.mjs";
 import { analyzeFrames, writeLog, summarize, validationFailures } from "./report.mjs";
+import { loadPlaywright } from "../../lib/playwright.mjs";
 
 // ---------------------------------------------------------------------------
 // Playwright (the repo has playwright-core only as a transitive dependency)
 // ---------------------------------------------------------------------------
-
-function loadPlaywright() {
-  const require = createRequire(import.meta.url);
-  const candidates = [process.env.PLAYWRIGHT_CORE, "playwright-core"].filter(Boolean);
-  try {
-    const store = path.join(ROOT, "node_modules", ".pnpm");
-    for (const dir of readdirSync(store)
-      .filter((name) => name.startsWith("playwright-core@"))
-      .sort()
-      .reverse()) {
-      candidates.push(path.join(store, dir, "node_modules", "playwright-core"));
-    }
-  } catch {
-    // No pnpm store: only the explicit candidates.
-  }
-  for (const candidate of candidates) {
-    try {
-      return require(candidate);
-    } catch {
-      // Try the next one.
-    }
-  }
-  throw new Error("playwright-core not found: set PLAYWRIGHT_CORE to its folder");
-}
 
 async function launch(chromium, extraArgs) {
   const options = { headless: !HEADED, args: [...GPU_ARGS, ...extraArgs] };

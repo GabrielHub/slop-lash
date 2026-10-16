@@ -15,6 +15,7 @@
     "quizslop:catalog:validate": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/quizslop/validate-catalog.ts",
     "quizslop:catalog:validate-approved": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/quizslop/validate-catalog.ts --require-approved",
     "quizslop:catalog:review": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/quizslop/render-catalog-review.ts",
+    "tutorials:voice": "node --no-warnings --experimental-transform-types --import ./scripts/quizslop/register-ts-loader.mjs scripts/tutorials/voice.ts",
     "convex:codegen": "convex codegen",
     "convex:dev": "convex dev",
     "prepare": "husky"
