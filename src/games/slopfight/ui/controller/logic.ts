@@ -119,8 +119,8 @@ export function healthAt(timeline: readonly (readonly number[])[], ms: number): 
 
 /** Taps one hype call may carry (the server caps a call at 20). */
 export const HYPE_PER_CALL = 20;
-/** Hype calls go out at most this often (about 4 a second). */
-export const HYPE_FLUSH_MS = 250;
+/** Local taps respond immediately; crowd updates coalesce to at most one call per second. */
+export const HYPE_FLUSH_MS = 1_000;
 
 /** Splits banked taps into what to send now and what stays banked. */
 export function takeHype(banked: number): { send: number; rest: number } {

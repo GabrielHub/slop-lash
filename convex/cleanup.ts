@@ -21,6 +21,7 @@ const DELETE_BATCH = 64;
 /** Every table that hangs off a game, with an index whose first field is `gameId`. */
 const GAME_TABLES = [
   ["playerSessions", "by_gameId"],
+  ["roomMaintenance", "by_gameId"],
   ["players", "by_gameId"],
   ["rounds", "by_gameId_and_roundNumber"],
   ["prompts", "by_gameId"],
@@ -42,8 +43,10 @@ const GAME_TABLES = [
   ["quizSlopReactions", "by_gameId_and_ordinal_and_step_and_playerId"],
   ["slopFightState", "by_gameId"],
   ["slopFightFighters", "by_gameId_and_slot"],
+  ["slopFightForgeStreams", "by_gameId"],
   ["slopFightStrokes", "by_gameId_and_fighterId"],
   ["slopFightFights", "by_gameId_and_round_and_step"],
+  ["slopFightHype", "by_gameId_and_round_and_step"],
   ["slopFightBets", "by_gameId"],
 ] as const satisfies readonly (readonly [TableNames, string])[];
 

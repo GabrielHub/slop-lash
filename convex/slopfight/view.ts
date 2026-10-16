@@ -50,21 +50,20 @@ const UPGRADE_EXTRA_PARTS = 2;
 export function forgePartTarget(
   streamed: number,
   plan: BodyPlan | null,
-  previous: Champion | null,
+  previousParts: number | null,
 ): number {
-  const base = previous
-    ? previous.parts.length + UPGRADE_EXTRA_PARTS
+  const base = previousParts !== null
+    ? previousParts + UPGRADE_EXTRA_PARTS
     : plan
       ? TYPICAL_PARTS[plan]
       : DEFAULT_PART_TARGET;
   return Math.min(PARTS_MAX, Math.max(base, streamed + 1));
 }
 
-/** Streamed parts so far and the soft target, for the owner's Forging screen. */
+/** Initial progress only; the owner's narrow query reads the live stream. */
 function forgeParts(fighter: Fighter) {
-  const streamed = fighter.partial?.length ?? 0;
   const previous = isUpgradeKind(fighter.forge?.kind) ? championOf(fighter) : null;
-  return { streamed, target: forgePartTarget(streamed, fighter.partialPlan ?? null, previous) };
+  return { streamed: 0, target: forgePartTarget(0, null, previous?.parts.length ?? null) };
 }
 
 function fighterView(fighter: Fighter, game: Doc<"games">, viewerId: Id<"players"> | null) {
@@ -89,8 +88,8 @@ function fighterView(fighter: Fighter, game: Doc<"games">, viewerId: Id<"players
     /** Why the last forge failed on both models; the stage says so honestly. */
     failure: fighter.status === "FAILED" ? (fighter.failure ?? "failed") : null,
     /**
-     * The owner's forge progress: parts streamed so far and a soft target.
-     * Null for everyone else, so streaming never re-sends their views.
+     * Initial progress for the owner; play.myForgeProgress reads live counts
+     * separately, so stream writes never invalidate this room query.
      */
     forgeParts: mine && fighter.status === "FORGING" ? forgeParts(fighter) : null,
     rejection: mine && fighter.status === "REJECTED" ? (fighter.rejection ?? null) : null,
@@ -155,6 +154,7 @@ function fightView(
     notes: fight.notes ?? [],
     applied: appliedNotes(fight, sheets),
     walkOn: fight.walkOn ?? null,
+    /** Final snapshot; live crowd pulses come from stage.hype without invalidating this view. */
     hype: fight.hype,
     /** Bets are public: who backed which side (avatars fly to their pick). */
     bets: {

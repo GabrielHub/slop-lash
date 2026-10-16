@@ -301,12 +301,13 @@ describe("SlopLash", () => {
     await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Ana" });
     await t.action(api.rooms.join, { roomCode: host.roomCode, name: "Bo" });
     await t.mutation(api.engine.start, { capability: host.capability });
-    const id = await gameId(t, host.capability);
     const writing = await room(t, host.capability);
 
     // Simulate a deadline whose scheduled tick never ran.
     vi.setSystemTime(writing.phaseDeadline! + 60_000);
-    await t.mutation(internal.engine.maintain, { gameId: id });
+    await t.mutation(internal.engine.sweep, {});
+    await vi.advanceTimersByTimeAsync(0);
+    await t.finishInProgressScheduledFunctions();
     expect((await room(t, host.capability)).phaseGeneration).toBeGreaterThan(
       writing.phaseGeneration,
     );

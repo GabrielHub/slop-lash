@@ -64,13 +64,19 @@ Games advance in one of three ways:
 - The host presses next.
 
 Each path checks the phase generation, so a double tap, a late timer, or a
-stale vote can never advance twice. A cron sweep every 15 seconds catches lost
-ticks, rooms that are waiting only on absent players, and hosts who have been
-gone for about 30 seconds; it hands host controls to a present player. The
-sweep keeps doing that for a finished game for 30 minutes
-(`REMATCH_WINDOW_MS`), while it is still the room's live game, so "Play again"
-never leaves with a host who walked off at the results. If a mode throws while
-advancing, the engine ends the game rather than leaving the room stuck.
+stale vote can never advance twice. Existing presence heartbeats also run room
+maintenance at most once every 15 seconds across all tabs. Maintenance shares
+one roster read to settle phases waiting on absent players and to hand host
+controls to a present player after the host has been gone for about 30 seconds.
+Its throttle lives in `roomMaintenance`, separate from `games`, so checking it
+does not invalidate room views. A newly occupied room or a returning participant
+gets a 15-second resume grace period, so the first returning phone cannot settle
+a vote before the other phones reconnect. Finished rooms retain host failover
+for 30 minutes (`REMATCH_WINDOW_MS`) while they are still the room's live game, keeping
+"Play again" available to the remaining players. A five-minute safety sweep
+uses the deadline index to recover missed ticks; idle lobbies and results do
+not receive scheduled maintenance. If a mode throws while advancing, the engine
+ends the game rather than leaving the room stuck.
 
 ### Play again
 
@@ -188,9 +194,25 @@ callback applies the result, or the fallback, in one guarded mutation.
 
 SlopFight's streaming forge uses the critical Workpool with automatic retries
 disabled. Its forge wrapper owns repair and model fallback; generation tokens
-guard partial updates and final writes to the fighter row. Drawing input is
+guard partial updates in `slopFightForgeStreams` and final writes to the fighter
+row. The stage reads the streams, while an authenticated owner query reads only
+that player's forge progress; full room views do not subscribe to stream rows.
+Drawing input is
 bounded by shared stroke and point limits so a full room remains within
 Convex's document and response budgets.
+
+SlopFight crowd taps update a small `slopFightHype` row. Only the live stage
+subscribes to those counters; results and early game endings snapshot them into the fight record.
+This keeps cosmetic taps from rewriting replay sheets and simulation results
+or invalidating every player's full room view. The stage reads drawing batches
+through their game index, without subscribing to unrelated fighter changes.
+
+SlopLash voting reactions and QuizSlop reveal reactions also have small live
+queries consumed only by reaction controls and effects. These queries check the
+room and phase generation and return anonymous emoji events. Full room views
+exclude the live reaction range; SlopLash loads reactions for attribution once
+the matchup is revealed. Reaction effects wait for their initial snapshot so
+reloading does not replay old events.
 
 ## AI Boundary
 

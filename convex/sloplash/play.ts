@@ -55,7 +55,7 @@ export const castVote = mutation({
     if (game.gameType !== "SLOPLASH" || game.phase !== "VOTING") {
       throw new ConvexError("Voting is closed");
     }
-    const bundle = await loadCurrentRound(ctx, game);
+    const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
     const prompt = bundle ? votingMatchup(game, bundle)?.prompt : undefined;
     if (!bundle || !prompt || prompt._id !== args.promptId) {
       throw new ConvexError("Voting moved on to another matchup");
@@ -90,7 +90,7 @@ export const react = mutation({
     if (game.gameType !== "SLOPLASH" || game.phase !== "VOTING") {
       throw new ConvexError("Reactions open during voting");
     }
-    const bundle = await loadCurrentRound(ctx, game);
+    const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
     const prompt = bundle ? votingMatchup(game, bundle)?.prompt : undefined;
     const response =
       bundle && prompt
@@ -127,7 +127,7 @@ export const castStagedBallot = internalMutation({
     if (!game || game.status !== "PLAYING" || game.phaseGeneration !== args.phaseGeneration) {
       return null;
     }
-    const bundle = await loadCurrentRound(ctx, game);
+    const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
     const prompt = bundle ? votingMatchup(game, bundle)?.prompt : undefined;
     if (!prompt || prompt._id !== ballot.promptId) return null;
     await castStaged(ctx, prompt, ballot);

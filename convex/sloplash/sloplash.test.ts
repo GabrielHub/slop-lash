@@ -297,6 +297,14 @@ describe("SlopLash AI ballots", () => {
       expect(prompt.votes).toEqual([]);
     }
     expect(live.liveReactions).toEqual([]);
+    expect(
+      await t.query(api.sloplash.reactions.live, {
+        roomCode: host.roomCode,
+        phaseGeneration: (await room(t, host.capability)).phaseGeneration,
+        promptId: live.id,
+        capability: host.capability,
+      }),
+    ).toEqual([]);
 
     await humansVote(t, humans);
     expect((await room(t, host.capability)).phase).toBe("REVEAL");
@@ -846,13 +854,23 @@ describe("SlopLash rules", () => {
     await react(voter!, first!.id, "fire");
 
     // Live and anonymous: everyone sees the floats, only the sender sees them as theirs.
-    const live = async (capability: string) =>
-      (await mode(t, capability)).round!.prompts.find((p) => p.id === prompt.id)!.liveReactions;
+    const live = async (capability: string) => {
+      const current = await room(t, capability);
+      return t.query(api.sloplash.reactions.live, {
+        capability,
+        roomCode: current.code,
+        phaseGeneration: current.phaseGeneration,
+        promptId: prompt.id,
+      });
+    };
     expect((await live(voter!)).map((r) => [r.emoji, r.mine])).toEqual([
       ["laugh", true],
       ["fire", true],
     ]);
     expect((await live(other!)).every((r) => !r.mine)).toBe(true);
+    expect(
+      (await mode(t, other!)).round!.prompts.find((p) => p.id === prompt.id)!.liveReactions,
+    ).toEqual([]);
     expect(
       (await mode(t, other!))
         .round!.prompts.find((p) => p.id === prompt.id)!

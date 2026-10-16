@@ -51,6 +51,7 @@ import type * as slopfight_tables from "../slopfight/tables.js";
 import type * as slopfight_view from "../slopfight/view.js";
 import type * as sloplash_mode from "../sloplash/mode.js";
 import type * as sloplash_play from "../sloplash/play.js";
+import type * as sloplash_reactions from "../sloplash/reactions.js";
 import type * as sloplash_runners from "../sloplash/runners.js";
 import type * as sloplash_tables from "../sloplash/tables.js";
 import type * as sloplash_view from "../sloplash/view.js";
@@ -107,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   "slopfight/view": typeof slopfight_view;
   "sloplash/mode": typeof sloplash_mode;
   "sloplash/play": typeof sloplash_play;
+  "sloplash/reactions": typeof sloplash_reactions;
   "sloplash/runners": typeof sloplash_runners;
   "sloplash/tables": typeof sloplash_tables;
   "sloplash/view": typeof sloplash_view;

@@ -56,6 +56,7 @@ import {
   titleSize,
   useNames,
   useQuizslop,
+  useQuizslopReactions,
   useRevealStep,
   useSeatOrder,
   type QuizslopBet,
@@ -676,6 +677,12 @@ function StepDots({ total, current }: { total: number; current: number }) {
   );
 }
 
+function RevealReactionFloats() {
+  const reactions = useQuizslopReactions();
+  // Mount with the first snapshot so a reload doesn't replay old reactions.
+  return reactions ? <ReactionFloats reactions={reactions} /> : null;
+}
+
 function RevealPanel({ step }: { step: number }) {
   const { view } = useRoom();
   const mode = useQuizslop();
@@ -771,7 +778,7 @@ function RevealPanel({ step }: { step: number }) {
       </div>
 
       <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-[1.25rem]">
-        {!reduced && <ReactionFloats reactions={mode.reactions} />}
+        {!reduced && <RevealReactionFloats />}
         <motion.h2
           variants={enter}
           data-ambient-calm

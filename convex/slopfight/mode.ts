@@ -34,6 +34,7 @@ import {
   currentFight,
   decideBySeed,
   findFight,
+  findHype,
   forgeLeftovers,
   HOUSE_ADDITIONS,
   housePick,
@@ -216,6 +217,21 @@ export const slopfightMode: GameMode = {
   minPlayers: MIN_PLAYERS,
   maxPlayers: MAX_PLAYERS,
   keepsRecaps: true,
+
+  async onFinish(ctx, game) {
+    // A host stop or rescue can finish in FIGHT without scoring it. Preserve
+    // the cheers already shown while leaving the score/awards untouched.
+    if (game.phase === "FIGHT") {
+      const crowd = await findHype(ctx, game._id, game.round, game.step);
+      if (crowd) await ctx.db.patch("slopFightFights", crowd.fightId, { hype: crowd.hype });
+    }
+    // In-flight model callbacks must not revive a stream after the game ends.
+    const streams = await ctx.db
+      .query("slopFightForgeStreams")
+      .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
+      .take(MAX_PLAYERS);
+    for (const stream of streams) await ctx.db.delete("slopFightForgeStreams", stream._id);
+  },
 
   async start(ctx, game, players) {
     const humans = players

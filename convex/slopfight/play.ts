@@ -13,8 +13,11 @@ import {
 } from "../../src/games/slopfight/strokes";
 import { sanitize } from "../../src/lib/sanitize";
 import {
+  clearForgeStream,
   currentFight,
-  loadBets,
+  findBet,
+  findForgeStream,
+  findHype,
   loadFighterStrokeRows,
   loadFighters,
   retryForges as restartForges,
@@ -28,6 +31,7 @@ import {
   strokeBatchFields,
   type InputKind,
 } from "./tables";
+import { forgePartTarget } from "./view";
 
 // SlopFight's player and host mutations, guarded like SlopLash's: a seat, the
 // right game and phase, inputs checked against the current state, idempotent
@@ -277,6 +281,7 @@ export const submitChampion = mutation({
       await ctx.db.patch("slopFightFighters", fighter._id, { inputKind: "DRAW" });
       if (isBlankDoodle(await layerStrokes(ctx, fighter._id, 0))) {
         // Nothing readable: rejected on the spot, no model call needed.
+        await clearForgeStream(ctx, fighter._id);
         await ctx.db.patch("slopFightFighters", fighter._id, {
           status: "REJECTED",
           rejection: BLANK_REJECTION,
@@ -330,7 +335,7 @@ export const placeBet = mutation({
     if (game.phase !== "FACE_OFF") throw new ConvexError("Bets are closed");
     const fight = await currentFight(ctx, game);
     if (!fight || fight._id !== args.fightId) throw new ConvexError("That fight is not up");
-    const existing = (await loadBets(ctx, fight._id)).find((bet) => bet.playerId === player._id);
+    const existing = await findBet(ctx, fight._id, player._id);
     if (existing?.side === args.side) return null;
     if (existing) await ctx.db.patch("slopFightBets", existing._id, { side: args.side });
     else {
@@ -357,21 +362,17 @@ export const hype = mutation({
   handler: async (ctx, args) => {
     const { game, player } = await requireSeat(ctx, args.capability);
     if (game.phase !== "FIGHT") return null;
-    const fight = await currentFight(ctx, game);
-    if (!fight) return null;
-    const [a, b] = await Promise.all([
-      ctx.db.get("slopFightFighters", fight.a),
-      ctx.db.get("slopFightFighters", fight.b),
-    ]);
-    if (a?.ownerId === player._id || b?.ownerId === player._id) {
+    const crowd = await findHype(ctx, game._id, game.round, game.step);
+    if (!crowd) return null;
+    if (crowd.owners.A === player._id || crowd.owners.B === player._id) {
       throw new ConvexError("Owners can't hype their own fight");
     }
     const count = Math.min(HYPE_MAX_PER_CALL, Math.max(0, Math.floor(args.count)));
     if (!Number.isFinite(count) || count === 0) return null;
-    const bet = (await loadBets(ctx, fight._id)).find((entry) => entry.playerId === player._id);
-    const side = args.side ?? bet?.side ?? (fight.hype.A <= fight.hype.B ? "A" : "B");
-    await ctx.db.patch("slopFightFights", fight._id, {
-      hype: { ...fight.hype, [side]: fight.hype[side] + count },
+    const bet = args.side === undefined ? await findBet(ctx, crowd.fightId, player._id) : null;
+    const side = args.side ?? bet?.side ?? (crowd.hype.A <= crowd.hype.B ? "A" : "B");
+    await ctx.db.patch("slopFightHype", crowd._id, {
+      hype: { ...crowd.hype, [side]: crowd.hype[side] + count },
     });
     return null;
   },
@@ -421,6 +422,22 @@ export const myStrokes = query({
       seq: row.seq,
       strokes: row.strokes,
     }));
+  },
+});
+
+/** The owner's live count without reading champion sheets or the shared room view. */
+export const myForgeProgress = query({
+  args: { capability: v.string(), fighterId: v.id("slopFightFighters") },
+  returns: v.union(v.null(), v.object({ streamed: v.number(), target: v.number() })),
+  handler: async (ctx, args) => {
+    const { game, player } = await requirePlayer(ctx, args.capability);
+    if (game.gameType !== "SLOPFIGHT" || game.status !== "PLAYING") return null;
+    const stream = await findForgeStream(ctx, args.fighterId);
+    if (!stream || stream.gameId !== game._id || stream.ownerId !== player._id) return null;
+    return {
+      streamed: stream.parts.length,
+      target: forgePartTarget(stream.parts.length, stream.bodyPlan ?? null, stream.previousParts),
+    };
   },
 });
 

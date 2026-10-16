@@ -41,6 +41,7 @@ import {
   type SlPrompt,
 } from "./data";
 import { formatPoints } from "@/lib/format";
+import { useSloplashReactions } from "./reactions";
 
 /** The most ballot chips, voter faces or reaction bursts a card shows. */
 const MAX_FACES = 6;
@@ -607,9 +608,14 @@ function BallotBand({
       <p className="sr-only" aria-live="polite">
         {filled} of {eligible.length} votes in
       </p>
-      {!reduced && <ReactionFloats reactions={prompt.liveReactions} />}
+      {!reduced && <LiveReactionFloats prompt={prompt} />}
     </div>
   );
+}
+
+function LiveReactionFloats({ prompt }: { prompt: SlPrompt }) {
+  const reactions = useSloplashReactions(prompt);
+  return reactions ? <ReactionFloats reactions={reactions} /> : null;
 }
 
 /**

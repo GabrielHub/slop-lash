@@ -15,6 +15,7 @@ import {
   insertVote,
   isForfeit,
   loadCurrentRound,
+  loadRoundDoc,
   type RoundBundle,
 } from "../rounds";
 import { FORFEIT_MARKER } from "../../src/games/core/constants";
@@ -126,6 +127,17 @@ export async function loadMessages(ctx: DatabaseCtx, gameId: Id<"games">) {
     .query("matchSlopMessages")
     .withIndex("by_gameId_and_turn", (index) => index.eq("gameId", gameId))
     .take(MAX_MESSAGES);
+}
+
+/** MatchSlop has one prompt per round; writes need no other players' answers or votes. */
+export async function loadCurrentPrompt(ctx: DatabaseCtx, game: Doc<"games">) {
+  if (game.round < 1) return null;
+  const round = await loadRoundDoc(ctx, game._id, game.round);
+  if (!round) return null;
+  return ctx.db
+    .query("prompts")
+    .withIndex("by_roundId", (index) => index.eq("roundId", round._id))
+    .unique();
 }
 
 export function transcriptOf(messages: Doc<"matchSlopMessages">[]): TranscriptLine[] {
@@ -395,9 +407,11 @@ async function postReply(ctx: MutationCtx, game: Doc<"games">): Promise<Transiti
       : cannedReply(reply.source, !ending ? "continue" : comeback ? "comeback" : "ending");
 
   // Credit the sent line's author, recorded when sendWinner posted it.
-  const sent = (await loadMessages(ctx, game._id)).findLast(
-    (message) => message.speaker === "PLAYERS" && message.turn === game.round,
-  );
+  const messages = await ctx.db
+    .query("matchSlopMessages")
+    .withIndex("by_gameId_and_turn", (index) => index.eq("gameId", game._id).eq("turn", game.round))
+    .take(2);
+  const sent = messages.findLast((message) => message.speaker === "PLAYERS");
   const author = sent?.authorId ? await ctx.db.get("players", sent.authorId) : null;
   if (author && turn.points !== 0) {
     await ctx.db.patch("players", author._id, { score: author.score + turn.points });
@@ -549,7 +563,7 @@ export const matchslopMode: GameMode = {
           Date.now() >= game.phaseStartedAt + MATCHSLOP_SENT_MIN_MS
         );
       case "WRITING": {
-        const bundle = await loadCurrentRound(ctx, game);
+        const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
         if (!bundle) return false;
         const answered = new Set(bundle.responses.map((response) => response.playerId));
         return connected.every((player) => answered.has(player._id));
@@ -573,7 +587,7 @@ export const matchslopMode: GameMode = {
         return startRound(ctx, game, 1);
       }
       case "WRITING": {
-        const bundle = await loadCurrentRound(ctx, game);
+        const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
         if (!bundle) return "FINISH";
         // Forfeits never count toward the tally, so the bundle stays valid after this.
         await fillForfeits(ctx, bundle);
@@ -666,17 +680,15 @@ function personaBrief(state: Doc<"matchSlopState">): PersonaBrief | null {
 const deadlineOf = (game: Doc<"games">) => game.phaseDeadline ?? null;
 
 async function forfeit(ctx: MutationCtx, game: Doc<"games">, playerId: Id<"players">) {
-  const bundle = await loadCurrentRound(ctx, game);
-  const prompt = bundle?.prompts[0];
+  const prompt = await loadCurrentPrompt(ctx, game);
   if (!prompt || (await findResponse(ctx, prompt._id, playerId))) return;
   await insertResponse(ctx, prompt, playerId, FORFEIT_MARKER);
 }
 
 async function abstain(ctx: MutationCtx, game: Doc<"games">, playerId: Id<"players">) {
-  const bundle = await loadCurrentRound(ctx, game);
-  const prompt = bundle?.prompts[0];
-  if (!bundle || !prompt || (await findVote(ctx, prompt._id, playerId))) return;
-  await fillTimedOutVotes(ctx, bundle, prompt, [playerId]);
+  const prompt = await loadCurrentPrompt(ctx, game);
+  if (!prompt || (await findVote(ctx, prompt._id, playerId))) return;
+  await insertVote(ctx, prompt, playerId, null, true);
 }
 
 /**
@@ -759,12 +771,11 @@ export const matchslopJobHandlers: JobHandlers<MatchslopJobs> = {
     async prepare(ctx, game, job) {
       const player = await jobAiPlayer(ctx, job);
       if (!player || game.phase !== "WRITING") return null;
-      const [state, bundle, messages] = await Promise.all([
+      const [state, prompt, messages] = await Promise.all([
         loadState(ctx, game._id),
-        loadCurrentRound(ctx, game),
+        loadCurrentPrompt(ctx, game),
         loadMessages(ctx, game._id),
       ]);
-      const prompt = bundle?.prompts[0];
       if (!state.profile || !prompt || (await findResponse(ctx, prompt._id, player._id))) {
         return null;
       }
@@ -779,8 +790,7 @@ export const matchslopJobHandlers: JobHandlers<MatchslopJobs> = {
     },
     async apply(ctx, game, job, output) {
       const { playerId } = job.payload as PlayerJobPayload;
-      const bundle = await loadCurrentRound(ctx, game);
-      const prompt = bundle?.prompts[0];
+      const prompt = await loadCurrentPrompt(ctx, game);
       if (!prompt || (await findResponse(ctx, prompt._id, playerId))) return;
       const text = cleanLine(output.text ?? "");
       if (!text || text === FORFEIT_MARKER) {
@@ -809,7 +819,7 @@ export const matchslopJobHandlers: JobHandlers<MatchslopJobs> = {
       if (!player || game.phase !== "VOTING") return null;
       const [state, bundle, messages] = await Promise.all([
         loadState(ctx, game._id),
-        loadCurrentRound(ctx, game),
+        loadCurrentRound(ctx, game, { includeVotes: false }),
         loadMessages(ctx, game._id),
       ]);
       const prompt = bundle?.prompts[0];
@@ -828,18 +838,21 @@ export const matchslopJobHandlers: JobHandlers<MatchslopJobs> = {
     },
     async apply(ctx, game, job, output) {
       const { playerId } = job.payload as PlayerJobPayload;
-      const bundle = await loadCurrentRound(ctx, game);
-      const prompt = bundle?.prompts[0];
-      if (!bundle || !prompt || (await findVote(ctx, prompt._id, playerId))) return;
-      const choice = bundle.responses.find(
-        (response) =>
-          response._id === output.responseId &&
-          !isForfeit(response) &&
-          response.playerId !== playerId,
-      );
+      const prompt = await loadCurrentPrompt(ctx, game);
+      if (!prompt || (await findVote(ctx, prompt._id, playerId))) return;
+      const responseId =
+        !output.failed && output.responseId
+          ? ctx.db.normalizeId("responses", output.responseId)
+          : null;
+      const choice = responseId ? await ctx.db.get("responses", responseId) : null;
       // A failed call abstains; it never becomes a picked vote.
-      if (output.failed || !choice) {
-        await fillTimedOutVotes(ctx, bundle, prompt, [playerId]);
+      if (
+        !choice ||
+        choice.promptId !== prompt._id ||
+        isForfeit(choice) ||
+        choice.playerId === playerId
+      ) {
+        await insertVote(ctx, prompt, playerId, null, true);
       } else {
         await insertVote(ctx, prompt, playerId, choice._id);
       }

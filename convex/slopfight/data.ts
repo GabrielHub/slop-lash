@@ -97,6 +97,46 @@ export async function loadBets(ctx: DatabaseCtx, fightId: Id<"slopFightFights">)
     .take(MAX_BETS);
 }
 
+export async function findBet(
+  ctx: DatabaseCtx,
+  fightId: Id<"slopFightFights">,
+  playerId: Id<"players">,
+) {
+  return ctx.db
+    .query("slopFightBets")
+    .withIndex("by_fightId_and_playerId", (index) =>
+      index.eq("fightId", fightId).eq("playerId", playerId),
+    )
+    .unique();
+}
+
+/** The small live counter row; never joins the fight replay or its champion sheets. */
+export async function findHype(
+  ctx: DatabaseCtx,
+  gameId: Id<"games">,
+  round: number,
+  step: number,
+) {
+  return ctx.db
+    .query("slopFightHype")
+    .withIndex("by_gameId_and_round_and_step", (index) =>
+      index.eq("gameId", gameId).eq("round", round).eq("step", step),
+    )
+    .unique();
+}
+
+export async function findForgeStream(ctx: DatabaseCtx, fighterId: Id<"slopFightFighters">) {
+  return ctx.db
+    .query("slopFightForgeStreams")
+    .withIndex("by_fighterId", (index) => index.eq("fighterId", fighterId))
+    .unique();
+}
+
+export async function clearForgeStream(ctx: MutationCtx, fighterId: Id<"slopFightFighters">) {
+  const stream = await findForgeStream(ctx, fighterId);
+  if (stream) await ctx.db.delete("slopFightForgeStreams", stream._id);
+}
+
 // ---------------------------------------------------------------------------
 // Strokes
 // ---------------------------------------------------------------------------
@@ -242,6 +282,17 @@ export async function startForge(
     rejection: undefined,
     failure: undefined,
   });
+  const previousStream = await findForgeStream(ctx, fighter._id);
+  const stream = {
+    gameId: fighter.gameId,
+    fighterId: fighter._id,
+    ownerId: fighter.ownerId,
+    forgeToken,
+    parts: [],
+    previousParts: isUpgradeKind(kind) ? (fighter.champion?.parts.length ?? null) : null,
+  };
+  if (previousStream) await ctx.db.replace("slopFightForgeStreams", previousStream._id, stream);
+  else await ctx.db.insert("slopFightForgeStreams", stream);
   await aiWorkpools.critical.enqueueAction(
     ctx,
     internal.slopfight.forge.run,
@@ -272,6 +323,7 @@ export async function keepChampion(
   fighter: Fighter,
   version: number,
 ): Promise<void> {
+  await clearForgeStream(ctx, fighter._id);
   await ctx.db.patch("slopFightFighters", fighter._id, {
     status: fighter.champion === undefined ? "FAILED" : "READY",
     ...(fighter.champion === undefined ? { failure: "no-champion" } : { failure: undefined }),
@@ -376,7 +428,7 @@ export async function createRoundFights(
     if (await findFight(ctx, game._id, round, step)) continue;
     const aIsHouse = fighters.get(pair.a)?.ownerId === null;
     const bIsHouse = fighters.get(pair.b)?.ownerId === null;
-    await ctx.db.insert("slopFightFights", {
+    const fightId = await ctx.db.insert("slopFightFights", {
       gameId: game._id,
       round,
       step,
@@ -390,6 +442,17 @@ export async function createRoundFights(
       matchup: "PENDING",
       matchupAttempt: 0,
       sim: { status: "IDLE", attempt: 0 },
+      hype: { A: 0, B: 0 },
+    });
+    await ctx.db.insert("slopFightHype", {
+      gameId: game._id,
+      round,
+      step,
+      fightId,
+      owners: {
+        A: fighters.get(pair.a)?.ownerId ?? null,
+        B: fighters.get(pair.b)?.ownerId ?? null,
+      },
       hype: { A: 0, B: 0 },
     });
   }
@@ -470,10 +533,11 @@ export async function decideBySeed(ctx: MutationCtx, fight: Fight): Promise<Figh
  */
 export async function scoreFightOnce(ctx: MutationCtx, fight: Fight): Promise<void> {
   if (fight.scoredAt !== undefined || !fight.outcome) return;
-  const [a, b, bets] = await Promise.all([
+  const [a, b, bets, crowd] = await Promise.all([
     ctx.db.get("slopFightFighters", fight.a),
     ctx.db.get("slopFightFighters", fight.b),
     loadBets(ctx, fight._id),
+    findHype(ctx, fight.gameId, fight.round, fight.step),
   ]);
   if (!a || !b) return;
   const { winner, method, health } = fight.outcome;
@@ -496,5 +560,10 @@ export async function scoreFightOnce(ctx: MutationCtx, fight: Fight): Promise<vo
   await ctx.db.patch("slopFightFighters", b._id, {
     record: addResult(b.record, winner === "B", health.B),
   });
-  await ctx.db.patch("slopFightFights", fight._id, { awards, scoredAt: Date.now() });
+  await ctx.db.patch("slopFightFights", fight._id, {
+    awards,
+    scoredAt: Date.now(),
+    // Freeze the crowd total once for results/recaps; live cheers only touch slopFightHype.
+    hype: crowd?.hype ?? fight.hype,
+  });
 }

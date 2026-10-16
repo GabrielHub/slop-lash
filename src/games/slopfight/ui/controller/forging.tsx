@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { AnimatePresence, motion } from "motion/react";
 import { useRoom, useServerNow } from "@/room/context";
 import type { Champion } from "../../sheet";
@@ -10,7 +12,7 @@ import { Kicker, Screen, ambientBuzz, useSfx, type FighterView } from "./shared"
 import { ChampionSilhouette } from "./silhouette";
 
 // The Foundry wait and its payoff. The streamed parts go to the stage only;
-// the owner's view carries just their count and a soft target (`forgeParts`),
+// the owner's narrow query carries just their count and a soft target,
 // so the bar follows the real forge (forging-progress.ts) under a lively loop
 // of lines, then the card lands when the sheet is READY.
 
@@ -56,9 +58,14 @@ function FoundryBlob({ old }: { old: Champion | null }) {
 
 /** "The Foundry is building your champion": a lively wait. */
 export function ForgingScreen({ fighter, upgrade = false }: { fighter: FighterView; upgrade?: boolean }) {
+  const { capability, live } = useRoom();
+  const progress = useQuery(
+    api.slopfight.play.myForgeProgress,
+    live && capability && capability !== "fixture" ? { capability, fighterId: fighter.id } : "skip",
+  );
   const now = useServerNow();
   const startedAt = fighter.forge?.startedAt ?? now;
-  const parts = fighter.forgeParts;
+  const parts = live && capability !== "fixture" ? progress ?? fighter.forgeParts : fighter.forgeParts;
   // The bar never slides back within one forge (a fallback restreams its parts).
   const [held, setHeld] = useState<{ forge: number | null; value: number }>({ forge: null, value: 0 });
   const next = holdProgress(held, fighter.forge?.startedAt ?? null, forgeProgress(now - startedAt, parts));

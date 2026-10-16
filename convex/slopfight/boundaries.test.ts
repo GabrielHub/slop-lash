@@ -298,30 +298,37 @@ describe("review follow-ups", () => {
     ).rejects.toThrow();
   });
 
-  test("the owner's view counts the streamed parts against a soft target; nobody else sees it", async () => {
+  test("the owner's progress query tracks streamed parts without invalidating room documents", async () => {
     const room = await fightRoom(setup(), 2);
     await start(room);
     await describeAll(room, [room.host]);
     // The forge action has not run yet: no parts, no plan.
     expect((await sf(room)).fighters[0]!.forgeParts).toEqual({ streamed: 0, target: 8 });
     const mine = (await fighters(room))[0]!;
+    const beforeView = await sf(room);
+    const progress = (capability = room.host) => room.t.query(api.slopfight.play.myForgeProgress, {
+      capability,
+      fighterId: mine._id,
+    });
+    expect(await progress()).toEqual({ streamed: 0, target: 8 });
     await room.t.mutation(internal.slopfight.forgeData.patchPartial, {
       fighterId: mine._id,
       forgeToken: mine.forgeToken,
       parts: kit.sampleChampion().parts.slice(0, 3),
       bodyPlan: "HOPPER",
     });
-    expect(
-      (await room.t.run((ctx) => ctx.db.get("slopFightFighters", mine._id)))!.partialPlan,
-    ).toBe("HOPPER");
-    expect((await sf(room)).fighters[0]!.forgeParts).toEqual({ streamed: 3, target: 4 });
+    expect(await progress()).toEqual({ streamed: 3, target: 4 });
+    expect(await room.t.run((ctx) => ctx.db.get("slopFightFighters", mine._id))).toEqual(mine);
+    expect(await sf(room)).toEqual(beforeView);
+    expect(await progress(room.caps[1]!)).toBeNull();
+    await expect(progress("invalid")).rejects.toThrow();
     // A later patch without the plan keeps it.
     await room.t.mutation(internal.slopfight.forgeData.patchPartial, {
       fighterId: mine._id,
       forgeToken: mine.forgeToken,
       parts: kit.sampleChampion().parts,
     });
-    expect((await sf(room)).fighters[0]!.forgeParts).toEqual({ streamed: 4, target: 5 });
+    expect(await progress()).toEqual({ streamed: 4, target: 5 });
     expect((await sf(room, room.caps[1])).fighters[0]!.forgeParts).toBeNull();
     const watched = (await room.t.query(api.views.watch, { roomCode: room.code })).mode;
     if (watched?.kind !== "SLOPFIGHT") throw new Error("wrong mode");
@@ -332,6 +339,7 @@ describe("review follow-ups", () => {
     expect(ready.status).toBe("READY");
     expect(ready.partialPlan).toBeUndefined();
     expect((await sf(room)).fighters[0]!.forgeParts).toBeNull();
+    expect(await progress()).toBeNull();
   });
 
   test("forge part targets: the plan's typical count, the old sheet plus two, always past what arrived", () => {
@@ -340,7 +348,7 @@ describe("review follow-ups", () => {
     expect(forgePartTarget(2, "HOPPER", null)).toBe(4);
     expect(forgePartTarget(6, "HOPPER", null)).toBe(7);
     expect(forgePartTarget(3, "MULTIPED", null)).toBe(11);
-    expect(forgePartTarget(1, "BIPED", old)).toBe(old.parts.length + 2);
+    expect(forgePartTarget(1, "BIPED", old.parts.length)).toBe(old.parts.length + 2);
     expect(forgePartTarget(60, "BIPED", null)).toBe(40);
     expect(partialBodyPlan({ champion: { bodyPlan: "SLITHER", parts: [] } })).toBe("SLITHER");
     expect(partialBodyPlan({ champion: { bodyPlan: "SLITH" } })).toBeNull();

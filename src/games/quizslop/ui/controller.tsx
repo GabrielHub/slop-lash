@@ -37,6 +37,7 @@ import {
   useMySeat,
   useNames,
   useQuizslop,
+  useQuizslopReactions,
   useRevealStep,
 } from "./shared";
 
@@ -710,11 +711,11 @@ function PhoneReveal() {
 /** Spectators react to the question on the TV; each emoji once per reveal step. */
 function RevealReactions() {
   const { run } = useRoom();
-  const mode = useQuizslop();
+  const reactions = useQuizslopReactions();
   return (
     <ReactionStrip
       keys={QUIZSLOP_REACTIONS}
-      sent={mode.reactions.filter((reaction) => reaction.mine).map((reaction) => reaction.emoji)}
+      sent={(reactions ?? []).filter((reaction) => reaction.mine).map((reaction) => reaction.emoji)}
       send={(emoji) => run(api.quizslop.play.react, { emoji })}
     />
   );

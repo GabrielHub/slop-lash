@@ -20,9 +20,9 @@ async function modeView(
 ) {
   switch (game.gameType) {
     case "SLOPLASH":
-      return sloplashView(ctx, game, viewerId, players);
+      return sloplashView(ctx, game, viewerId);
     case "MATCHSLOP":
-      return matchslopView(ctx, game, viewerId);
+      return matchslopView(ctx, game, viewerId, players);
     case "QUIZSLOP":
       return quizslopView(ctx, game, viewerId, players);
     case "SLOPFIGHT":

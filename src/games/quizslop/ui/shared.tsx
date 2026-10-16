@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, type ReactNode } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 import type { MomentCue } from "@/room/moment";
 import { useModeView, usePlayers, useRoom, type ModeView } from "@/room/context";
 import { Avatar } from "@/room/avatar";
@@ -14,6 +16,24 @@ export type QuizslopBet = QuizslopMode["calls"]["list"][number];
 
 export function useQuizslop(): QuizslopMode {
   return useModeView("QUIZSLOP");
+}
+
+/** Only the reaction controls/effects subscribe, leaving the quiz scene stable. */
+export function useQuizslopReactions() {
+  const { view, capability, live } = useRoom();
+  const mode = useQuizslop();
+  const subscribe = live && capability !== "fixture" && view.room.phase === "REVEAL";
+  const reactions = useQuery(
+    api.quizslop.play.reactions,
+    subscribe
+      ? {
+          roomCode: view.room.code,
+          phaseGeneration: view.room.phaseGeneration,
+          ...(capability ? { capability } : {}),
+        }
+      : "skip",
+  );
+  return subscribe ? reactions : mode.reactions;
 }
 
 /** A player's name by id, kicked players included (the view's `names` covers the whole game). */

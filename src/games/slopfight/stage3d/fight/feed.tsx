@@ -8,6 +8,8 @@
 // scenes render without a backend.
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
 import { useOptionalRoom, type RoomContextValue } from "@/room/context";
 import type { MatchupNote, Side } from "../../modifiers";
 import type { Champion } from "../../sheet";
@@ -118,11 +120,21 @@ export function useFightFeed(): FightFeed | null {
   const view = room?.view;
   const offset = room?.clockOffsetMs;
   const live = room?.live;
+  const crowd = useQuery(
+    api.slopfight.stage.hype,
+    !provided && live && room?.capability !== "fixture" && view?.room.phase === "FIGHT"
+      ? { roomCode: view.room.code }
+      : "skip",
+  );
   return useMemo(
-    () => provided ?? (room ? feedFromRoom(room) : null),
+    () => {
+      const feed = provided ?? (room ? feedFromRoom(room) : null);
+      if (!feed?.current || !crowd || feed.current.id !== crowd.fightId) return feed;
+      return { ...feed, current: { ...feed.current, hype: crowd.hype } };
+    },
     // Recompute when the room's view or clock changes (room itself is a memoized value).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [provided, view, offset, live],
+    [provided, view, offset, live, crowd],
   );
 }
 

@@ -4,10 +4,14 @@
 import presenceTest from "@convex-dev/presence/test";
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
+import type { RegisteredMutation, RegisteredQuery } from "convex/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import schema from "../schema";
+import { room as roomQuery, watch as watchQuery } from "../views";
+import { chooseTopic, reactions as reactionsQuery } from "./play";
 import { revealOrder } from "../../src/games/quizslop/deck";
 
 const modules = import.meta.glob("/convex/**/*.ts");
@@ -22,6 +26,15 @@ function setup() {
 
 type Backend = ReturnType<typeof setup>;
 type Seat = { capability: string; playerId: Id<"players">; roomCode: string };
+
+/** Run the real entrypoint with an instrumented database; Convex hides this runtime field in its public types. */
+function invokeHandler<Args extends Record<string, unknown>, Result>(
+  fn: RegisteredQuery<"public", Args, Result> | RegisteredMutation<"public", Args, Result>,
+  ctx: MutationCtx,
+  args: Args,
+): Result {
+  return (fn as unknown as { _handler: (ctx: MutationCtx, args: Args) => Result })._handler(ctx, args);
+}
 
 beforeEach(() => {
   vi.stubEnv("HOST_SECRET", "secret");
@@ -242,6 +255,30 @@ describe("QuizSlop rules", () => {
     ).rejects.toThrow("Betting is closed");
   });
 
+  test("a bet still rejects foreign or removed targets and duplicate submissions spend one token", async () => {
+    const t = setup();
+    const [host, ana, bo] = await lobby(t, ["Ana", "Bo"]) as [Seat, Seat, Seat];
+    const [otherHost] = await lobby(t, ["Elsewhere"]) as [Seat, Seat];
+    await t.mutation(api.engine.start, { capability: host.capability });
+    await expect(t.mutation(api.quizslop.play.call, {
+      capability: host.capability,
+      targetId: otherHost.playerId,
+    })).rejects.toThrow("That player is not in the game");
+    await t.mutation(api.rooms.kick, { capability: host.capability, playerId: bo.playerId });
+    await expect(t.mutation(api.quizslop.play.call, {
+      capability: host.capability,
+      targetId: bo.playerId,
+    })).rejects.toThrow("That player is not in the game");
+    const tokens = (await mode(t, host)).seats.find((seat) => seat.playerId === host.playerId)!.callTokens;
+    const args = { capability: host.capability, targetId: ana.playerId };
+    await t.mutation(api.quizslop.play.call, args);
+    await t.mutation(api.quizslop.play.call, args);
+    const current = await mode(t, host);
+    expect(current.seats.find((seat) => seat.playerId === host.playerId)!.callTokens).toBe(tokens - 1);
+    expect((await roundCalls(t, (await liveGame(t, host))._id, 1))
+      .filter((call) => call.callerId === host.playerId)).toHaveLength(1);
+  });
+
   test("reactions open during a reveal step, once per emoji, and reset each step", async () => {
     const t = setup();
     const seats = await lobby(t, ["Ana", "Bo"]);
@@ -253,6 +290,12 @@ describe("QuizSlop rules", () => {
     await spreadTiers(t, seats);
     await playUntil(t, seats, (room) => room.phase === "REVEAL");
     expect((await view(t, host)).room.step).toBe(0);
+    const before = await view(t, ana);
+    const watching = await t.query(api.views.watch, { roomCode: host.roomCode });
+    const reactionArgs = {
+      roomCode: host.roomCode,
+      phaseGeneration: before.room.phaseGeneration,
+    };
 
     await t.mutation(api.quizslop.play.react, { capability: ana.capability, emoji: "clap" });
     await t.mutation(api.quizslop.play.react, { capability: ana.capability, emoji: "clap" });
@@ -261,15 +304,82 @@ describe("QuizSlop rules", () => {
       t.mutation(api.quizslop.play.react, { capability: ana.capability, emoji: "puke" }),
     ).rejects.toThrow("Unknown reaction");
 
-    const seen = (await mode(t, ana)).reactions;
+    const seen = await t.query(api.quizslop.play.reactions, {
+      ...reactionArgs,
+      capability: ana.capability,
+    });
     expect(seen.map((reaction) => [reaction.emoji, reaction.mine])).toEqual([
       ["clap", true],
       ["skull", false],
     ]);
+    expect(await t.query(api.quizslop.play.reactions, reactionArgs)).toEqual(
+      seen.map((reaction) => ({ ...reaction, mine: false })),
+    );
+    expect(await view(t, ana)).toEqual(before);
+    expect(await t.query(api.views.watch, { roomCode: host.roomCode })).toEqual(watching);
+    await expect(t.query(api.quizslop.play.reactions, {
+      ...reactionArgs,
+      capability: "invalid",
+    })).rejects.toThrow();
+    expect(await t.query(api.quizslop.play.reactions, {
+      ...reactionArgs,
+      roomCode: "OTHER",
+      capability: ana.capability,
+    })).toEqual([]);
+
+    // Exercise both entrypoints with their real context: reactions must never
+    // join the large reactive room read set again, even during a reveal.
+    await t.run(async (ctx) => {
+      const reads = vi.spyOn(ctx.db, "query");
+      try {
+        await invokeHandler(roomQuery, ctx, { capability: ana.capability });
+        expect(reads.mock.calls.map(([table]) => table)).not.toContain("quizSlopReactions");
+        reads.mockClear();
+        await invokeHandler(watchQuery, ctx, { roomCode: host.roomCode });
+        expect(reads.mock.calls.map(([table]) => table)).not.toContain("quizSlopReactions");
+        reads.mockClear();
+        await invokeHandler(reactionsQuery, ctx, reactionArgs);
+        expect(reads.mock.calls.map(([table]) => table)).toEqual(["games", "quizSlopReactions"]);
+      } finally {
+        reads.mockRestore();
+      }
+    });
 
     await advance(t, host);
     const next = await view(t, host);
-    if (next.room.phase === "REVEAL") expect((await mode(t, ana)).reactions).toEqual([]);
+    expect(await t.query(api.quizslop.play.reactions, reactionArgs)).toEqual([]);
+    expect(await t.query(api.quizslop.play.reactions, {
+      ...reactionArgs,
+      phaseGeneration: next.room.phaseGeneration,
+    })).toEqual([]);
+    if (next.room.phase === "REVEAL") {
+      await t.mutation(api.quizslop.play.react, { capability: ana.capability, emoji: "clap" });
+      expect(await t.query(api.quizslop.play.reactions, {
+        ...reactionArgs,
+        phaseGeneration: next.room.phaseGeneration,
+      })).toHaveLength(1);
+    }
+    await t.mutation(api.engine.end, { capability: host.capability });
+    expect(await t.query(api.quizslop.play.reactions, {
+      ...reactionArgs,
+      phaseGeneration: (await view(t, host)).room.phaseGeneration,
+    })).toEqual([]);
+  });
+
+  test("choosing the same topic again does not rewrite the subscribed seat", async () => {
+    const t = setup();
+    const [host] = await lobby(t, ["Ana"]);
+    const topicId = (await mode(t, host!)).lobby!.topics[0]!.id;
+    await t.mutation(api.quizslop.play.chooseTopic, { capability: host!.capability, topicId });
+    await t.run(async (ctx) => {
+      const writes = vi.spyOn(ctx.db, "patch");
+      try {
+        await invokeHandler(chooseTopic, ctx, { capability: host!.capability, topicId });
+        expect(writes).not.toHaveBeenCalled();
+      } finally {
+        writes.mockRestore();
+      }
+    });
   });
 
   test("a round where nobody has a bet left opens straight at answers", async () => {

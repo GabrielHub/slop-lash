@@ -230,9 +230,8 @@ export const slopfightTables = {
      * no-op. Unset for forges the server starts. Never sent to clients.
      */
     forgeInput: v.optional(v.string()),
-    /** Streamed parts while forging; cleared when the forge ends. */
+    /** Retained schema fields; live streams now live in slopFightForgeStreams. */
     partial: v.optional(v.array(partValidator)),
-    /** The body plan the forge streamed before its parts (paces the phone's progress). */
     partialPlan: v.optional(bodyPlanValidator),
     /** The current champion sheet (sheet.ts `Champion`, balanced). */
     champion: v.optional(championValidator),
@@ -253,6 +252,20 @@ export const slopfightTables = {
     version: v.number(),
     record: fightRecordValidator,
   }).index("by_gameId_and_slot", ["gameId", "slot"]),
+
+  /** One active stream per fighter, separate from stable champion/room documents. */
+  slopFightForgeStreams: defineTable({
+    gameId: v.id("games"),
+    fighterId: v.id("slopFightFighters"),
+    ownerId: v.union(v.id("players"), v.null()),
+    forgeToken: v.string(),
+    parts: v.array(partValidator),
+    bodyPlan: v.optional(bodyPlanValidator),
+    /** An upgrade's progress starts from its previous sheet's part count. */
+    previousParts: v.union(v.number(), v.null()),
+  })
+    .index("by_gameId", ["gameId"])
+    .index("by_fighterId", ["fighterId"]),
 
   /** One row per stroke batch, so live drawing never rewrites a fighter. */
   slopFightStrokes: defineTable({
@@ -308,6 +321,20 @@ export const slopfightTables = {
     scoredAt: v.optional(v.number()),
     awards: v.optional(v.array(awardValidator)),
     recapLine: v.optional(v.string()),
+    hype: sidesValidator,
+  }).index("by_gameId_and_round_and_step", ["gameId", "round", "step"]),
+
+  /** Live crowd counters, isolated from the large fight replay and room subscriptions. */
+  slopFightHype: defineTable({
+    gameId: v.id("games"),
+    round: v.number(),
+    step: v.number(),
+    fightId: v.id("slopFightFights"),
+    /** Owners are fixed for this fight; checking a cheer never loads champion sheets. */
+    owners: v.object({
+      A: v.union(v.id("players"), v.null()),
+      B: v.union(v.id("players"), v.null()),
+    }),
     hype: sidesValidator,
   }).index("by_gameId_and_round_and_step", ["gameId", "round", "step"]),
 

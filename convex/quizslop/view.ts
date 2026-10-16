@@ -13,11 +13,7 @@ import {
   type QuizslopPhase,
 } from "./mode";
 import { availableCatalogTopics } from "../../src/games/quizslop/catalog";
-import {
-  FINAL_SLATE_SIZE,
-  MAX_PLAYERS,
-  QUIZSLOP_REACTIONS,
-} from "../../src/games/quizslop/game-constants";
+import { FINAL_SLATE_SIZE, MAX_PLAYERS } from "../../src/games/quizslop/game-constants";
 import { callDecided, finalResults, quizPointsForRound } from "../../src/games/quizslop/scoring";
 import type { QuizslopCatalogTopic } from "../../src/games/quizslop/types";
 
@@ -52,7 +48,7 @@ export async function quizslopView(
   const phase = game.phase as QuizslopPhase | "LOBBY" | "FINAL";
   // The House Choice is always the deck's last round, so only it reads the votes.
   const lastRound = game.round > 0 && game.round === game.totalRounds;
-  const [allSeats, round, answers, allCalls, players, offered, votes, reactions] =
+  const [allSeats, round, answers, allCalls, players, offered, votes] =
     await Promise.all([
       loadSeats(ctx, game._id),
       game.round > 0 ? loadDeckRound(ctx, game._id, game.round) : null,
@@ -61,15 +57,6 @@ export async function quizslopView(
       allPlayers,
       game.status === "LOBBY" ? lobbyTopics(ctx, game) : null,
       lastRound ? loadHouseVotes(ctx, game._id) : [],
-      // Only the step on screen: the stage floats new ones, the phone lights the viewer's own.
-      phase === "REVEAL"
-        ? ctx.db
-            .query("quizSlopReactions")
-            .withIndex("by_gameId_and_ordinal_and_step_and_playerId", (index) =>
-              index.eq("gameId", game._id).eq("ordinal", game.round).eq("step", game.step),
-            )
-            .take(MAX_PLAYERS * QUIZSLOP_REACTIONS.length)
-        : [],
     ]);
   const houseChoice = round?.kind === "HOUSE_CHOICE";
   const houseVotes = houseChoice ? votes : [];
@@ -260,14 +247,8 @@ export async function quizslopView(
       ];
     }),
     revealTotal: revealOrder.length,
-    /** This reveal step's reactions, oldest first. */
-    reactions: reactions
-      .toSorted((left, right) => left._creationTime - right._creationTime)
-      .map((reaction) => ({
-        id: reaction._id,
-        emoji: reaction.emoji,
-        mine: reaction.playerId === viewerId,
-      })),
+    /** Fixtures can supply effects; live reactions use their own narrow subscription. */
+    reactions: [] as { id: Id<"quizSlopReactions">; emoji: string; mine: boolean }[],
     /** Which reveal step holds the viewer's question, or null if they had none. */
     myRevealStep: myRevealStep === -1 ? null : myRevealStep,
     final: game.status === "FINISHED" ? finalResults(seats) : null,

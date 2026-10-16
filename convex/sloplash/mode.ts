@@ -338,7 +338,7 @@ export const sloplashMode: GameMode = {
       }
       case "VOTING": {
         // Staged AI ballots land a few seconds in; late ones are cast on arrival.
-        const bundle = await loadCurrentRound(ctx, game);
+        const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
         const matchup = bundle ? votingMatchup(game, bundle) : undefined;
         if (!matchup) return;
         for (const ballot of await stagedBallotsFor(ctx, matchup.prompt._id)) {
@@ -363,7 +363,8 @@ export const sloplashMode: GameMode = {
   },
 
   async isComplete(ctx, game, connected) {
-    const bundle = await loadCurrentRound(ctx, game);
+    if (game.phase !== "WRITING" && game.phase !== "VOTING") return false;
+    const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
     if (!bundle) return false;
     const here = new Set(connected.map((player) => player._id as Id<"players">));
     if (game.phase === "WRITING") {
@@ -375,7 +376,11 @@ export const sloplashMode: GameMode = {
     if (game.phase === "VOTING") {
       const matchup = votingMatchup(game, bundle);
       if (!matchup) return true;
-      const voted = new Set(votesFor(bundle, matchup.prompt._id).map((vote) => vote.voterId));
+      const votes = await ctx.db
+        .query("votes")
+        .withIndex("by_promptId_and_voterId", (index) => index.eq("promptId", matchup.prompt._id))
+        .take(MAX_PLAYERS);
+      const voted = new Set(votes.map((vote) => vote.voterId));
       for (const voter of votersFor(matchup.prompt, connected)) {
         if (voted.has(voter._id)) continue;
         if (voter.type === "AI" && (await aiVoterDone(ctx, game, matchup.prompt, voter._id))) {
@@ -389,6 +394,11 @@ export const sloplashMode: GameMode = {
   },
 
   async next(ctx, game) {
+    if (game.phase === "ROUND_RESULTS") {
+      const players = await loadActivePlayers(ctx, game._id);
+      if (game.round >= game.totalRounds || players.length < 2) return "FINISH";
+      return startRound(ctx, game, players, game.round + 1);
+    }
     const bundle = await loadCurrentRound(ctx, game);
     if (!bundle) return "FINISH";
     switch (game.phase as SloplashPhase) {
@@ -408,11 +418,6 @@ export const sloplashMode: GameMode = {
       }
       case "REVEAL":
         return enterMatchup(ctx, game, bundle, game.step + 1);
-      case "ROUND_RESULTS": {
-        const players = await loadActivePlayers(ctx, game._id);
-        if (game.round >= game.totalRounds || players.length < 2) return "FINISH";
-        return startRound(ctx, game, players, game.round + 1);
-      }
       default:
         return "FINISH";
     }
@@ -477,7 +482,7 @@ type BallotsPayload = PlayerJobPayload & { round: number };
 const MAX_HISTORY_ROUNDS = 10;
 
 async function unansweredPrompts(ctx: QueryCtx, game: Doc<"games">, playerId: Id<"players">) {
-  const bundle = await loadCurrentRound(ctx, game);
+  const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
   if (!bundle) return [];
   return bundle.prompts.filter(
     (prompt) =>
@@ -495,7 +500,7 @@ async function responseHistory(ctx: QueryCtx, game: Doc<"games">, playerId: Id<"
   const first = Math.max(1, game.round - MAX_HISTORY_ROUNDS);
   const bundles = await Promise.all(
     Array.from({ length: Math.max(0, game.round - first) }, (_, index) =>
-      loadRound(ctx, game._id, first + index),
+      loadRound(ctx, game._id, first + index, { includeVotes: false }),
     ),
   );
   const history: RoundHistoryEntry[] = [];
@@ -533,7 +538,9 @@ async function taglineFacts(
 ): Promise<TaglineFacts> {
   const players = (await loadActivePlayers(ctx, game._id)).toSorted((l, r) => r.score - l.score);
   const isFinal = game.phase === "FINAL";
-  const rounds = isFinal ? await loadAllRounds(ctx, game._id) : [await loadCurrentRound(ctx, game)];
+  const rounds = isFinal
+    ? await loadAllRounds(ctx, game._id, { includeVotes: false })
+    : [await loadCurrentRound(ctx, game, { includeVotes: false })];
   const jokes: TaglineFacts["jokes"] = [];
   for (const bundle of rounds) {
     if (!bundle) continue;
@@ -601,7 +608,7 @@ export const sloplashJobHandlers: JobHandlers<SloplashJobs> = {
       const player = await jobAiPlayer(ctx, job);
       if (!player || game.status !== "PLAYING" || game.round !== round) return null;
       if (game.phase !== "VOTING" && game.phase !== "REVEAL") return null;
-      const bundle = await loadCurrentRound(ctx, game);
+      const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
       if (!bundle) return null;
       const matchups: SloplashJobs["SLOPLASH_BALLOTS"]["input"]["matchups"] = [];
       for (const [order, matchup] of matchupOrder(bundle).entries()) {
@@ -623,7 +630,7 @@ export const sloplashJobHandlers: JobHandlers<SloplashJobs> = {
       const { playerId, round } = job.payload as BallotsPayload;
       if (game.status !== "PLAYING" || game.round !== round) return;
       if (game.phase !== "VOTING" && game.phase !== "REVEAL") return;
-      const bundle = await loadCurrentRound(ctx, game);
+      const bundle = await loadCurrentRound(ctx, game, { includeVotes: false });
       if (!bundle) return;
       const order = matchupOrder(bundle);
       for (const ballot of output.ballots) {

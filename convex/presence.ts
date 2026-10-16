@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireViewer } from "./capabilities";
 import { roomPresence } from "./components";
+import { maintainFromHeartbeat } from "./engine";
 import { presenceUserId } from "./roster";
 
 const MIN_INTERVAL_MS = 2_000;
@@ -14,6 +15,7 @@ const TAB_ID_PATTERN = /^[0-9a-f-]{16,64}$/iu;
  */
 export const heartbeat = mutation({
   args: { capability: v.string(), tabId: v.string(), interval: v.number() },
+  returns: v.object({ sessionToken: v.string(), serverNow: v.number() }),
   handler: async (ctx, args) => {
     if (
       !Number.isInteger(args.interval) ||
@@ -24,13 +26,22 @@ export const heartbeat = mutation({
       throw new ConvexError("Invalid presence heartbeat");
     }
     const { game, session, player } = await requireViewer(ctx, args.capability);
+    const userId = presenceUserId(session, player);
+    // A seat belongs to one game; rematches clear old display-host presence.
+    // Read just this user's status before the heartbeat marks it online, so a
+    // returning phone gets grace even while the TV keeps the room active.
+    const previousPresence = await roomPresence.listUser(ctx, userId, false, 1);
+    const reconnecting = !previousPresence.some(
+      (entry) => entry.roomId === game._id && entry.online,
+    );
     const { sessionToken } = await roomPresence.heartbeat(
       ctx,
       game._id,
-      presenceUserId(session, player),
+      userId,
       args.tabId,
       args.interval,
     );
+    await maintainFromHeartbeat(ctx, game, reconnecting);
     return { sessionToken, serverNow: Date.now() };
   },
 });

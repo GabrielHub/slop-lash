@@ -8,6 +8,7 @@ import { CheckIcon } from "@/components/icons";
 import { ACCENT, SPRING, collapse, pop, press } from "@/lib/animations";
 import { useModeView, useRoom, useRoomAction } from "@/room/context";
 import { ReactionStrip } from "@/room/reaction-strip";
+import { useSloplashReactions } from "./reactions";
 import { CountUp, Stamp, buzz, useMoment, useReducedAfterMount } from "@/room/moment";
 import { REACTION_STRIP } from "../game-constants";
 import { matchupOutcome } from "../outcomes";
@@ -141,12 +142,11 @@ function Ballot({ prompt, me }: { prompt: SlPrompt; me: string }) {
 /** Five reactions on my pick; each sends once and stays lit. */
 function MatchupReactions({ prompt, responseId }: { prompt: SlPrompt; responseId: string }) {
   const { run } = useRoom();
+  const reactions = useSloplashReactions(prompt) ?? [];
   return (
     <ReactionStrip
       keys={REACTION_STRIP}
-      sent={prompt.liveReactions
-        .filter((reaction) => reaction.mine)
-        .map((reaction) => reaction.emoji)}
+      sent={reactions.filter((reaction) => reaction.mine).map((reaction) => reaction.emoji)}
       send={(emoji) =>
         run(api.sloplash.play.react, { responseId: responseId as SlAnswer["id"], emoji })
       }

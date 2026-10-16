@@ -10,6 +10,7 @@ import {
   type RoundBundle,
 } from "../rounds";
 import { matchupOrder, matchupStage, taglineRow, type Matchup } from "./mode";
+import { loadResponseReactions } from "./reactions";
 import { presentationOrder } from "../../src/games/sloplash/order";
 import type { MatchupKind } from "../../src/games/sloplash/scoring";
 
@@ -59,7 +60,7 @@ export type SloplashPrompt = {
   /** In a stable per-prompt shuffle (not creation order), so position never hints at authorship. */
   answers: SloplashAnswer[];
   votes: SloplashVote[];
-  /** Human reactions on the matchup being voted on; empty everywhere else. */
+  /** Fixture reactions; live rooms receive these through the narrow reaction feed. */
   liveReactions: SloplashLiveReaction[];
 };
 
@@ -71,8 +72,6 @@ type PromptState = {
   revealed: boolean;
   /** A matchup that has not come up yet: only its kind, order and assignees show. */
   hidden: boolean;
-  /** The matchup being voted on right now. */
-  live: boolean;
   viewerId: Id<"players"> | null;
 };
 
@@ -89,10 +88,9 @@ function mapPrompt(
   bundle: RoundBundle,
   prompt: Doc<"prompts">,
   reactions: Doc<"reactions">[],
-  aiPlayerIds: ReadonlySet<Id<"players">>,
   state: PromptState,
 ): SloplashPrompt {
-  const { revealed, hidden, live, viewerId } = state;
+  const { revealed, hidden, viewerId } = state;
   const base = {
     id: prompt._id,
     assigneeIds: prompt.assigneeIds,
@@ -126,16 +124,7 @@ function mapPrompt(
       responseId: revealed || vote.voterId === viewerId ? (vote.responseId ?? null) : null,
       timedOut: vote.timedOut,
     })),
-    // AI reactions stay hidden until the reveal, so they never anchor human voters.
-    liveReactions: live
-      ? promptReactions
-          .filter((reaction) => !aiPlayerIds.has(reaction.playerId))
-          .map((reaction) => ({
-            id: reaction._id,
-            emoji: reaction.emoji,
-            mine: reaction.playerId === viewerId,
-          }))
-      : [],
+    liveReactions: [],
   };
 }
 
@@ -146,12 +135,11 @@ async function revealedRound(ctx: QueryCtx, bundle: RoundBundle): Promise<Slopla
   return {
     number: bundle.round.roundNumber,
     prompts: bundle.prompts.map((prompt) =>
-      mapPrompt(bundle, prompt, reactions, new Set(), {
+      mapPrompt(bundle, prompt, reactions, {
         kind: order.get(prompt._id)?.kind ?? "void",
         order: order.get(prompt._id)?.order ?? null,
         revealed: true,
         hidden: false,
-        live: false,
         viewerId: null,
       }),
     ),
@@ -168,13 +156,11 @@ export async function sloplashView(
   ctx: QueryCtx,
   game: Doc<"games">,
   viewerId: Id<"players"> | null,
-  /** Every player in the game, as the room view loaded them. */
-  allPlayers: Promise<Doc<"players">[]>,
 ) {
   const isFinal = game.status === "FINISHED";
   const [tagline, bundle, allRounds] = await Promise.all([
-    taglineRow(ctx, game),
-    isFinal ? null : loadCurrentRound(ctx, game),
+    isFinal || game.phase === "ROUND_RESULTS" ? taglineRow(ctx, game) : null,
+    isFinal ? null : loadCurrentRound(ctx, game, { includeVotes: game.phase !== "WRITING" }),
     isFinal ? loadAllRounds(ctx, game._id) : [],
   ]);
 
@@ -219,14 +205,16 @@ export async function sloplashView(
     };
   }
 
-  const [reactions, players] = await Promise.all([
-    loadRoundReactions(ctx, bundle.round._id),
-    allPlayers,
-  ]);
-  const aiPlayerIds = new Set(
-    players.filter((player) => player.type === "AI").map((player) => player._id),
-  );
   const matchups = matchupOrder(bundle);
+  const pastIds = new Set(matchups.slice(0, game.step).map((matchup) => matchup.prompt._id));
+  const reactions = await (game.phase === "VOTING"
+    ? loadResponseReactions(
+        ctx,
+        bundle.responses
+          .filter((response) => pastIds.has(response.promptId))
+          .map((response) => response._id),
+      )
+    : loadRoundReactions(ctx, bundle.round._id));
   const order = promptOrder(matchups);
   const inMatchups = game.phase === "VOTING" || game.phase === "REVEAL";
   const current = inMatchups ? matchups[game.step] : undefined;
@@ -235,12 +223,11 @@ export async function sloplashView(
     const position = placed?.order ?? null;
     // Outside VOTING and REVEAL (and for voids) every matchup is settled.
     const stage = inMatchups && position !== null ? matchupStage(game, position) : "past";
-    return mapPrompt(bundle, prompt, reactions, aiPlayerIds, {
+    return mapPrompt(bundle, prompt, reactions, {
       kind: placed?.kind ?? "void",
       order: position,
       revealed: stage === "past",
       hidden: stage === "future",
-      live: stage === "live",
       viewerId,
     });
   });

@@ -3,8 +3,7 @@ import { mutation } from "../_generated/server";
 import { requirePlayer } from "../capabilities";
 import { settle } from "../engine";
 import { findResponse, findVote, insertResponse, insertVote, isForfeit } from "../rounds";
-import { loadCurrentRound } from "../rounds";
-import { loadState, validOpenerPromptId } from "./mode";
+import { loadCurrentPrompt, loadState, validOpenerPromptId } from "./mode";
 import { isForfeitMarker } from "../../src/games/core/constants";
 import { cleanLine } from "../../src/games/matchslop/rules";
 
@@ -16,6 +15,7 @@ export const submitResponse = mutation({
     /** Which profile prompt (or the photo, once it exists) an opener answers; round 1 only. */
     openerPromptId: v.union(v.string(), v.null()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const { game, player } = await requirePlayer(ctx, args.capability);
     if (game.gameType !== "MATCHSLOP" || game.phase !== "WRITING") {
@@ -25,8 +25,7 @@ export const submitResponse = mutation({
     if (!text) throw new ConvexError("Write something first");
     if (isForfeitMarker(text)) throw new ConvexError("That message is not allowed");
 
-    const bundle = await loadCurrentRound(ctx, game);
-    const prompt = bundle?.prompts[0];
+    const prompt = await loadCurrentPrompt(ctx, game);
     if (!prompt || prompt._id !== args.promptId) {
       throw new ConvexError("That prompt is not in this round");
     }
@@ -44,29 +43,33 @@ export const submitResponse = mutation({
         ) ?? undefined;
       if (!opener) throw new ConvexError("Pick which part of their profile you're replying to");
     }
-    if (await findResponse(ctx, prompt._id, player._id)) return;
+    if (await findResponse(ctx, prompt._id, player._id)) return null;
     await insertResponse(ctx, prompt, player._id, text, opener);
     await settle(ctx, game._id);
+    return null;
   },
 });
 
 export const castVote = mutation({
   args: { capability: v.string(), promptId: v.id("prompts"), responseId: v.id("responses") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const { game, player } = await requirePlayer(ctx, args.capability);
     if (game.gameType !== "MATCHSLOP" || game.phase !== "VOTING") {
       throw new ConvexError("Voting is closed");
     }
-    const bundle = await loadCurrentRound(ctx, game);
-    const prompt = bundle?.prompts[0];
-    if (!bundle || !prompt || prompt._id !== args.promptId) {
+    const prompt = await loadCurrentPrompt(ctx, game);
+    if (!prompt || prompt._id !== args.promptId) {
       throw new ConvexError("Voting moved on");
     }
-    const choice = bundle.responses.find((response) => response._id === args.responseId);
-    if (!choice || isForfeit(choice)) throw new ConvexError("That message is not on the ballot");
+    const choice = await ctx.db.get("responses", args.responseId);
+    if (!choice || choice.promptId !== prompt._id || isForfeit(choice)) {
+      throw new ConvexError("That message is not on the ballot");
+    }
     if (choice.playerId === player._id) throw new ConvexError("You can't vote for yourself");
-    if (await findVote(ctx, prompt._id, player._id)) return;
+    if (await findVote(ctx, prompt._id, player._id)) return null;
     await insertVote(ctx, prompt, player._id, choice._id);
     await settle(ctx, game._id);
+    return null;
   },
 });

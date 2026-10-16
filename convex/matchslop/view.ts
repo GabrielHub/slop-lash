@@ -1,6 +1,5 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { loadPlayers } from "../roster";
 import { isForfeit, loadCurrentRound } from "../rounds";
 import { loadMessages, loadState, openerPromptText, tallyRound, type MatchslopPhase } from "./mode";
 import { pickWinner, verdictOf } from "../../src/games/matchslop/rules";
@@ -13,12 +12,14 @@ export async function matchslopView(
   ctx: QueryCtx,
   game: Doc<"games">,
   viewerId: Id<"players"> | null,
+  /** Every player in the game, as the room view loaded them. */
+  allPlayers: Promise<Doc<"players">[]>,
 ) {
   const [state, messages, bundle, players] = await Promise.all([
     loadState(ctx, game._id),
     loadMessages(ctx, game._id),
-    loadCurrentRound(ctx, game),
-    loadPlayers(ctx, game._id),
+    loadCurrentRound(ctx, game, { includeVotes: game.phase !== "WRITING" }),
+    allPlayers,
   ]);
   const phase = game.phase as MatchslopPhase | "LOBBY" | "FINAL";
   const revealed = phase === "SENT" || phase === "REPLY" || phase === "FINAL";

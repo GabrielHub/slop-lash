@@ -22,6 +22,9 @@ export type RoundBundle = {
   votes: Doc<"votes">[];
 };
 
+/** Some readers need answers and scores, but never inspect ballots. */
+type RoundReadOptions = { includeVotes?: boolean };
+
 export async function loadRoundDoc(ctx: DatabaseCtx, gameId: Id<"games">, roundNumber: number) {
   return ctx.db
     .query("rounds")
@@ -31,7 +34,11 @@ export async function loadRoundDoc(ctx: DatabaseCtx, gameId: Id<"games">, roundN
     .unique();
 }
 
-export async function loadRoundData(ctx: DatabaseCtx, round: Doc<"rounds">): Promise<RoundBundle> {
+export async function loadRoundData(
+  ctx: DatabaseCtx,
+  round: Doc<"rounds">,
+  options: RoundReadOptions = {},
+): Promise<RoundBundle> {
   const [prompts, responses, votes] = await Promise.all([
     ctx.db
       .query("prompts")
@@ -41,10 +48,12 @@ export async function loadRoundData(ctx: DatabaseCtx, round: Doc<"rounds">): Pro
       .query("responses")
       .withIndex("by_roundId", (index) => index.eq("roundId", round._id))
       .take(MAX_ROUND_RESPONSES),
-    ctx.db
-      .query("votes")
-      .withIndex("by_roundId", (index) => index.eq("roundId", round._id))
-      .take(MAX_ROUND_VOTES),
+    options.includeVotes === false
+      ? []
+      : ctx.db
+          .query("votes")
+          .withIndex("by_roundId", (index) => index.eq("roundId", round._id))
+          .take(MAX_ROUND_VOTES),
   ]);
   return {
     round,
@@ -58,22 +67,31 @@ export async function loadRound(
   ctx: DatabaseCtx,
   gameId: Id<"games">,
   roundNumber: number,
+  options: RoundReadOptions = {},
 ): Promise<RoundBundle | null> {
   const round = await loadRoundDoc(ctx, gameId, roundNumber);
-  return round ? loadRoundData(ctx, round) : null;
+  return round ? loadRoundData(ctx, round, options) : null;
 }
 
 /** The round the game is on, or null before the first one. */
-export async function loadCurrentRound(ctx: DatabaseCtx, game: Doc<"games">) {
-  return game.round > 0 ? loadRound(ctx, game._id, game.round) : null;
+export async function loadCurrentRound(
+  ctx: DatabaseCtx,
+  game: Doc<"games">,
+  options: RoundReadOptions = {},
+) {
+  return game.round > 0 ? loadRound(ctx, game._id, game.round, options) : null;
 }
 
-export async function loadAllRounds(ctx: DatabaseCtx, gameId: Id<"games">) {
+export async function loadAllRounds(
+  ctx: DatabaseCtx,
+  gameId: Id<"games">,
+  options: RoundReadOptions = {},
+) {
   const rounds = await ctx.db
     .query("rounds")
     .withIndex("by_gameId_and_roundNumber", (index) => index.eq("gameId", gameId))
     .take(MAX_ROUNDS);
-  return Promise.all(rounds.map((round) => loadRoundData(ctx, round)));
+  return Promise.all(rounds.map((round) => loadRoundData(ctx, round, options)));
 }
 
 export async function loadRoundReactions(ctx: DatabaseCtx, roundId: Id<"rounds">) {

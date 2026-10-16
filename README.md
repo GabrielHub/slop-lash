@@ -130,6 +130,12 @@ On first run, Convex links or creates a development deployment, generates the
 typed API, and writes the browser-safe deployment values to `.env.local`.
 Keep this process running while developing backend functions.
 
+Cloud development deployments share the team's Convex usage allowance. Use
+`vp test` and the static `/dev/ui` fixtures for routine iteration, then run a
+bounded live integration check. A frontend on localhost may still be using
+the cloud backend. See the [Convex usage audit](docs/convex-usage-audit.md) for
+the measured hotspots and ways to avoid unnecessary development I/O.
+
 ### 3. Configure backend secrets
 
 Secrets belong in the Convex deployment, not in browser environment variables.

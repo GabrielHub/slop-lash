@@ -11,7 +11,6 @@ import {
   HOST_FAILOVER_MS,
   loadActivePlayers,
   loadConnectedPlayers,
-  loadPresence,
 } from "./roster";
 
 /** Where a phase goes next. `seconds: null` waits for players or the host. */
@@ -62,6 +61,7 @@ export function timed(game: Doc<"games">, seconds: number): number | null {
 /** If a scheduled tick was lost, the sweep fires it this long after the deadline. */
 const MISSED_DEADLINE_GRACE_MS = 10_000;
 const SWEEP_BATCH = 50;
+const MAINTENANCE_INTERVAL_MS = 15_000;
 
 /**
  * How long after the end a finished game still hands host controls to someone
@@ -151,7 +151,16 @@ async function advance(ctx: MutationCtx, game: Doc<"games">, reason: AdvanceReas
 export async function settle(ctx: MutationCtx, gameId: Id<"games">): Promise<boolean> {
   const game = await ctx.db.get("games", gameId);
   if (!game || game.status !== "PLAYING") return false;
-  const { players, connected } = await loadConnectedPlayers(ctx, game, Date.now());
+  return settleWithRoster(ctx, game, await loadConnectedPlayers(ctx, game, Date.now()));
+}
+
+type ConnectedRoster = Awaited<ReturnType<typeof loadConnectedPlayers>>;
+
+async function settleWithRoster(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  { players, connected }: ConnectedRoster,
+): Promise<boolean> {
   // With every human away, nobody is watching: let the clock run instead of
   // racing through phases on AI input alone.
   const humansHere = connected.some((player) => player.type === "HUMAN");
@@ -163,27 +172,30 @@ export async function settle(ctx: MutationCtx, gameId: Id<"games">): Promise<boo
 }
 
 /** Moves host controls to a connected human when the current host is gone. */
-async function failOverHost(ctx: MutationCtx, game: Doc<"games">, now: number): Promise<void> {
-  const [players, presence] = await Promise.all([
-    loadActivePlayers(ctx, game._id),
-    loadPresence(ctx, game._id),
-  ]);
+async function failOverHost(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  now: number,
+  { players, presence }: ConnectedRoster,
+): Promise<Doc<"games">> {
   const hostPlayerActive = players.some((player) => player._id === game.hostPlayerId);
   const hostIds = [hostPlayerActive ? game.hostPlayerId : undefined, game.hostSessionId].filter(
     (id): id is NonNullable<typeof id> => id !== undefined,
   );
-  if (hostIds.some((id) => presence.get(id)?.online)) return;
+  if (hostIds.some((id) => presence.get(id)?.online)) return game;
   const hostLastSeen = Math.max(
     game.createdAt,
     ...hostIds.map((id) => presence.get(id)?.lastDisconnected ?? 0),
   );
-  if (now - hostLastSeen < HOST_FAILOVER_MS) return;
+  if (now - hostLastSeen < HOST_FAILOVER_MS) return game;
   const successor = players
     .filter((player) => player.type === "HUMAN" && presence.get(player._id)?.online)
     .toSorted((left, right) => left.joinedAt - right.joinedAt)[0];
   if (successor && successor._id !== game.hostPlayerId) {
     await ctx.db.patch("games", game._id, { hostPlayerId: successor._id, updatedAt: now });
+    return { ...game, hostPlayerId: successor._id, updatedAt: now };
   }
+  return game;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,58 +262,99 @@ export function finishedAtOf(game: Doc<"games">): number {
   return game.finishedAt ?? game.updatedAt;
 }
 
-/** Per-room housekeeping: missed deadlines, quorum after someone left, host failover. */
+/** Housekeeping shares one roster read for host failover and phase completion. */
+async function maintainGame(ctx: MutationCtx, game: Doc<"games">, now: number): Promise<void> {
+  if (game.status === "FINISHED") {
+    // Only the room's live game can be played again, and only for a while.
+    if (now - finishedAtOf(game) > REMATCH_WINDOW_MS) return;
+    const live = await findGameByCode(ctx, game.roomCode);
+    if (live?._id !== game._id) return;
+  }
+  const roster = await loadConnectedPlayers(ctx, game, now);
+  const current = await failOverHost(ctx, game, now, roster);
+  if (current.status !== "PLAYING") return;
+  if (
+    current.phaseDeadline !== undefined &&
+    current.phaseDeadline + MISSED_DEADLINE_GRACE_MS < now
+  ) {
+    await advanceOrRescue(ctx, current, "deadline");
+    return;
+  }
+  try {
+    await settleWithRoster(ctx, current, roster);
+  } catch (error) {
+    console.error(`[engine] settle failed for ${current._id}`, error);
+  }
+}
+
+/**
+ * Occupied rooms maintain themselves through existing heartbeats, at most once
+ * per interval across all tabs. The throttle lives outside games so it cannot
+ * invalidate every room subscription. Closing all tabs leaves no timer chain.
+ */
+export async function maintainFromHeartbeat(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  reconnecting: boolean,
+): Promise<void> {
+  const now = Date.now();
+  if (game.status === "FINISHED" && now - finishedAtOf(game) > REMATCH_WINDOW_MS) return;
+  const maintenance = await ctx.db
+    .query("roomMaintenance")
+    .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
+    .unique();
+  if (!reconnecting && maintenance && now - maintenance.checkedAt < MAINTENANCE_INTERVAL_MS) return;
+  // A sleeping party resumes one tab at a time. Give the other seats one
+  // maintenance interval to reconnect before treating them as absent. Actual
+  // presence detects short absences even if a TV kept maintenance running.
+  const resuming = !maintenance || reconnecting;
+  if (maintenance) {
+    await ctx.db.patch("roomMaintenance", maintenance._id, { checkedAt: now });
+  } else {
+    await ctx.db.insert("roomMaintenance", { gameId: game._id, checkedAt: now });
+  }
+  if (resuming) return;
+  try {
+    // Keep successful presence writes even if housekeeping fails. Its phase
+    // changes run in a subtransaction and roll back independently on error.
+    await ctx.runMutation(internal.engine.maintain, { gameId: game._id });
+  } catch (error) {
+    console.error(`[engine] heartbeat maintenance failed for ${game._id}`, error);
+  }
+}
+
+/** Per-room housekeeping, also callable explicitly for diagnostics and recovery. */
 export const maintain = internalMutation({
   args: { gameId: v.id("games") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const game = await ctx.db.get("games", args.gameId);
-    if (!game) return;
-    const now = Date.now();
-    if (game.status === "FINISHED") {
-      // Only the room's live game can be played again, and only for a while.
-      if (now - finishedAtOf(game) > REMATCH_WINDOW_MS) return;
-      const live = await findGameByCode(ctx, game.roomCode);
-      if (live?._id === game._id) await failOverHost(ctx, game, now);
-      return;
-    }
-    await failOverHost(ctx, game, now);
-    if (game.status !== "PLAYING") return;
-    if (game.phaseDeadline !== undefined && game.phaseDeadline + MISSED_DEADLINE_GRACE_MS < now) {
-      await advanceOrRescue(ctx, game, "deadline");
-      return;
-    }
-    try {
-      await settle(ctx, game._id);
-    } catch (error) {
-      console.error(`[engine] settle failed for ${game._id}`, error);
-    }
+    if (game) await maintainGame(ctx, game, Date.now());
+    return null;
   },
 });
 
-/** Cron entry point: fans `maintain` out to every live room and recent results screen. */
+/** Low-frequency safety net: only overdue deadlines need work without a heartbeat. */
 export const sweep = internalMutation({
   args: {},
+  returns: v.null(),
   handler: async (ctx) => {
-    const now = Date.now();
-    for (const status of ["LOBBY", "PLAYING", "FINISHED"] as const) {
-      const games = await ctx.db
-        .query("games")
-        .withIndex("by_status_and_updatedAt", (index) =>
-          status === "FINISHED"
-            ? index.eq("status", status).gt("updatedAt", now - REMATCH_WINDOW_MS)
-            : index.eq("status", status),
-        )
-        .order("desc")
-        .take(SWEEP_BATCH);
-      for (const game of games) {
-        if (status === "FINISHED") {
-          // Same checks as `maintain`: only the live game, inside its rematch window.
-          if (now - finishedAtOf(game) > REMATCH_WINDOW_MS) continue;
-          if ((await findGameByCode(ctx, game.roomCode))?._id !== game._id) continue;
-        }
-        await ctx.scheduler.runAfter(0, internal.engine.maintain, { gameId: game._id });
-      }
+    const games = await ctx.db
+      .query("games")
+      .withIndex("by_status_and_phaseDeadline", (index) =>
+        index
+          .eq("status", "PLAYING")
+          .gt("phaseDeadline", 0)
+          .lt("phaseDeadline", Date.now() - MISSED_DEADLINE_GRACE_MS),
+      )
+      .take(SWEEP_BATCH);
+    for (const game of games) {
+      await ctx.scheduler.runAfter(0, internal.engine.tick, {
+        gameId: game._id,
+        phaseGeneration: game.phaseGeneration,
+      });
     }
+    return null;
   },
 });
 

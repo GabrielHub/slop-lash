@@ -119,6 +119,20 @@ export async function loadCalls(ctx: DatabaseCtx, gameId: Id<"games">, ordinal: 
     .take(MAX_PLAYERS * 2);
 }
 
+export async function findCall(
+  ctx: DatabaseCtx,
+  gameId: Id<"games">,
+  ordinal: number,
+  callerId: Id<"players">,
+) {
+  return ctx.db
+    .query("quizSlopCalls")
+    .withIndex("by_gameId_and_ordinal_and_callerId", (index) =>
+      index.eq("gameId", gameId).eq("ordinal", ordinal).eq("callerId", callerId),
+    )
+    .unique();
+}
+
 export async function loadHouseVotes(ctx: DatabaseCtx, gameId: Id<"games">) {
   return ctx.db
     .query("quizSlopHouseVotes")
@@ -269,7 +283,7 @@ async function openAnswers(
   ctx: MutationCtx,
   game: Doc<"games">,
   ordinal: number,
-  loaded?: { players: Doc<"players">[]; seats: Doc<"quizSlopSeats">[] },
+  loaded?: { players: Doc<"players">[]; seats?: Doc<"quizSlopSeats">[] },
 ): Promise<Transition> {
   const [round, players, seatList, asked] = await Promise.all([
     loadDeckRound(ctx, game._id, ordinal),
@@ -360,7 +374,7 @@ async function markAnswers(ctx: MutationCtx, game: Doc<"games">) {
       });
     }
   }
-  return round;
+  return { round, answers };
 }
 
 /** Moves the round onto the seats once: points, refunds, and hidden ladders. */
@@ -474,11 +488,10 @@ export const quizslopMode: GameMode = {
             callerId: player._id,
           });
         }
-        return openAnswers(ctx, game, game.round);
+        return openAnswers(ctx, game, game.round, { players });
       }
       case "ANSWER": {
-        const round = await markAnswers(ctx, game);
-        const answers = await loadAnswers(ctx, game._id, game.round);
+        const { round, answers } = await markAnswers(ctx, game);
         // On a player's topic, the owner's question closes the round.
         const ownerQuestionId =
           round.kind === "HOME_TURF" && round.ownerPlayerId

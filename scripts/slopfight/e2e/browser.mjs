@@ -221,7 +221,7 @@ function tvSnapshot() {
       notes: fight.notes.length,
       walkOn: fight.walkOn !== null,
       bets: fight.bets,
-      hype: fight.hype,
+      hype: window.__slopFight?.fight.id === fight.id ? window.__slopFight.fight.hype : fight.hype,
       startsAt: fight.startsAt,
       decidedBySeed: fight.decidedBySeed,
       outcome: fight.outcome && {

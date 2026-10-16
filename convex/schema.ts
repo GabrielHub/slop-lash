@@ -54,7 +54,14 @@ export default defineSchema({
   })
     .index("by_roomCode_and_gameNumber", ["roomCode", "gameNumber"])
     .index("by_status_and_updatedAt", ["status", "updatedAt"])
+    .index("by_status_and_phaseDeadline", ["status", "phaseDeadline"])
     .index("by_gameType_and_status_and_finishedAt", ["gameType", "status", "finishedAt"]),
+
+  /** Throttles active-room housekeeping without invalidating game subscriptions. */
+  roomMaintenance: defineTable({
+    gameId: v.id("games"),
+    checkedAt: v.number(),
+  }).index("by_gameId", ["gameId"]),
 
   /** Free Play rooms created per UTC day, for the daily cap. */
   freePlayUsage: defineTable({

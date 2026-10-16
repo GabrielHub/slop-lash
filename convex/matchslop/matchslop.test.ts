@@ -559,6 +559,90 @@ async function jobRow(t: Backend, gameId: Id<"games">, key: string) {
 }
 
 describe("MatchSlop edge paths", () => {
+  test("narrow writes keep room and round boundaries, and retries stay idempotent", async () => {
+    const t = setup();
+    const room = await startedRoom(t);
+    const other = await startedRoom(t);
+    for (const [index, capability] of room.everyone.entries()) {
+      await t.mutation(api.presence.heartbeat, {
+        capability,
+        tabId: (index + 10).toString(16).padStart(16, "0"),
+        interval: 5_000,
+      });
+    }
+    const round = (await mode(t, room.host.capability)).round!;
+    const otherRound = (await mode(t, other.host.capability)).round!;
+    const opener = await openerId(t, room);
+    const otherOpener = await openerId(t, other);
+    const submit = (capability: string, text: string, promptId = round.promptId) =>
+      t.mutation(api.matchslop.play.submitResponse, {
+        capability,
+        promptId,
+        text,
+        openerPromptId: promptId === otherRound.promptId ? otherOpener : opener,
+      });
+    await expect(submit(room.host.capability, "Wrong room", otherRound.promptId)).rejects.toThrow(
+      /not in this round/,
+    );
+    await submit(room.host.capability, "Original line");
+    await submit(room.host.capability, "Retried with a changed line");
+    await submit(room.ana.capability, "The other line");
+    await submit(other.host.capability, "Foreign line", otherRound.promptId);
+    const ballot = (await mode(t, room.host.capability)).round!;
+    const mine = ballot.answers.find((answer) => answer.id === ballot.myResponseId)!;
+    const choice = ballot.answers.find((answer) => answer.id !== ballot.myResponseId)!;
+    expect(mine.text).toBe("Original line");
+    expect(ballot.answers).toHaveLength(2);
+    const foreignResponse = (await mode(t, other.host.capability)).round!.myResponseId!;
+    const vote = (responseId: Id<"responses">, promptId = round.promptId) =>
+      t.mutation(api.matchslop.play.castVote, {
+        capability: room.host.capability,
+        promptId,
+        responseId,
+      });
+    await expect(vote(foreignResponse)).rejects.toThrow(/not on the ballot/);
+    await expect(vote(choice.id, otherRound.promptId)).rejects.toThrow(/moved on/);
+    await expect(vote(mine.id)).rejects.toThrow(/yourself/);
+    await vote(choice.id);
+    await vote(choice.id);
+    const after = (await mode(t, room.host.capability)).round!;
+    expect(after.votedPlayerIds).toHaveLength(1);
+    expect(after.myVoteResponseId).toBe(choice.id);
+  });
+
+  test("a later reply credits only the current turn's author", async () => {
+    script.lines.reply = replyWith("good");
+    const t = setup();
+    const room = await startedRoom(t);
+    await playLoneRound(t, room);
+    const firstReply = await view(t, room.host.capability);
+    const hostScore = firstReply.players.find((player) => player.name === "Host")!.score;
+    const oldPrompt = (await mode(t, room.host.capability)).round!.promptId;
+    await advance(t, room);
+    const round = (await mode(t, room.ana.capability)).round!;
+    await expect(
+      t.mutation(api.matchslop.play.submitResponse, {
+        capability: room.ana.capability,
+        promptId: oldPrompt,
+        text: "Stale round",
+        openerPromptId: null,
+      }),
+    ).rejects.toThrow(/not in this round/);
+    await t.mutation(api.matchslop.play.submitResponse, {
+      capability: room.ana.capability,
+      promptId: round.promptId,
+      text: "A new round with a new author",
+      openerPromptId: null,
+    });
+    await advance(t, room);
+    await waitForReply(t, room);
+    const reply = await view(t, room.host.capability);
+    const ana = reply.players.find((player) => player.name === "Ana")!;
+    expect((await mode(t, room.host.capability)).signal!.authorId).toBe(ana.id);
+    expect(ana.score).toBe(100);
+    expect(reply.players.find((player) => player.name === "Host")!.score).toBe(hostScore);
+  });
+
   test("waiting on the AI is flagged, so a timers-off host never skips it in one tap", async () => {
     script.lines.reply = replyWith("cute");
     const t = setup();

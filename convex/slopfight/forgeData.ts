@@ -9,6 +9,8 @@ import type { Stroke } from "../../src/games/slopfight/strokes";
 import { rollUpUsage } from "../../src/lib/ai/usage";
 import {
   championOf,
+  clearForgeStream,
+  findForgeStream,
   isUpgradeKind,
   keepChampion,
   lenientKind,
@@ -131,13 +133,13 @@ export const patchPartial = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const fighter = await ctx.db.get("slopFightFighters", args.fighterId);
-    if (!isCurrentForge(fighter, args.forgeToken)) return null;
+    const stream = await findForgeStream(ctx, args.fighterId);
+    if (!stream || stream.forgeToken !== args.forgeToken) return null;
     // Parts only grow while one call streams; a late, shorter patch never shrinks them.
-    if (!args.restart && (fighter.partial?.length ?? 0) >= args.parts.length) return null;
-    await ctx.db.patch("slopFightFighters", fighter._id, {
-      partial: args.parts,
-      ...(args.bodyPlan ? { partialPlan: args.bodyPlan } : {}),
+    if (!args.restart && stream.parts.length >= args.parts.length) return null;
+    await ctx.db.patch("slopFightForgeStreams", stream._id, {
+      parts: args.parts,
+      ...(args.bodyPlan ? { bodyPlan: args.bodyPlan } : {}),
     });
     return null;
   },
@@ -171,6 +173,7 @@ export const applyForge = internalMutation({
     await recordUsage(ctx, game._id, rollUpUsage(args.calls));
     await recordCalls(ctx, game._id, args.calls);
     if (game.status !== "PLAYING" || !isCurrentForge(fighter, args.forgeToken)) return null;
+    await clearForgeStream(ctx, fighter._id);
     const forge = fighter.forge;
     const done = {
       partial: undefined,
