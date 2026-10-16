@@ -134,7 +134,8 @@ export function HostContinueBar({ className = "" }: { className?: string }) {
     // overflow-x-clip: the button's breathing ring grows 18% wider than the bar,
     // which would otherwise widen the whole phone page.
     <div
-      className={`sticky bottom-0 z-20 overflow-x-clip border-t border-edge bg-canvas/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 ${className}`}
+      data-keyboard-bar
+      className={`sticky bottom-[var(--keyboard-inset)] z-20 overflow-x-clip border-t border-edge bg-canvas/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 ${className}`}
     >
       <ErrorBanner error={error} className="mb-2" />
       <motion.button

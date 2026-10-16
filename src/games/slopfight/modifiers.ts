@@ -18,6 +18,7 @@ import {
   type DynamicHazardId,
 } from "./arenas";
 import { MATCHUP_NOTES_MAX, NOTE_REASON_MAX } from "./constants";
+import { finishSpeed } from "./finishes";
 import { cleanText, type Champion } from "./sheet";
 import type { Trait } from "./vocab";
 
@@ -632,8 +633,8 @@ const round3 = (value: number) => Math.round(value * 1000) / 1000;
 
 /**
  * One clamped FighterModifiers per side from both sheets, the arena and the
- * matchup notes, in that order: trait effects (self and foe), arena hazard
- * rules, a clamp, then the notes under NOTE_FAVOR_CAP (at most the first
+ * matchup notes, in that order: trait effects (self and foe), the speed the
+ * body's finishes cost (finishes.ts), arena hazard rules, a clamp, then the notes under NOTE_FAVOR_CAP (at most the first
  * MATCHUP_NOTES_MAX, in the order given), a final clamp and rounding.
  */
 export function resolveModifiers(
@@ -655,6 +656,8 @@ export function resolveModifiers(
       }
       for (const flag of brain) brains[side].add(flag);
     }
+    const speed = finishSpeed(sheets[side]);
+    if (speed !== 0) apply(acc[side], "speed", speed);
   }
   for (const side of ["A", "B"] as const) {
     for (const hazard of stage.hazards) {

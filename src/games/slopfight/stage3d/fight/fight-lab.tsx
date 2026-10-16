@@ -7,6 +7,8 @@
 // stores, so the stage's replay hash check runs for real.
 //
 //   ?a=<sampleId>&b=<sampleId>&arena=garage|kitchen|rooftop&seed=<n>
+//   ?fa=<recipe>&fb=<recipe>  finishes on A's and B's parts ("gold", "arm:metal",
+//                             "torso:crystal,head:gold"; see creature/finish-recipes.ts)
 //   ?phase=roster|faceoff|fight|result|recap&t=<ms into the phase>
 //   ?auto=0          stay in the phase (default: roster -> faceoff -> fight -> result)
 //   ?final=1 ?third=1 ?pending=1 (matchup still running) ?coin=1 (decided by seed)
@@ -27,6 +29,7 @@ import { SAMPLES, sampleById } from "../../samples";
 import { scoreFight } from "../../scoring";
 import type { Champion } from "../../sheet";
 import { loadRapier, runFight, type FightEvent, type FightInput, type FightOutcome } from "../../sim";
+import { applyFinishRecipe } from "../creature/finish-recipes";
 import type { StageEventName } from "../events";
 import { parseQualityParam, type QualityTier } from "../look/quality";
 import { useArenaNodes, useCreateStageServices, type StageServices } from "../services";
@@ -77,8 +80,8 @@ function readParams(): LabParams {
   const arena = ARENA_ALIASES[arenaParam] ?? ((ARENA_IDS as readonly string[]).includes(arenaParam) ? (arenaParam as ArenaId) : "FLOODED_GARAGE");
   const bets = query.get("bets");
   return {
-    a: championFor(query.get("a"), 0),
-    b: championFor(query.get("b"), 5),
+    a: applyFinishRecipe(championFor(query.get("a"), 0), query.get("fa") ?? ""),
+    b: applyFinishRecipe(championFor(query.get("b"), 5), query.get("fb") ?? ""),
     arena,
     seed: Number(query.get("seed") ?? 7) >>> 0,
     phase: PHASE_PARAM[query.get("phase") ?? "roster"] ?? "ROSTER",

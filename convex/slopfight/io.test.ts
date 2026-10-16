@@ -115,8 +115,8 @@ test("a replaced or ended forge cannot revive its isolated stream", async () => 
   expect(await progress()).toEqual({ streamed: 4, target: 5 });
   await patch(second.forgeToken, 1, true);
   expect(await progress()).toEqual({ streamed: 1, target: 4 });
-  const foundry = await room.t.query(api.slopfight.stage.foundry, { roomCode: room.code });
-  expect(foundry.find((entry) => entry.id === first._id)?.partial).toEqual(parts.slice(0, 1));
+  const forges = await room.t.query(api.slopfight.stage.forges, { roomCode: room.code });
+  expect(forges.find((entry) => entry.fighterId === first._id)?.parts).toEqual(parts.slice(0, 1));
   expect((await fighters(room))[0]).toEqual(second);
 
   await room.t.mutation(api.engine.end, { capability: room.host });

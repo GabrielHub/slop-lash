@@ -159,7 +159,7 @@ function plateShifts(
 
 export function PodiumScene({ input, nodes }: PhaseSceneProps) {
   const services = useStage();
-  const data = useSceneData();
+  const data = useSceneData({ feeds: false });
   const phaseSeconds = usePhaseSeconds(input);
   const live = input.live;
   const placed = useMemo(() => (data ? podiumFighters(data) : []), [data]);

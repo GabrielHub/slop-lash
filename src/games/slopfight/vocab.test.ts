@@ -9,6 +9,9 @@ import {
   MOUTH_STYLE_INFO,
   MOUTH_STYLES,
   NEUTRAL_TRAITS,
+  INKS,
+  MATERIAL_INKS,
+  materialInk,
   PHONE_PALETTE,
   PROP_INFO,
   PROP_TAGS,
@@ -95,6 +98,19 @@ describe("phone palette", () => {
     }
     expect(new Set(inks.map((ink) => ink.toy)).size).toBe(6);
     expect(PHONE_PALETTE.at(-1)!.toy).toBeNull();
+  });
+
+  test("material inks follow the eraser, one per finish, each visible with a brighter core", () => {
+    expect(MATERIAL_INKS.map((ink) => ink.index)).toEqual([7, 8, 9, 10, 11, 12, 13]);
+    expect(new Set(MATERIAL_INKS.map((ink) => ink.finish)).size).toBe(MATERIAL_INKS.length);
+    for (const ink of MATERIAL_INKS) {
+      expect(contrast(ink.hex, DRAWING_CANVAS_HEX)).toBeGreaterThanOrEqual(2);
+      expect(contrast(ink.core, ink.hex)).toBeGreaterThanOrEqual(1.8);
+      expect(materialInk(ink.index)).toBe(ink);
+    }
+    for (const entry of PHONE_PALETTE) expect(materialInk(entry.index)).toBeUndefined();
+    // A stroke's colour index is its place in INKS.
+    expect(INKS.map((ink) => ink.index)).toEqual(INKS.map((_, position) => position));
   });
 });
 

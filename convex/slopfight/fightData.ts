@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { championOf, decideBySeed, startSim } from "./data";
+import { championOf, decideBySeed, fightSheets, recordOutcome, startSim } from "./data";
 import { outcomeLanded } from "./mode";
 import {
   arenaIdValidator,
@@ -28,8 +28,9 @@ export const simInput = internalQuery({
   handler: async (ctx, args) => {
     const fight = await ctx.db.get("slopFightFights", args.fightId);
     if (!fight || fight.outcome) return null;
-    let sheetA = fight.sheets?.A ?? null;
-    let sheetB = fight.sheets?.B ?? null;
+    const sheets = await fightSheets(ctx, fight);
+    let sheetA = sheets?.A ?? null;
+    let sheetB = sheets?.B ?? null;
     if (!sheetA || !sheetB) {
       const [a, b] = await Promise.all([
         ctx.db.get("slopFightFighters", fight.a),
@@ -64,9 +65,9 @@ export const storeOutcome = internalMutation({
   handler: async (ctx, args) => {
     const fight = await ctx.db.get("slopFightFights", args.fightId);
     if (!fight || fight.outcome) return null;
-    await ctx.db.patch("slopFightFights", fight._id, {
-      outcome: args.outcome,
-      sim: { status: "DONE", attempt: Math.max(fight.sim.attempt, args.attempt) },
+    await recordOutcome(ctx, fight, args.outcome, {
+      status: "DONE",
+      attempt: Math.max(fight.sim.attempt, args.attempt),
     });
     await outcomeLanded(ctx, fight.gameId, fight._id);
     return null;

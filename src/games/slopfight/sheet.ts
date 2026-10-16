@@ -44,6 +44,7 @@ import {
   DELIVERIES,
   ELONGATIONS,
   EYE_STYLES,
+  FINISHES,
   LEG_ANCHORS,
   MARKING_KINDS,
   MOUTH_STYLES,
@@ -94,6 +95,8 @@ export const PartSchema = z.object({
     "Where on the parent it attaches. Null only for the torso. Legs use leg1..leg8 and arms arm1..arm4 (odd left, even right, front to back)",
   ),
   color: z.enum(PART_COLORS),
+  /** What it is made of; absent means vinyl (normalizePart drops "vinyl"). */
+  finish: z.enum(FINISHES).optional(),
   mirror: z
     .boolean()
     .describe("True adds a mirrored copy across the midline. False on legN and armN anchors"),
@@ -202,6 +205,7 @@ export type {
   Delivery,
   Elongation,
   EyeStyle,
+  Finish,
   MarkingKind,
   MouthStyle,
   MoveType,
@@ -517,6 +521,7 @@ function normalizePart(part: Part): Part {
     parent: part.parent === null ? null : normalizePartId(part.parent) || null,
     anchor: part.anchor,
     color: part.color,
+    ...(part.finish && part.finish !== "vinyl" ? { finish: part.finish } : {}),
     mirror: part.role === "torso" || isLimbAnchor(part.anchor) ? false : part.mirror,
   };
 }

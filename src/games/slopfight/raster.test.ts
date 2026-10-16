@@ -11,7 +11,7 @@ import {
   type RasterImage,
 } from "./raster";
 import type { Stroke, StrokeBatch } from "./strokes";
-import { DRAWING_CANVAS_HEX, ERASER_INDEX, PHONE_PALETTE } from "./vocab";
+import { DRAWING_CANVAS_HEX, ERASER_INDEX, MATERIAL_INKS, PHONE_PALETTE } from "./vocab";
 
 /** zlib with stored (uncompressed) deflate blocks: the smallest valid deflate, no node:zlib. */
 function storedDeflate(data: Uint8Array): Uint8Array {
@@ -178,6 +178,15 @@ describe("rasterizeDoodle", () => {
     const image = rasterizeDoodle([{ layer: 0, seq: 0, strokes: [{ c: 4, w: 1, p: [500, 500] }] }], 0);
     expect(pixel(image, 256, 256).slice(0, 3)).toEqual(rgb(PHONE_PALETTE[4].hex));
     expect(pixel(image, 256, 270).slice(0, 3)).toEqual(CREAM);
+  });
+
+  it("paints a material ink as a tube: its bright core down the middle of its own colour", () => {
+    for (const material of MATERIAL_INKS) {
+      const image = rasterizeDoodle([{ layer: 0, seq: 0, strokes: [{ c: material.index, w: 1, p: [100, 500, 900, 500] }] }], 0);
+      expect(pixel(image, at(500), at(500)).slice(0, 3)).toEqual(rgb(material.core));
+      expect(pixel(image, at(500), at(500) + 5).slice(0, 3)).toEqual(rgb(material.hex));
+      expect(pixel(image, at(500), at(500) + 9).slice(0, 3)).toEqual(CREAM);
+    }
   });
 
   it("erases with the canvas colour", () => {

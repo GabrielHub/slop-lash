@@ -30,6 +30,7 @@ import { moodFor } from "./look/moods";
 import { PostStack } from "./look/post";
 import { ALL_POST_ON, type PostToggles } from "./look/post-fx";
 import type { QualityTier } from "./look/quality";
+import { FINISH_DETAIL } from "./look/toon";
 import { compileStageObjects, createProgramWarmup } from "./program-cache";
 import { PHASE_DIRECTION, PhaseScene } from "./scenes/phase-scene";
 import { StageProvider, useArenaNodes, useCreateStageServices, useQuality, useStage, type StageServices } from "./services";
@@ -101,13 +102,16 @@ function CameraRig() {
   return null;
 }
 
-/** Follow the quality ladder's DPR cap. */
-function DprFollower() {
+/** Follow the quality ladder's DPR cap and creature finish detail. */
+function QualityFollower() {
   const quality = useQuality();
   const setDpr = useThree((state) => state.setDpr);
   useEffect(() => {
     setDpr(Math.min(window.devicePixelRatio || 1, quality.maxDpr));
   }, [quality.maxDpr, setDpr]);
+  useEffect(() => {
+    FINISH_DETAIL.value = quality.finishDetail;
+  }, [quality.finishDetail]);
   return null;
 }
 
@@ -182,7 +186,7 @@ function StageContents({
       <StageLoop stats={stats} />
       <ProgramKeeper />
       <CameraRig />
-      <DprFollower />
+      <QualityFollower />
       <StageLighting mood={mood} geometry={ARENAS[arena].geometry} phase={input.phase} />
       <Suspense fallback={null}>
         <ArenaSet

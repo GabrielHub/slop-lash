@@ -6,16 +6,21 @@
 // vertices onto it, normals come from the field gradient, and each vertex is
 // skinned to its nearest bone plus that bone's nearest neighbour in the tree.
 // Colour is decoupled from skinning: a vertex takes one hard label, its nearest
-// bone's palette slot (or that bone's marking colour inside a painted
-// marking), and every triangle whose corners disagree is split along the
-// boundary, so part seams and markings are crisp toon edges. Pure TS: it runs
-// in a module worker (mesher.worker.ts) or on the main thread as a fallback.
+// bone's (palette slot, finish) (or that bone's marking colour inside a
+// painted marking, still in the bone's finish), and every triangle whose
+// corners disagree is split along the boundary, so part seams, finish seams
+// and markings are crisp toon edges. Each vertex also carries its finish id
+// and a jelly-wobble scale that blends smoothly across seams (finish-look.ts).
+// Pure TS: it runs in a module worker (mesher.worker.ts) or on the main thread
+// as a fallback.
 
 import type { Bone } from "../../body/skeleton";
 import type { Vec3 } from "../../body/vec";
 import type { Marking } from "../../sheet";
-import type { BodyPlan, PartColor } from "../../vocab";
+import { partFinish } from "../../finishes";
+import { FINISHES, type BodyPlan, type Finish, type PartColor } from "../../vocab";
 import { stableHash } from "../../../../lib/hash";
+import { FINISH_ID, FINISH_WOBBLE, finishColor, luminance, mixRgb, scaleRgb } from "./finish-look";
 import { CLOSE_COLORS, FLOOR_SHADE, floorWeight, markingField, oklabDistance, type MarkingField, type Rgb } from "./paint";
 import { renderLayout, type LayoutFaceInput, type LayoutPart } from "./render-layout";
 import { FAR, boneDistance, marchSurface, preparePrims, primBounds, smin } from "./sdf";
@@ -52,6 +57,8 @@ export interface MeshData {
   normals: Float32Array;
   /** Linear RGB. */
   colors: Float32Array;
+  /** Two per vertex: the finish id (FINISH_ID, flat per triangle) and the wobble scale (smooth). */
+  finish: Float32Array;
   skinIndex: Uint16Array;
   skinWeight: Float32Array;
   index: Uint32Array;
@@ -82,14 +89,18 @@ export function hexToLinear(hex: string): [number, number, number] {
 }
 
 /** Bumped when the renderer's output changes for the same request. */
-const RENDER_VERSION = "r3";
+const RENDER_VERSION = "r4";
+
+/** Labels per finish: label = slot + LABEL_SLOTS * finish id. */
+const LABEL_SLOTS = 3;
+const finishIndex = (finish: Finish | undefined): number => FINISH_ID[finish ?? "vinyl"] ?? 0;
 
 /** A stable cache key for a mesh request. */
 export function meshKey(req: MeshRequest): string {
   const bones = req.bones
     .map(
       (b) =>
-        `${b.id}|${b.role}|${b.shape}|${b.parent ?? ""}|${b.color}|${b.load ? 1 : 0}|${b.radius}|${b.head.join(",")}|${b.tail.join(",")}`,
+        `${b.id}|${b.role}|${b.shape}|${b.parent ?? ""}|${b.color}|${partFinish(b)}|${b.load ? 1 : 0}|${b.radius}|${b.head.join(",")}|${b.tail.join(",")}`,
     )
     .join(";");
   const extra = JSON.stringify([
@@ -108,6 +119,7 @@ function emptyMesh(resolution: number, ms: number): MeshData {
     positions: new Float32Array(0),
     normals: new Float32Array(0),
     colors: new Float32Array(0),
+    finish: new Float32Array(0),
     skinIndex: new Uint16Array(0),
     skinWeight: new Float32Array(0),
     index: new Uint32Array(0),
@@ -424,10 +436,11 @@ export function meshCreature(req: MeshRequest): MeshData {
   const skinIndex = new Uint16Array(vertexCount * 4);
   const skinWeight = new Float32Array(vertexCount * 4);
 
-  // Paint: every vertex takes one hard label (its nearest bone's palette slot,
-  // or that bone's marking colour inside the marking), and triangles whose
-  // corners disagree are split along the boundary below, so colour edges stay
-  // crisp toon edges at any resolution. The floor shade is the only blend.
+  // Paint: every vertex takes one hard label (its nearest bone's palette slot
+  // and finish, or that bone's marking colour inside the marking, in the same
+  // finish), and triangles whose corners disagree are split along the boundary
+  // below, so colour and finish edges stay crisp toon edges at any resolution.
+  // The floor shade is the only blend.
   const slotOrder: readonly PartColor[] = ["primary", "secondary", "accent"];
   const slot: Rgb[] = slotOrder.map((name) => hexToLinear(req.palette[name]));
   const darkHex = req.palette.dark;
@@ -435,7 +448,8 @@ export function meshCreature(req: MeshRequest): MeshData {
   const gradient = req.gradient ?? DEFAULT_GRADIENT;
   const close = oklabDistance(slot[0]!, slot[1]!) < CLOSE_COLORS;
   const height = layout.height;
-  const boneSlot = req.bones.map((bone) => slotOrder.indexOf(bone.color));
+  const boneFinish = req.bones.map((bone) => finishIndex(bone.finish));
+  const boneSlot = req.bones.map((bone, i) => slotOrder.indexOf(bone.color) + LABEL_SLOTS * boneFinish[i]!);
   const markSlot = req.bones.map(() => -1);
   const markField: (MarkingField | null)[] = req.bones.map(() => null);
   if (req.markings?.length) {
@@ -456,18 +470,50 @@ export function meshCreature(req: MeshRequest): MeshData {
       });
       if (!field) return;
       markField[i] = field;
-      markSlot[i] = slotOrder.indexOf(m.color);
+      markSlot[i] = slotOrder.indexOf(m.color) + LABEL_SLOTS * boneFinish[i]!;
     });
   }
-  /** Linear RGB of a label at height y: the slot colour, the primary darkened toward the floor. */
-  const colourOf = (label: number, y: number): Rgb => {
-    const c = slot[label]!;
-    if (label !== 0 || gradient <= 0) return c;
+  /** Linear RGB of a palette slot at height y: the slot colour, the primary darkened toward the floor. */
+  const vinylOf = (index: number, y: number): Rgb => {
+    const c = slot[index]!;
+    if (index !== 0 || gradient <= 0) return c;
     const f = floorWeight(y, height);
     if (f <= 0) return c;
     return close
       ? mixRgb(c, slot[1]!, gradient * f)
       : mixRgb(c, dark[0]!, FLOOR_SHADE * (gradient / DEFAULT_GRADIENT) * f);
+  };
+  const slotLuminance = slot.map(luminance);
+  /** Linear RGB of a label at height y: its slot's vinyl colour, tinted by its finish. */
+  const colourOf = (label: number, y: number): Rgb => {
+    const index = label % LABEL_SLOTS;
+    const c = vinylOf(index, y);
+    const finish = FINISHES[(label - index) / LABEL_SLOTS] ?? "vinyl";
+    if (finish === "vinyl") return c;
+    const shade = slotLuminance[index]! > 1e-5 ? Math.min(1, luminance(c) / slotLuminance[index]!) : 1;
+    return finishColor(c, finish, shade);
+  };
+  // Wobble scale: each primitive's finish, blended over the primitives within
+  // WOBBLE_BLEND of the nearest one. It depends only on the position, so it is
+  // continuous everywhere and both copies of a seam crossing carry the same value.
+  const primWobble = bones.map((b) => FINISH_WOBBLE[partFinish(req.bones[b.bone]!)] ?? 1);
+  const uniformWobble = primWobble.every((w) => w === primWobble[0]) ? (primWobble[0] ?? 1) : null;
+  const wobbleBlend = cell * 3;
+  const wobbleAt = (x: number, y: number, z: number): number => {
+    if (uniformWobble !== null) return uniformWobble;
+    gather(x, y, z, cell * 1.5);
+    let d1 = Infinity;
+    for (let c = 0; c < candCount; c += 1) d1 = Math.min(d1, boneDistance(x, y, z, bones[cand[c]!]!));
+    let sum = 0;
+    let weight = 0;
+    for (let c = 0; c < candCount; c += 1) {
+      const i = cand[c]!;
+      const t = 1 - (boneDistance(x, y, z, bones[i]!) - d1) / wobbleBlend;
+      if (t <= 0) continue;
+      sum += t * t * primWobble[i]!;
+      weight += t * t;
+    }
+    return weight > 0 ? sum / weight : 1;
   };
   const tmpP: Vec3 = [0, 0, 0];
   const tmpN: Vec3 = [0, 0, 0];
@@ -569,20 +615,25 @@ export function meshCreature(req: MeshRequest): MeshData {
     }
   }
 
+  const vWobble = new Float32Array(vertexCount);
+  for (let v = 0; v < vertexCount; v += 1) vWobble[v] = wobbleAt(positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!);
+
   // 5. Split every triangle whose corners carry different labels along the
   //    boundary. Each label-changing edge gets one crossing point (shared by
   //    both triangles on that edge, so nothing cracks), emitted twice: same
-  //    position, normal and skin, one colour per side.
+  //    position, normal, skin and wobble, one colour and finish per side.
   const extraPos: number[] = [];
   const extraNrm: number[] = [];
   const extraSkin: number[] = [];
   const extraLabel: number[] = [];
+  const extraWobble: number[] = [];
   let next = vertexCount;
-  const addVertex = (p: Vec3, n: Vec3, skinFrom: number, label: number): number => {
+  const addVertex = (p: Vec3, n: Vec3, skinFrom: number, label: number, wobble: number): number => {
     extraPos.push(p[0], p[1], p[2]);
     extraNrm.push(n[0], n[1], n[2]);
     extraSkin.push(skinFrom);
     extraLabel.push(label);
+    extraWobble.push(wobble);
     return next++;
   };
   type Crossing = [labelA: number, indexA: number, labelB: number, indexB: number];
@@ -627,7 +678,8 @@ export function meshCreature(req: MeshRequest): MeshData {
     const n: Vec3 = [crossN[0] / nl, crossN[1] / nl, crossN[2] / nl];
     const p: Vec3 = [crossP[0], crossP[1], crossP[2]];
     const skinFrom = t < 0.5 ? lo : hi;
-    const record: Crossing = [la, addVertex(p, n, skinFrom, la), lb, addVertex(p, n, skinFrom, lb)];
+    const wobble = wobbleAt(p[0], p[1], p[2]);
+    const record: Crossing = [la, addVertex(p, n, skinFrom, la, wobble), lb, addVertex(p, n, skinFrom, lb, wobble)];
     crossings.set(key, record);
     return record;
   };
@@ -661,9 +713,10 @@ export function meshCreature(req: MeshRequest): MeshData {
       gn[2] /= gl;
       const lg = labelAt(g[0], g[1], g[2], gn[0], gn[1], gn[2]);
       const skinFrom = lg === l1 ? v1 : lg === l2 ? v2 : v0;
-      const g0 = addVertex(g, gn, skinFrom, l0);
-      const g1 = addVertex(g, gn, skinFrom, l1);
-      const g2 = addVertex(g, gn, skinFrom, l2);
+      const gw = wobbleAt(g[0], g[1], g[2]);
+      const g0 = addVertex(g, gn, skinFrom, l0, gw);
+      const g1 = addVertex(g, gn, skinFrom, l1, gw);
+      const g2 = addVertex(g, gn, skinFrom, l2, gw);
       out.push(v0, side(c01, l0), g0, v0, g0, side(c20, l0));
       out.push(v1, side(c12, l1), g1, v1, g1, side(c01, l1));
       out.push(v2, side(c20, l2), g2, v2, g2, side(c12, l2));
@@ -703,13 +756,17 @@ export function meshCreature(req: MeshRequest): MeshData {
   const allSkinWeight = new Float32Array(total * 4);
   allSkinWeight.set(skinWeight);
   const colors = new Float32Array(total * 3);
+  const finish = new Float32Array(total * 2);
   for (let v = 0; v < total; v += 1) {
     let label: number;
+    let wobble: number;
     if (v < vertexCount) {
       label = vLabel[v]!;
+      wobble = vWobble[v]!;
     } else {
       const e = v - vertexCount;
       label = extraLabel[e]!;
+      wobble = extraWobble[e]!;
       const from = extraSkin[e]!;
       for (let k = 0; k < 4; k += 1) {
         allSkinIndex[v * 4 + k] = skinIndex[from * 4 + k]!;
@@ -720,6 +777,8 @@ export function meshCreature(req: MeshRequest): MeshData {
     colors[v * 3] = c[0];
     colors[v * 3 + 1] = c[1];
     colors[v * 3 + 2] = c[2];
+    finish[v * 2] = (label - (label % LABEL_SLOTS)) / LABEL_SLOTS;
+    finish[v * 2 + 1] = wobble;
   }
 
   const index = new Uint32Array(out);
@@ -727,6 +786,7 @@ export function meshCreature(req: MeshRequest): MeshData {
     positions: allPos,
     normals: allNrm,
     colors,
+    finish,
     skinIndex: allSkinIndex,
     skinWeight: allSkinWeight,
     index,
@@ -736,10 +796,3 @@ export function meshCreature(req: MeshRequest): MeshData {
     ms: now() - started,
   };
 }
-
-const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [
-  a[0] + (b[0] - a[0]) * t,
-  a[1] + (b[1] - a[1]) * t,
-  a[2] + (b[2] - a[2]) * t,
-];
-const scaleRgb = (a: Rgb, s: number): Rgb => [a[0] * s, a[1] * s, a[2] * s];

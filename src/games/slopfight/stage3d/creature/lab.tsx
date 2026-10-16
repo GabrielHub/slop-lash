@@ -1,8 +1,15 @@
 // The creature lab behind /dev/slopfight: every sample on a small stage under
 // the three-point rig, a forge playback, a walk loop and a turntable, with a
-// frame-time readout. Query: ?mode=gallery|forge|walk|single&sample=<id>
-// &page=<n> (gallery/walk pages of 12), &hold=<parts> (forge: stop streaming
-// after that many parts), &probe=1 (adds sheets from /dev/slopfight-probe.json).
+// frame-time readout. Query: ?mode=gallery|forge|walk|single|finishes
+// &sample=<id> &page=<n> (gallery/walk pages of 12), &hold=<parts> (forge:
+// stop streaming after that many parts), &probe=1 (adds sheets from
+// /dev/slopfight-probe.json).
+//
+// Finishes: &finish=<recipe> puts finishes on every sheet shown ("gold",
+// "arm:metal", "torso:crystal,head:gold"; see finish-recipes.ts), and
+// mode=finishes lines them up side by side: &set=all (every finish on
+// &sample, default robot), mix (mixed bodies), four, or a recipe. Under arena
+// lighting: /dev/slopfight/finishes.
 
 import { ContactShadows, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
@@ -22,9 +29,10 @@ import type { Champion, Part } from "../../sheet";
 import { createToonMaterial } from "../look/toon";
 import { createDriver, type CreatureDriver, type DriverAnim } from "./animator";
 import { Creature, type CreatureEvent, type CreatureHandle } from "./creature";
+import { applyFinishRecipe, finishSet } from "./finish-recipes";
 import { mesherStats } from "./mesh-client";
 
-type Mode = "gallery" | "forge" | "walk" | "single";
+type Mode = "gallery" | "forge" | "walk" | "single" | "finishes";
 
 interface LabParams {
   mode: Mode;
@@ -34,6 +42,10 @@ interface LabParams {
   probe: boolean;
   /** Fixed facing in degrees (single: no turntable; gallery: overrides the 3/4 turn). */
   yaw: number | null;
+  /** A finish recipe put on every sheet (finish-recipes.ts). */
+  finish: string | null;
+  /** mode=finishes: which set (all, mix, four or a recipe). */
+  set: string | null;
 }
 
 const PAGE_SIZE = 12;
@@ -43,12 +55,14 @@ function readParams(): LabParams {
   const mode = q.get("mode");
   const hold = q.get("hold");
   return {
-    mode: mode === "forge" || mode === "walk" || mode === "single" ? mode : "gallery",
+    mode: mode === "forge" || mode === "walk" || mode === "single" || mode === "finishes" ? mode : "gallery",
     sample: q.get("sample"),
     page: Math.max(1, Number(q.get("page") ?? 1) || 1),
     hold: hold !== null && Number.isFinite(Number(hold)) ? Number(hold) : null,
     probe: q.get("probe") === "1",
     yaw: q.get("yaw") !== null && Number.isFinite(Number(q.get("yaw"))) ? Number(q.get("yaw")) : null,
+    finish: q.get("finish"),
+    set: q.get("set"),
   };
 }
 
@@ -592,7 +606,7 @@ function AutoFrame({ focus }: { focus: RefObject<CreatureHandle | null> }) {
 function CameraRig({ mode, count }: { mode: Mode; count: number }) {
   const { camera } = useThree();
   const { position, target } = useMemo(() => {
-    if (mode === "gallery") {
+    if (mode === "gallery" || mode === "finishes") {
       const rows = Math.max(3, Math.ceil(count / 4));
       return {
         position: [0, 3 + rows * 1.35, 4.6 + rows * 2.6] as [number, number, number],
@@ -635,13 +649,21 @@ export default function CreatureLab() {
     };
   }, [params.probe]);
 
-  const all = useMemo(() => [...extra, ...SAMPLES], [extra]);
-  const chosen = params.sample ? all.find((s) => s.id === params.sample || s.id === `probe:${params.sample}`) : undefined;
+  const all = useMemo(() => {
+    const list = [...extra, ...SAMPLES];
+    const recipe = params.finish;
+    return recipe ? list.map((s) => ({ ...s, champion: applyFinishRecipe(s.champion, recipe) })) : list;
+  }, [extra, params.finish]);
+  const finishes = params.mode === "finishes";
+  const chosen = params.sample && !finishes ? all.find((s) => s.id === params.sample || s.id === `probe:${params.sample}`) : undefined;
   const pageSamples = useMemo(() => {
+    if (finishes) {
+      return finishSet(params.set, params.sample).map((v) => ({ id: v.id, input: v.title, champion: v.champion }));
+    }
     if (chosen) return [chosen];
     const start = (params.page - 1) * PAGE_SIZE;
     return all.slice(start, start + PAGE_SIZE);
-  }, [all, chosen, params.page]);
+  }, [all, chosen, params.page, finishes, params.set, params.sample]);
   const pages = Math.ceil(all.length / PAGE_SIZE);
   const labelSpots = useMemo(
     () =>
@@ -654,8 +676,10 @@ export default function CreatureLab() {
   );
   const single = chosen ?? all[0]!;
   const headline =
-    params.mode === "gallery" || params.mode === "walk"
-      ? `page ${params.page}/${pages}  (${all.length} sheets)`
+    finishes
+      ? `finishes ${params.set ?? "all"}${params.sample ? ` on ${params.sample}` : ""}`
+      : params.mode === "gallery" || params.mode === "walk"
+      ? `page ${params.page}/${pages}  (${all.length} sheets)${params.finish ? `  finish ${params.finish}` : ""}`
       : params.mode === "single"
         ? `${single.id}: ${single.input}`
         : label;
@@ -664,18 +688,18 @@ export default function CreatureLab() {
     <div className="relative h-full w-full" style={{ background: HORIZON }}>
       <Canvas shadows dpr={[1, 1.5]} camera={{ fov: 30, near: 0.1, far: 140, position: [0, 4, 10] }}>
         <Backdrop />
-        <Rig extent={params.mode === "walk" ? 8 : params.mode === "gallery" ? 7 : 3} />
+        <Rig extent={params.mode === "walk" ? 8 : params.mode === "gallery" || finishes ? 7 : 3} />
         <Floor />
         <ContactShadows position={[0, 0.004, 0]} scale={24} resolution={1024} blur={2.4} opacity={0.5} far={1.6} color="#3a2420" />
         <FrameMeter stats={stats} />
-        {params.mode === "gallery" || params.mode === "walk" ? (
+        {params.mode === "gallery" || params.mode === "walk" || finishes ? (
           <CameraRig mode={params.mode} count={pageSamples.length} />
         ) : (
           <AutoFrame focus={focus} />
         )}
-        {params.mode === "gallery" && <Gallery samples={pageSamples} stats={stats} yaw={params.yaw} />}
+        {(params.mode === "gallery" || finishes) && <Gallery samples={pageSamples} stats={stats} yaw={params.yaw} />}
         {params.mode === "single" && <Single sample={single} stats={stats} yaw={params.yaw} focus={focus} />}
-        {params.mode === "gallery" && <LabelProjector />}
+        {(params.mode === "gallery" || finishes) && <LabelProjector />}
         {params.mode === "walk" && <Walk samples={pageSamples} stats={stats} />}
         {params.mode === "forge" && (
           <Forge
@@ -688,7 +712,7 @@ export default function CreatureLab() {
           />
         )}
       </Canvas>
-      {params.mode === "gallery" && <LabelLayer spots={labelSpots} />}
+      {(params.mode === "gallery" || finishes) && <LabelLayer spots={labelSpots} />}
       <Readout stats={stats} mode={params.mode} label={headline} />
     </div>
   );

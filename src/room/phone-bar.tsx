@@ -69,7 +69,7 @@ export function PhoneBar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 bg-canvas/95 pt-[env(safe-area-inset-top)]">
+    <header data-keyboard-cover className="sticky top-0 z-30 bg-canvas/95 pt-[env(safe-area-inset-top)]">
       <div className="flex h-12 items-center gap-2 pl-3 pr-1">
         {me?.name && (
           <div className="flex min-w-0 items-center gap-2">

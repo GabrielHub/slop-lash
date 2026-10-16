@@ -11,7 +11,7 @@ import { getArena } from "../../arenas";
 import { DESCRIBE_TEXT_MAX, UPGRADE_TEXT_MAX } from "../../constants";
 import { isBlankDoodle, type Stroke } from "../../strokes";
 import { ERASER_INDEX } from "../../vocab";
-import { DrawingCanvas, InkPicker } from "./canvas";
+import { DrawingCanvas, InkPicker, InkTool } from "./canvas";
 import { ForgingScreen, ReadyScreen } from "./forging";
 import {
   BigButton,
@@ -23,11 +23,14 @@ import {
   type FighterView,
 } from "./shared";
 import { ChampionSilhouette } from "./silhouette";
+import { withStarter } from "./logic";
+import { MaterialStarters } from "./materials";
 import { useStrokeSync, type StrokeSync } from "./use-strokes";
 
 // BUILD and UPGRADE: pick Draw it or Describe it, then the canvas or the text
 // box, then one submit. A rejection shows the reason and reopens the work as
-// it was. Upgrades add one thing: a short text or strokes on a new layer over
+// it was. Upgrades add one thing: a short text (material chips start one:
+// "solid gold " and the player names the part) or strokes on a new layer over
 // the faded drawing.
 
 type InputKind = "DRAW" | "DESCRIBE";
@@ -43,9 +46,12 @@ const DESCRIBE_EXAMPLES = [
 const UPGRADE_EXAMPLES = [
   "a jetpack",
   "a tiny lawyer",
+  "solid gold arms",
   "rocket skates",
+  "a diamond body",
   "a frying pan",
   "angry bees",
+  "lava fists",
   "a cape",
 ];
 const EXAMPLE_MS = 3_000;
@@ -205,53 +211,41 @@ function Rejection({ reason, suggestion }: { reason: string; suggestion: string 
   );
 }
 
-function ToolButton({
-  children,
-  onClick,
-  disabled,
-  label,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  label: string;
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      className="flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-raised px-4 text-[15px] font-bold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-      {...press}
-    >
-      {children}
-    </motion.button>
-  );
-}
+/** How long Clear stays armed for its second tap. */
+const CLEAR_ARMED_MS = 2_500;
+/**
+ * The canvas never grows past what leaves the rest of the draw screen on a
+ * short phone (the bar, the title, two ink rows and Send), so nothing needs a
+ * scroll, which on a phone would start on the canvas and draw instead.
+ */
+const FIT_CANVAS = "mx-auto max-w-[max(15rem,calc(100svh-20rem))]";
 
-/** The canvas with its inks and tools, and the one Submit. */
+/** The canvas with its inks and tools, and the one Submit, all on one screen. */
 function DrawPanel({
   sync,
   submit,
   submitting,
-  switchLabel,
-  onSwitch,
   backdrop,
   minInk = true,
 }: {
   sync: StrokeSync;
   submit: () => void;
   submitting: boolean;
-  switchLabel: string;
-  onSwitch: () => void;
   backdrop?: ReactNode;
   /** Submit waits for something readable on this layer. */
   minInk?: boolean;
 }) {
   const [ink, setInk] = useState(0);
+  // Clear can't be undone, and it sits by the inks: the first tap arms it.
+  const [clearArmed, setClearArmed] = useState(false);
+  useEffect(() => {
+    if (!clearArmed) return;
+    const timer = window.setTimeout(() => setClearArmed(false), CLEAR_ARMED_MS);
+    return () => window.clearTimeout(timer);
+  }, [clearArmed]);
   const play = useSfx();
   const blank = isBlankDoodle(sync.strokes);
+  const empty = sync.strokes.length === 0;
   const onStroke = (stroke: Stroke) => {
     sync.add(stroke);
     play("tap", 0.3);
@@ -265,6 +259,7 @@ function DrawPanel({
         disabled={!sync.ready || sync.full || submitting || sync.error !== null}
         onStroke={onStroke}
         backdrop={backdrop}
+        className={FIT_CANVAS}
       />
       {sync.full && (
         <p className="text-sm text-ink-dim">Canvas full. Send it, or undo a stroke to make room.</p>
@@ -275,43 +270,48 @@ function DrawPanel({
           setInk(index);
           play("tap", 0.2);
         }}
-      />
-      <div className="flex items-center gap-2">
-        <ToolButton
-          label="Undo"
-          onClick={sync.undo}
-          disabled={sync.strokes.length === 0 || submitting}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="size-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.4}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        tools={[
+          <InkTool key="undo" label="Undo" onClick={sync.undo} disabled={empty || submitting}>
+            <svg
+              viewBox="0 0 24 24"
+              className="size-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 14 4 9l5-5" />
+              <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+            </svg>
+          </InkTool>,
+          <InkTool
+            key="clear"
+            label={clearArmed ? "Tap again to clear the drawing" : "Clear"}
+            armed={clearArmed}
+            onClick={() => {
+              if (!clearArmed) return setClearArmed(true);
+              setClearArmed(false);
+              sync.clear();
+            }}
+            disabled={empty || submitting}
           >
-            <path d="M9 14 4 9l5-5" />
-            <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
-          </svg>
-          Undo
-        </ToolButton>
-        <ToolButton
-          label="Clear"
-          onClick={sync.clear}
-          disabled={sync.strokes.length === 0 || submitting}
-        >
-          Clear
-        </ToolButton>
-        <button
-          type="button"
-          onClick={onSwitch}
-          className="ml-auto h-11 cursor-pointer rounded-full px-3 text-[15px] font-bold text-teal"
-        >
-          {switchLabel}
-        </button>
-      </div>
+            <svg
+              viewBox="0 0 24 24"
+              className="size-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+            </svg>
+          </InkTool>,
+        ]}
+      />
       <ErrorBanner error={sync.error} className="" />
       <BigButton onClick={submit} disabled={(minInk && blank) || submitting || !sync.ready}>
         {submitting
@@ -321,6 +321,25 @@ function DrawPanel({
             : "Send to the Foundry"}
       </BigButton>
     </>
+  );
+}
+
+/** The heading over the canvas or the text box; drawing puts its switch beside it. */
+function WorkHeading({ title, onSwitch }: { title: string; onSwitch?: { label: string; go: () => void } }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <h2 className="min-w-0 font-display text-2xl font-bold text-ink">{title}</h2>
+      {onSwitch && (
+        <button
+          type="button"
+          onClick={onSwitch.go}
+          className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-teal-soft px-3 text-[15px] font-bold text-teal"
+        >
+          <TypeIcon className="size-5" />
+          {onSwitch.label}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -335,6 +354,7 @@ function DescribePanel({
   switchLabel,
   onSwitch,
   label,
+  starters = false,
 }: {
   text: string;
   onText: (text: string) => void;
@@ -345,6 +365,8 @@ function DescribePanel({
   switchLabel: string;
   onSwitch: () => void;
   label: string;
+  /** Material chips under the box: a tap starts the text and hands the keyboard back. */
+  starters?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const example = useRotating(examples);
@@ -355,8 +377,17 @@ function DescribePanel({
     element.style.height = `${Math.max(element.scrollHeight + 4, 132)}px`;
   }, [text]);
   const ready = text.trim().length > 0 && !submitting;
+  // The chip keeps the box focused (it never takes focus itself), so an open
+  // keyboard stays up; a closed one opens, since focus() runs inside the tap.
+  const start = (phrase: string) => {
+    const next = withStarter(text, phrase).slice(0, max);
+    onText(next);
+    ref.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => ref.current?.setSelectionRange(next.length, next.length));
+  };
   return (
-    <>
+    // The keyboard frame: the box, its chips and Send stay above the keyboard together.
+    <div data-keyboard-frame className="flex flex-col gap-3">
       <div className="relative">
         <textarea
           ref={ref}
@@ -378,6 +409,7 @@ function DescribePanel({
           className="w-full resize-none rounded-2xl border-2 border-edge bg-surface p-4 text-xl text-ink placeholder:text-ink-dim/70 focus:border-teal focus:outline-none"
         />
       </div>
+      {starters && <MaterialStarters onPick={start} disabled={submitting} />}
       <div className="-mt-2 flex items-center justify-between">
         <button
           type="button"
@@ -398,7 +430,7 @@ function DescribePanel({
       <BigButton onClick={submit} disabled={!ready}>
         {submitting ? "Sending…" : "Send to the Foundry"}
       </BigButton>
-    </>
+    </div>
   );
 }
 
@@ -516,11 +548,10 @@ function BuildWork({ fighter }: { fighter: FighterView }) {
 
   return (
     <Screen className="gap-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="font-display text-2xl font-bold text-ink">
-          {kind === "DRAW" ? "Draw your champion" : "Describe your champion"}
-        </h2>
-      </div>
+      <WorkHeading
+        title={kind === "DRAW" ? "Draw your champion" : "Describe your champion"}
+        onSwitch={kind === "DRAW" ? { label: "Type it", go: () => choose("DESCRIBE") } : undefined}
+      />
       <AnimatePresence initial={false}>
         {rejection && (
           <Rejection key="rejected" reason={rejection.reason} suggestion={rejection.suggestion} />
@@ -539,8 +570,6 @@ function BuildWork({ fighter }: { fighter: FighterView }) {
           sync={sync}
           submit={() => void submitDrawing()}
           submitting={pending || flushing}
-          switchLabel="Describe it instead"
-          onSwitch={() => choose("DESCRIBE")}
         />
       ) : (
         <DescribePanel
@@ -669,9 +698,10 @@ function UpgradeWork({ fighter, round }: { fighter: FighterView; round: number }
 
   return (
     <Screen className="gap-3">
-      <h2 className="font-display text-2xl font-bold text-ink">
-        {shownKind === "DRAW" ? `Draw on ${champion.name}` : `Give ${champion.name} one thing`}
-      </h2>
+      <WorkHeading
+        title={shownKind === "DRAW" ? `Draw on ${champion.name}` : `Give ${champion.name} one thing`}
+        onSwitch={shownKind === "DRAW" ? { label: "Write it", go: () => setKind("DESCRIBE") } : undefined}
+      />
       <AnimatePresence initial={false}>
         {rejected && (
           <Rejection key="rejected" reason={rejected.reason} suggestion={rejected.suggestion} />
@@ -683,8 +713,6 @@ function UpgradeWork({ fighter, round }: { fighter: FighterView; round: number }
           sync={sync}
           submit={() => void submitDrawing()}
           submitting={pending || flushing}
-          switchLabel="Write it instead"
-          onSwitch={() => setKind("DESCRIBE")}
           backdrop={<ChampionSilhouette champion={champion} className="size-4/5" />}
         />
       ) : (
@@ -701,6 +729,7 @@ function UpgradeWork({ fighter, round }: { fighter: FighterView; round: number }
           switchLabel="Draw it on instead"
           onSwitch={() => setKind("DRAW")}
           label="Add one thing"
+          starters
         />
       )}
     </Screen>

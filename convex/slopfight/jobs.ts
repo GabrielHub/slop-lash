@@ -16,6 +16,7 @@ import {
   abandonMatchup,
   championOf,
   fallbackWalkOn,
+  findReplay,
   HOUSE_FALLBACK_DESCRIPTIONS,
   housePick,
   loadFighters,
@@ -23,6 +24,7 @@ import {
   startForge,
   startSim,
   type Fight,
+  type Replay,
 } from "./data";
 import type { RecapEvent, RecapOutcome } from "./ports";
 
@@ -78,10 +80,10 @@ async function payloadFight(ctx: QueryCtx | MutationCtx, job: Doc<"generationJob
   return fight ? { fight, attempt: payload.attempt } : null;
 }
 
-async function fightChampions(ctx: QueryCtx | MutationCtx, fight: Fight) {
+async function fightChampions(ctx: QueryCtx | MutationCtx, fight: Fight, replay: Replay | null = null) {
   // A recap can run after an upgrade or be re-queued at FINAL. It describes
   // the champions that actually fought, never their newer sheets.
-  if (fight.sheets) return { a: fight.sheets.A, b: fight.sheets.B };
+  if (replay?.sheets) return { a: replay.sheets.A, b: replay.sheets.B };
   const [a, b] = await Promise.all([
     ctx.db.get("slopFightFighters", fight.a),
     ctx.db.get("slopFightFighters", fight.b),
@@ -197,14 +199,15 @@ export const slopfightJobHandlers: JobHandlers<SlopfightJobs> = {
       const found = await payloadFight(ctx, job);
       const fight = found?.fight;
       if (!fight?.outcome || fight.outcome.decidedBySeed || fight.recapLine) return null;
-      const champions = await fightChampions(ctx, fight);
+      const replay = await findReplay(ctx, fight);
+      const champions = await fightChampions(ctx, fight, replay);
       if (!champions) return null;
-      const { winner, method, endMs, health, maxHealth, events } = fight.outcome;
+      const { winner, method, endMs, health, maxHealth } = fight.outcome;
       return {
         fightId: fight._id,
         ...champions,
         outcome: { winner, method, endMs, health, maxHealth },
-        events: (events as Array<{ t: number; kind: string; side?: unknown }>)
+        events: ((replay?.events ?? []) as Array<{ t: number; kind: string; side?: unknown }>)
           .filter((event) => RECAP_EVENT_KINDS.has(event.kind))
           .slice(0, RECAP_EVENTS_MAX)
           .map(({ side, ...event }): RecapEvent =>

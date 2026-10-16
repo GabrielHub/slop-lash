@@ -589,6 +589,10 @@ function ReplayWorld({
         if (event.kind === "throw" || event.type === "GRAPPLE") play("grappleSlam", { intensity });
         else if (event.type === "STRIKE") play("strikeThwack", { intensity });
         else play("trickBonk", { intensity });
+        if (event.kind === "hit") {
+          const guard: Side = event.side === "A" ? "B" : "A";
+          fx.playFinishLayers(point, event, { attack: colors[event.side], guard: colors[guard], big, strength }, play);
+        }
         if (big) play("crowdGasp", { intensity: 0.7, gain: 0.8 });
         break;
       }

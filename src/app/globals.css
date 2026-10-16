@@ -148,6 +148,8 @@
    the ambient canvas can sit between it and every piece of content. */
 html {
   background: var(--bg);
+  /* How much of the page a phone keyboard covers (src/room/keyboard.ts). */
+  --keyboard-inset: 0px;
 }
 
 body {

@@ -1,8 +1,11 @@
 // Resolve impact magnitudes from the same pre-hit fighter state. The fight
 // queues these records before applying any damage, so simultaneous blows stay
 // simultaneous. These functions consume only the attacker's named RNG stream.
+// Finishes scale a hit locally: the part that delivered it (attackFinish) and
+// the part it landed on (guardFinish), both exactly 1 for vinyl.
 import type { ArenaGeometry } from "../arenas";
-import type { MoveType } from "../vocab";
+import { FINISH_EFFECTS } from "../finishes";
+import type { Finish, MoveType } from "../vocab";
 import { com, edgeGradient, flatDir } from "./collision";
 import { clamp } from "./dmath";
 import type { Fighter } from "./fighter";
@@ -24,6 +27,10 @@ export interface HitRecord {
   forceStagger: StaggerCause | null;
   staggerMul: number;
   staggerMs: number;
+  /** What the attacker's part that landed it is made of. */
+  attackFinish: Finish;
+  /** What the defender's part it landed on is made of. */
+  guardFinish: Finish;
 }
 
 const baseDamage = (power: number) => K.DMG_BASE + K.DMG_PER_POWER * power;
@@ -34,8 +41,12 @@ export function moveHit(
   kind: "strike" | "counter" | "poke",
   impact: number,
   point: V3,
+  attackFinish: Finish,
+  guardFinish: Finish,
 ): HitRecord {
   const { index: move, type, effPower } = att.move!;
+  const hitter = FINISH_EFFECTS[attackFinish];
+  const guard = FINISH_EFFECTS[guardFinish];
   const broken = kind === "strike" && def.move?.type === "TRICK" && def.move.phase === "windup";
   const bonus =
     kind === "counter"
@@ -59,7 +70,9 @@ export function moveHit(
         bonus *
         (miracle ? K.MIRACLE_DAMAGE : 1) *
         (downed ? K.DOWNED_DAMAGE : 1) *
-        (type === "STRIKE" ? K.STRIKE_DAMAGE : type === "TRICK" ? K.TRICK_DAMAGE : 1),
+        (type === "STRIKE" ? K.STRIKE_DAMAGE : type === "TRICK" ? K.TRICK_DAMAGE : 1) *
+        hitter.hitDamage *
+        guard.guardDamage,
     ),
   );
   const immune = type === "STRIKE" && def.mods.strikeKnockbackImmune;
@@ -71,7 +84,9 @@ export function moveHit(
       def.mods.knockbackTaken *
       (miracle ? K.MIRACLE_KNOCKBACK : 1) *
       (kind === "poke" ? 0.6 : 1) *
-      (downed ? K.DOWNED_KNOCKBACK : 1);
+      (downed ? K.DOWNED_KNOCKBACK : 1) *
+      hitter.hitKnockback *
+      guard.guardKnockback;
   const dir = flatDir(att, def);
   return {
     att,
@@ -87,11 +102,18 @@ export function moveHit(
     forceStagger: broken ? "trickBroken" : null,
     staggerMul: kind === "counter" ? 0.6 : 1,
     staggerMs: 0,
+    attackFinish,
+    guardFinish,
   };
 }
 
+/** A throw: the grip's finish against the victim's core (the torso it was held by). */
 export function throwHit(f: Fighter, foe: Fighter, geometry: ArenaGeometry): HitRecord {
   const m = f.move!;
+  const attackFinish = m.finish;
+  const guardFinish = foe.def.bodies[0]!.finishes[0]!;
+  const hitter = FINISH_EFFECTS[attackFinish];
+  const guard = FINISH_EFFECTS[guardFinish];
   // Throw away from the thrower, bent toward the victim's nearest drop.
   const forward = flatDir(f, foe);
   const c = com(foe);
@@ -110,7 +132,9 @@ export function throwHit(f: Fighter, foe: Fighter, geometry: ArenaGeometry): Hit
         f.mods.damageDealt *
         foe.mods.damageTaken *
         bonus *
-        (miracle ? K.MIRACLE_DAMAGE : 1),
+        (miracle ? K.MIRACLE_DAMAGE : 1) *
+        hitter.hitDamage *
+        guard.guardDamage,
     ),
   );
   const dv =
@@ -118,7 +142,9 @@ export function throwHit(f: Fighter, foe: Fighter, geometry: ArenaGeometry): Hit
     f.mods.knockbackDealt *
     foe.mods.knockbackTaken *
     bonus *
-    (miracle ? K.MIRACLE_KNOCKBACK : 1);
+    (miracle ? K.MIRACLE_KNOCKBACK : 1) *
+    hitter.hitKnockback *
+    guard.guardKnockback;
   return {
     att: f,
     def: foe,
@@ -133,5 +159,7 @@ export function throwHit(f: Fighter, foe: Fighter, geometry: ArenaGeometry): Hit
     forceStagger: "throw",
     staggerMul: 1,
     staggerMs: K.THROW_STAGGER_MS + 40 * m.effPower,
+    attackFinish,
+    guardFinish,
   };
 }

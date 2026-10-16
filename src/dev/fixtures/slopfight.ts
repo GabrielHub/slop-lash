@@ -72,7 +72,7 @@ export const slopfightFixtures: Fixture[] = [
     view: buildView(
       { status: "DRAWING", inputKind: "DRAW" },
       {
-        priya: { status: "DESCRIBING", inputKind: "DESCRIBE", typingAt: FIXTURE_NOW - 1_000 },
+        priya: { status: "DESCRIBING", inputKind: "DESCRIBE" },
         viewer: priya,
       },
     ),

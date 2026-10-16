@@ -2,7 +2,8 @@
 // scripts/slopfight/blender/build_props.py), loaded once, baked into creature
 // rest space at the hand (in the mouth, or strapped on) and skinned rigidly to
 // the item bone, so they swing with the hand and share the body's toon look,
-// outline, wobble and shadow.
+// outline, wobble and shadow. An item part with a finish (a golden sword) is
+// tinted and shaded in that finish, like the body.
 //
 // Prop space (from the GLB): the origin is the grip, +Y the long axis for
 // `upright` props, the business end along +Z for `aim` props, the broad face
@@ -11,7 +12,10 @@
 import { BufferAttribute, BufferGeometry, Color, Matrix3, Matrix4, Vector3, type Mesh } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { Bone, Skeleton } from "../../body/skeleton";
-import type { Anchor, PartRole, PartSize } from "../../vocab";
+import type { Anchor, Finish, PartRole, PartSize } from "../../vocab";
+import { FINISH_ATTRIBUTE } from "../look/toon";
+import { FINISH_ID, FINISH_WOBBLE, finishColor, luminance } from "./finish-look";
+import type { Rgb } from "./paint";
 import type { RenderBone, RenderLayout } from "./render-layout";
 
 export const PROPS_URL = "/models/slopfight/props.glb";
@@ -378,16 +382,40 @@ export interface BakedProp {
   outline: BufferGeometry;
 }
 
-/** A prop baked into creature rest space, skinned with weight 1 to `bone`. */
-export function bakeProp(asset: PropAsset, matrix: Matrix4, bone: number, accent: string | null): BakedProp {
+/** A prop baked into creature rest space, skinned with weight 1 to `bone`, in the item part's finish. */
+export function bakeProp(
+  asset: PropAsset,
+  matrix: Matrix4,
+  bone: number,
+  accent: string | null,
+  finish: Finish = "vinyl",
+): BakedProp {
   const geometry = asset.geometry.clone();
   geometry.applyMatrix4(matrix);
+  const col = geometry.getAttribute("color") as BufferAttribute;
   if (asset.tint === "accent" && accent) {
     const tint = new Color(accent);
-    const col = geometry.getAttribute("color") as BufferAttribute;
     for (let i = 0; i < col.count; i += 1) col.setXYZ(i, col.getX(i) * tint.r, col.getY(i) * tint.g, col.getZ(i) * tint.b);
   }
+  if (finish !== "vinyl") {
+    // Keep the model's light and dark (a gold blade over a darker gold hilt).
+    let mean = 0;
+    for (let i = 0; i < col.count; i += 1) mean += luminance([col.getX(i), col.getY(i), col.getZ(i)]);
+    mean = Math.max(1e-3, mean / Math.max(1, col.count));
+    for (let i = 0; i < col.count; i += 1) {
+      const c: Rgb = [col.getX(i), col.getY(i), col.getZ(i)];
+      const shade = Math.min(1.5, Math.max(0.4, luminance(c) / mean));
+      const out = finishColor(c, finish, shade);
+      col.setXYZ(i, out[0], out[1], out[2]);
+    }
+  }
   const count = geometry.getAttribute("position").count;
+  const look = new Float32Array(count * 2);
+  for (let i = 0; i < count; i += 1) {
+    look[i * 2] = FINISH_ID[finish];
+    look[i * 2 + 1] = FINISH_WOBBLE[finish];
+  }
+  geometry.setAttribute(FINISH_ATTRIBUTE, new BufferAttribute(look, 2));
   const skinIndex = new Uint16Array(count * 4);
   const skinWeight = new Float32Array(count * 4);
   for (let i = 0; i < count; i += 1) {

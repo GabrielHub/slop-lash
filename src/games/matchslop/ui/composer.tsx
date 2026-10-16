@@ -17,7 +17,7 @@ export const PRIMARY =
 /** The phone's one primary action, pinned in the thumb zone. */
 export function PrimaryBar({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky bottom-0 z-10 -mx-4 mt-auto bg-gradient-to-t from-canvas from-70% to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+    <div data-keyboard-bar className="sticky bottom-[var(--keyboard-inset)] z-10 -mx-4 mt-auto bg-gradient-to-t from-canvas from-70% to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
       {children}
     </div>
   );
@@ -91,7 +91,6 @@ export function Composer({
               event.preventDefault();
               void send();
             }}
-            onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest" })}
             className="block w-full resize-none overflow-y-auto rounded-2xl border-2 border-edge bg-surface px-4 py-3 text-lg leading-snug text-ink placeholder:text-ink-dim focus:border-punch focus:outline-none"
           />
           {draft.length >= COUNT_FROM && (

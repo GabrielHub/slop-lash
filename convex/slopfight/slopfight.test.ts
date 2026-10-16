@@ -175,14 +175,17 @@ describe("start and Build", () => {
       strokes: [{ ...stroke, c: 3 }],
     });
     await room.t.mutation(api.slopfight.play.undoStroke, { capability: room.host, layer: 0 });
-    const easel = await room.t.query(api.slopfight.stage.strokes, { roomCode: room.code });
+    const easel = await room.t.query(api.slopfight.stage.strokes, {
+      roomCode: room.code,
+      fighterId: (await fighters(room))[0]!._id,
+    });
     expect(easel.map((row) => [row.seq, row.strokes.length])).toEqual([[0, 2]]);
     await expect(
       room.t.mutation(api.slopfight.play.addStrokes, {
         capability: room.host,
         layer: 0,
         seq: 2,
-        strokes: [{ c: 9, w: 1, p: [1, 2] }],
+        strokes: [{ c: 14, w: 1, p: [1, 2] }],
       }),
     ).rejects.toThrow(/canvas/);
 
@@ -701,14 +704,118 @@ describe("stage queries", () => {
       forgeToken: mine.forgeToken,
       parts: kit.sampleChampion().parts.slice(0, 1),
     });
-    const growing = await room.t.query(api.slopfight.stage.foundry, { roomCode: room.code });
-    expect(growing[0]).toMatchObject({ status: "FORGING", champion: null });
-    expect(growing[0]!.partial.map((part) => part.id)).toEqual(["torso", "head"]);
+    const growing = await room.t.query(api.slopfight.stage.forges, { roomCode: room.code });
+    expect(growing).toHaveLength(1);
+    expect(growing[0]!.fighterId).toBe(mine._id);
+    expect(growing[0]!.parts.map((part) => part.id)).toEqual(["torso", "head"]);
+    // Only the parts go out: no owner, token or forge input.
+    expect(Object.keys(growing[0]!).toSorted()).toEqual(["fighterId", "parts"]);
     expect(JSON.stringify(growing)).not.toContain("jellyfish");
     await runFor(room.t, 1_000);
-    const grown = await room.t.query(api.slopfight.stage.foundry, { roomCode: room.code });
-    expect(grown[0]).toMatchObject({ status: "READY", partial: [] });
-    expect(grown[0]!.champion?.name).toBe("Grown");
-    expect(await room.t.query(api.slopfight.stage.foundry, { roomCode: "ZZZZ" })).toEqual([]);
+    // Landing the forge deletes its stream; the sheet reaches the stage in the room view.
+    expect(await room.t.query(api.slopfight.stage.forges, { roomCode: room.code })).toEqual([]);
+    const grown = (await view(room.t, room.host)).mode;
+    if (grown?.kind !== "SLOPFIGHT") throw new Error("no fight view");
+    expect(grown.fighters.find((fighter) => fighter.id === mine._id)?.champion?.name).toBe("Grown");
+    expect(await room.t.query(api.slopfight.stage.forges, { roomCode: "ZZZZ" })).toEqual([]);
+  });
+});
+
+describe("read amplification", () => {
+  test("typing stamps live in their own row; the fighter row changes once", async () => {
+    const room = await fightRoom(setup(), 2);
+    await start(room);
+    await room.t.mutation(api.slopfight.play.setTyping, { capability: room.host });
+    const mine = (await fighters(room))[0]!;
+    expect(mine.status).toBe("DESCRIBING");
+    expect(mine.typingAt).toBeUndefined();
+    const typed = await room.t.query(api.slopfight.stage.typing, { roomCode: room.code });
+    expect(typed).toEqual([{ fighterId: mine._id, at: expect.any(Number) }]);
+    // A keystroke inside the throttle writes nothing.
+    await room.t.mutation(api.slopfight.play.setTyping, { capability: room.host });
+    expect(await room.t.query(api.slopfight.stage.typing, { roomCode: room.code })).toEqual(typed);
+    expect((await fighters(room))[0]).toEqual(mine);
+    expect(JSON.stringify(await sf(room))).not.toContain("typingAt");
+    // Nothing to shimmer once Build is over.
+    await describeAll(room);
+    await pump(room);
+    expect(await room.t.query(api.slopfight.stage.typing, { roomCode: room.code })).toEqual([]);
+  });
+
+  test("stroke rows carry the layer's running totals", async () => {
+    const room = await fightRoom(setup(), 2);
+    await start(room);
+    const stroke = { c: 0, w: 1, p: [100, 100, 900, 900, 500, 500] };
+    const add = (seq: number, count: number) =>
+      room.t.mutation(api.slopfight.play.addStrokes, {
+        capability: room.host,
+        layer: 0,
+        seq,
+        strokes: Array.from({ length: count }, () => stroke),
+      });
+    await add(0, 2);
+    await add(1, 2);
+    const totals = async () =>
+      (await room.t.run((ctx) => ctx.db.query("slopFightStrokes").collect())).map((row) => [
+        row.seq,
+        row.total,
+        row.points,
+      ]);
+    expect(await totals()).toEqual([
+      [0, 2, 6],
+      [1, 4, 12],
+    ]);
+    await room.t.mutation(api.slopfight.play.undoStroke, { capability: room.host, layer: 0 });
+    expect(await totals()).toEqual([
+      [0, 2, 6],
+      [1, 3, 9],
+    ]);
+  });
+
+  test("a live view carries only the fight in play's replay; the recap carries every one", async () => {
+    const room = await fightRoom(setup(), 2);
+    await throughBuild(room);
+    await pump(room);
+    // The fight rows keep who won; the log and the frozen sheets live on the replay rows.
+    const rows = await fights(room);
+    const first = rows.find((fight) => fight.round === 1 && fight.step === 0)!;
+    expect(first.outcome).toBeDefined();
+    expect(first.outcome).not.toHaveProperty("events");
+    expect(first.outcome).not.toHaveProperty("healthTimeline");
+    expect(first.sheets).toBeUndefined();
+    const replays = await room.t.run((ctx) => ctx.db.query("slopFightReplays").collect());
+    expect(replays.find((replay) => replay.fightId === first._id)).toMatchObject({
+      sheets: { A: expect.any(Object), B: expect.any(Object) },
+      events: expect.any(Array),
+    });
+
+    await hostNext(room);
+    await playFight(room);
+    const playing = (await sf(room)).fights[0]!;
+    expect(playing.outcome?.events.length).toBeGreaterThan(0);
+    expect(playing.outcome?.healthTimeline.length).toBeGreaterThan(0);
+
+    await hostNext(room);
+    expect((await phase(room)).phase).toBe("FACE_OFF");
+    const next = await sf(room);
+    expect(next.currentFightId).toBe(next.fights[1]!.id);
+    // Fight 1 is scored and revealed, but its log stays off the live view.
+    expect(next.fights[0]!.outcome?.winner).toBe(playing.outcome?.winner);
+    expect(next.fights[0]!.outcome?.events).toEqual([]);
+    expect(next.fights[0]!.outcome?.healthTimeline).toEqual([]);
+    expect(next.fights[0]!.applied).toEqual([]);
+    expect(next.fights[0]!.sheets).toBeNull();
+
+    await room.t.mutation(api.engine.end, { capability: room.host });
+    const ended = await sf(room);
+    expect(ended.fights[0]!.outcome?.events).toEqual([]);
+    expect(ended.doodles).toBeNull();
+    const recap = await room.t.query(api.views.recap, { roomCode: room.code });
+    if (recap.kind !== "READY" || recap.view.mode?.kind !== "SLOPFIGHT") throw new Error("no recap");
+    const replayed = recap.view.mode.fights[0]!;
+    expect(replayed.outcome?.events).toEqual(playing.outcome?.events);
+    expect(replayed.outcome?.healthTimeline).toEqual(playing.outcome?.healthTimeline);
+    expect(replayed.sheets?.A.name).toBeTruthy();
+    expect(recap.view.mode.doodles).not.toBeNull();
   });
 });

@@ -2,9 +2,11 @@
 // never drift from what the schema and the game accept. Pure: no SDK imports.
 
 import { ARENAS, type ArenaId } from "../arenas";
+import { finishGroups } from "../finishes";
 import type { Champion } from "../sheet";
 import {
   EYE_STYLE_INFO,
+  FINISH_INFO,
   MARKING_INFO,
   MOUTH_STYLE_INFO,
   MOVE_TYPE_INFO,
@@ -31,6 +33,9 @@ export function vocabularyText(): string {
     "",
     "Mouths:",
     lines(Object.entries(MOUTH_STYLE_INFO).map(([style, info]) => `- ${style}: ${info}`)),
+    "",
+    "Finishes (what a part is made of; vinyl unless it is made of something):",
+    lines(Object.entries(FINISH_INFO).map(([finish, info]) => `- ${finish}: ${info.prompt}`)),
     "",
     "Markings (paint on one part, in a palette slot that is not that part's own colour):",
     lines(Object.entries(MARKING_INFO).map(([kind, info]) => `- ${kind}: ${info}`)),
@@ -64,10 +69,14 @@ export function championCard(champion: Champion): string {
   const moves = champion.moves
     .map((move) => `${move.name} (${move.type} ${move.power}, ${move.delivery})`)
     .join("; ");
+  const groups = finishGroups(champion);
+  const finishes = groups.map((group) => group.label.toLowerCase());
+  const rest = groups.some((group) => group.where === "everything") ? "" : ", the rest vinyl";
   return [
     `name: ${champion.name}`,
     `bio: ${champion.bio}`,
     `body: ${champion.bodyPlan}, ${champion.parts.length} parts`,
+    ...(finishes.length > 0 ? [`made of: ${finishes.join(", ")}${rest}`] : []),
     `item: ${champion.item ?? "none"}`,
     `traits: ${champion.traits.join(", ")}`,
     `stats: heft ${champion.stats.heft}, reach ${champion.stats.reach}, chaos ${champion.stats.chaos}`,

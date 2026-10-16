@@ -12,10 +12,12 @@ import {
   NOTE_REASON_MAX,
 } from "../constants";
 import { MODIFIER_KEYS, MODIFIER_SPECS, TRAIT_EFFECTS, formatEffect } from "../modifiers";
+import { FINISH_EFFECTS } from "../finishes";
 import type { Champion } from "../sheet";
+import { FINISHES } from "../vocab";
 import { championCard } from "./prompt-parts";
 
-export const MATCHUP_PROMPT_VERSION = 1;
+export const MATCHUP_PROMPT_VERSION = 2;
 
 function unitOf(key: (typeof MODIFIER_KEYS)[number]): string {
   const spec = MODIFIER_SPECS[key];
@@ -37,6 +39,21 @@ function modifierTable(): string {
   ).join("\n");
 }
 
+const percent = (multiplier: number) => {
+  const value = Math.round((multiplier - 1) * 100);
+  return `${value > 0 ? "+" : ""}${value}%`;
+};
+
+/** What each finish already does, from FINISH_EFFECTS (vinyl does nothing). */
+function finishTable(): string {
+  return FINISHES.filter((finish) => finish !== "vinyl")
+    .map((finish) => {
+      const e = FINISH_EFFECTS[finish];
+      return `- ${finish}: hits it lands ${percent(e.hitDamage)} damage, ${percent(e.hitKnockback)} knockback, its Strikes wind up ${percent(e.swing)}; hits on it ${percent(e.guardDamage)} damage, ${percent(e.guardKnockback)} knockback; a body made of it ${e.weight > 0 ? "+" : ""}${e.weight}% speed`;
+    })
+    .join("\n");
+}
+
 function traitTable(): string {
   return Object.entries(TRAIT_EFFECTS)
     .map(([trait, effect]) => `- ${trait}: ${effect.effects.map(formatEffect).join(", ") || "brain only"}`)
@@ -51,7 +68,8 @@ You write the Matchup Notes for one fight in SlopFight, a party game on a TV whe
 - Write ${MATCHUP_NOTES_MIN} to ${MATCHUP_NOTES_MAX} notes. Each names a side (A or B), one modifier, a value and a reason.
 - The reason is at most ${NOTE_REASON_MAX} characters and cites something real: a trait, the item, a body part, the body plan, or the arena. The room reads it in two seconds and nods: "fair, a fish on a rooftop".
 - The best notes are about this pairing: one champion's thing against the other's (spikes against a hugger, fluff against fire, a long neck against a tiny foe), or a champion against this arena in a way the hazard cards do not already cover.
-- The game already applies every trait's own effects and every hazard card. Never repeat those; a note adds something new about the matchup.
+- A card's "made of" line says which parts are metal, crystal, lava and so on. A finish against the other champion or the arena makes a great note: lava fists against an ice body, a metal body in the flooded garage, glass against a heavy hitter.
+- The game already applies every trait's own effects, every finish's own effects and every hazard card. Never repeat those; a note adds something new about the matchup.
 - Keep it fair: notes tilt a fight, they never decide it. Code caps what one side can gain in total, so prefer small values and give each side something when you can.
 </notes>
 
@@ -64,6 +82,11 @@ ${modifierTable()}
 What each trait already does (never repeat these):
 ${traitTable()}
 </trait-effects>
+
+<finish-effects>
+What each finish already does to the part made of it (never repeat these):
+${finishTable()}
+</finish-effects>
 
 <walk-ons>
 Also write one walk-on line per fighter (walkOnA for A, walkOnB for B), each at most ${NARRATION_LINE_MAX} characters: what the announcer says as it walks out for this fight. Make it about this matchup or this arena, not a generic intro.

@@ -5,6 +5,7 @@ import { aiWorkpools } from "../components";
 import { mixedHash } from "../../src/lib/hash";
 import {
   CHAMPIONS,
+  FACE_OFF_MIN_SECONDS,
   FOUNDRY_WATCHDOG_SECONDS,
   STROKES_PER_DOODLE,
 } from "../../src/games/slopfight/constants";
@@ -23,7 +24,7 @@ import {
   ROUNDS,
   roundArena,
 } from "../../src/games/slopfight/tournament";
-import type { ForgeKind, StoredOutcome } from "./tables";
+import type { FightResult, ForgeKind, StoredOutcome } from "./tables";
 
 // Reads and writes shared by the mode, the player mutations, the forge and the
 // sim: bounded loaders, forge and sim launchers, and fight scoring.
@@ -31,9 +32,13 @@ import type { ForgeKind, StoredOutcome } from "./tables";
 type DatabaseCtx = QueryCtx | MutationCtx;
 export type Fighter = Doc<"slopFightFighters">;
 export type Fight = Doc<"slopFightFights">;
+export type Replay = Doc<"slopFightReplays">;
 
 const MAX_FIGHTS = 12;
 const MAX_BETS = 16;
+
+/** When the face-off may close: it never ends before its minimum. */
+export const faceOffOpensAt = (game: Doc<"games">) => game.phaseStartedAt + FACE_OFF_MIN_SECONDS * 1_000;
 
 export async function loadState(ctx: DatabaseCtx, gameId: Id<"games">) {
   return ctx.db
@@ -50,12 +55,73 @@ export async function loadFighters(ctx: DatabaseCtx, gameId: Id<"games">): Promi
     .take(CHAMPIONS);
 }
 
+/** A player's own fighter, read alone (no other champion sheets). */
+export async function findOwnFighter(
+  ctx: DatabaseCtx,
+  gameId: Id<"games">,
+  ownerId: Id<"players">,
+): Promise<Fighter | null> {
+  return ctx.db
+    .query("slopFightFighters")
+    .withIndex("by_gameId_and_ownerId", (index) => index.eq("gameId", gameId).eq("ownerId", ownerId))
+    .unique();
+}
+
 /** Every fight created so far, by round then step. */
 export async function loadFights(ctx: DatabaseCtx, gameId: Id<"games">): Promise<Fight[]> {
   return ctx.db
     .query("slopFightFights")
     .withIndex("by_gameId_and_round_and_step", (index) => index.eq("gameId", gameId))
     .take(MAX_FIGHTS);
+}
+
+/** A fight's replay row: its frozen sheets, then its event log. */
+export async function findReplay(ctx: DatabaseCtx, fight: Fight): Promise<Replay | null> {
+  return ctx.db
+    .query("slopFightReplays")
+    .withIndex("by_gameId_and_fightId", (index) =>
+      index.eq("gameId", fight.gameId).eq("fightId", fight._id),
+    )
+    .unique();
+}
+
+/** Every fight replay of a game, for the recap. */
+export async function loadReplays(ctx: DatabaseCtx, gameId: Id<"games">): Promise<Replay[]> {
+  return ctx.db
+    .query("slopFightReplays")
+    .withIndex("by_gameId_and_fightId", (index) => index.eq("gameId", gameId))
+    .take(MAX_FIGHTS);
+}
+
+/** Writes some of a fight's replay fields, creating its row on first use. */
+async function writeReplay(
+  ctx: MutationCtx,
+  fight: Fight,
+  replay: Replay | null,
+  fields: Partial<Pick<Replay, "sheets" | "events" | "healthTimeline">>,
+): Promise<void> {
+  if (replay) await ctx.db.patch("slopFightReplays", replay._id, fields);
+  else await ctx.db.insert("slopFightReplays", { gameId: fight.gameId, fightId: fight._id, ...fields });
+}
+
+/** Both champions as a fight's sim ran them, once it has started. */
+export async function fightSheets(ctx: DatabaseCtx, fight: Fight) {
+  return (await findReplay(ctx, fight))?.sheets ?? null;
+}
+
+/** Stores a fight's outcome: who won on the fight row, the event log on its replay. */
+export async function recordOutcome(
+  ctx: MutationCtx,
+  fight: Fight,
+  outcome: StoredOutcome,
+  sim: Fight["sim"],
+): Promise<FightResult> {
+  const { events, healthTimeline, ...result } = outcome;
+  await ctx.db.patch("slopFightFights", fight._id, { outcome: result, sim });
+  if (events.length > 0 || healthTimeline.length > 0) {
+    await writeReplay(ctx, fight, await findReplay(ctx, fight), { events, healthTimeline });
+  }
+  return result;
 }
 
 export async function loadRoundFights(ctx: DatabaseCtx, gameId: Id<"games">, round: number) {
@@ -363,6 +429,10 @@ export const HOUSE_ADDITIONS = [
   "a big angry eyebrow",
   "springs instead of feet",
   "a frying pan shield",
+  "solid gold arms",
+  "a body of pure diamond",
+  "lava fists that it keeps blowing on",
+  "chrome plating on absolutely everything",
 ] as const;
 
 /** A seeded pick for house fighter `slot` at `round`. */
@@ -467,8 +537,8 @@ export function fallbackWalkOn(a: Champion | null, b: Champion | null): string[]
 export async function startSim(ctx: MutationCtx, fight: Fight): Promise<void> {
   if (fight.outcome) return;
   const attempt = fight.sim.attempt + 1;
-  let sheets = fight.sheets;
-  if (!sheets) {
+  const replay = await findReplay(ctx, fight);
+  if (!replay?.sheets) {
     const [a, b] = await Promise.all([
       ctx.db.get("slopFightFighters", fight.a),
       ctx.db.get("slopFightFighters", fight.b),
@@ -476,9 +546,9 @@ export async function startSim(ctx: MutationCtx, fight: Fight): Promise<void> {
     const sheetA = a && championOf(a);
     const sheetB = b && championOf(b);
     // Frozen once both are forged; the sim reads these, the recap replays them.
-    if (sheetA && sheetB) sheets = { A: sheetA, B: sheetB };
+    if (sheetA && sheetB) await writeReplay(ctx, fight, replay, { sheets: { A: sheetA, B: sheetB } });
   }
-  await ctx.db.patch("slopFightFights", fight._id, { sim: { status: "RUNNING", attempt }, sheets });
+  await ctx.db.patch("slopFightFights", fight._id, { sim: { status: "RUNNING", attempt } });
   await ctx.scheduler.runAfter(0, internal.slopfight.fightSim.run, { fightId: fight._id, attempt });
 }
 
@@ -498,7 +568,7 @@ export async function abandonMatchup(ctx: MutationCtx, fight: Fight): Promise<Fi
  * When the sim failed twice the seed decides, honestly: no fight to show,
  * full health both sides, and the view says so.
  */
-export function seedDecision(fight: Fight, a: Champion | null, b: Champion | null): StoredOutcome {
+export function seedDecision(fight: Fight, a: Champion | null, b: Champion | null): FightResult {
   const health = { A: a ? maxHealth(a) : 100, B: b ? maxHealth(b) : 100 };
   return {
     winner: mixedHash(`slopfight-decide:${fight.seed}`) % 2 === 0 ? "A" : "B",
@@ -506,8 +576,6 @@ export function seedDecision(fight: Fight, a: Champion | null, b: Champion | nul
     endMs: 0,
     health,
     maxHealth: health,
-    events: [],
-    healthTimeline: [],
     hash: `seed:${fight.seed}`,
     decidedBySeed: true,
   };
@@ -519,12 +587,11 @@ export async function decideBySeed(ctx: MutationCtx, fight: Fight): Promise<Figh
     ctx.db.get("slopFightFighters", fight.a),
     ctx.db.get("slopFightFighters", fight.b),
   ]);
+  // No fight to show, so no event log: the replay keeps only its sheets.
   const outcome = seedDecision(fight, a && championOf(a), b && championOf(b));
-  await ctx.db.patch("slopFightFights", fight._id, {
-    outcome,
-    sim: { ...fight.sim, status: "FAILED" },
-  });
-  return { ...fight, outcome };
+  const sim = { ...fight.sim, status: "FAILED" as const };
+  await ctx.db.patch("slopFightFights", fight._id, { outcome, sim });
+  return { ...fight, outcome, sim };
 }
 
 /**

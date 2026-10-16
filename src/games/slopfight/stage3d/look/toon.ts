@@ -12,7 +12,10 @@
 //   skinning and instancing.
 // Creatures add `wobble`: jelly vertex displacement (idle breathing, a ripple
 // driven by speed, a hit jiggle, and the top trailing behind motion), shared
-// with the outline material so the hull follows the body.
+// with the outline material so the hull follows the body. Creature materials
+// (the wobbling ones) also shade finishes (SLOP_FINISH, look/finish-glsl.ts):
+// their geometry carries FINISH_ATTRIBUTE (finish id, wobble scale), and the
+// wobble scale also reaches the outline hull, so rigid parts barely jelly.
 //
 // Works for vertex-coloured static meshes (arenas, props) as well as skinned
 // creatures: createToonMaterial({ wobble: false }).
@@ -25,6 +28,16 @@ import {
   type ColorRepresentation,
   type IUniform,
 } from "three";
+import { FINISH_FRAGMENT_PARS, FINISH_SETUP, FINISH_VERTEX, FINISH_VERTEX_PARS } from "./finish-glsl";
+
+/** The creature geometry attribute: [finish id, wobble scale] per vertex (creature/mesher.ts). */
+export const FINISH_ATTRIBUTE = "slopFinish";
+
+/**
+ * Finish pattern detail, shared by every creature material: 1 runs the full
+ * patterns, 0 the cheap path (the low quality tier).
+ */
+export const FINISH_DETAIL: IUniform<number> = { value: 1 };
 
 export interface WobbleUniforms {
   [name: string]: IUniform;
@@ -58,7 +71,11 @@ export function createWobbleUniforms(seed = 0, height = 1): WobbleUniforms {
   };
 }
 
-/** Vertex-shader declarations for the wobble (needs `normal` in bind space). */
+/**
+ * Vertex-shader declarations for the wobble (needs `normal` in bind space).
+ * With SLOP_FINISH, the jelly (breath, ripple, jiggle) scales by the vertex's
+ * wobble scale; the lag sways the whole body (the view scales it on the CPU).
+ */
 export const WOBBLE_PARS = /* glsl */ `
 #ifdef SLOP_WOBBLE
 uniform float uTime;
@@ -69,14 +86,17 @@ uniform vec3 uLag;
 uniform float uBreath;
 uniform float uHeight;
 uniform float uSeed;
-vec3 slopWobble( vec3 p, vec3 n ) {
+#ifdef SLOP_FINISH
+attribute vec2 slopFinish;
+#endif
+vec3 slopWobble( vec3 p, vec3 n, float scale ) {
   float hgt = max( uHeight, 0.05 );
   float h = clamp( p.y / hgt, 0.0, 1.4 );
   float body = smoothstep( 0.04, 0.4, h );
   float breath = uBreath * sin( uTime * 2.1 + uSeed ) * body * ( 1.25 - h );
   float ripple = sin( dot( p, vec3( 5.3, 7.1, 4.7 ) ) * uWobbleFreq / hgt + uTime * 10.0 + uSeed );
   float jig = uJiggle * sin( uTime * 36.0 + p.y * 11.0 / hgt + uSeed );
-  vec3 d = n * ( breath + ripple * uWobbleAmp + jig ) * hgt * body;
+  vec3 d = n * ( breath + ripple * uWobbleAmp + jig ) * hgt * body * scale;
   d += uLag * ( h * h ) * hgt;
   return p + d;
 }
@@ -87,7 +107,11 @@ vec3 slopWobble( vec3 p, vec3 n ) {
 export const WOBBLE_VERTEX = /* glsl */ `
 #include <begin_vertex>
 #ifdef SLOP_WOBBLE
-transformed = slopWobble( transformed, normal );
+#ifdef SLOP_FINISH
+transformed = slopWobble( transformed, normal, slopFinish.y );
+#else
+transformed = slopWobble( transformed, normal, 1.0 );
+#endif
 #endif
 `;
 
@@ -176,20 +200,43 @@ vec3 slopSaturate( vec3 c, float amount ) {
   float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
   return max( mix( vec3( l ), c, amount ), 0.0 );
 }
-
+${FINISH_FRAGMENT_PARS}
 void RE_Direct_Toon( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in ToonMaterial material, inout ReflectedLight reflectedLight ) {
+  #ifdef SLOP_FINISH
+  float shadeK = fShade;
+  vec3 shadeTint = fShadeTint;
+  float threshold = fThreshold;
+  float soft = fSoft;
+  float translucency = fTrans;
+  float specK = fSpec;
+  float specSize = fSpecSize;
+  float specGate = fSpecGate;
+  #else
+  float shadeK = uShade;
+  vec3 shadeTint = uShadeTint;
+  float threshold = uThreshold;
+  float soft = uSoft;
+  float translucency = uTranslucency;
+  float specK = uSpec;
+  float specSize = uSpecSize;
+  float specGate = uSpecMinLight;
+  #endif
   float ndl = dot( geometryNormal, directLight.direction );
   float wrapped = ( ndl + uWrap ) / ( 1.0 + uWrap );
-  float band = smoothstep( uThreshold - uSoft, uThreshold + uSoft, wrapped ) * toonShadow;
-  vec3 light = mix( uShade * uShadeTint, vec3( 1.0 ), band );
+  float band = smoothstep( threshold - soft, threshold + soft, wrapped ) * toonShadow;
+  vec3 light = mix( shadeK * shadeTint, vec3( 1.0 ), band );
   reflectedLight.directDiffuse += directLight.color * light * BRDF_Lambert( material.diffuseColor );
   float back = ( 1.0 - band ) * clamp( 0.5 - 0.5 * ndl, 0.0, 1.0 );
-  reflectedLight.directDiffuse += directLight.color * back * uTranslucency * BRDF_Lambert( slopSaturate( material.diffuseColor, 1.6 ) );
+  reflectedLight.directDiffuse += directLight.color * back * translucency * BRDF_Lambert( slopSaturate( material.diffuseColor, 1.6 ) );
   vec3 halfDir = normalize( directLight.direction + geometryViewDir );
   float ndh = max( dot( geometryNormal, halfDir ), 0.0 );
   float lightLevel = dot( directLight.color, vec3( 0.3333 ) );
-  float spec = smoothstep( uSpecSize - 0.002, uSpecSize + 0.002, ndh ) * band * ( uSpecMinLight > 0.0 ? smoothstep( uSpecMinLight * 0.75, uSpecMinLight * 1.25, lightLevel ) : 1.0 );
-  reflectedLight.directSpecular += directLight.color * spec * uSpec;
+  float gate = specGate > 0.0 ? smoothstep( specGate * 0.75, specGate * 1.25, lightLevel ) : 1.0;
+  float spec = smoothstep( specSize - 0.002, specSize + 0.002, ndh ) * band * gate;
+  reflectedLight.directSpecular += directLight.color * spec * specK;
+  #ifdef SLOP_FINISH
+  if ( slopKind != FINISH_VINYL ) slopDirect( directLight.color, ndh, band, gate, reflectedLight );
+  #endif
   toonShadow = 1.0;
 }
 
@@ -211,8 +258,20 @@ const OUTGOING_TOON = /* glsl */ `
 vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + totalEmissiveRadiance;
 {
   float ndv = clamp( dot( normal, normalize( vViewPosition ) ), 0.0, 1.0 );
-  float rim = smoothstep( 1.0 - uRimWidth - 0.06, 1.0 - uRimWidth + 0.06, 1.0 - ndv );
-  outgoingLight += uRimColor * uRim * rim * ( 0.3 + 0.7 * diffuseColor.rgb );
+  #ifdef SLOP_FINISH
+  float rimWidth = fRimWidth;
+  vec3 rimColor = fRimColor;
+  float rimK = fRim;
+  #else
+  float rimWidth = uRimWidth;
+  vec3 rimColor = uRimColor;
+  float rimK = uRim;
+  #endif
+  float rim = smoothstep( 1.0 - rimWidth - 0.06, 1.0 - rimWidth + 0.06, 1.0 - ndv );
+  outgoingLight += rimColor * rimK * rim * ( 0.3 + 0.7 * diffuseColor.rgb );
+  #ifdef SLOP_FINISH
+  if ( slopKind != FINISH_VINYL ) outgoingLight = slopFinishOut( outgoingLight, diffuseColor.rgb, normal, normalize( vViewPosition ), ndv, rim );
+  #endif
 }
 `;
 
@@ -240,18 +299,20 @@ export function createToonMaterial(opts: ToonOptions = {}): ToonMaterial {
   const wobble =
     opts.wobble === true ? createWobbleUniforms() : opts.wobble ? opts.wobble : null;
   material.userData = { toon, wobble };
-  if (wobble) material.defines = { ...material.defines, SLOP_WOBBLE: "" };
+  // Creatures (the wobbling materials) shade finishes; one program for all of them.
+  if (wobble) material.defines = { ...material.defines, SLOP_WOBBLE: "", SLOP_FINISH: "" };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, toon);
-    if (wobble) Object.assign(shader.uniforms, wobble);
+    if (wobble) Object.assign(shader.uniforms, wobble, { uFinishDetail: FINISH_DETAIL });
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", `#include <common>\n${WOBBLE_PARS}`)
-      .replace("#include <begin_vertex>", WOBBLE_VERTEX);
+      .replace("#include <common>", `#include <common>\n${WOBBLE_PARS}\n${FINISH_VERTEX_PARS}`)
+      .replace("#include <begin_vertex>", `${WOBBLE_VERTEX}\n${FINISH_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <lights_toon_pars_fragment>", TOON_PARS)
+      .replace("#include <lights_toon_fragment>", `#include <lights_toon_fragment>\n${FINISH_SETUP}`)
       .replace("#include <lights_fragment_begin>", LIGHTS_BEGIN)
       .replace(OUTGOING, OUTGOING_TOON);
   };
-  material.customProgramCacheKey = () => `slop-toon-1${wobble ? "-wobble" : ""}`;
+  material.customProgramCacheKey = () => `slop-toon-2${wobble ? "-wobble-finish" : ""}`;
   return material;
 }

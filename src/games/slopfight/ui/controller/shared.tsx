@@ -91,7 +91,7 @@ export function Screen({
     <div className={`mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 ${className}`}>
       <div className={`flex flex-col gap-4 ${center ? "my-auto" : ""} ${fill ? "flex-1" : ""}`}>{children}</div>
       {action && (
-        <div className="sticky bottom-0 z-10 mt-auto -mx-4 bg-canvas/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+        <div data-keyboard-bar className="sticky bottom-[var(--keyboard-inset)] z-10 mt-auto -mx-4 bg-canvas/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
           {action}
         </div>
       )}

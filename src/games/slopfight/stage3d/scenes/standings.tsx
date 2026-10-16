@@ -18,7 +18,7 @@ import { Scoreboard } from "./scoreboard";
 
 export function StandingsScene({ input, nodes }: PhaseSceneProps) {
   const services = useStage();
-  const data = useSceneData();
+  const data = useSceneData({ feeds: false });
   const phaseSeconds = usePhaseSeconds(input);
   const round = input.round;
   const rows = useMemo(() => (data ? boardRows(data, round) : []), [data, round]);

@@ -1,55 +1,43 @@
 import { v } from "convex/values";
-import type { Doc } from "../_generated/dataModel";
 import { query, type QueryCtx } from "../_generated/server";
-import { findGameByCode, findGameByNumber } from "../roster";
+import { findGameByCode } from "../roster";
 import { CHAMPIONS } from "../../src/games/slopfight/constants";
-import { championOf, findHype, loadFighters, MAX_FIGHTER_STROKE_ROWS } from "./data";
-import {
-  championValidator,
-  fighterStatusValidator,
-  forgeValidator,
-  partValidator,
-  strokeBatchFields,
-} from "./tables";
+import { findHype, loadFighterStrokeRows } from "./data";
+import { partValidator, strokeBatchFields } from "./tables";
 
 // The stage's own subscriptions (build plan decision 5): the heavy, fast-moving
-// data that stays out of `views.room`, so phones drawing at 4 Hz and forges
-// streaming parts never resend the room view to every client. Like
-// `views.watch`, they take the room code: a TV watches without a seat. Both
-// carry only what the shared screen shows anyway.
+// data that stays out of `views.room`, so phones drawing at 4 Hz, forges
+// streaming parts and players typing never resend the room view to every
+// client. Like `views.watch`, they take the room code: a TV watches without a
+// seat. They carry only what the shared screen shows anyway, and each reads
+// its own small table, never the fighter rows and their champion sheets.
 
-async function stageGame(ctx: QueryCtx, roomCode: string, gameNumber: number | undefined) {
-  const game =
-    gameNumber === undefined
-      ? await findGameByCode(ctx, roomCode)
-      : await findGameByNumber(ctx, roomCode, gameNumber);
+async function stageGame(ctx: QueryCtx, roomCode: string) {
+  const game = await findGameByCode(ctx, roomCode);
   return game?.gameType === "SLOPFIGHT" ? game : null;
 }
 
 /**
- * Every stroke batch of the game, for the easels (and the recap with
- * `gameNumber`). The game-wide cap covers every champion's full doodle on
- * every layer. Reading strokes directly avoids invalidation on forge/typing
- * changes to the fighter rows.
+ * One champion's stroke batches, every layer, in layer then seq order, for
+ * its easel. The stage subscribes once per fighter, so a batch re-reads and
+ * resends only its drawer's rows, never the other three doodles.
  */
 export const strokes = query({
-  args: { roomCode: v.string(), gameNumber: v.optional(v.number()) },
+  args: { roomCode: v.string(), fighterId: v.id("slopFightFighters") },
   returns: v.array(v.object({ id: v.id("slopFightStrokes"), ...strokeBatchFields })),
   handler: async (ctx, args) => {
-    const game = await stageGame(ctx, args.roomCode, args.gameNumber);
+    const game = await stageGame(ctx, args.roomCode);
     if (!game) return [];
-    const rows = await ctx.db
-      .query("slopFightStrokes")
-      .withIndex("by_gameId_and_fighterId", (index) => index.eq("gameId", game._id))
-      .take(CHAMPIONS * MAX_FIGHTER_STROKE_ROWS);
-    rows.sort((a, b) => a.fighterId.localeCompare(b.fighterId) || a.layer - b.layer || a.seq - b.seq);
-    return rows.map((row) => ({
-      id: row._id,
-      fighterId: row.fighterId,
-      layer: row.layer,
-      seq: row.seq,
-      strokes: row.strokes,
-    }));
+    const rows = await loadFighterStrokeRows(ctx, args.fighterId);
+    return rows
+      .filter((row) => row.gameId === game._id)
+      .map((row) => ({
+        id: row._id,
+        fighterId: row.fighterId,
+        layer: row.layer,
+        seq: row.seq,
+        strokes: row.strokes,
+      }));
   },
 });
 
@@ -64,56 +52,47 @@ export const hype = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const game = await stageGame(ctx, args.roomCode, undefined);
+    const game = await stageGame(ctx, args.roomCode);
     if (!game || game.status !== "PLAYING" || game.phase !== "FIGHT") return null;
     const crowd = await findHype(ctx, game._id, game.round, game.step);
     return crowd ? { fightId: crowd.fightId, hype: crowd.hype } : null;
   },
 });
 
-function foundryEntry(fighter: Doc<"slopFightFighters">, stream?: Doc<"slopFightForgeStreams">) {
-  return {
-    id: fighter._id,
-    slot: fighter.slot,
-    ownerId: fighter.ownerId,
-    status: fighter.status,
-    forge: fighter.forge ?? null,
-    /** The streamed parts so far, while forging. */
-    partial: fighter.status === "FORGING" && stream?.forgeToken === fighter.forgeToken ? stream.parts : [],
-    champion: championOf(fighter),
-    previous: fighter.previous ?? null,
-    version: fighter.version,
-    failure: fighter.status === "FAILED" ? (fighter.failure ?? "failed") : null,
-  };
-}
-
-/** Each fighter's forge as it grows: status, streamed parts, and the finished sheet. */
-export const foundry = query({
+/**
+ * The parts each forge has streamed so far. A stream row exists only while
+ * its fighter forges: starting a forge replaces it and landing one deletes
+ * it, and a superseded forge's late parts never reach it, so the rows alone
+ * are current. Status and the finished sheet come from the room view, which
+ * the same transaction updates.
+ */
+export const forges = query({
   args: { roomCode: v.string() },
-  returns: v.array(
-    v.object({
-      id: v.id("slopFightFighters"),
-      slot: v.number(),
-      ownerId: v.union(v.id("players"), v.null()),
-      status: fighterStatusValidator,
-      forge: v.union(forgeValidator, v.null()),
-      partial: v.array(partValidator),
-      champion: v.union(championValidator, v.null()),
-      previous: v.union(championValidator, v.null()),
-      version: v.number(),
-      failure: v.union(v.string(), v.null()),
-    }),
-  ),
+  returns: v.array(v.object({ fighterId: v.id("slopFightFighters"), parts: v.array(partValidator) })),
   handler: async (ctx, args) => {
-    const game = await stageGame(ctx, args.roomCode, undefined);
-    if (!game) return [];
-    const [fighters, streams] = await Promise.all([
-      loadFighters(ctx, game._id),
-      ctx.db
-        .query("slopFightForgeStreams")
-        .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
-        .take(CHAMPIONS),
-    ]);
-    return fighters.map((fighter) => foundryEntry(fighter, streams.find((stream) => stream.fighterId === fighter._id)));
+    const game = await stageGame(ctx, args.roomCode);
+    if (!game || game.status !== "PLAYING") return [];
+    const streams = await ctx.db
+      .query("slopFightForgeStreams")
+      .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
+      .take(CHAMPIONS);
+    return streams.map((stream) => ({ fighterId: stream.fighterId, parts: stream.parts }));
+  },
+});
+
+/** Each describer's last keystroke (server time), for the easels' typing shimmer. */
+export const typing = query({
+  args: { roomCode: v.string() },
+  returns: v.array(v.object({ fighterId: v.id("slopFightFighters"), at: v.number() })),
+  handler: async (ctx, args) => {
+    const game = await stageGame(ctx, args.roomCode);
+    if (!game || game.status !== "PLAYING" || (game.phase !== "BUILD" && game.phase !== "UPGRADE")) {
+      return [];
+    }
+    const rows = await ctx.db
+      .query("slopFightTyping")
+      .withIndex("by_gameId_and_fighterId", (index) => index.eq("gameId", game._id))
+      .take(CHAMPIONS);
+    return rows.map((row) => ({ fighterId: row.fighterId, at: row.at }));
   },
 });

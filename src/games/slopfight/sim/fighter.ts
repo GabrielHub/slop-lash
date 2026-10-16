@@ -3,8 +3,9 @@
 import type { ImpulseJoint, RigidBody, World } from "@dimforge/rapier3d-deterministic-compat";
 import type { Arena, CounterCrackHazard, WaterLandingHazard } from "../arenas";
 import type { FighterModifiers, Side } from "../modifiers";
+import { FINISH_EFFECTS, partFinish } from "../finishes";
 import { championHash, maxHealth, type Champion, type Delivery } from "../sheet";
-import type { MoveType } from "../vocab";
+import type { Finish, MoveType } from "../vocab";
 import {
   brainProfile,
   createBrainState,
@@ -46,6 +47,8 @@ export interface WorldShape {
   a: V3;
   b: V3;
   r: number;
+  /** What the shape's part is made of. */
+  finish: Finish;
 }
 
 export type Mode = "ready" | "move" | "showboat" | "stagger" | "getup" | "held" | "ko" | "out";
@@ -59,6 +62,8 @@ interface MoveRun {
   dur: number;
   /** Chain root body index (0 = the torso). */
   root: number;
+  /** What the deliverer is made of: the root body's part, or the item for item moves. */
+  finish: Finish;
   chain: number[];
   resolved: boolean;
   peakRel: number;
@@ -86,6 +91,8 @@ export interface Fighter {
   rng: Rng;
   moves: BrainMove[];
   itemRoot: number;
+  /** What the held item is made of (null without one). */
+  itemFinish: Finish | null;
   /** Bodies a body-delivered move hits or grabs with: the torso plus the head chain. */
   coreChain: number[];
   bodies: RigidBody[];
@@ -155,16 +162,29 @@ export function effPowerOf(power: number, type: MoveType, mods: FighterModifiers
   return clamp(soft, 0.5, 7);
 }
 
-/** The limb chain that holds the item (0 when it is welded to the torso, -1 without one). */
-function itemRootOf(def: ProxyDef, champion: Champion): number {
+/**
+ * The limb chain that holds the item (0 when it is welded to the torso, -1 without one)
+ * and what the item is made of.
+ */
+function itemOf(def: ProxyDef, champion: Champion): { root: number; finish: Finish | null } {
   for (const part of champion.parts) {
     if (part.role !== "item") continue;
     for (const bone of [part.id, `${part.id}~m`]) {
       const index = def.boneBody.get(bone);
-      if (index !== undefined) return index === 0 ? 0 : def.bodies[index]!.chainRoot;
+      if (index !== undefined)
+        return { root: index === 0 ? 0 : def.bodies[index]!.chainRoot, finish: partFinish(part) };
     }
   }
-  return -1;
+  return { root: -1, finish: null };
+}
+
+/**
+ * What a move's deliverer is made of: the item for an item move that has one, else the
+ * chain root's own part (the torso for body moves; a body slam's contact refines that).
+ */
+export function delivererFinish(f: Fighter, root: number, delivery: Delivery): Finish {
+  if (delivery === "item" && f.itemFinish !== null && root === f.itemRoot) return f.itemFinish;
+  return f.def.bodies[root]!.finishes[0]!;
 }
 
 /** Chain root for a move's delivery, with fallbacks to what the body actually has. */
@@ -267,7 +287,8 @@ export function createFighter(
 ): Fighter {
   const geometry = arena.geometry;
   const def = buildProxyDef(champion);
-  const itemRoot = itemRootOf(def, champion);
+  const item = itemOf(def, champion);
+  const itemRoot = item.root;
   const yaw = side === "A" ? HALF_PI : -HALF_PI;
   const q = qYaw(yaw);
   const spawn = geometry.spawns[side];
@@ -364,6 +385,7 @@ export function createFighter(
     rng: rngStream(seed, `brain:${side}:${championHash(champion)}`),
     moves,
     itemRoot,
+    itemFinish: item.finish,
     coreChain,
     bodies,
     st: [],
@@ -420,6 +442,22 @@ export function createFighter(
   };
   fighter.restComY = bodies[0]!.worldCom().y;
   return fighter;
+}
+
+/** Long limbs swing slower: Reach costs time on a Strike's windup and recovery. */
+export const reachTiming = (f: Fighter) => 1 + K.REACH_TIMING * (f.profile.effReach - 3);
+
+/**
+ * A Strike's windup before speed: power, Chaos jitter and Reach, then the deliverer's
+ * finish (heavy ones swing slower, light ones quicker; exactly 1 for vinyl).
+ */
+export function strikeWindupMs(f: Fighter, effPower: number, jitter: number, finish: Finish): number {
+  return (
+    (K.STRIKE_WINDUP_MS + K.STRIKE_WINDUP_PER_POWER * effPower) *
+    jitter *
+    reachTiming(f) *
+    FINISH_EFFECTS[finish].swing
+  );
 }
 
 export const isActive = (f: Fighter) =>

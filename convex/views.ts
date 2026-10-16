@@ -11,12 +11,16 @@ import { sloplashView } from "./sloplash/view";
 
 const MAX_MODEL_USAGES = 32;
 
-/** `players` is the room view's own read of every player (kicked ones included), shared, not repeated. */
+/**
+ * `players` is the room view's own read of every player (kicked ones included), shared, not repeated.
+ * `recap`: the recap page's view, which may carry what live rooms leave out (SlopFight's replays and doodles).
+ */
 async function modeView(
   ctx: QueryCtx,
   game: Doc<"games">,
   viewerId: Id<"players"> | null,
   players: Promise<Doc<"players">[]>,
+  recap: boolean,
 ) {
   switch (game.gameType) {
     case "SLOPLASH":
@@ -26,7 +30,7 @@ async function modeView(
     case "QUIZSLOP":
       return quizslopView(ctx, game, viewerId, players);
     case "SLOPFIGHT":
-      return slopfightView(ctx, game, viewerId);
+      return slopfightView(ctx, game, viewerId, recap);
   }
 }
 
@@ -53,14 +57,14 @@ async function loadUsage(ctx: QueryCtx, game: Doc<"games">) {
 }
 
 /** What one viewer sees of a room. A null viewer is an outside spectator. */
-async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer | null) {
+async function buildRoomView(ctx: QueryCtx, game: Doc<"games">, viewer: Viewer | null, recap = false) {
   const viewerId = viewer?.player?._id ?? null;
   const finished = game.status === "FINISHED";
   const allPlayers = loadPlayers(ctx, game._id);
   const [players, presence, mode, usage, live] = await Promise.all([
     allPlayers,
     loadPresence(ctx, game._id),
-    modeView(ctx, game, viewerId, allPlayers),
+    modeView(ctx, game, viewerId, allPlayers, recap),
     finished ? loadUsage(ctx, game) : Promise.resolve(null),
     // A finished game may have been followed by a "Play again" under the same code.
     finished ? findGameByCode(ctx, game.roomCode) : Promise.resolve(null),
@@ -167,6 +171,6 @@ export const recap = query({
     const game = await findGameByNumber(ctx, args.roomCode, gameNumber);
     if (!game) return { kind: "NOT_FOUND" as const };
     if (game.status !== "FINISHED") return { kind: "IN_PROGRESS" as const };
-    return { kind: "READY" as const, view: await buildRoomView(ctx, game, null) };
+    return { kind: "READY" as const, view: await buildRoomView(ctx, game, null, true) };
   },
 });

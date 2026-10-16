@@ -1,7 +1,7 @@
 // Five complete ForgeResults for the forge prompt's static block: a described
 // biped with a held item, a hat (ears moved to the sides) and a belly; a drawn
 // biped with a written name, one centred back-gear part and a suit marking; a
-// tentacled flat-disc object; a rejection; and a lenient mark built as
+// tentacled flat-disc object made of metal with a crystal dome; a rejection; and a lenient mark built as
 // something other than a sphere with nubs. They model the <body> rules (tells
 // at M to XL, limbs in the body's slot, legs normal, nothing on the face's
 // front but a muzzle, one part kind per anchor, clothing as paint) and never
@@ -21,7 +21,14 @@ export interface ForgeExample {
 type Spec = `${Part["role"]} ${Part["shape"]} ${Part["size"]} ${Part["elongation"]}`;
 
 /** `spec` is "role shape size elongation"; `on` is "parent.anchor", null for the torso. */
-function part(id: string, spec: Spec, on: string | null, color: Part["color"], mirror = false): Part {
+function part(
+  id: string,
+  spec: Spec,
+  on: string | null,
+  color: Part["color"],
+  mirror = false,
+  finish: Part["finish"] = "vinyl",
+): Part {
   const [role, shape, size, elongation] = spec.split(" ") as [
     Part["role"],
     Part["shape"],
@@ -29,7 +36,8 @@ function part(id: string, spec: Spec, on: string | null, color: Part["color"], m
     Part["elongation"],
   ];
   const [parent, anchor] = on ? (on.split(".") as [string, Part["anchor"]]) : [null, null];
-  return { id, role, shape, size, elongation, parent, anchor, color, mirror };
+  // Vinyl is the absent finish, as balanceChampion stores it.
+  return { id, role, shape, size, elongation, parent, anchor, color, ...(finish === "vinyl" ? {} : { finish }), mirror };
 }
 
 export const FORGE_EXAMPLES: readonly ForgeExample[] = [
@@ -138,8 +146,8 @@ export const FORGE_EXAMPLES: readonly ForgeExample[] = [
         bodyPlan: "FLIER",
         palette: { primary: "teal", secondary: "lime", accent: "butter" },
         parts: [
-          part("saucer", "torso sphere XL stubby", null, "primary"),
-          part("dome", "head sphere M normal", "saucer.top", "secondary"),
+          part("saucer", "torso sphere XL stubby", null, "primary", false, "metal"),
+          part("dome", "head sphere M normal", "saucer.top", "secondary", false, "crystal"),
           part("tent1", "tail cone M long", "saucer.bottom", "secondary"),
           part("tent2", "tail cone M long", "saucer.bottom", "secondary"),
           part("tent3", "tail cone M long", "saucer.bottom", "secondary"),

@@ -4,6 +4,7 @@
 // worker's typed arrays.
 
 import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from "three";
+import { FINISH_ATTRIBUTE } from "../look/toon";
 import { meshCreature, meshKey, type MeshData, type MeshRequest } from "./mesher";
 import type { WorkerRequest, WorkerResponse } from "./mesher.worker";
 
@@ -137,6 +138,7 @@ export function geometryFromMesh(mesh: MeshData): BufferGeometry {
   geometry.setAttribute("position", new BufferAttribute(mesh.positions, 3));
   geometry.setAttribute("normal", new BufferAttribute(mesh.normals, 3));
   geometry.setAttribute("color", new BufferAttribute(mesh.colors, 3));
+  geometry.setAttribute(FINISH_ATTRIBUTE, new BufferAttribute(mesh.finish, 2));
   geometry.setAttribute("skinIndex", new BufferAttribute(mesh.skinIndex, 4));
   geometry.setAttribute("skinWeight", new BufferAttribute(mesh.skinWeight, 4));
   geometry.setIndex(new BufferAttribute(mesh.index, 1));

@@ -8,7 +8,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Vector3, type Group } from "three";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import type { ArenaNodes, NodeTransform } from "../arena/nodes";
-import { useStageFoundry, useStageStrokes, useLiveFeeds } from "../feeds";
+import { useLiveFeeds, useStageFoundry, useStageStrokes, useStageTyping } from "../feeds";
 import { useStage } from "../services";
 import type { StageInput } from "../stage-input";
 import { lightOf, UI_COLORS } from "../ui3d/materials";
@@ -21,15 +21,20 @@ import { buildSceneData, needsSynthetic, type SceneData, type SceneFighter } fro
 
 type DevFeedModule = typeof import("./dev-feed");
 
-/** The scenes' view of the room plus the stage feeds (null outside a SlopFight room). */
-export function useSceneData(): SceneData | null {
+/**
+ * The scenes' view of the room plus the stage feeds (null outside a SlopFight
+ * room). `feeds: false` for a scene that shows no strokes, streamed parts or
+ * typing: it subscribes to none of them.
+ */
+export function useSceneData({ feeds = true }: { feeds?: boolean } = {}): SceneData | null {
   const room = useRoomOrNull();
-  const strokes = useStageStrokes();
-  const foundry = useStageFoundry();
+  const strokes = useStageStrokes(feeds);
+  const foundry = useStageFoundry(feeds);
+  const typing = useStageTyping(feeds);
   const live = useLiveFeeds();
   const view = room?.view ?? null;
   const offset = room?.clockOffsetMs ?? 0;
-  const synth = !!view && !live && needsSynthetic(view, foundry);
+  const synth = feeds && !!view && !live && needsSynthetic(view, foundry);
   // A fixture's forging fighters grow from a synthetic stream (the sample
   // champions, loaded on demand so they stay out of the production chunk):
   // re-read it a few times a second.
@@ -55,8 +60,8 @@ export function useSceneData(): SceneData | null {
   return useMemo(() => {
     if (!view) return null;
     const synthetic = synth && devFeed && synthNow !== null ? devFeed.sampleStream(synthNow) : null;
-    return buildSceneData(view, { strokes, foundry, synthetic });
-  }, [view, strokes, foundry, synth, devFeed, synthNow]);
+    return buildSceneData(view, { strokes, foundry, typing, synthetic });
+  }, [view, strokes, foundry, typing, synth, devFeed, synthNow]);
 }
 
 /** Seconds since the phase started on the presentation clock (mount time when the phase start is unknown). */

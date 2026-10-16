@@ -8,19 +8,24 @@ import { podium, seedOrder, TOTAL_FIGHTS } from "../../src/games/slopfight/tourn
 import {
   championOf,
   FIGHT_PHASES,
+  findReplay,
   isUpgradeKind,
   loadFighters,
   loadFights,
   loadGameStrokeRows,
+  loadReplays,
   loadState,
   type Fight,
   type Fighter,
+  type Replay,
 } from "./data";
-import type { StoredOutcome } from "./tables";
+import type { FightResult, StoredOutcome } from "./tables";
 
-// What one viewer sees of a SlopFight game. Kept small: no strokes and no
-// streamed parts while the game runs (stage.ts serves those to the stage
-// only). The seed and the outcome of a fight reach clients only once its
+// What one viewer sees of a SlopFight game. Kept small: no strokes, streamed
+// parts or typing while the game runs (stage.ts serves those to the stage
+// only), and no fight replay but the one in play: a live view reads that
+// fight's event log and nothing else's. The recap reads every replay and
+// doodle. The seed and the outcome of a fight reach clients only once its
 // FIGHT starts, after bets close. A rejection reaches only its owner.
 
 const MAX_BETS = 128;
@@ -76,8 +81,6 @@ function fighterView(fighter: Fighter, game: Doc<"games">, viewerId: Id<"players
     ownerId: fighter.ownerId,
     status: fighter.status,
     inputKind: fighter.inputKind,
-    /** Last keystroke (server time), for the typing shimmer. */
-    typingAt: fighter.typingAt ?? null,
     /** The current sheet; during an upgrade forge it is still the old one. */
     champion: championOf(fighter),
     previous: showPrevious ? (fighter.previous ?? null) : null,
@@ -106,9 +109,13 @@ function sheetsById(fighters: readonly Fighter[]) {
 }
 
 /** The notes as they actually apply (capped), for the face-off cards. */
-function appliedNotes(fight: Fight, sheets: Map<Id<"slopFightFighters">, Champion | null>) {
-  const a = fight.sheets?.A ?? sheets.get(fight.a);
-  const b = fight.sheets?.B ?? sheets.get(fight.b);
+function appliedNotes(
+  fight: Fight,
+  replay: Replay | null,
+  sheets: Map<Id<"slopFightFighters">, Champion | null>,
+) {
+  const a = replay?.sheets?.A ?? sheets.get(fight.a);
+  const b = replay?.sheets?.B ?? sheets.get(fight.b);
   if (!a || !b || !fight.notes || fight.notes.length === 0) return [];
   return resolveModifiers(a, b, fight.arena, fight.notes).notes.map((applied) => ({
     side: applied.note.side,
@@ -121,24 +128,47 @@ function appliedNotes(fight: Fight, sheets: Map<Id<"slopFightFighters">, Champio
   }));
 }
 
+/** The fight in play, if a fight phase is on. */
+function isCurrent(fight: Fight, game: Doc<"games">) {
+  return (
+    game.status === "PLAYING" &&
+    FIGHT_PHASES.includes(game.phase) &&
+    game.round === fight.round &&
+    game.step === fight.step
+  );
+}
+
+/** Bets close when FIGHT starts; only then (or once scored) do the seed and outcome go out. */
+function isRevealed(fight: Fight, game: Doc<"games">) {
+  return (
+    game.status === "FINISHED" ||
+    fight.scoredAt !== undefined ||
+    (isCurrent(fight, game) && (game.phase === "FIGHT" || game.phase === "RESULT"))
+  );
+}
+
+/** The outcome as clients read it: the log comes from the replay, when this view read it. */
+function outcomeOf(result: FightResult, replay: Replay | null): StoredOutcome {
+  return { ...result, events: replay?.events ?? [], healthTimeline: replay?.healthTimeline ?? [] };
+}
+
+/**
+ * One fight for this viewer. `replay` is read only for the fight in play and
+ * in the recap: other fights go out with an empty log and no applied notes,
+ * which nothing shows for them.
+ */
 function fightView(
   fight: Fight,
   game: Doc<"games">,
   bets: readonly Doc<"slopFightBets">[],
   sheets: Map<Id<"slopFightFighters">, Champion | null>,
   viewerId: Id<"players"> | null,
+  replay: Replay | null,
+  recap: boolean,
 ) {
-  const current =
-    game.status === "PLAYING" &&
-    FIGHT_PHASES.includes(game.phase) &&
-    game.round === fight.round &&
-    game.step === fight.step;
-  // Bets close when FIGHT starts; only then (or once scored) do the seed and outcome go out.
-  const revealed =
-    game.status === "FINISHED" ||
-    fight.scoredAt !== undefined ||
-    (current && (game.phase === "FIGHT" || game.phase === "RESULT"));
-  const outcome: StoredOutcome | null = revealed ? (fight.outcome ?? null) : null;
+  const current = isCurrent(fight, game);
+  const revealed = isRevealed(fight, game);
+  const outcome = revealed && fight.outcome ? outcomeOf(fight.outcome, replay) : null;
   return {
     id: fight._id,
     round: fight.round,
@@ -152,7 +182,7 @@ function fightView(
     /** PENDING while the matchup call runs; FAILED means no notes. */
     matchup: fight.matchup,
     notes: fight.notes ?? [],
-    applied: appliedNotes(fight, sheets),
+    applied: current || recap ? appliedNotes(fight, replay, sheets) : [],
     walkOn: fight.walkOn ?? null,
     /** Final snapshot; live crowd pulses come from stage.hype without invalidating this view. */
     hype: fight.hype,
@@ -173,10 +203,10 @@ function fightView(
     awards: revealed ? (fight.awards ?? null) : null,
     /**
      * Both champions as this fight's sim ran them, for the recap's re-sim
-     * (with seed, arena, notes and limitMs). Only once the game is over: while
-     * it runs, the fighters' current sheets are the ones in play.
+     * (with seed, arena, notes and limitMs). Only in the recap: while the game
+     * runs, the fighters' current sheets are the ones in play.
      */
-    sheets: game.status === "FINISHED" && fight.sheets ? fight.sheets : null,
+    sheets: recap ? (replay?.sheets ?? null) : null,
     recapLine: revealed ? (fight.recapLine ?? null) : null,
   };
 }
@@ -191,12 +221,34 @@ async function loadDoodles(ctx: QueryCtx, fighters: readonly Fighter[]) {
   }));
 }
 
+/**
+ * The fight replays this view reads: every one for the recap, else only the
+ * fight in play once it is revealed (its playback and health bars).
+ */
+async function loadViewReplays(
+  ctx: QueryCtx,
+  game: Doc<"games">,
+  fights: readonly Fight[],
+  recap: boolean,
+): Promise<Replay[]> {
+  if (recap) return loadReplays(ctx, game._id);
+  const playing = fights.find((fight) => isCurrent(fight, game));
+  if (!playing?.outcome || !isRevealed(playing, game)) return [];
+  const replay = await findReplay(ctx, playing);
+  return replay ? [replay] : [];
+}
+
+/**
+ * `recap`: the recap page's view of a finished game, with every replay and
+ * doodle. Live rooms (finished ones included) never read those; the stage
+ * reads strokes from stage.strokes.
+ */
 export async function slopfightView(
   ctx: QueryCtx,
   game: Doc<"games">,
   viewerId: Id<"players"> | null,
+  recap = false,
 ) {
-  const finished = game.status === "FINISHED";
   const [state, fighters, fights, bets] = await Promise.all([
     loadState(ctx, game._id),
     loadFighters(ctx, game._id),
@@ -206,8 +258,10 @@ export async function slopfightView(
       .withIndex("by_gameId", (index) => index.eq("gameId", game._id))
       .take(MAX_BETS),
   ]);
-  // The recap re-draws every doodle; while playing the stage reads them from stage.strokes.
-  const doodles = finished ? await loadDoodles(ctx, fighters) : null;
+  const [replays, doodles] = await Promise.all([
+    loadViewReplays(ctx, game, fights, recap),
+    recap ? loadDoodles(ctx, fighters) : Promise.resolve(null),
+  ]);
   const sheets = sheetsById(fighters);
   const fightViews = fights.map((fight) =>
     fightView(
@@ -216,6 +270,8 @@ export async function slopfightView(
       bets.filter((bet) => bet.fightId === fight._id),
       sheets,
       viewerId,
+      replays.find((replay) => replay.fightId === fight._id) ?? null,
+      recap,
     ),
   );
   const current = fightViews.find(
@@ -266,7 +322,7 @@ export async function slopfightView(
     /** A forge failed on both models and the Foundry waits for the host's retry. */
     foundryParked:
       game.status === "PLAYING" && game.phase === "FOUNDRY" && game.phaseDeadline === undefined,
-    /** Every stroke batch, for the recap only (null while the game runs). */
+    /** Every stroke batch, for the recap only (null in live rooms). */
     doodles,
   };
 }

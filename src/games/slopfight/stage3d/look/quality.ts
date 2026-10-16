@@ -27,6 +27,8 @@ export interface QualitySettings {
   /** Marching-cubes grid for the creature mesher: while growing, and the final mesh. */
   meshResolution: MeshResolution;
   meshGrid: { growing: number; final: number };
+  /** Creature finish pattern detail (look/toon.ts FINISH_DETAIL): 1 full, 0 the cheap path. */
+  finishDetail: number;
   /** Upper bound on the canvas pixel ratio. */
   maxDpr: number;
 }
@@ -47,6 +49,7 @@ export const QUALITY_LADDER: readonly QualitySettings[] = [
     contactShadowSize: 512,
     meshResolution: "high",
     meshGrid: { growing: 48, final: 64 },
+    finishDetail: 1,
     maxDpr: 2,
   },
   {
@@ -57,6 +60,7 @@ export const QUALITY_LADDER: readonly QualitySettings[] = [
     contactShadowSize: 512,
     meshResolution: "high",
     meshGrid: { growing: 48, final: 64 },
+    finishDetail: 1,
     maxDpr: 1.5,
   },
   {
@@ -67,6 +71,7 @@ export const QUALITY_LADDER: readonly QualitySettings[] = [
     contactShadowSize: 256,
     meshResolution: "high",
     meshGrid: { growing: 48, final: 64 },
+    finishDetail: 1,
     maxDpr: 1.5,
   },
   {
@@ -77,6 +82,7 @@ export const QUALITY_LADDER: readonly QualitySettings[] = [
     contactShadowSize: 256,
     meshResolution: "low",
     meshGrid: { growing: 32, final: 40 },
+    finishDetail: 0,
     maxDpr: 1,
   },
 ];

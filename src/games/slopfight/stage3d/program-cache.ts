@@ -10,7 +10,7 @@ import {
 } from "three";
 import { eyeMaterial } from "./creature/face-materials";
 import { createOutlineMaterial } from "./look/outline";
-import { createToonMaterial } from "./look/toon";
+import { createToonMaterial, FINISH_ATTRIBUTE } from "./look/toon";
 
 export function createProgramWarmup() {
   const root = new Group();
@@ -18,6 +18,8 @@ export function createProgramWarmup() {
   const geometry = new BufferGeometry();
   for (const attribute of ["position", "normal", "color"]) geometry.setAttribute(attribute, new Float32BufferAttribute([0, 0, 0], 3));
   geometry.setAttribute("uv", new Float32BufferAttribute([0, 0], 2));
+  // Creature bodies carry their finish (id, wobble scale); one finish program serves them all.
+  geometry.setAttribute(FINISH_ATTRIBUTE, new Float32BufferAttribute([0, 1], 2));
   geometry.setAttribute("skinIndex", new Uint16BufferAttribute([0, 0, 0, 0], 4));
   geometry.setAttribute("skinWeight", new Float32BufferAttribute([1, 0, 0, 0], 4));
   const skeleton = new Skeleton([new Bone()]);

@@ -31,6 +31,7 @@ import { toVoiceFighter } from "../../narration";
 import type { Champion, Part } from "../../sheet";
 import type { ArenaNodes } from "../arena/nodes";
 import { Creature, createDriver, type CreatureEvent, type CreatureHandle } from "../creature/creature";
+import { FINISH_LAND_SOUND } from "../creature/finish-look";
 import { createToonMaterial } from "../look/toon";
 import { useStage, type StageServices } from "../services";
 import type { StagePhase } from "../stage-input";
@@ -210,8 +211,12 @@ export function ForgePedestal({ fighter, nodes, phase, round, doodle, parked, on
 
   const onCreatureEvent = (event: CreatureEvent) => {
     const sfx = stageSfx(services);
-    if (event.kind === "partLanded") sfx.play("partPop", { intensity: 0.35 + Math.random() * 0.2, gain: 0.7 });
-    else if (event.kind === "reform") sfx.play("inflate", { intensity: 0.3, gain: 0.35 });
+    if (event.kind === "partLanded") {
+      sfx.play("partPop", { intensity: 0.35 + Math.random() * 0.2, gain: 0.7 });
+      // A finished part lands with its material's own note over the pop.
+      const finish = event.part.finish ? FINISH_LAND_SOUND[event.part.finish] : null;
+      if (finish) sfx.play(finish.name, { intensity: finish.intensity, gain: finish.gain });
+    } else if (event.kind === "reform") sfx.play("inflate", { intensity: 0.3, gain: 0.35 });
     else if (event.kind === "eyesOpen") sfx.play("boing", { intensity: 0.25, gain: 0.45 });
   };
 

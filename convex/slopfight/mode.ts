@@ -7,7 +7,6 @@ import { enterPhase, settle, timed, type GameMode, type Transition } from "../en
 import { pickArenaOrder } from "../../src/games/slopfight/arenas";
 import {
   BUILD_SECONDS,
-  FACE_OFF_MIN_SECONDS,
   FACE_OFF_SECONDS,
   FIGHT_LEAD_MS,
   FIGHT_OUTRO_MS,
@@ -33,6 +32,7 @@ import {
   createRoundFights,
   currentFight,
   decideBySeed,
+  faceOffOpensAt,
   findFight,
   findHype,
   forgeLeftovers,
@@ -295,7 +295,7 @@ export const slopfightMode: GameMode = {
       case "FACE_OFF": {
         // Face-off never closes before its minimum; this ping re-checks then.
         await ctx.scheduler.runAt(
-          game.phaseStartedAt + FACE_OFF_MIN_SECONDS * 1_000,
+          faceOffOpensAt(game),
           internal.slopfight.play.settlePing,
           { gameId: game._id, phaseGeneration: game.phaseGeneration },
         );
@@ -335,10 +335,13 @@ export const slopfightMode: GameMode = {
       case "UPGRADE": {
         // The house adds one invented thing to each of its champions, live.
         const version = targetVersion(game);
-        for (const fighter of await loadFighters(ctx, game._id)) {
+        const [fighters, state] = await Promise.all([
+          loadFighters(ctx, game._id),
+          loadState(ctx, game._id),
+        ]);
+        for (const fighter of fighters) {
           if (fighter.ownerId !== null || isDone(fighter, version)) continue;
           if (fighter.status === "FORGING") continue;
-          const state = await loadState(ctx, game._id);
           const text = housePick(HOUSE_ADDITIONS, state?.seed ?? 0, fighter.slot, version);
           const addition = { round: version, kind: "DESCRIBE" as const, text };
           await ctx.db.patch("slopFightFighters", fighter._id, { addition });
@@ -393,9 +396,10 @@ export const slopfightMode: GameMode = {
         );
       }
       case "FACE_OFF": {
+        // The clock first: before the minimum there is nothing to read.
+        if (Date.now() < faceOffOpensAt(game)) return false;
         const fight = await currentFight(ctx, game);
         if (!fight?.outcome) return false;
-        if (Date.now() < game.phaseStartedAt + FACE_OFF_MIN_SECONDS * 1_000) return false;
         const bettors = new Set<string>(
           (await loadBets(ctx, fight._id)).map((bet) => bet.playerId),
         );

@@ -20,10 +20,10 @@ import {
 import { describe, expect, test, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { runFor, setup } from "../test.harness";
-import { MAX_FIGHTER_STROKE_ROWS, REVEAL_HOLD_MS } from "./data";
+import { runFor, setup, view } from "../test.harness";
+import { fightSheets, MAX_FIGHTER_STROKE_ROWS, REVEAL_HOLD_MS } from "./data";
 import { slopfightJobHandlers } from "./jobs";
-import { partialBodyPlan } from "./forge";
+import { forgeOptions, partialBodyPlan } from "./forge";
 import { forgePartTarget } from "./view";
 
 /** Stroke rows inserted straight into the table, one stroke each (the worst case for row counts). */
@@ -168,7 +168,10 @@ describe("review follow-ups", () => {
       const job = (await ctx.db.get("generationJobs", jobId))!;
       return slopfightJobHandlers.SLOPFIGHT_RECAP.prepare(ctx, game, job);
     });
-    expect(recapInput?.a.name).toBe(fight.sheets!.A.name);
+    // The sheets the sim froze live on the fight's replay row, not the fight row.
+    const frozen = await room.t.run((ctx) => fightSheets(ctx, fight));
+    expect(fight.sheets).toBeUndefined();
+    expect(recapInput?.a.name).toBe(frozen!.A.name);
     expect(recapInput?.a.name).not.toBe("Different upgraded champion");
     expect((await sf(room)).fights[0]!.applied).toEqual(original.applied);
   });
@@ -225,8 +228,15 @@ describe("review follow-ups", () => {
     expect(MAX_FIGHTER_STROKE_ROWS).toBe(1_200);
     const expected = { [host!._id]: 1_200, [ana!._id]: 400, [bo!._id]: 3 };
 
-    const easel = await room.t.query(api.slopfight.stage.strokes, { roomCode: room.code });
+    const easels = await Promise.all(
+      [host!, ana!, bo!].map((fighter) =>
+        room.t.query(api.slopfight.stage.strokes, { roomCode: room.code, fighterId: fighter._id }),
+      ),
+    );
+    const easel = easels.flat();
     expect(countBy(easel, (row) => row.fighterId)).toEqual(expected);
+    // Each subscription carries its own fighter only.
+    expect(easels.map((rows) => new Set(rows.map((row) => row.fighterId)).size)).toEqual([1, 1, 1]);
     // Same shape as before: an id, the fighter, the layer, the seq and the strokes.
     expect(Object.keys(easel[0]!).toSorted()).toEqual([
       "fighterId",
@@ -250,11 +260,9 @@ describe("review follow-ups", () => {
     const doodles = recap.view.mode.doodles!;
     expect(countBy(doodles, (row) => row.fighterId)).toEqual(expected);
     expect(Object.keys(doodles[0]!).toSorted()).toEqual(["fighterId", "layer", "seq", "strokes"]);
-    const byNumber = await room.t.query(api.slopfight.stage.strokes, {
-      roomCode: room.code,
-      gameNumber: 1,
-    });
-    expect(byNumber).toHaveLength(1_603);
+    // The live room never carries them, finished or not.
+    const live = (await view(room.t, room.host)).mode;
+    expect(live?.kind === "SLOPFIGHT" ? live.doodles : "missing").toBeNull();
   });
 
   test("myStrokes returns only the caller's own strokes, up to a layer", async () => {
@@ -354,6 +362,22 @@ describe("review follow-ups", () => {
     expect(partialBodyPlan({ champion: { bodyPlan: "SLITH" } })).toBeNull();
     expect(partialBodyPlan({ bodyPlan: "FLIER" })).toBe("FLIER");
     expect(partialBodyPlan(null)).toBeNull();
+  });
+
+  test("the forge hears where the forged layer's material ink shows: the Build drawing, or the upgrade's new strokes", () => {
+    const gold = { c: 7 as const, w: 1 as const, p: [310, 110, 690, 110] };
+    const lava = { c: 10 as const, w: 1 as const, p: [410, 810, 590, 810] };
+    const base = { kind: "SUBMIT" as const, text: null, layer: 0, previous: null, addition: null, arenas: [] };
+    const inks = (input: Parameters<typeof forgeOptions>[0]) =>
+      forgeOptions(input).inks?.map((patch) => patch.ink.finish);
+    expect(inks({ ...base, batches: [{ layer: 0, seq: 0, strokes: [gold] }] })).toEqual(["gold"]);
+    const layers = [
+      { layer: 0, seq: 0, strokes: [gold] },
+      { layer: 1, seq: 0, strokes: [lava] },
+    ];
+    expect(inks({ ...base, kind: "UPGRADE", layer: 1, batches: layers })).toEqual(["lava"]);
+    expect(inks({ ...base, kind: "UPGRADE", layer: 2, batches: layers })).toEqual([]);
+    expect(forgeOptions({ ...base, batches: null }).inks).toBeUndefined();
   });
 
   test("an identical resubmit while that forge runs is a no-op; a changed one supersedes it", async () => {

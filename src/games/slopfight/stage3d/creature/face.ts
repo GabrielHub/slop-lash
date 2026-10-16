@@ -79,8 +79,8 @@ export function browEnds(uBrowTilt: number, side: number, base = 0): { inner: nu
   return side >= 0 ? { inner: left, outer: right } : { inner: right, outer: left };
 }
 
-/** Mirrors slopWobble (look/toon.ts) for one point, so decals ride the jelly. */
-function wobbleOffset(p: Vector3, n: Vector3, w: WobbleUniforms, out: Vector3): Vector3 {
+/** Mirrors slopWobble (look/toon.ts) for one point, so decals ride the jelly; `scale` is the surface's wobble scale (its finish). */
+function wobbleOffset(p: Vector3, n: Vector3, w: WobbleUniforms, out: Vector3, scale = 1): Vector3 {
   const hgt = Math.max(w.uHeight.value, 0.05);
   const h = Math.min(Math.max(p.y / hgt, 0), 1.4);
   const s = Math.min(Math.max((h - 0.04) / 0.36, 0), 1);
@@ -90,7 +90,7 @@ function wobbleOffset(p: Vector3, n: Vector3, w: WobbleUniforms, out: Vector3): 
   const breath = w.uBreath.value * Math.sin(time * 2.1 + seed) * body * (1.25 - h);
   const ripple = Math.sin(((p.x * 5.3 + p.y * 7.1 + p.z * 4.7) * w.uWobbleFreq.value) / hgt + time * 10 + seed);
   const jig = w.uJiggle.value * Math.sin(time * 36 + (p.y * 11) / hgt + seed);
-  const k = (breath + ripple * w.uWobbleAmp.value + jig) * hgt * body;
+  const k = (breath + ripple * w.uWobbleAmp.value + jig) * hgt * body * scale;
   out.copy(n).multiplyScalar(k);
   out.addScaledVector(w.uLag.value, h * h * hgt);
   return out;
@@ -100,6 +100,8 @@ interface EyeDecal {
   mesh: Mesh<BufferGeometry, ShaderMaterial & { uniforms: EyeUniforms }>;
   rest: Vector3;
   normal: Vector3;
+  /** The wobble scale of the surface under it (a metal head barely jellies). */
+  wobble: number;
   basis: Quaternion;
   slot: EyeSlot;
   /** Side of the face (+1 on the creature's left), for lid and brow tilt. */
@@ -112,6 +114,7 @@ interface MouthDecal {
   mesh: Mesh<BufferGeometry, MeshBasicMaterial>;
   rest: Vector3;
   normal: Vector3;
+  wobble: number;
   shape: MouthShape | null;
 }
 
@@ -251,6 +254,7 @@ export class CreatureFace {
         mesh,
         rest: mesh.position.clone(),
         normal: spot.normal,
+        wobble: 1,
         basis: spot.basis,
         slot,
         side: slot.x >= 0 ? 1 : -1,
@@ -273,16 +277,18 @@ export class CreatureFace {
       mesh.renderOrder = 3;
       mesh.frustumCulled = false;
       this.group.add(mesh);
-      this.mouth = { mesh, rest: mesh.position.clone(), normal: spot.normal, shape: null };
+      this.mouth = { mesh, rest: mesh.position.clone(), normal: spot.normal, wobble: 1, shape: null };
     }
     this.group.visible = true;
   }
 
   /**
    * Lids take the actual skin colour under each decal, and the mouth's line
-   * the colour that reads on the skin under it (the mesh's vertex colours, linear).
+   * the colour that reads on the skin under it (the mesh's vertex colours,
+   * linear). With the mesh's finish attribute, each decal also takes the
+   * surface's wobble scale, so it stays on a rigid or extra-wobbly head.
    */
-  sampleSkin(positions: Float32Array, colors: Float32Array) {
+  sampleSkin(positions: Float32Array, colors: Float32Array, finish?: Float32Array) {
     const count = positions.length / 3;
     const stride = Math.max(1, Math.floor(count / 6000));
     const nearest = (p: Vector3) => {
@@ -300,12 +306,15 @@ export class CreatureFace {
       }
       return bi;
     };
+    const wobbleAt = (bi: number) => (finish && bi >= 0 ? (finish[bi * 2 + 1] ?? 1) : 1);
     for (const eye of this.eyes) {
       const bi = nearest(eye.rest);
       if (bi >= 0) eye.mesh.material.uniforms.uLid.value.setRGB(colors[bi * 3]!, colors[bi * 3 + 1]!, colors[bi * 3 + 2]!);
+      eye.wobble = wobbleAt(bi);
     }
     if (this.mouth) {
       const bi = nearest(this.mouth.rest);
+      this.mouth.wobble = wobbleAt(bi);
       if (bi < 0) return;
       const under = new Color().setRGB(colors[bi * 3]!, colors[bi * 3 + 1]!, colors[bi * 3 + 2]!);
       const line = luminance(under) < 0.08 ? "#f4ead8" : "#2a1c22";
@@ -474,7 +483,7 @@ export class CreatureFace {
       u.uPupil.value.copy(eye.pupil);
       const s = popScale * eyeScale;
       eye.mesh.scale.set(s, s, s);
-      if (wobble) eye.mesh.position.copy(eye.rest).add(wobbleOffset(eye.rest, eye.normal, wobble, tmpV2));
+      if (wobble) eye.mesh.position.copy(eye.rest).add(wobbleOffset(eye.rest, eye.normal, wobble, tmpV2, eye.wobble));
     }
 
     if (this.mouth && this.spec) {
@@ -489,7 +498,7 @@ export class CreatureFace {
       const s = Math.max(0.001, Math.min(1, this.reveal * 1.1));
       this.mouth.mesh.scale.set(s, s, s);
       if (wobble) {
-        this.mouth.mesh.position.copy(this.mouth.rest).add(wobbleOffset(this.mouth.rest, this.mouth.normal, wobble, tmpV2));
+        this.mouth.mesh.position.copy(this.mouth.rest).add(wobbleOffset(this.mouth.rest, this.mouth.normal, wobble, tmpV2, this.mouth.wobble));
       }
     }
   }

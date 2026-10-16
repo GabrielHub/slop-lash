@@ -43,9 +43,11 @@ const GAME_TABLES = [
   ["quizSlopReactions", "by_gameId_and_ordinal_and_step_and_playerId"],
   ["slopFightState", "by_gameId"],
   ["slopFightFighters", "by_gameId_and_slot"],
+  ["slopFightTyping", "by_gameId_and_fighterId"],
   ["slopFightForgeStreams", "by_gameId"],
   ["slopFightStrokes", "by_gameId_and_fighterId"],
   ["slopFightFights", "by_gameId_and_round_and_step"],
+  ["slopFightReplays", "by_gameId_and_fightId"],
   ["slopFightHype", "by_gameId_and_round_and_step"],
   ["slopFightBets", "by_gameId"],
 ] as const satisfies readonly (readonly [TableNames, string])[];

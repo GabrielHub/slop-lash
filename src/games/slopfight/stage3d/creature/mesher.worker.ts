@@ -56,6 +56,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       mesh.positions.buffer,
       mesh.normals.buffer,
       mesh.colors.buffer,
+      mesh.finish.buffer,
       mesh.skinIndex.buffer,
       mesh.skinWeight.buffer,
       mesh.index.buffer,

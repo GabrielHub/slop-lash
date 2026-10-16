@@ -7,7 +7,7 @@ import type { ModeView, RoomPlayer, RoomView } from "@/room/context";
 import type { Champion, Part } from "../../sheet";
 import type { StrokeBatch } from "../../strokes";
 import type { FightRecord } from "../../tournament";
-import type { StageFoundryEntry, StageStrokeRow } from "../feeds";
+import type { StageFoundryEntry, StageStrokeRow, StageTyping } from "../feeds";
 
 export type SlopfightMode = ModeView<"SLOPFIGHT">;
 export type ModeFighter = SlopfightMode["fighters"][number];
@@ -22,7 +22,7 @@ export interface SceneFighter {
   house: boolean;
   status: FighterStatus;
   inputKind: "DRAW" | "DESCRIBE" | null;
-  /** Last keystroke (server ms) while describing. */
+  /** Last keystroke (server ms) while describing (stage.typing). */
   typingAt: number | null;
   champion: Champion | null;
   previous: Champion | null;
@@ -57,6 +57,8 @@ export type SyntheticParts = (fighterId: string, forgeStartedAt: number) => read
 export interface SceneDataOptions {
   strokes: readonly StageStrokeRow[] | null;
   foundry: readonly StageFoundryEntry[] | null;
+  /** Keystroke stamps by fighter id; none: nobody is typing. */
+  typing?: StageTyping | null;
   /** Grow FORGING fighters without a feed from this synthetic stream (fixtures); null: never. */
   synthetic: SyntheticParts | null;
 }
@@ -84,7 +86,7 @@ export function buildSceneData(view: RoomView, options: SceneDataOptions): Scene
     let synthetic = false;
     if (fighter.status === "FORGING") {
       if (entry) {
-        partial = entry.status === "FORGING" ? entry.partial : [];
+        partial = entry.partial;
       } else if (options.synthetic && fighter.forge) {
         // An upgrade grows into a sample too: the fixture has no new sheet yet.
         partial = options.synthetic(fighter.id, fighter.forge.startedAt);
@@ -99,9 +101,9 @@ export function buildSceneData(view: RoomView, options: SceneDataOptions): Scene
       house: fighter.ownerId === null,
       status: fighter.status,
       inputKind: fighter.inputKind,
-      typingAt: fighter.typingAt,
-      champion: (entry?.champion ?? fighter.champion) as Champion | null,
-      previous: (fighter.previous ?? entry?.previous ?? null) as Champion | null,
+      typingAt: options.typing?.[fighter.id] ?? null,
+      champion: fighter.champion as Champion | null,
+      previous: (fighter.previous ?? null) as Champion | null,
       forge: fighter.forge,
       failure: fighter.failure,
       version: fighter.version,

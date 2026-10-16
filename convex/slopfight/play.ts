@@ -3,10 +3,13 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "../_generated/server";
 import { requireHost, requirePlayer } from "../capabilities";
 import { enterPhase, settle } from "../engine";
-import { DESCRIBE_TEXT_MAX, UPGRADE_TEXT_MAX } from "../../src/games/slopfight/constants";
+import {
+  DESCRIBE_TEXT_MAX,
+  UPGRADE_TEXT_MAX,
+} from "../../src/games/slopfight/constants";
 import {
   isBlankDoodle,
-  doodleRoom,
+  layerRoom,
   StrokeBatchSchema,
   strokePointCount,
   type Stroke,
@@ -15,11 +18,12 @@ import { sanitize } from "../../src/lib/sanitize";
 import {
   clearForgeStream,
   currentFight,
+  faceOffOpensAt,
   findBet,
   findForgeStream,
   findHype,
+  findOwnFighter,
   loadFighterStrokeRows,
-  loadFighters,
   retryForges as restartForges,
   startForge,
   type Fighter,
@@ -59,7 +63,7 @@ async function requireSeat(ctx: MutationCtx, capability: string) {
 }
 
 async function myFighter(ctx: MutationCtx, game: Doc<"games">, playerId: Id<"players">) {
-  const fighter = (await loadFighters(ctx, game._id)).find((f) => f.ownerId === playerId);
+  const fighter = await findOwnFighter(ctx, game._id, playerId);
   if (!fighter) throw new ConvexError("You don't have a champion in this game");
   return fighter;
 }
@@ -176,14 +180,18 @@ export const addStrokes = mutation({
     if (existing) return null;
     const last = await lastRow(ctx, fighter._id, args.layer);
     // The phone serializes batches. A new row must append: inserting before
-    // the cumulative total would undercount strokes and bypass the layer cap.
+    // the cumulative totals would undercount the layer and bypass its cap.
     if (last && args.seq <= last.seq) throw new ConvexError("That stroke batch is out of order");
+    // The last row's running totals are the whole layer's, so the cap never re-reads it.
     const total = last?.total ?? 0;
-    const room = doodleRoom(await layerStrokes(ctx, fighter._id, args.layer));
+    // A row saved before `points` existed: count the layer once.
+    const points = last ? (last.points ?? strokePointCount(await layerStrokes(ctx, fighter._id, args.layer))) : 0;
+    const room = layerRoom(total, points);
     // Keep the whole submitted batch or reject it: a partial save would make
     // the phone's optimistic drawing disagree with what the Foundry receives.
     const strokes = parsed.data;
-    if (strokes.length > room.strokes || strokePointCount(strokes) > room.points) {
+    const added = strokePointCount(strokes);
+    if (strokes.length > room.strokes || added > room.points) {
       throw new ConvexError("The canvas is full. Undo a stroke or clear it to make room");
     }
     await ctx.db.insert("slopFightStrokes", {
@@ -193,6 +201,7 @@ export const addStrokes = mutation({
       seq: args.seq,
       strokes,
       total: total + strokes.length,
+      points: points + added,
     });
     // The first stroke picks the drawing input; later batches never touch the fighter row.
     if (args.layer === 0 && fighter.status !== "DRAWING") {
@@ -216,9 +225,11 @@ export const undoStroke = mutation({
     if (row.strokes.length <= 1) {
       await ctx.db.delete("slopFightStrokes", row._id);
     } else {
+      const removed = strokePointCount(row.strokes.slice(-1));
       await ctx.db.patch("slopFightStrokes", row._id, {
         strokes: row.strokes.slice(0, -1),
         total: row.total - 1,
+        points: row.points === undefined ? undefined : row.points - removed,
       });
     }
     return null;
@@ -237,7 +248,11 @@ export const clearStrokes = mutation({
   },
 });
 
-/** A keystroke in the describe box, for the stage's typing shimmer (throttled). */
+/**
+ * A keystroke in the describe box, for the stage's typing shimmer (throttled).
+ * The stamp goes in its own small row (only stage.typing reads it); the
+ * fighter row changes once, when the first keystroke picks the describe input.
+ */
 export const setTyping = mutation({
   args: { capability: v.string() },
   returns: v.null(),
@@ -246,13 +261,21 @@ export const setTyping = mutation({
     if (game.phase !== "BUILD" && game.phase !== "UPGRADE") return null;
     const fighter = await myFighter(ctx, game, player._id);
     const now = Date.now();
-    if (fighter.typingAt !== undefined && now - fighter.typingAt < TYPING_THROTTLE_MS) return null;
-    const describing =
-      game.phase === "BUILD" && drafting(fighter) && fighter.status !== "DESCRIBING";
-    await ctx.db.patch("slopFightFighters", fighter._id, {
-      typingAt: now,
-      ...(describing ? { inputKind: "DESCRIBE" as const, status: "DESCRIBING" as const } : {}),
-    });
+    const stamp = await ctx.db
+      .query("slopFightTyping")
+      .withIndex("by_gameId_and_fighterId", (index) =>
+        index.eq("gameId", game._id).eq("fighterId", fighter._id),
+      )
+      .unique();
+    if (stamp && now - stamp.at < TYPING_THROTTLE_MS) return null;
+    if (stamp) await ctx.db.patch("slopFightTyping", stamp._id, { at: now });
+    else await ctx.db.insert("slopFightTyping", { gameId: game._id, fighterId: fighter._id, at: now });
+    if (game.phase === "BUILD" && drafting(fighter) && fighter.status !== "DESCRIBING") {
+      await ctx.db.patch("slopFightFighters", fighter._id, {
+        inputKind: "DESCRIBE",
+        status: "DESCRIBING",
+      });
+    }
     return null;
   },
 });
@@ -346,7 +369,9 @@ export const placeBet = mutation({
         side: args.side,
       });
     }
-    await settle(ctx, game._id);
+    // The face-off can't end before its minimum, and a ping settles it then:
+    // bets before it skip the roster and fight reads of a settle.
+    if (Date.now() >= faceOffOpensAt(game)) await settle(ctx, game._id);
     return null;
   },
 });
@@ -411,9 +436,7 @@ export const myStrokes = query({
   handler: async (ctx, args) => {
     const { game, player } = await requirePlayer(ctx, args.capability);
     if (game.gameType !== "SLOPFIGHT") return [];
-    const fighter = (await loadFighters(ctx, game._id)).find(
-      (entry) => entry.ownerId === player._id,
-    );
+    const fighter = await findOwnFighter(ctx, game._id, player._id);
     if (!fighter) return [];
     const rows = await loadFighterStrokeRows(ctx, fighter._id, args.layer);
     return rows.map((row) => ({

@@ -72,6 +72,79 @@ export const ARM_ANCHORS = ANCHORS.filter((anchor) => anchor.startsWith("arm"));
 export const PART_COLORS = ["primary", "secondary", "accent"] as const;
 export type PartColor = (typeof PART_COLORS)[number];
 
+/** What a part is made of. `vinyl` is the soft toy default; the rest change the look and the fight. */
+export const FINISHES = [
+  "vinyl",
+  "metal",
+  "gold",
+  "crystal",
+  "stone",
+  "wood",
+  "ice",
+  "lava",
+  "slime",
+  "glow",
+] as const;
+export type Finish = (typeof FINISHES)[number];
+
+/**
+ * `prompt`: what the forge reads (the words a player might use for it).
+ * `label`: the card's chip name. `card`: one player-facing line, kept in step
+ * with FINISH_EFFECTS (finishes.ts).
+ */
+export const FINISH_INFO = {
+  vinyl: {
+    prompt: "Soft painted toy vinyl, the default for every part.",
+    label: "Vinyl",
+    card: "Soft toy vinyl.",
+  },
+  metal: {
+    prompt: "Metal: steel, iron, chrome, tin, plating, armour, machinery, mechanical limbs.",
+    label: "Metal",
+    card: "Hits clang harder but swing slower; plating soaks damage; heavy.",
+  },
+  gold: {
+    prompt: "Gold: solid gold, golden, gilded, brass, trophies and crowns.",
+    label: "Gold",
+    card: "Heavy, hits hard, swings slow, hard to shove.",
+  },
+  crystal: {
+    prompt: "Crystal: diamond, gems, glass, ruby, sapphire, emerald, quartz.",
+    label: "Crystal",
+    card: "Razor hits and a hard shell, but brittle: it flies far.",
+  },
+  stone: {
+    prompt: "Stone: rock, marble, granite, concrete, statues, golems, boulders.",
+    label: "Stone",
+    card: "Huge knockback, barely budges, very slow swings.",
+  },
+  wood: {
+    prompt: "Wood: wooden, bark, planks, logs, branches, puppets, peg legs.",
+    label: "Wood",
+    card: "Sturdy and clubby, a little slow.",
+  },
+  ice: {
+    prompt: "Ice: frozen, frost, icicles, glaciers.",
+    label: "Ice",
+    card: "Quick, slick hits that send foes sliding, and it slides too.",
+  },
+  lava: {
+    prompt: "Lava: magma, molten, fire, flaming, burning, embers.",
+    label: "Lava",
+    card: "Scorching hits, but the crust crumbles when struck.",
+  },
+  slime: {
+    prompt: "Slime: goo, ooze, jelly, gelatin, gum, sludge.",
+    label: "Slime",
+    card: "Soaks and splats: hard to launch, hits soft.",
+  },
+  glow: {
+    prompt: "Glow: glowing, neon, radioactive, ghostly, electric energy, plasma, holograms.",
+    label: "Glow",
+    card: "Pure energy: fast and zappy, and flimsy.",
+  },
+} as const satisfies Record<Finish, { prompt: string; label: string; card: string }>;
+
 export const MOVE_TYPES = ["STRIKE", "GRAPPLE", "TRICK"] as const;
 export type MoveType = (typeof MOVE_TYPES)[number];
 
@@ -280,6 +353,38 @@ export const PHONE_PALETTE = [
   toy: ToyColor | null;
   hex: string;
 }[];
+
+/**
+ * Material inks, stroke colour indices 7..13: what is painted in one forges
+ * in that finish (gold paint makes gold). Each draws as a glossy tube, `hex`
+ * with a bright `core` down the middle, so the forge image tells it from the
+ * flat inks. The ink sets the material, not the colour.
+ */
+export const MATERIAL_INKS = [
+  { index: 7, finish: "gold", label: "Gold", hex: "#D29A1E", core: "#FFEB8A" },
+  { index: 8, finish: "metal", label: "Chrome", hex: "#76838F", core: "#F1F4F7" },
+  { index: 9, finish: "crystal", label: "Diamond", hex: "#6E9EEB", core: "#FFFFFF" },
+  { index: 10, finish: "lava", label: "Lava", hex: "#4A2419", core: "#FF8A24" },
+  { index: 11, finish: "ice", label: "Ice", hex: "#3AA9C6", core: "#E3FAFF" },
+  { index: 12, finish: "slime", label: "Slime", hex: "#5C9A1D", core: "#C9F27A" },
+  { index: 13, finish: "glow", label: "Glow", hex: "#17AE86", core: "#E0FFF5" },
+] as const satisfies readonly {
+  index: number;
+  finish: Exclude<Finish, "vinyl">;
+  label: string;
+  hex: string;
+  core: string;
+}[];
+
+export type MaterialInk = (typeof MATERIAL_INKS)[number];
+
+/** Every ink by stroke colour index (`INKS[c].index === c`): the flat inks, the eraser, the material inks. */
+export const INKS = [...PHONE_PALETTE, ...MATERIAL_INKS] as const;
+
+/** The material ink at a stroke colour index, or undefined for a flat ink or the eraser. */
+export function materialInk(index: number): MaterialInk | undefined {
+  return MATERIAL_INKS.find((ink) => ink.index === index);
+}
 
 // ---------------------------------------------------------------------------
 // Face

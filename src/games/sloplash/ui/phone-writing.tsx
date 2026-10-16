@@ -105,6 +105,7 @@ function Writer() {
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.div
           key={current.id}
+          data-keyboard-frame
           className="flex flex-col gap-3"
           variants={deckCard}
           initial="hidden"

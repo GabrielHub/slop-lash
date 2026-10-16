@@ -1,9 +1,10 @@
 // Pure helpers behind the phone screens: the stroke send queue, the live
-// health bars, hype batching and the per-phase "still has something to do".
-// No React, no Convex: tested in logic.test.ts.
+// health bars, hype batching, the per-phase "still has something to do" and
+// the upgrade's material starters. No React, no Convex: tested in logic.test.ts.
 
 import { STROKES_PER_BATCH } from "../../constants";
 import { takeStrokeBatch, type Stroke } from "../../strokes";
+import type { Finish } from "../../vocab";
 
 // ---------------------------------------------------------------------------
 // Stroke queue
@@ -126,4 +127,39 @@ export const HYPE_FLUSH_MS = 1_000;
 export function takeHype(banked: number): { send: number; rest: number } {
   const send = Math.min(HYPE_PER_CALL, Math.max(0, Math.floor(banked)));
   return { send, rest: Math.max(0, banked - send) };
+}
+
+// ---------------------------------------------------------------------------
+// Material starters: a tap starts the upgrade's text, the player finishes it
+// ---------------------------------------------------------------------------
+
+export interface MaterialStarter {
+  finish: Exclude<Finish, "vinyl">;
+  label: string;
+  /** Words ai/upgrade.ts reads as that finish, before the part the player names. */
+  phrase: string;
+}
+
+/** The upgrade box's material chips, most fun first. */
+export const MATERIAL_STARTERS: readonly MaterialStarter[] = [
+  { finish: "gold", label: "Gold", phrase: "solid gold" },
+  { finish: "crystal", label: "Diamond", phrase: "diamond" },
+  { finish: "lava", label: "Lava", phrase: "lava" },
+  { finish: "metal", label: "Chrome", phrase: "chrome" },
+  { finish: "ice", label: "Ice", phrase: "ice" },
+  { finish: "slime", label: "Slime", phrase: "slimy" },
+  { finish: "glow", label: "Glow", phrase: "glowing" },
+  { finish: "stone", label: "Stone", phrase: "stone" },
+  { finish: "wood", label: "Wood", phrase: "wooden" },
+];
+
+/**
+ * The text after tapping a starter, ending in a space for the player to name
+ * what it makes ("solid gold " becomes "solid gold arms"). It replaces an
+ * empty box or a lone starter, and follows anything the player wrote.
+ */
+export function withStarter(text: string, phrase: string): string {
+  const written = text.trim();
+  const lone = written === "" || MATERIAL_STARTERS.some((starter) => starter.phrase === written);
+  return `${lone ? "" : `${written} `}${phrase} `;
 }

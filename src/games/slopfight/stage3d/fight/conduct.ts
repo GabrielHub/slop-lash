@@ -4,7 +4,8 @@
 //
 // - hits: hit stop (four frozen frames), the impact frame, shake scaled by
 //   damage, a spark burst in the attacker's colours, sweat off the target,
-//   the move family's sound, the crowd; a big hit adds slow motion (0.3x for
+//   the move family's sound (plus a finish layer when either part is
+//   finished: particles and a sound of its own), the crowd; a big hit adds slow motion (0.3x for
 //   half a second) with `slowmo_orbit` (rationed: the first big hit, then
 //   only heavy ones at least four seconds apart, and the finishing blow),
 //   then `ragdoll_follow` if the target flies;
@@ -499,6 +500,10 @@ export class FightConductor {
     if (event.type === "STRIKE") this.play("strikeThwack", { intensity, pan });
     else if (event.type === "GRAPPLE") this.play("grappleSlam", { intensity, pan });
     else this.play("trickBonk", { intensity, pan });
+    // Finished parts add their own layer: a clang off metal, a crunch off ice.
+    fx.playFinishLayers(point, event, { attack: this.o.colors[event.side], guard: this.o.colors[victim], big, strength }, (name, options) =>
+      this.play(name, { ...options, pan }),
+    );
     services.cheer(big ? 1 : 0.15 + strength * 0.35);
     if (big) this.play("crowdGasp", { intensity: 0.7, gain: 0.8 });
     this.hits += 1;

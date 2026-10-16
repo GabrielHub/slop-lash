@@ -17,7 +17,7 @@ import {
 import { inventHouseChampions } from "./house";
 import { settleNotes, writeMatchup } from "./matchup";
 import { writeRecapLine } from "./recap";
-import { FORGE_PROMPT_VERSION } from "./forge-prompt";
+import { FORGE_PROMPT_VERSION, writtenResult } from "./forge-prompt";
 import { SLOPFIGHT_FALLBACK_MODEL_ID, SLOPFIGHT_MODEL_ID } from "./shared";
 
 type StreamResult = Awaited<ReturnType<MockLanguageModelV4["doStream"]>>;
@@ -71,7 +71,8 @@ function streamingModel(...replies: (ForgeResult | "refuse" | "error" | (() => P
       if (reply === "refuse") return streamOf("", "content-filter")();
       if (typeof reply === "function") return reply();
       void options;
-      return streamOf(JSON.stringify(reply))();
+      // The decoder makes the model name every part's finish.
+      return streamOf(JSON.stringify(writtenResult(reply)))();
     },
   });
 }

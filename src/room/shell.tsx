@@ -17,6 +17,7 @@ import { ControllerLobby, StageLobby } from "./lobby";
 import { MenuButton } from "./menu-sheet";
 import { StageFxProvider } from "./moment/stage-fx";
 import { SurfaceProvider } from "./moment/surface";
+import { useKeyboardAvoidance } from "./keyboard";
 import { CountdownPill, PhoneBar } from "./phone-bar";
 import { Scene } from "./scene";
 import { StageRail, StageSoundButton, useMuteKey, type StageVariant } from "./stage-rail";
@@ -132,11 +133,13 @@ function ControllerColumn({ variant }: { variant: "phone" | "docked" }) {
   const lobby = status === "LOBBY";
   const phone = variant === "phone";
   const tutorial = useTutorialRun();
+  useKeyboardAvoidance();
 
   return (
     <SurfaceProvider value="phone">
       {phone && <PhoneBar />}
-      <div className="relative flex flex-1 flex-col">
+      {/* Padded by what an iOS keyboard covers, so the page can scroll its end above it. */}
+      <div className="relative flex flex-1 flex-col pb-[var(--keyboard-inset)]">
         <Scene id={tutorial ? "tutorial" : lobby ? "lobby" : phaseKey(view)} surface="phone">
           {tutorial ? (
             <PhoneTutorial run={tutorial} docked={!phone} />

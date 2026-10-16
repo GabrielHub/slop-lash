@@ -4,10 +4,12 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { pop, press } from "@/lib/animations";
 import { Sheet } from "@/room/menu-sheet";
+import { finishGroups } from "../../finishes";
 import { bodyPlanLabel, type Champion } from "../../sheet";
-import { DRAWING_CANVAS_HEX, MOVE_TYPE_INFO, TOY_COLOR_VALUES, TRAIT_INFO, type MoveType } from "../../vocab";
+import { DRAWING_CANVAS_HEX, FINISH_INFO, MOVE_TYPE_INFO, TOY_COLOR_VALUES, TRAIT_INFO, type MoveType } from "../../vocab";
 import { Pips } from "./shared";
 import { ChampionSilhouette } from "./silhouette";
+import { FinishSwatch } from "./materials";
 
 // The champion card: everything the Foundry decided, readable on a phone.
 // It stays reachable all game through the "My champion" chip.
@@ -54,6 +56,7 @@ export function ChampionCard({
   className?: string;
 }) {
   const accent = TOY_COLOR_VALUES[champion.palette.primary].hex;
+  const finishes = finishGroups(champion);
   return (
     <motion.article
       variants={pop}
@@ -93,6 +96,19 @@ export function ChampionCard({
             </li>
           ))}
         </ul>
+        {finishes.length > 0 && (
+          <ul className="flex flex-col gap-1.5" aria-label="Made of">
+            {finishes.map((group) => (
+              <li key={group.finish} className="flex items-center gap-2.5 rounded-xl bg-raised/60 px-2.5 py-2">
+                <FinishSwatch finish={group.finish} className="size-8" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-bold capitalize text-ink">{group.label}</span>
+                  {!compact && <span className="block text-xs text-ink-dim">{FINISH_INFO[group.finish].card}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         <ul className="flex flex-wrap gap-1.5">
           {champion.traits.map((trait) => (
             <li

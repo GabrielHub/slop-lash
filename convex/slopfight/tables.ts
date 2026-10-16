@@ -8,6 +8,7 @@ import {
   DELIVERIES,
   ELONGATIONS,
   EYE_STYLES,
+  FINISHES,
   MARKING_KINDS,
   MOUTH_STYLES,
   MOVE_TYPES,
@@ -75,6 +76,7 @@ export const partValidator = v.object({
   parent: v.union(v.string(), v.null()),
   anchor: v.union(oneOf(ANCHORS), v.null()),
   color: oneOf(PART_COLORS),
+  finish: v.optional(oneOf(FINISHES)),
   mirror: v.boolean(),
 });
 
@@ -162,23 +164,40 @@ const sidesValidator = v.object({ A: v.number(), B: v.number() });
  * the event log and the health timeline are capped (see outcome.ts). `hash`
  * still covers the full run.
  */
-export const fightOutcomeValidator = v.object({
+const fightResultFields = {
   winner: fightSideValidator,
   method: fightMethodValidator,
   endMs: v.number(),
   health: sidesValidator,
   maxHealth: sidesValidator,
-  /** sim `FightEvent`s: `{ t, kind, side, ... }`. */
-  events: v.array(v.any()),
-  /** `[ms, healthA, healthB]` samples. */
-  healthTimeline: v.array(v.array(v.number())),
   hash: v.string(),
   /** Minor events were dropped to fit the cap. */
   truncated: v.optional(v.boolean()),
   /** The sim failed twice, so the seed picked the winner and there is no fight to show. */
   decidedBySeed: v.optional(v.boolean()),
-});
+};
+const fightLogFields = {
+  /** sim `FightEvent`s: `{ t, kind, side, ... }`. */
+  events: v.array(v.any()),
+  /** `[ms, healthA, healthB]` samples. */
+  healthTimeline: v.array(v.array(v.number())),
+};
+
+export const fightOutcomeValidator = v.object({ ...fightResultFields, ...fightLogFields });
+const fightSheetsValidator = v.object({ A: championValidator, B: championValidator });
 export type StoredOutcome = Infer<typeof fightOutcomeValidator>;
+
+/**
+ * The outcome as the fight row keeps it: who won and how. The event log and
+ * health timeline live in `slopFightReplays`, so room views never read them.
+ * Rows from before the split may still carry them; nothing reads them there.
+ */
+const fightResultValidator = v.object({
+  ...fightResultFields,
+  events: v.optional(fightLogFields.events),
+  healthTimeline: v.optional(fightLogFields.healthTimeline),
+});
+export type FightResult = Infer<typeof fightResultValidator>;
 
 export const awardValidator = v.object({
   playerId: v.id("players"),
@@ -244,14 +263,27 @@ export const slopfightTables = {
     addition: v.optional(
       v.object({ round: v.number(), kind: inputKindValidator, text: v.string() }),
     ),
-    /** Last keystroke time, throttled, for the stage's typing shimmer. */
+    /** Retained schema field; keystroke stamps live in slopFightTyping. */
     typingAt: v.optional(v.number()),
     /** When the latest forge landed READY: the stage's reveal runs from here (see `revealEndsAt`). */
     readyAt: v.optional(v.number()),
     /** 0 at Build, the round number after an upgrade. */
     version: v.number(),
     record: fightRecordValidator,
-  }).index("by_gameId_and_slot", ["gameId", "slot"]),
+  })
+    .index("by_gameId_and_slot", ["gameId", "slot"])
+    .index("by_gameId_and_ownerId", ["gameId", "ownerId"]),
+
+  /**
+   * The describe box's last keystroke per fighter, throttled. Kept off the
+   * fighter row so typing never resends the room view; only the stage's
+   * typing shimmer subscribes.
+   */
+  slopFightTyping: defineTable({
+    gameId: v.id("games"),
+    fighterId: v.id("slopFightFighters"),
+    at: v.number(),
+  }).index("by_gameId_and_fighterId", ["gameId", "fighterId"]),
 
   /** One active stream per fighter, separate from stable champion/room documents. */
   slopFightForgeStreams: defineTable({
@@ -277,6 +309,11 @@ export const slopfightTables = {
     strokes: v.array(strokeValidator),
     /** Strokes in this layer up to and including this row, for the per-layer cap. */
     total: v.number(),
+    /**
+     * Points in this layer up to and including this row, so a batch checks
+     * the cap against the last row alone. Absent on rows from before it existed.
+     */
+    points: v.optional(v.number()),
   })
     .index("by_gameId_and_fighterId", ["gameId", "fighterId"])
     .index("by_fighterId_and_layer_and_seq", ["fighterId", "layer", "seq"]),
@@ -310,19 +347,31 @@ export const slopfightTables = {
       attempt: v.number(),
       error: v.optional(v.string()),
     }),
-    /**
-     * Both champions as the sim ran them, frozen when it first starts, so the
-     * recap re-simulates a round-1 fight with round-1 sheets after upgrades.
-     */
-    sheets: v.optional(v.object({ A: championValidator, B: championValidator })),
+    /** Retained schema field; the frozen sheets live in slopFightReplays. */
+    sheets: v.optional(fightSheetsValidator),
     /** Server time of the sim's t = 0. */
     startsAt: v.optional(v.number()),
-    outcome: v.optional(fightOutcomeValidator),
+    outcome: v.optional(fightResultValidator),
     scoredAt: v.optional(v.number()),
     awards: v.optional(v.array(awardValidator)),
     recapLine: v.optional(v.string()),
     hype: sidesValidator,
   }).index("by_gameId_and_round_and_step", ["gameId", "round", "step"]),
+
+  /**
+   * A fight's heavy half, one row per fight, apart from the fight row so room
+   * views re-run without reading it: both champions as the sim ran them
+   * (frozen when it first starts, so the recap re-simulates a round-1 fight
+   * with round-1 sheets after upgrades), then the stored event log and health
+   * timeline. Views read it for the fight in play and for the recap.
+   */
+  slopFightReplays: defineTable({
+    gameId: v.id("games"),
+    fightId: v.id("slopFightFights"),
+    sheets: v.optional(fightSheetsValidator),
+    events: v.optional(fightLogFields.events),
+    healthTimeline: v.optional(fightLogFields.healthTimeline),
+  }).index("by_gameId_and_fightId", ["gameId", "fightId"]),
 
   /** Live crowd counters, isolated from the large fight replay and room subscriptions. */
   slopFightHype: defineTable({

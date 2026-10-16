@@ -20,13 +20,15 @@ import {
   Vector3,
 } from "three";
 import { GROWTH_UNIT, resolveSkeleton, type Skeleton } from "../../body/skeleton";
+import { finishCoverage, partFinish } from "../../finishes";
 import type { Face, Marking, Palette, Part } from "../../sheet";
-import { TOY_COLOR_VALUES, type BodyPlan, type Delivery, type PropTag } from "../../vocab";
+import { FINISHES, TOY_COLOR_VALUES, type BodyPlan, type Delivery, type Finish, type PropTag } from "../../vocab";
 import { createOutlineMaterial, type OutlineMaterial } from "../look/outline";
 import { createToonMaterial, createWobbleUniforms, type ToonMaterial, type WobbleUniforms } from "../look/toon";
 import { CreatureAnimator, type AnimEvent, type CreatureDriver } from "./animator";
 import { updateSkinBounds } from "./bounds";
 import { CreatureFace } from "./face";
+import { burstColors, FINISH_BURST, FINISH_WOBBLE } from "./finish-look";
 import { geometryFromMesh, requestMesh, warmMesher } from "./mesh-client";
 import { DEFAULT_GRADIENT, FINAL_RESOLUTION, GROWTH_RESOLUTION, meshKey, type MeshData, type MeshRequest } from "./mesher";
 import { bakeProp, heldItemBones, loadProps, loadedProps, propMatrix, propsFailed, type PropAsset } from "./props";
@@ -92,6 +94,20 @@ const SPECULAR_SIZE = 0.9975;
 const IDENTITY = new Matrix4();
 const tmpV = new Vector3();
 
+/**
+ * How much the body's lag (the whole-body sway behind its motion) moves: the
+ * finishes' rigidity weighted by how much of the body each covers. The lag
+ * shears every vertex at once, so it is scaled per creature rather than per
+ * vertex, which would tear finish seams open. 1 for an all-vinyl body.
+ */
+function lagScale(parts: readonly Part[]): number {
+  // All vinyl comes out exactly 1 (vinyl's coverage is 1, its wobble 1).
+  const coverage = finishCoverage({ parts: [...parts] });
+  let scale = 0;
+  for (const finish of FINISHES) scale += coverage[finish] * FINISH_WOBBLE[finish];
+  return scale;
+}
+
 export class CreatureView {
   readonly root = new Group();
   skeleton: Skeleton | null = null;
@@ -124,6 +140,8 @@ export class CreatureView {
   private events: CreatureEvent[] = [];
   private pendingEyes = false;
   private wobbleOut = { amp: 0, jiggle: 0, lag: new Vector3() };
+  /** lagScale of the current parts. */
+  private lagScale = 1;
   private anim: CreatureAnimator | null = null;
   private outlineWidth: number;
   private castShadow: boolean;
@@ -149,7 +167,7 @@ export class CreatureView {
       depthBias: OUTLINE_DEPTH_BIAS,
     });
     this.root.add(this.face.group);
-    this.root.add(this.puffs.mesh);
+    this.root.add(this.puffs.group);
     warmMesher();
   }
 
@@ -161,6 +179,7 @@ export class CreatureView {
   setSource(source: CreatureSource) {
     const prev = this.source;
     this.source = source;
+    this.lagScale = lagScale(source.parts);
     const palette = source.palette ?? DEFAULT_PALETTE;
     const paletteKey = `${palette.primary}|${palette.secondary}|${palette.accent}`;
     if (paletteKey !== this.paletteKey) {
@@ -371,7 +390,14 @@ export class CreatureView {
         if (!part) continue;
         const bone = skeleton.bones.find((b) => b.id === ids[0])!;
         const centre = new Vector3(...bone.head).add(new Vector3(...bone.tail)).multiplyScalar(0.5);
-        this.pendingPuffs.push({ centre, radius: bone.radius * 1.6 + skeleton.height * 0.05, boneId: bone.id });
+        const finish = partFinish(part);
+        this.pendingPuffs.push({
+          centre,
+          radius: bone.radius * 1.6 + skeleton.height * 0.05,
+          boneId: bone.id,
+          finish,
+          color: TOY_COLOR_VALUES[(source.palette ?? DEFAULT_PALETTE)[part.color]].hex,
+        });
         this.events.push({ kind: "partLanded", part, boneIds: ids, position: centre.clone() });
       }
     }
@@ -379,7 +405,9 @@ export class CreatureView {
     const rebuilt = this.syncFace(source, firstBody && !!source.complete);
     // A repaint (a mask, say) re-tints the lids even when the face stays put.
     if (!rebuilt) {
-      for (const face of [this.face, ...this.extras]) if (face.boneId) face.sampleSkin(mesh.positions, mesh.colors);
+      for (const face of [this.face, ...this.extras]) {
+        if (face.boneId) face.sampleSkin(mesh.positions, mesh.colors, mesh.finish);
+      }
     }
   }
 
@@ -408,7 +436,7 @@ export class CreatureView {
         min: asset.min,
         max: asset.max,
       });
-      const baked = bakeProp(asset, matrix, i, accent);
+      const baked = bakeProp(asset, matrix, i, accent, part ? partFinish(part) : "vinyl");
       const body = new SkinnedMesh(baked.geometry, this.material);
       const hull = new SkinnedMesh(baked.outline, this.outlineMaterial);
       for (const m of [body, hull]) {
@@ -433,7 +461,7 @@ export class CreatureView {
     this.props = [];
   }
 
-  private pendingPuffs: { centre: Vector3; radius: number; boneId: string }[] = [];
+  private pendingPuffs: { centre: Vector3; radius: number; boneId: string; finish: Finish; color: string }[] = [];
   private meshData: MeshData | null = null;
 
   /** Rebuild the face decals when the face or the surface under it changed; true when rebuilt. */
@@ -489,7 +517,7 @@ export class CreatureView {
       this.extras.push(extra);
     });
     for (const f of [this.face, ...this.extras]) {
-      if (this.meshData) f.sampleSkin(this.meshData.positions, this.meshData.colors);
+      if (this.meshData) f.sampleSkin(this.meshData.positions, this.meshData.colors, this.meshData.finish);
       if (hadFace || instant || !this.growth) {
         f.showOpen();
       } else {
@@ -589,6 +617,7 @@ export class CreatureView {
       this.wobble.uWobbleAmp.value = this.wobbleOut.amp;
       this.wobble.uJiggle.value = this.wobbleOut.jiggle;
       this.wobble.uLag.value.copy(this.wobbleOut.lag);
+      if (this.lagScale !== 1) this.wobble.uLag.value.multiplyScalar(this.lagScale);
       for (const event of animEvents) {
         out.push(event);
         if (event.kind === "hopLand") this.puffs.emit(event.position, this.height * 0.35, "dust");
@@ -601,7 +630,10 @@ export class CreatureView {
       for (const puff of this.pendingPuffs) {
         const index = this.rig.index.get(puff.boneId) ?? this.rig.torso;
         tmpV.copy(puff.centre).applyMatrix4(anim.matrices[index]!);
-        this.puffs.emit(tmpV.clone(), puff.radius, "puff");
+        const burst = FINISH_BURST[puff.finish];
+        // A finished part keeps a smaller puff under its own burst.
+        this.puffs.emit(tmpV.clone(), puff.radius, "puff", burst ? 4 : undefined);
+        if (burst) this.puffs.burst(tmpV.clone(), puff.radius, burst, burstColors(puff.finish, puff.color));
       }
       this.pendingPuffs = [];
       const striking = driver.anim?.movePhase === "active" || driver.anim?.movePhase === "hold";

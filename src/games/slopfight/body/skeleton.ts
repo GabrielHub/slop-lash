@@ -63,8 +63,9 @@
 // missing anchor gets the role's default, duplicate ids are dropped, and an
 // empty list gives an empty skeleton (no bones, torso "").
 
+import { partFinish } from "../finishes";
 import { championScale, type BodyPlan, type Champion, type Part, type PartRole, type PartShape } from "../sheet";
-import type { Anchor, Elongation, PartSize } from "../vocab";
+import type { Anchor, Elongation, Finish, PartSize } from "../vocab";
 import {
   add,
   clamp,
@@ -99,6 +100,8 @@ export interface Bone {
   tail: Vec3;
   radius: number;
   color: "primary" | "secondary" | "accent";
+  /** What the part is made of (vinyl when the sheet says nothing). */
+  finish: Finish;
   /** Torso, head, legs and arms carry the body (and a slitherer's tail chain); the rest is secondary. */
   load: boolean;
 }
@@ -650,6 +653,7 @@ export function resolveSkeleton(parts: readonly Part[], opts: ResolveOptions = {
       tail: item.tail,
       radius: item.radius,
       color: item.part.color,
+      finish: partFinish(item.part),
       load: isLoadBearing(item.role, plan),
     };
     raw.push(bone);

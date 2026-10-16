@@ -17,12 +17,20 @@ import type { ModelMessage, UserContent } from "ai";
 import type { InstructionBlock } from "@/lib/ai/prompt";
 import { escapeXmlText, singleLine, xml } from "@/lib/ai/xml";
 import type { ArenaId } from "../arenas";
-import { DESCRIBE_TEXT_MAX, POWER_SUM, REJECTION_TEXT_MAX, STAT_SUM, UPGRADE_TEXT_MAX } from "../constants";
-import type { Champion } from "../sheet";
+import {
+  DESCRIBE_TEXT_MAX,
+  POWER_SUM,
+  REJECTION_TEXT_MAX,
+  STAT_SUM,
+  STROKE_GRID,
+  UPGRADE_TEXT_MAX,
+} from "../constants";
+import type { Champion, ForgeResult, Part } from "../sheet";
+import type { InkPatch } from "../strokes";
 import { FORGE_EXAMPLES } from "./examples";
 import { arenasText, vocabularyText } from "./prompt-parts";
 
-export const FORGE_PROMPT_VERSION = 3;
+export const FORGE_PROMPT_VERSION = 4;
 
 export type ForgeMode = "submit" | "lenient" | "upgrade" | "house";
 
@@ -43,9 +51,10 @@ The room watches an empty pedestal until you stop thinking, so think only about 
 </pace>`;
 
 const READING = `<reading-drawings>
-- Drawings are quick phone doodles: one thick round brush in six inks (charcoal, tomato red, tangerine orange, moss green, ocean blue, grape purple) on a cream canvas. Expect wobbly lines, single-line bodies and missing details, and read them generously: what it is, where its head is, how many limbs reach the ground, what it holds, what sticks out.
+- Drawings are quick phone doodles: one thick round brush in six flat inks (charcoal, tomato red, tangerine orange, moss green, ocean blue, grape purple) and seven material inks on a cream canvas. Expect wobbly lines, single-line bodies and missing details, and read them generously: what it is, where its head is, how many limbs reach the ground, what it holds, what sticks out.
 - Count limbs from the lines actually drawn: two lines down are two legs, four lines under a body are four legs. Never add limbs the drawing does not show, and never drop ones it does.
-- The inks are a palette hint: an orange-and-purple doodle comes out tangerine and grape. A plain charcoal line drawing can take whatever toy colours fit the subject.
+- The flat inks are a palette hint: an orange-and-purple doodle comes out tangerine and grape. A plain charcoal line drawing can take whatever toy colours fit the subject.
+- Material inks draw as a glossy tube, a bright core down a coloured stroke: gold, metal (chrome), crystal (diamond), lava, ice, slime and glow. What is drawn or painted over in one is made of that finish, and the submission says where each one shows. The ink sets the finish, not the colour: colour that part as the subject suggests.
 - Words written on a drawing are part of it: a label says what it is, and a written name is the champion's name.
 - In an upgrade drawing, the faded strokes are the champion as it is now and the full-strength strokes are the addition.
 </reading-drawings>`;
@@ -86,6 +95,8 @@ Recipes:
 Held items: item is the tag (or thing), plus one item part on the holding arm's bottom; a body with no arms holds it on head.bottom, in its mouth. Size M, or L or XL when giant.
 
 Colour: primary is the subject's best-known colour, on the torso, head and limbs. Secondary is its real second colour (a pale belly or muzzle, a mane, dark legs). Accent is one small signature (a beak, a hat, a prop, a tip). A natural animal keeps natural colours: its belly or muzzle is bone, sand or blush, never the accent. Parts that must read apart (a box head on a box body, a pack and a tail) take different slots.
+
+Finish is what a part is made of, and the fight feels it. Almost every part is vinyl, the soft toy default. Another finish goes only on parts the player made of something or the subject obviously is: a knight's armour is metal, a statue is stone, a glass dome or a gem is crystal, a living log is wood, a ghost is glow. Make only those parts of it: a hero with an iron fist has one metal arm, not a metal body. A finish shows the part's own palette colour (a cherry crystal reads as a ruby), except gold, which is always gold. A colour is never a finish: a golden-haired prince is butter vinyl, and a creature that breathes fire is not lava unless it is made of fire.
 
 Markings paint a pattern on one part in a contrasting slot. A mask (a bandit mask, eye patches) is only for subjects known for one: the darkest slot on a lighter head. Clothing it wears is paint: a suit, tuxedo, jacket or uniform is a suit marking on the torso in a darker slot; a back stripe is a streak; a belt or collar a band; boots or gloves a tip; a pale shirt front a belly. A job shows in one prop and at most one hat on head.top. Glasses are the visor eyes. Tiny details (buttons, whiskers, wheels, windows, text) are paint or bio, never parts.
 </body>`;
@@ -135,7 +146,7 @@ const MODES = `<modes>
 The call block names the mode.
 - submit: a player's own submission. Judge it by the verdict rules, then FORGE or REJECT.
 - lenient: the clock ran out, so this champion must exist. Never REJECT. A smudge, dot or scribble becomes a mysterious smudge (or dot, or scribble) with ambitions: build the mark itself as a champion. If nothing was submitted, invent a champion and say in the bio that it was forged on the player's behalf. If the submission breaks rule 2 or 3, do not build it: invent a harmless replacement and say in the bio that the original was confiscated. Text that describes nothing becomes a champion made of that text.
-- upgrade: the champion in <champion-now> gets one addition: text, a drawing on top, or both. Code keeps every existing part, marking and colour, so spend your effort on the addition: big (M or larger, wings L), as literal as asked ("a backpack" adds a backpack part, "a second head" adds a head with its own face parts), in the slot nearest its drawn ink. A slot no current part or marking uses may be recoloured for it. Change the body plan only when the addition demands it (wings may make it a FLIER; losing its legs may make it a HOPPER). Rebalance around the addition and rewrite the bio and narration so the upgrade is the joke: escalation is the joke. Keep the name, or add a short title if it still fits. REJECT only when the addition itself breaks a verdict rule.
+- upgrade: the champion in <champion-now> gets one addition: text, a drawing on top, or both. Code keeps every existing part, marking and colour, so spend your effort on the addition: big (M or larger, wings L), as literal as asked ("a backpack" adds a backpack part, "a second head" adds a head with its own face parts), in the slot nearest its drawn ink. A slot no current part or marking uses may be recoloured for it. Change the body plan only when the addition demands it (wings may make it a FLIER; losing its legs may make it a HOPPER). An addition that changes what something is made of ("metal arms", "a diamond body", "lava fists", or material ink painted over a part) changes only those parts' finish and keeps their shape; one that names no part ("turn it to gold") changes every part's finish. Rebalance around the addition and rewrite the bio and narration so the upgrade is the joke: escalation is the joke. Keep the name, or add a short title if it still fits. REJECT only when the addition itself breaks a verdict rule.
 - house: the house's own champion, from a house description. Never REJECT; forge exactly what it describes.
 </modes>`;
 
@@ -147,11 +158,26 @@ const OUTPUT = `<output>
 Reply with the ForgeResult only, fields in order: verdict, rejection, champion. The champion opens with its bodyPlan and palette, then the parts, so the creature grows on the pedestal while you write: the torso, the head, the legs, the arms and the rest, each part after its parent.
 </output>`;
 
+/** A part as the model writes it: the finish named (vinyl when the sheet leaves it out), just before `mirror`. */
+function writtenPart({ finish, mirror, ...rest }: Part) {
+  return { ...rest, finish: finish ?? "vinyl", mirror };
+}
+
+/** A champion as the model writes it: every part names its finish. */
+function written(champion: Champion) {
+  return { ...champion, parts: champion.parts.map(writtenPart) };
+}
+
+/** A stored ForgeResult as the model writes it (the examples, and test replies). */
+export function writtenResult(result: ForgeResult) {
+  return result.champion ? { ...result, champion: written(result.champion) } : result;
+}
+
 function examplesText(): string {
-  const examples = FORGE_EXAMPLES.map(
-    (example) =>
-      `<example mode="${example.mode}">\n<input>${example.input}</input>\n<forge-result>${JSON.stringify(example.result)}</forge-result>\n</example>`,
-  );
+  const examples = FORGE_EXAMPLES.map(({ mode, input, result }) => {
+    const shown = writtenResult(result);
+    return `<example mode="${mode}">\n<input>${input}</input>\n<forge-result>${JSON.stringify(shown)}</forge-result>\n</example>`;
+  });
   return [
     "<examples>",
     "Five complete results. They show the format, the anatomy rules and the bar for jokes; never reuse their names, jokes or lines.",
@@ -204,6 +230,8 @@ export interface ForgeInput {
   png?: Uint8Array | undefined;
   previous?: Champion | undefined;
   addition?: string | undefined;
+  /** Where the drawing's material inks show (an upgrade: on its new layer only). */
+  inks?: readonly InkPatch[] | undefined;
 }
 
 const clip = (text: string | undefined, max: number) => singleLine(text ?? "").slice(0, max);
@@ -226,15 +254,28 @@ export function forgeUserContent(input: ForgeInput): UserContent {
   return parts;
 }
 
+/** Where each material ink shows, in percent of the image from its top-left corner; null for none. */
+function inksText(inks: readonly InkPatch[] | undefined): string | null {
+  if (!inks || inks.length === 0) return null;
+  const percent = (value: number) => Math.round((value / STROKE_GRID) * 100);
+  const where = inks.map(
+    ({ ink, bounds }) =>
+      `${ink.finish} at x ${percent(bounds.minX)}-${percent(bounds.maxX)}%, y ${percent(bounds.minY)}-${percent(bounds.maxY)}%`,
+  );
+  return `Material ink (what it covers is made of that finish): ${where.join("; ")}.`;
+}
+
 function submissionText(input: ForgeInput): string {
   const drawing = Boolean(input.png && input.png.length > 0);
+  const inks = drawing ? inksText(input.inks) : null;
   if (input.mode === "upgrade") {
     const addition = clip(input.addition ?? input.text, UPGRADE_TEXT_MAX);
     const kinds = [drawing ? "drawing" : null, addition ? "text" : null].filter(Boolean).join(" and ");
     const lines = [
-      `<champion-now>${escapeXmlText(JSON.stringify(input.previous ?? null))}</champion-now>`,
+      `<champion-now>${escapeXmlText(JSON.stringify(input.previous ? written(input.previous) : null))}</champion-now>`,
       `<addition kind="${kinds || "none"}">`,
       drawing ? "The attached drawing: faded strokes are the champion now, full-strength strokes are the addition." : null,
+      inks,
       addition ? xml("text", addition) : null,
       drawing || addition ? null : "The player added nothing; return the champion as it is.",
       "</addition>",
@@ -244,9 +285,14 @@ function submissionText(input: ForgeInput): string {
   const text = clip(input.text, DESCRIBE_TEXT_MAX);
   const tag = input.mode === "house" ? "house-description" : "description";
   if (drawing && text) {
-    return `<submission kind="drawing and description">\nThe attached drawing, plus:\n${xml(tag, text)}\n</submission>`;
+    const lines = ["The attached drawing, plus:", xml(tag, text), inks].filter((line) => line !== null);
+    return `<submission kind="drawing and description">\n${lines.join("\n")}\n</submission>`;
   }
-  if (drawing) return `<submission kind="drawing">The attached drawing.</submission>`;
+  if (drawing) {
+    return inks
+      ? `<submission kind="drawing">\nThe attached drawing.\n${inks}\n</submission>`
+      : `<submission kind="drawing">The attached drawing.</submission>`;
+  }
   if (text) return `<submission kind="description">\n${xml(tag, text)}\n</submission>`;
   return `<submission kind="none">The player submitted nothing.</submission>`;
 }

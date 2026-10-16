@@ -10,7 +10,11 @@
 // - puff: low-poly dust balls for landings and slams, tinted to the floor;
 // - sweat: teardrops flicked off a fighter that just took one;
 // - drop: splash droplets for a water ring-out;
-// - ring: a flat shock ring (big hits, splashes).
+// - ring: a flat shock ring (big hits, splashes);
+// - finish layers over a hit's spark, by what landed and what it landed on
+//   (finishHit): hot sparks off metal and gold, glassy shards off crystal
+//   and ice, chips and splinters off stone and wood, embers off lava, goo
+//   off slime, a halo off glow. A vinyl hit adds none.
 //
 // Everything runs on the presentation clock, so a hit stop freezes the burst
 // on the impact frame and slow motion slows it. KO stars orbit a knocked-out
@@ -24,6 +28,7 @@ import {
   IcosahedronGeometry,
   InstancedMesh,
   Matrix4,
+  OctahedronGeometry,
   Quaternion,
   Shape,
   SphereGeometry,
@@ -32,10 +37,13 @@ import {
   type BufferGeometry,
   type Group,
 } from "three";
+import type { SfxName, SfxOptions } from "../../audio";
+import type { Finish } from "../../vocab";
+import { burstColors, hitFinishLayers } from "../creature/finish-look";
 import { createToonMaterial, type ToonMaterial } from "../look/toon";
 import { useStageClock } from "../services";
 
-type Kind = "core" | "petal" | "puff" | "sweat" | "drop" | "ring";
+type Kind = "core" | "petal" | "puff" | "sweat" | "drop" | "ring" | "spark" | "ember" | "shard" | "chip" | "goo" | "halo";
 
 interface Particle {
   alive: boolean;
@@ -58,7 +66,20 @@ interface Particle {
   flat: boolean;
 }
 
-const POOL: Record<Kind, number> = { core: 24, petal: 160, puff: 90, sweat: 40, drop: 80, ring: 16 };
+const POOL: Record<Kind, number> = {
+  core: 24,
+  petal: 160,
+  puff: 90,
+  sweat: 40,
+  drop: 80,
+  ring: 16,
+  spark: 48,
+  ember: 32,
+  shard: 32,
+  chip: 32,
+  goo: 24,
+  halo: 6,
+};
 
 function petalGeometry(): BufferGeometry {
   // A blade: narrow at the root, fat a third of the way out, pointed at the tip (+Y).
@@ -116,6 +137,18 @@ function rng(seed: number) {
   };
 }
 
+interface BurstInit {
+  speed: number;
+  /** Upward bias of the directions, -1..1. */
+  up: number;
+  life: number;
+  size: number;
+  gravity: number;
+  drag: number;
+  stretch?: number;
+  colors: readonly string[];
+}
+
 export interface SparkOptions {
   /** Petal colours (the attacker's palette). */
   colors: readonly string[];
@@ -126,7 +159,11 @@ export interface SparkOptions {
 
 export class FxSystem {
   readonly particles: Record<Kind, Particle[]>;
+  /** The glow halo's colour (the last glowing hit's paint). */
+  readonly haloColor = new Color("#ffffff");
   private random = rng(7);
+  /** Finish layers draw from their own stream, so vinyl hits replay exactly as before. */
+  private finishRandom = rng(11);
 
   constructor() {
     const make = (kind: Kind, count: number): Particle[] =>
@@ -153,6 +190,12 @@ export class FxSystem {
       sweat: make("sweat", POOL.sweat),
       drop: make("drop", POOL.drop),
       ring: make("ring", POOL.ring),
+      spark: make("spark", POOL.spark),
+      ember: make("ember", POOL.ember),
+      shard: make("shard", POOL.shard),
+      chip: make("chip", POOL.chip),
+      goo: make("goo", POOL.goo),
+      halo: make("halo", POOL.halo),
     };
   }
 
@@ -210,8 +253,8 @@ export class FxSystem {
   }
 
   /** Dust balls at a landing. */
-  puff(point: Vector3, options: { color: string; count?: number; size?: number; spread?: number }): void {
-    const r = this.random;
+  puff(point: Vector3, options: { color: string; count?: number; size?: number; spread?: number; random?: () => number }): void {
+    const r = options.random ?? this.random;
     const count = options.count ?? 6;
     const size = options.size ?? 0.16;
     const spread = options.spread ?? 1;
@@ -264,6 +307,94 @@ export class FxSystem {
     }
     this.spawn("ring", { p: point, life: 0.7, size: 1.4, color, flat: true });
     this.spawn("ring", { p: point, life: 1.0, size: 2.2, color, flat: true });
+  }
+
+  /**
+   * A finish's layer over a hit's spark at `point`: what the finished part
+   * throws off. A few particles each (spec: no particle spam).
+   */
+  finishHit(point: Vector3, finish: Finish, options: SparkOptions): void {
+    const r = this.finishRandom;
+    const big = options.big === true;
+    const strength = Math.min(1, Math.max(0.15, options.strength ?? 0.5));
+    const more = big ? 1.5 : 0.8 + strength * 0.5;
+    const paint = options.colors[2] ?? options.colors[0] ?? "#ffd76a";
+    const colors = burstColors(finish, paint);
+    const burst = (kind: Kind, count: number, init: BurstInit) => {
+      const n = Math.max(2, Math.round(count * more));
+      for (let i = 0; i < n; i += 1) {
+        // Out in every direction, a little more upward than down.
+        const a = r() * Math.PI * 2;
+        const z = Math.max(-1, Math.min(1, r() * 2 - 1 + init.up));
+        const flat = Math.sqrt(1 - z * z);
+        const speed = init.speed * (0.6 + r() * 0.8) * (0.8 + strength * 0.4);
+        this.spawn(kind, {
+          p: point,
+          v: tmpV.set(Math.cos(a) * flat * speed, z * speed, Math.sin(a) * flat * speed),
+          gravity: init.gravity,
+          drag: init.drag,
+          life: init.life * (0.8 + r() * 0.4),
+          size: init.size * (0.75 + r() * 0.5),
+          stretch: init.stretch ?? 1,
+          angle: r() * Math.PI * 2,
+          color: init.colors[i % init.colors.length]!,
+        });
+      }
+    };
+    switch (finish) {
+      case "metal":
+        burst("spark", 9, { speed: 5.5, up: 0.35, life: 0.32, size: 0.028, gravity: -9, drag: 1.2, stretch: 4, colors });
+        break;
+      case "gold":
+        burst("spark", 10, { speed: 5, up: 0.4, life: 0.38, size: 0.03, gravity: -8, drag: 1.2, stretch: 4, colors });
+        burst("shard", 3, { speed: 2.2, up: 0.5, life: 0.5, size: 0.05, gravity: -4, drag: 2, colors: ["#ffd65a"] });
+        break;
+      case "crystal":
+        burst("shard", 7, { speed: 3.4, up: 0.35, life: 0.5, size: 0.06, gravity: -6, drag: 1.8, stretch: 1.7, colors });
+        break;
+      case "ice":
+        burst("shard", 6, { speed: 3, up: 0.3, life: 0.5, size: 0.05, gravity: -7, drag: 1.8, stretch: 2.2, colors });
+        this.puff(point, { color: "#eaf8ff", count: 3, size: 0.09, spread: 0.6, random: r });
+        break;
+      case "stone":
+        burst("chip", 6, { speed: 3, up: 0.45, life: 0.55, size: 0.055, gravity: -10, drag: 0.8, colors });
+        this.puff(point, { color: "#c9c1b3", count: 4, size: 0.11, spread: 0.7, random: r });
+        break;
+      case "wood":
+        burst("chip", 6, { speed: 3.4, up: 0.45, life: 0.55, size: 0.03, gravity: -10, drag: 0.8, stretch: 3.6, colors });
+        break;
+      case "lava":
+        burst("ember", 8, { speed: 2.6, up: 0.6, life: 0.75, size: 0.03, gravity: 0.8, drag: 2.2, stretch: 1.8, colors });
+        burst("chip", 3, { speed: 2.4, up: 0.3, life: 0.5, size: 0.04, gravity: -10, drag: 0.8, colors: ["#3a2420"] });
+        break;
+      case "slime":
+        burst("goo", 5, { speed: 2.8, up: 0.45, life: 0.6, size: 0.07, gravity: -8, drag: 1.4, colors });
+        break;
+      case "glow":
+        this.haloColor.set(paint);
+        this.spawn("halo", { p: point, life: 0.34, size: big ? 0.95 : 0.7, color: "#ffffff", facing: true });
+        burst("shard", 4, { speed: 2.4, up: 0.4, life: 0.45, size: 0.04, gravity: 0.5, drag: 2.4, colors: [...colors, "#ffffff"] });
+        break;
+      case "vinyl":
+        break;
+    }
+  }
+
+  /**
+   * Every finish layer a hit adds (hitFinishLayers): its burst at `point` in
+   * the colours of the side whose part made it, and its sound through `play`.
+   */
+  playFinishLayers(
+    point: Vector3,
+    hit: { attackFinish?: Finish; guardFinish?: Finish },
+    options: { attack: readonly string[]; guard: readonly string[]; big: boolean; strength: number },
+    play: (name: SfxName, options: SfxOptions) => void,
+  ): void {
+    const { big, strength } = options;
+    for (const layer of hitFinishLayers(hit)) {
+      this.finishHit(point, layer.finish, { colors: options[layer.from], big, strength });
+      play(layer.sound.name, { intensity: Math.min(1, layer.sound.intensity * (big ? 1.25 : 1)), gain: layer.sound.gain });
+    }
   }
 
   /** Electric zap (self-damage): yellow petals around a point. */
@@ -324,16 +455,40 @@ function particleMatrix(particle: Particle, camera: Quaternion, out: Matrix4): M
       break;
     }
     case "sweat":
-    case "drop": {
+    case "drop":
+    case "spark":
+    case "ember": {
       const speed = particle.v.length();
       if (speed > 0.01) tmpQ.setFromUnitVectors(Y, tmpV.copy(particle.v).divideScalar(speed));
       else tmpQ.identity();
       const shrink = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
       sx = sz = particle.size * shrink;
-      sy = particle.size * shrink * (1.6 + Math.min(1.2, speed * 0.12));
+      const drop = particle.kind === "sweat" || particle.kind === "drop";
+      sy = particle.size * shrink * (drop ? 1.6 + Math.min(1.2, speed * 0.12) : particle.stretch * (0.5 + Math.min(1, speed * 0.2)));
       break;
     }
-    case "ring": {
+    case "shard":
+    case "chip": {
+      // Tumbling, shrinking at the end.
+      const shrink = u > 0.65 ? 1 - (u - 0.65) / 0.35 : 1;
+      tmpQ.setFromAxisAngle(Y, particle.angle + u * 9).multiply(tmpQ2.setFromAxisAngle(X, particle.angle * 1.7 + u * 13));
+      sx = sz = particle.size * shrink;
+      sy = particle.size * shrink * particle.stretch;
+      break;
+    }
+    case "goo": {
+      // Blobs drawn out along their flight, wobbling.
+      const speed = particle.v.length();
+      if (speed > 0.01) tmpQ.setFromUnitVectors(Y, tmpV.copy(particle.v).divideScalar(speed));
+      else tmpQ.identity();
+      const s = (u < 0.15 ? 0.5 + u / 0.3 : 1) * (u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1);
+      const wob = 1 + 0.18 * Math.sin(particle.angle + u * 22);
+      sx = sz = particle.size * s * wob;
+      sy = (particle.size * s * (1.25 + Math.min(0.6, speed * 0.08))) / wob;
+      break;
+    }
+    case "ring":
+    case "halo": {
       const s = 0.25 + (1 - (1 - u) ** 2.2);
       sx = sy = particle.size * s;
       sz = particle.size * (1 - u) * 0.9 + 0.05;
@@ -365,6 +520,12 @@ function useFxMaterial(options: { emissive?: string; glow?: number; specular?: n
   return material;
 }
 
+/** The glow halo takes the paint of the last glowing hit. */
+function HaloTint({ system, material }: { system: FxSystem; material: ToonMaterial }) {
+  useFrame(() => material.emissive.copy(system.haloColor));
+  return null;
+}
+
 function Pool({ system, kind, geometry, material }: { system: FxSystem; kind: Kind; geometry: BufferGeometry; material: ToonMaterial }) {
   const mesh = useMemo(() => {
     const instanced = new InstancedMesh(geometry, material, POOL[kind]);
@@ -379,14 +540,21 @@ function Pool({ system, kind, geometry, material }: { system: FxSystem; kind: Ki
   useEffect(() => () => mesh.dispose(), [mesh]);
   const camera = useThree((state) => state.camera);
   useFrame(() => {
+    const particles = system.particles[kind];
+    // Idle pools skip the loop and the GPU uploads.
+    if (mesh.count === 0 && !particles.some((particle) => particle.alive)) {
+      mesh.visible = false;
+      return;
+    }
     let count = 0;
-    for (const particle of system.particles[kind]) {
+    for (const particle of particles) {
       if (!particle.alive) continue;
       mesh.setMatrixAt(count, particleMatrix(particle, camera.quaternion, tmpM));
       mesh.setColorAt(count, particle.color);
       count += 1;
     }
     mesh.count = count;
+    mesh.visible = count > 0;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   });
@@ -403,6 +571,8 @@ export function FightFx({ system }: { system: FxSystem }) {
       puff: new IcosahedronGeometry(1, 1),
       drop: new SphereGeometry(1, 10, 8),
       ring: new TorusGeometry(1, 0.08, 6, 36),
+      shard: new OctahedronGeometry(1, 0),
+      halo: new TorusGeometry(1, 0.05, 6, 36),
     }),
     [],
   );
@@ -411,6 +581,13 @@ export function FightFx({ system }: { system: FxSystem }) {
   const dust = useFxMaterial({ emissive: "#000000", glow: 0, specular: 0.1 });
   const water = useFxMaterial({ emissive: "#d8f6ff", glow: 0.45, specular: 0.9 });
   const ring = useFxMaterial({ emissive: "#fff6dc", glow: 1.1, specular: 0.2 });
+  // Finish layers: uniform-only differences, so the same instanced toon program.
+  const spark = useFxMaterial({ emissive: "#fff0c4", glow: 2, specular: 0 });
+  const ember = useFxMaterial({ emissive: "#ff7a24", glow: 2.2, specular: 0 });
+  const shard = useFxMaterial({ emissive: "#eaf6ff", glow: 0.3, specular: 1.2 });
+  const chip = useFxMaterial({ emissive: "#000000", glow: 0, specular: 0 });
+  const goo = useFxMaterial({ emissive: "#000000", glow: 0, specular: 1.1 });
+  const halo = useFxMaterial({ emissive: "#ffffff", glow: 1.9, specular: 0 });
   useEffect(() => () => Object.values(geometries).forEach((geometry) => geometry.dispose()), [geometries]);
   useFrame(() => system.update(clock.delta), -10);
   return (
@@ -421,6 +598,13 @@ export function FightFx({ system }: { system: FxSystem }) {
       <Pool system={system} kind="sweat" geometry={geometries.drop} material={water} />
       <Pool system={system} kind="drop" geometry={geometries.drop} material={water} />
       <Pool system={system} kind="ring" geometry={geometries.ring} material={ring} />
+      <Pool system={system} kind="spark" geometry={geometries.shard} material={spark} />
+      <Pool system={system} kind="ember" geometry={geometries.shard} material={ember} />
+      <Pool system={system} kind="shard" geometry={geometries.shard} material={shard} />
+      <Pool system={system} kind="chip" geometry={geometries.shard} material={chip} />
+      <Pool system={system} kind="goo" geometry={geometries.drop} material={goo} />
+      <Pool system={system} kind="halo" geometry={geometries.halo} material={halo} />
+      <HaloTint system={system} material={halo} />
     </>
   );
 }

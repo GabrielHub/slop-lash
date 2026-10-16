@@ -3,8 +3,11 @@
 // the viewport height), drawn in a dark version of the base colour (never pure
 // black). Supports skinning, instancing and fog, and the creature wobble when
 // given the same uniforms as the body's toon material, so the hull stays glued
-// to the jelly. Use the same geometry as the body: `new Mesh(geometry,
+// to the jelly (with the same per-vertex wobble scale: the geometry's
+// FINISH_ATTRIBUTE, see toon.ts). Use the same geometry as the body: `new Mesh(geometry,
 // createOutlineMaterial(...))` or a SkinnedMesh bound to the same skeleton.
+// On a creature, a glow part's hull is drawn bright in the part's own hue (from
+// its vertex colours) instead of dark, so it reads as giving off light.
 
 import {
   BackSide,
@@ -15,6 +18,7 @@ import {
   type ColorRepresentation,
   type IUniform,
 } from "three";
+import { FINISH_ID } from "../creature/finish-look";
 import { WOBBLE_PARS, WOBBLE_VERTEX, type WobbleUniforms } from "./toon";
 
 export interface OutlineOptions {
@@ -46,8 +50,16 @@ const VERTEX = /* glsl */ `
 ${WOBBLE_PARS}
 uniform float uWidth;
 uniform float uDepthBias;
+#ifdef SLOP_FINISH
+attribute vec3 color;
+// A glow part's colour (negative elsewhere).
+flat varying vec3 vHalo;
+#endif
 
 void main() {
+  #ifdef SLOP_FINISH
+  vHalo = abs( slopFinish.x - ${FINISH_ID.glow}.0 ) < 0.5 ? color : vec3( - 1.0 );
+  #endif
   #include <beginnormal_vertex>
   #include <skinbase_vertex>
   #include <skinnormal_vertex>
@@ -76,9 +88,20 @@ const FRAGMENT = /* glsl */ `
 uniform vec3 uColor;
 #include <common>
 #include <fog_pars_fragment>
+#ifdef SLOP_FINISH
+flat varying vec3 vHalo;
+#endif
 
 void main() {
-  gl_FragColor = vec4( uColor, 1.0 );
+  vec3 color = uColor;
+  #ifdef SLOP_FINISH
+  if ( vHalo.r >= 0.0 ) {
+    // Glow: a rim in the part's hue, bright enough for every hue to bloom into a halo.
+    float lum = dot( vHalo, vec3( 0.2126, 0.7152, 0.0722 ) );
+    color = vHalo / max( lum, 0.04 ) * 2.2;
+  }
+  #endif
+  gl_FragColor = vec4( color, 1.0 );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
@@ -102,7 +125,8 @@ export function createOutlineMaterial(opts: OutlineOptions): OutlineMaterial {
     fragmentShader: FRAGMENT,
     side: BackSide,
     fog: true,
-    defines: opts.wobble ? { SLOP_WOBBLE: "" } : {},
+    // The creature hull reads the body's per-vertex wobble scale (finishes), so rigid parts stay glued.
+    defines: opts.wobble ? { SLOP_WOBBLE: "", SLOP_FINISH: "" } : {},
   }) as OutlineMaterial;
   return material;
 }

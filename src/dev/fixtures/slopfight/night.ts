@@ -160,7 +160,6 @@ function fighter(
     ownerId: owner?.id ?? null,
     status: "EMPTY",
     inputKind: null,
-    typingAt: null,
     champion: null,
     previous: null,
     text: null,
@@ -732,11 +731,7 @@ export function fourBuild(): RoomView {
     fighter("four", 0, jo, { status: "DRAWING", inputKind: "DRAW" }),
     fighter("four", 1, priya, ready(JELLY)),
     fighter("four", 2, sam, { status: "DRAWING", inputKind: "DRAW" }),
-    fighter("four", 3, max, {
-      status: "DESCRIBING",
-      inputKind: "DESCRIBE",
-      typingAt: FIXTURE_NOW - 30_000,
-    }),
+    fighter("four", 3, max, { status: "DESCRIBING", inputKind: "DESCRIBE" }),
   ];
   return fixtureView(
     players,

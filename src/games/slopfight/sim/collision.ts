@@ -23,19 +23,21 @@ export function readState(f: Fighter) {
   const shapes: WorldShape[] = [];
   f.def.bodies.forEach((body, index) => {
     const s = st[index]!;
-    for (const shape of body.shapes) {
+    body.shapes.forEach((shape, shapeIndex) => {
+      const finish = body.finishes[shapeIndex]!;
       if (shape.kind === "ball") {
         const c = vAdd(s.p, qRotate(s.q, shape.center));
-        shapes.push({ body: index, a: c, b: c, r: shape.radius });
+        shapes.push({ body: index, a: c, b: c, r: shape.radius, finish });
       } else {
         shapes.push({
           body: index,
           a: vAdd(s.p, qRotate(s.q, shape.a)),
           b: vAdd(s.p, qRotate(s.q, shape.b)),
           r: shape.radius,
+          finish,
         });
       }
-    }
+    });
   });
   f.shapes = shapes;
 }
@@ -66,13 +68,25 @@ export function surfaceReach(f: Fighter, foe: Fighter): number {
   return best;
 }
 
+export interface Gap {
+  gap: number;
+  point: V3;
+  /** The second list's body at the closest point (-1 when a list is empty). */
+  body: number;
+  /** The closest shape of each list (null when a list is empty). */
+  shapeA: WorldShape | null;
+  shapeB: WorldShape | null;
+}
+
 /** Smallest surface gap between two shape lists, with the contact point. `rb` scales the second list's radii. */
-export function minGap(
-  listA: WorldShape[],
-  listB: WorldShape[],
-  rb = 1,
-): { gap: number; point: V3; body: number } {
-  let best = { gap: Number.POSITIVE_INFINITY, point: [0, 0, 0] as V3, body: -1 };
+export function minGap(listA: WorldShape[], listB: WorldShape[], rb = 1): Gap {
+  let best: Gap = {
+    gap: Number.POSITIVE_INFINITY,
+    point: [0, 0, 0],
+    body: -1,
+    shapeA: null,
+    shapeB: null,
+  };
   for (const sa of listA) {
     for (const sb of listB) {
       const r2 = sb.r * rb;
@@ -89,6 +103,8 @@ export function minGap(
             result.c1[2] + (result.c2[2] - result.c1[2]) * t,
           ],
           body: sb.body,
+          shapeA: sa,
+          shapeB: sb,
         };
       }
     }

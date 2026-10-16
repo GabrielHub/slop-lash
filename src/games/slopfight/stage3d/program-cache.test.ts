@@ -1,5 +1,6 @@
 import { DoubleSide, InstancedMesh, Mesh } from "three";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { FINISH_ATTRIBUTE } from "./look/toon";
 import { createProgramWarmup } from "./program-cache";
 
 describe("stage program warmup", () => {
@@ -12,6 +13,14 @@ describe("stage program warmup", () => {
     expect(instances).toHaveLength(2);
     expect(instances.some((mesh) => !Array.isArray(mesh.material) && mesh.material.side === DoubleSide)).toBe(true);
     const materials = meshes.flatMap((mesh) => Array.isArray(mesh.material) ? mesh.material : [mesh.material]);
+    // The creature body and its outline: the one finish program every finish shares.
+    const skinned = meshes.filter((mesh) => mesh.type === "SkinnedMesh");
+    expect(skinned.length).toBeGreaterThanOrEqual(2);
+    for (const mesh of skinned) {
+      const material = Array.isArray(mesh.material) ? mesh.material[0]! : mesh.material;
+      expect(material.defines).toHaveProperty("SLOP_FINISH");
+      expect(mesh.geometry.getAttribute(FINISH_ATTRIBUTE)?.itemSize).toBe(2);
+    }
     expect(materials.filter((material) => !material.fog && material.transparent && !material.depthTest)).toHaveLength(2);
     const disposed = materials.map((material) => vi.spyOn(material, "dispose"));
     const instanceDisposals = instances.map((mesh) => vi.spyOn(mesh, "dispose"));

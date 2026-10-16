@@ -5,8 +5,16 @@
 // the PNG goes straight into the forge call.
 
 import { STROKE_GRID } from "./constants";
-import { BRUSH_WIDTH, ERASER_WIDTH, isEraser, strokesByLayer, type Stroke, type StrokeBatch } from "./strokes";
-import { DRAWING_CANVAS_HEX, PHONE_PALETTE } from "./vocab";
+import {
+  BRUSH_WIDTH,
+  ERASER_WIDTH,
+  isEraser,
+  MATERIAL_CORE_WIDTH,
+  strokesByLayer,
+  type Stroke,
+  type StrokeBatch,
+} from "./strokes";
+import { DRAWING_CANVAS_HEX, INKS, MATERIAL_INKS } from "./vocab";
 
 /** The forge image size: about 350 input tokens on Claude, enough to count legs. */
 export const RASTER_SIZE = 512;
@@ -32,7 +40,10 @@ function hexToRgb(hex: string): Rgb {
 }
 
 const CANVAS_RGB = hexToRgb(DRAWING_CANVAS_HEX);
-const INK_RGB: readonly Rgb[] = PHONE_PALETTE.map((ink) => hexToRgb(ink.hex));
+/** Every ink by stroke colour index. */
+const INK_RGB: readonly Rgb[] = INKS.map((ink) => hexToRgb(ink.hex));
+/** A material ink's bright core, by stroke colour index. */
+const CORE_RGB: ReadonlyMap<number, Rgb> = new Map(MATERIAL_INKS.map((ink) => [ink.index, hexToRgb(ink.core)]));
 
 /** A blank cream canvas. */
 export function blankRaster(size = RASTER_SIZE): RasterImage {
@@ -49,74 +60,87 @@ export function blankRaster(size = RASTER_SIZE): RasterImage {
 /**
  * Paints strokes in order onto `image` with an antialiased round brush (one
  * pixel of soft edge). Each stroke's coverage is the max over its segments,
- * so joints never double up; the eraser paints the canvas colour.
+ * so joints never double up; the eraser paints the canvas colour, and a
+ * material ink paints its bright core down the middle of the stroke.
  */
 export function paintStrokes(image: RasterImage, strokes: readonly Stroke[]): void {
-  const { width, height, data } = image;
-  const scale = width / STROKE_GRID;
-  const coverage = new Float32Array(width * height);
+  const scale = image.width / STROKE_GRID;
+  const coverage = new Float32Array(image.width * image.height);
   for (const stroke of strokes) {
-    const points = stroke.p;
-    if (points.length < 2) continue;
+    if (stroke.p.length < 2) continue;
     const erase = isEraser(stroke);
     const radius = Math.max(1, ((erase ? ERASER_WIDTH : BRUSH_WIDTH) / 2) * scale);
-    const color = erase ? CANVAS_RGB : (INK_RGB[stroke.c] ?? INK_RGB[0]!);
-    let minX = width;
-    let minY = height;
-    let maxX = -1;
-    let maxY = -1;
-    const segment = (x0: number, y0: number, x1: number, y1: number) => {
-      const reach = radius + 1;
-      const left = Math.max(0, Math.floor(Math.min(x0, x1) - reach));
-      const right = Math.min(width - 1, Math.ceil(Math.max(x0, x1) + reach));
-      const top = Math.max(0, Math.floor(Math.min(y0, y1) - reach));
-      const bottom = Math.min(height - 1, Math.ceil(Math.max(y0, y1) + reach));
-      if (left > right || top > bottom) return;
-      minX = Math.min(minX, left);
-      minY = Math.min(minY, top);
-      maxX = Math.max(maxX, right);
-      maxY = Math.max(maxY, bottom);
-      const dx = x1 - x0;
-      const dy = y1 - y0;
-      const length2 = dx * dx + dy * dy;
-      for (let py = top; py <= bottom; py += 1) {
-        const cy = py + 0.5;
-        for (let px = left; px <= right; px += 1) {
-          const cx = px + 0.5;
-          let t = length2 === 0 ? 0 : ((cx - x0) * dx + (cy - y0) * dy) / length2;
-          t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const ex = x0 + t * dx - cx;
-          const ey = y0 + t * dy - cy;
-          const cover = radius + 0.5 - Math.sqrt(ex * ex + ey * ey);
-          if (cover <= 0) continue;
-          const index = py * width + px;
-          const value = cover >= 1 ? 1 : cover;
-          if (value > coverage[index]!) coverage[index] = value;
-        }
-      }
-    };
-    if (points.length === 2) {
-      segment(points[0]! * scale, points[1]! * scale, points[0]! * scale, points[1]! * scale);
-    }
-    for (let index = 2; index + 1 < points.length; index += 2) {
-      segment(
-        points[index - 2]! * scale,
-        points[index - 1]! * scale,
-        points[index]! * scale,
-        points[index + 1]! * scale,
-      );
-    }
-    for (let py = minY; py <= maxY; py += 1) {
-      for (let px = minX; px <= maxX; px += 1) {
+    paintPath(image, coverage, stroke.p, scale, radius, erase ? CANVAS_RGB : (INK_RGB[stroke.c] ?? INK_RGB[0]!));
+    const core = CORE_RGB.get(stroke.c);
+    if (core) paintPath(image, coverage, stroke.p, scale, Math.max(1, radius * MATERIAL_CORE_WIDTH), core);
+  }
+}
+
+/** One round-brush polyline in `color`; `coverage` is scratch space, left zeroed. */
+function paintPath(
+  image: RasterImage,
+  coverage: Float32Array,
+  points: readonly number[],
+  scale: number,
+  radius: number,
+  color: Rgb,
+): void {
+  const { width, height, data } = image;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  const segment = (x0: number, y0: number, x1: number, y1: number) => {
+    const reach = radius + 1;
+    const left = Math.max(0, Math.floor(Math.min(x0, x1) - reach));
+    const right = Math.min(width - 1, Math.ceil(Math.max(x0, x1) + reach));
+    const top = Math.max(0, Math.floor(Math.min(y0, y1) - reach));
+    const bottom = Math.min(height - 1, Math.ceil(Math.max(y0, y1) + reach));
+    if (left > right || top > bottom) return;
+    minX = Math.min(minX, left);
+    minY = Math.min(minY, top);
+    maxX = Math.max(maxX, right);
+    maxY = Math.max(maxY, bottom);
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const length2 = dx * dx + dy * dy;
+    for (let py = top; py <= bottom; py += 1) {
+      const cy = py + 0.5;
+      for (let px = left; px <= right; px += 1) {
+        const cx = px + 0.5;
+        let t = length2 === 0 ? 0 : ((cx - x0) * dx + (cy - y0) * dy) / length2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ex = x0 + t * dx - cx;
+        const ey = y0 + t * dy - cy;
+        const cover = radius + 0.5 - Math.sqrt(ex * ex + ey * ey);
+        if (cover <= 0) continue;
         const index = py * width + px;
-        const alpha = coverage[index]!;
-        if (alpha === 0) continue;
-        coverage[index] = 0;
-        const offset = index * 4;
-        data[offset] = Math.round(data[offset]! + (color[0] - data[offset]!) * alpha);
-        data[offset + 1] = Math.round(data[offset + 1]! + (color[1] - data[offset + 1]!) * alpha);
-        data[offset + 2] = Math.round(data[offset + 2]! + (color[2] - data[offset + 2]!) * alpha);
+        const value = cover >= 1 ? 1 : cover;
+        if (value > coverage[index]!) coverage[index] = value;
       }
+    }
+  };
+  if (points.length === 2) {
+    segment(points[0]! * scale, points[1]! * scale, points[0]! * scale, points[1]! * scale);
+  }
+  for (let index = 2; index + 1 < points.length; index += 2) {
+    segment(
+      points[index - 2]! * scale,
+      points[index - 1]! * scale,
+      points[index]! * scale,
+      points[index + 1]! * scale,
+    );
+  }
+  for (let py = minY; py <= maxY; py += 1) {
+    for (let px = minX; px <= maxX; px += 1) {
+      const index = py * width + px;
+      const alpha = coverage[index]!;
+      if (alpha === 0) continue;
+      coverage[index] = 0;
+      const offset = index * 4;
+      data[offset] = Math.round(data[offset]! + (color[0] - data[offset]!) * alpha);
+      data[offset + 1] = Math.round(data[offset + 1]! + (color[1] - data[offset + 1]!) * alpha);
+      data[offset + 2] = Math.round(data[offset + 2]! + (color[2] - data[offset + 2]!) * alpha);
     }
   }
 }

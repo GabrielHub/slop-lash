@@ -6,8 +6,10 @@ import {
   StrokeSchema,
   flattenStrokes,
   inkLength,
+  INK_PATCHES_MAX,
   isBlankDoodle,
   isValidStroke,
+  materialInkPatches,
   simplifyStroke,
   strokeBounds,
   strokeRoom,
@@ -80,7 +82,9 @@ describe("stroke validation", () => {
     expect(isValidStroke(ink([0, 0, 1000, 1000]))).toBe(true);
     expect(isValidStroke(ink([500, 500]))).toBe(true);
     expect(isValidStroke(eraser([10, 10, 20, 20]))).toBe(true);
-    expect(isValidStroke({ c: 7, w: 1, p: [0, 0] })).toBe(false);
+    expect(isValidStroke({ c: 7, w: 1, p: [0, 0] })).toBe(true);
+    expect(isValidStroke({ c: 13, w: 1, p: [0, 0] })).toBe(true);
+    expect(isValidStroke({ c: 14, w: 1, p: [0, 0] })).toBe(false);
     expect(isValidStroke({ c: 0, w: 2, p: [0, 0] })).toBe(false);
     expect(isValidStroke(ink([0, 0, 1]))).toBe(false);
     expect(isValidStroke(ink([0, 1001]))).toBe(false);
@@ -171,6 +175,46 @@ describe("isBlankDoodle", () => {
     expect(isBlankDoodle(stickFigure)).toBe(false);
     expect(isBlankDoodle([ink([100, 500, 900, 500])])).toBe(false);
     expect(isBlankDoodle([ink([450, 450, 480, 520, 520, 460, 550, 530])])).toBe(false);
+  });
+});
+
+describe("materialInkPatches", () => {
+  const GOLD = 7;
+  const LAVA = 10;
+  const finishes = (strokes: Stroke[]) => materialInkPatches(strokes).map((patch) => patch.ink.finish);
+
+  test("finds each material ink where it shows, biggest first, in grid units", () => {
+    // On coverage-cell centres, so the bounds are exact: the cells the brush covers.
+    const patches = materialInkPatches([
+      ink([200, 510, 800, 510]),
+      ink([410, 810, 590, 810], LAVA),
+      ink([310, 110, 690, 110], GOLD),
+    ]);
+    expect(patches.map((patch) => [patch.ink.finish, patch.bounds])).toEqual([
+      ["gold", { minX: 300, minY: 100, maxX: 700, maxY: 120 }],
+      ["lava", { minX: 400, minY: 800, maxX: 600, maxY: 820 }],
+    ]);
+  });
+
+  test("none for flat inks; none once painted over or erased; specks dropped", () => {
+    const gold = ink([310, 510, 690, 510], GOLD);
+    expect(finishes([ink([100, 100, 900, 900]), eraser([500, 100, 500, 900])])).toEqual([]);
+    expect(finishes([gold])).toEqual(["gold"]);
+    expect(finishes([gold, ink([310, 510, 690, 510])])).toEqual([]);
+    expect(finishes([gold, eraser([310, 510, 690, 510])])).toEqual([]);
+    expect(finishes([ink([510, 510], GOLD)])).toEqual([]);
+  });
+
+  test("joins strokes a cell apart, splits far ones, and keeps the biggest few", () => {
+    const left = ink([110, 510, 210, 510], GOLD);
+    expect(materialInkPatches([left, ink([250, 510, 350, 510], GOLD)]).map((patch) => patch.bounds)).toEqual([
+      { minX: 100, minY: 500, maxX: 360, maxY: 520 },
+    ]);
+    expect(finishes([left, ink([790, 510, 890, 510], GOLD)])).toEqual(["gold", "gold"]);
+    const dashes = Array.from({ length: INK_PATCHES_MAX + 2 }, (_, index) =>
+      ink([30 + index * 110, 510, 70 + index * 110, 510], GOLD),
+    );
+    expect(materialInkPatches(dashes)).toHaveLength(INK_PATCHES_MAX);
   });
 });
 

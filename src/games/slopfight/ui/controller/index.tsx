@@ -49,7 +49,7 @@ function PhoneHeader() {
   // During Build the champion is the thing being made; the chip appears once it exists.
   const showChip = champion !== null && !(room.phase === "BUILD" && fighter?.status !== "READY");
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 bg-canvas/95 pl-3 pr-14 pt-[env(safe-area-inset-top)]">
+    <header data-keyboard-cover className="sticky top-0 z-20 flex h-14 items-center gap-2 bg-canvas/95 pl-3 pr-14 pt-[env(safe-area-inset-top)]">
       {showChip ? <MyChampionButton champion={champion} /> : <Kicker tone="dim">SlopFight</Kicker>}
       <div className="ml-auto flex items-center">{room.status === "PLAYING" && <CountdownPill />}</div>
     </header>

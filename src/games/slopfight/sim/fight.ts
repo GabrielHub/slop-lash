@@ -19,6 +19,7 @@ import {
 import { SUDDEN_DEATH_MS } from "../constants";
 import { resolveModifiers, type Side } from "../modifiers";
 import { stableStringify } from "../sheet";
+import type { Finish } from "../vocab";
 import { think, thinkDelay, aggressionAt } from "./brain";
 import {
   aimedDir,
@@ -28,6 +29,7 @@ import {
   flatDir,
   minGap,
   readState,
+  type Gap,
   shapesOf,
   surfaceReach,
   vAtPoint,
@@ -38,11 +40,14 @@ import {
   SIDE_GROUP,
   groups,
   createFighter,
+  delivererFinish,
   delivererOf,
   effPowerOf,
   isActive,
   limbReach,
   moveChain,
+  reachTiming,
+  strikeWindupMs,
   type Fighter,
   type Mode,
 } from "./fighter";
@@ -134,7 +139,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
 
   /** Exact surface gap between the fighters this step, computed at most once per step. */
   let gapStep = -1;
-  let gapNow: { gap: number; point: V3; body: number } = { gap: 0, point: [0, 0, 0], body: -1 };
+  let gapNow: Gap = { gap: 0, point: [0, 0, 0], body: -1, shapeA: null, shapeB: null };
   function exactGap() {
     if (gapStep !== stepIndex) {
       gapStep = stepIndex;
@@ -295,9 +300,6 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     emit({ t: tMs, kind: "stagger", side: f.side, ms: Math.round(dur), cause });
   }
 
-  /** Long limbs swing slower: Reach costs time on a Strike's windup and recovery. */
-  const reachTiming = (f: Fighter) => 1 + K.REACH_TIMING * (f.profile.effReach - 3);
-
   function enterPhase(f: Fighter, phase: MovePhase, dur: number) {
     const m = f.move!;
     m.phase = phase;
@@ -325,11 +327,12 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     const move = f.champion.moves[index]!;
     const effPower = effPowerOf(move.power, move.type, f.mods);
     const root = delivererOf(f.def, move.delivery, f.limbToggle, f.itemRoot);
+    const finish = delivererFinish(f, root, move.delivery);
     f.limbToggle += 1;
     const jitter = 1 + 0.35 * f.profile.chaos * f.rng.signed();
     const windup =
       move.type === "STRIKE"
-        ? (K.STRIKE_WINDUP_MS + K.STRIKE_WINDUP_PER_POWER * effPower) * jitter * reachTiming(f)
+        ? strikeWindupMs(f, effPower, jitter, finish)
         : move.type === "GRAPPLE"
           ? K.GRAPPLE_APPROACH_MS
           : K.TRICK_SETUP_MS * jitter;
@@ -348,6 +351,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
       t: 0,
       dur: windup / f.speedMul,
       root,
+      finish,
       // A body slam or body grab lands with whatever leads: the torso or the head in front of it.
       chain: moveChain(f.def, root, move.type, f.coreChain),
       resolved: false,
@@ -564,7 +568,10 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
         K.IMPACT_MIN,
         K.IMPACT_MAX,
       );
-      hitsThisStep.push(moveHit(f, foe, "strike", impact, contact.point));
+      const [attackFinish, guardFinish] = contactFinishes(f, contact);
+      hitsThisStep.push(
+        moveHit(f, foe, "strike", impact, contact.point, attackFinish, guardFinish),
+      );
     } else if (m.type === "GRAPPLE" && m.phase === "windup" && !m.resolved) {
       if (m.wild || !isActive(foe) || foe.heldBy || foe.wakeMs > 0) return;
       const recovering = foe.move?.type === "STRIKE" && foe.move.phase === "recover";
@@ -627,9 +634,25 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
       m.resolved = true;
       emit({ t: tMs, kind: "counter", side: f.side, move: m.index });
       const point = vScale(vAdd(com(f), com(foe)), 0.5);
-      hitsThisStep.push(moveHit(f, foe, "counter", 1, point));
+      const [attackFinish, guardFinish] = closeFinishes(f, foe);
+      hitsThisStep.push(moveHit(f, foe, "counter", 1, point, attackFinish, guardFinish));
       enterPhase(f, "recover", K.TRICK_RECOVER_MS / f.speedMul);
     }
+  }
+
+  /**
+   * The finishes a blow meets with: the deliverer's (for a body move, whichever of the
+   * torso and head made the contact) against the struck shape's part.
+   */
+  function contactFinishes(f: Fighter, contact: Gap): [Finish, Finish] {
+    const m = f.move!;
+    const attack = m.root === 0 ? (contact.shapeA?.finish ?? m.finish) : m.finish;
+    return [attack, contact.shapeB?.finish ?? "vinyl"];
+  }
+
+  /** Counters and pokes land at close range: on the foe's part nearest the move's chain. */
+  function closeFinishes(f: Fighter, foe: Fighter): [Finish, Finish] {
+    return contactFinishes(f, minGap(shapesOf(f, f.move!.chain), foe.shapes, foe.mods.hurtbox));
   }
 
   function poke(f: Fighter) {
@@ -638,7 +661,8 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     m.resolved = true;
     if (foe.mode !== "out" && foe.mode !== "ko" && f.reachGap <= f.moves[m.index]!.range) {
       const point = vScale(vAdd(com(f), com(foe)), 0.5);
-      hitsThisStep.push(moveHit(f, foe, "poke", 0.85, point));
+      const [attackFinish, guardFinish] = closeFinishes(f, foe);
+      hitsThisStep.push(moveHit(f, foe, "poke", 0.85, point, attackFinish, guardFinish));
     } else {
       emit({ t: tMs, kind: "whiff", side: f.side, move: m.index, type: "TRICK", reason: "miss" });
     }
@@ -755,6 +779,9 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
           health: def.health,
           counter: hit.kind === "counter",
           miracle: hit.miracle,
+          // Only when not vinyl, so an unfinished fight's log is unchanged.
+          ...(hit.attackFinish !== "vinyl" ? { attackFinish: hit.attackFinish } : {}),
+          ...(hit.guardFinish !== "vinyl" ? { guardFinish: hit.guardFinish } : {}),
         });
       }
       if (def.mods.selfDamageOnHitTaken > 0 && def.health > 0) {

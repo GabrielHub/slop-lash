@@ -24,6 +24,7 @@ import {
   type ForgeMode,
 } from "./forge-prompt";
 import { BIO_MAX, NARRATION_LINE_MAX, REJECTION_TEXT_MAX } from "../constants";
+import type { InkPatch } from "../strokes";
 import {
   callSettings,
   modelText,
@@ -64,6 +65,8 @@ export interface ForgeChampionOptions extends CallOptions {
   previous?: Champion;
   /** Upgrade: the added text (an added drawing comes in `png`, faded layers under the new one). */
   addition?: string;
+  /** Where the drawing's material inks show (`materialInkPatches`; an upgrade: its new layer's). */
+  inks?: readonly InkPatch[];
   arenas: readonly ArenaId[];
   /** Each partial ForgeResult as it streams; throttle on your side. Errors it throws are logged and ignored. */
   onPartial?: (partial: ForgePartial, info: ForgeStreamInfo) => void;
@@ -211,6 +214,7 @@ export async function forgeChampion(options: ForgeChampionOptions): Promise<Forg
     png: options.png,
     previous: options.previous,
     addition: options.addition,
+    inks: options.inks,
   };
   const instructions = forgeInstructions(mode, options.arenas);
   const calls: AiCallRecord[] = [];
@@ -218,10 +222,12 @@ export async function forgeChampion(options: ForgeChampionOptions): Promise<Forg
   // An upgrade carries the champion over in code: the model only adds.
   const previous = mode === "upgrade" ? options.previous : undefined;
   const additionText = options.addition ?? options.text ?? "";
+  // Material ink on the new layer may give any existing part its finish.
+  const inkFinishes = [...new Set((options.inks ?? []).map((patch) => patch.ink.finish))];
   const finish = (raw: ForgeResult): ForgeResult => {
     const result = finishForgeResult(raw);
     if (!previous || !result.champion) return result;
-    const champion = preserveUpgrade(previous, result.champion, additionText);
+    const champion = preserveUpgrade(previous, result.champion, additionText, inkFinishes);
     return { ...result, champion: { ...champion, markings: champion.markings ?? [] } };
   };
 
@@ -241,7 +247,9 @@ export async function forgeChampion(options: ForgeChampionOptions): Promise<Forg
         output: FORGE_OUTPUT,
         onPartial: (partial) =>
           options.onPartial?.(
-            previous ? preserveUpgradePartial(previous, partial as ForgePartial, additionText) : (partial as ForgePartial),
+            previous
+              ? preserveUpgradePartial(previous, partial as ForgePartial, additionText, inkFinishes)
+              : (partial as ForgePartial),
             info,
           ),
       },

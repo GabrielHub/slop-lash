@@ -20,6 +20,8 @@ vi.mock("../../src/lib/ai-gateway", async (importOriginal) => {
   const { MockLanguageModelV4: Mock } = await import("ai/test");
   const { APICallError, simulateReadableStream } = await import("ai");
   const { FORGE_EXAMPLES: examples } = await import("../../src/games/slopfight/ai/examples");
+  // The model writes every part's finish; the stored examples leave vinyl out.
+  const { writtenResult } = await import("../../src/games/slopfight/ai/forge-prompt");
   return {
     ...actual,
     getLanguageModel: (modelId: string) =>
@@ -35,7 +37,7 @@ vi.mock("../../src/lib/ai-gateway", async (importOriginal) => {
               isRetryable: false,
             });
           }
-          const text = JSON.stringify(examples[0]!.result);
+          const text = JSON.stringify(writtenResult(examples[0]!.result));
           const third = Math.ceil(text.length / 3);
           return {
             stream: simulateReadableStream({

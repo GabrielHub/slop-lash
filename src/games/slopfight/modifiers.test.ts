@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { ARENAS } from "./arenas";
+import { FINISH_EFFECTS, finishSpeed } from "./finishes";
 import {
   BRAIN_FLAGS,
   MatchupNoteSchema,
@@ -130,6 +131,18 @@ describe("resolveModifiers", () => {
     const { A } = resolveModifiers(fighter(["electric", "explosive", "heavy", "armored"]), fighter(["frosty", "stinky"]), "FLOODED_GARAGE", []);
     expect(A.selfDamageOnHitTaken).toBe(7); // garage electric 5 + explosive 2
     expect(A.speed).toBe(0.6);
+  });
+
+  test("folds in the speed the body's finishes cost, scaled by coverage", () => {
+    const blob = PLAIN;
+    const vinyl = resolveModifiers(blob, blob, "ROOFTOP", []).A.speed;
+    const metal = { ...blob, parts: blob.parts.map((part) => ({ ...part, finish: "metal" as const })) };
+    const glow = { ...blob, parts: blob.parts.map((part) => ({ ...part, finish: "glow" as const })) };
+    expect(finishSpeed(metal)).toBe(FINISH_EFFECTS.metal.weight);
+    expect(resolveModifiers(metal, blob, "ROOFTOP", []).A.speed).toBeCloseTo(vinyl + FINISH_EFFECTS.metal.weight / 100, 3);
+    expect(resolveModifiers(glow, blob, "ROOFTOP", []).A.speed).toBeCloseTo(vinyl + FINISH_EFFECTS.glow.weight / 100, 3);
+    // The foe's finishes are its own business.
+    expect(resolveModifiers(blob, metal, "ROOFTOP", []).A.speed).toBe(vinyl);
   });
 
   test("passes brain flags through, relentless over cowardly", () => {

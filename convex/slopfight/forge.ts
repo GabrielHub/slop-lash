@@ -8,6 +8,7 @@ import type { AiCallRow } from "../jobs";
 import { aiCallUsageValidator, aiFailReasonValidator } from "../validators";
 import { ARENA_IDS } from "../../src/games/slopfight/arenas";
 import { parsePartialParts, type Part } from "../../src/games/slopfight/sheet";
+import { materialInkPatches, strokesByLayer, type InkPatch } from "../../src/games/slopfight/strokes";
 import { BODY_PLANS, type BodyPlan } from "../../src/games/slopfight/vocab";
 import type { ForgeInput } from "./forgeData";
 import { forgeChampion, renderDoodlePng, type ForgeChampionOptions, type ForgeMode } from "./ports";
@@ -36,6 +37,12 @@ const WRAPPER_MODE: Record<ForgeKind, ForgeMode> = {
   HOUSE_UPGRADE: "upgrade",
 };
 
+/** Where the forged layer's material inks show: the whole Build drawing, or an upgrade's new strokes. */
+function forgedInks(batches: NonNullable<ForgeInput["batches"]>, layer: number): InkPatch[] {
+  const strokes = strokesByLayer(batches).find((group) => group.layer === layer)?.strokes ?? [];
+  return materialInkPatches(strokes);
+}
+
 /** The wrapper's options for one stored forge input. */
 export function forgeOptions(input: ForgeInput): Omit<ForgeChampionOptions, "keys" | "onPartial"> {
   return {
@@ -43,7 +50,9 @@ export function forgeOptions(input: ForgeInput): Omit<ForgeChampionOptions, "key
     arenas: input.arenas,
     deadline: null,
     ...(input.text ? { text: input.text } : {}),
-    ...(input.batches ? { png: renderDoodlePng(input.batches, input.layer) } : {}),
+    ...(input.batches
+      ? { png: renderDoodlePng(input.batches, input.layer), inks: forgedInks(input.batches, input.layer) }
+      : {}),
     ...(input.previous ? { previous: input.previous } : {}),
     ...(input.addition ? { addition: input.addition } : {}),
   };

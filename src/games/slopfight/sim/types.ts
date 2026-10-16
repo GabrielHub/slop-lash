@@ -4,7 +4,7 @@
 import type { ArenaId } from "../arenas";
 import type { MatchupNote, Side } from "../modifiers";
 import type { Champion } from "../sheet";
-import type { BodyPlan, MoveType } from "../vocab";
+import type { BodyPlan, Finish, MoveType } from "../vocab";
 
 export type { Side };
 export type Vec3 = [x: number, y: number, z: number];
@@ -79,6 +79,10 @@ export type FightEvent =
       health: number;
       counter: boolean;
       miracle: boolean;
+      /** The finish of the attacker's part that landed it; absent for vinyl. */
+      attackFinish?: Finish;
+      /** The finish of the target's part it landed on; absent for vinyl. */
+      guardFinish?: Finish;
     })
   | (EventBase & { kind: "whiff"; side: Side; move: number; type: MoveType; reason: WhiffReason })
   | (EventBase & { kind: "stagger"; side: Side; ms: number; cause: StaggerCause })

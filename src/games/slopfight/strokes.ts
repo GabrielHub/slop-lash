@@ -13,15 +13,17 @@ import {
   STROKES_PER_BATCH,
   STROKES_PER_DOODLE,
 } from "./constants";
-import { ERASER_INDEX } from "./vocab";
+import { ERASER_INDEX, INKS, materialInk, type MaterialInk } from "./vocab";
 
 /** The fixed round brush, as a diameter in grid units (w: 1). */
 export const BRUSH_WIDTH = 24;
 /** The eraser paints the canvas colour with a wider round brush. */
 export const ERASER_WIDTH = 56;
+/** A material ink's bright core, as a share of the brush width. */
+export const MATERIAL_CORE_WIDTH = 0.45;
 
-/** Palette index 0..5 (PHONE_PALETTE), or 6 for the eraser. */
-export const StrokeColorSchema = z.literal([0, 1, 2, 3, 4, 5, ERASER_INDEX]);
+/** Palette index 0..5 (PHONE_PALETTE), 6 for the eraser, or 7..13 for a material ink (MATERIAL_INKS). */
+export const StrokeColorSchema = z.literal(INKS.map((ink) => ink.index));
 
 export const StrokeSchema = z.object({
   c: StrokeColorSchema,
@@ -209,17 +211,15 @@ const MIN_INK_CELLS = 5;
 const MIN_INK_SPAN = 4;
 
 /**
- * True when the strokes leave nothing readable on the canvas: no strokes, a
- * single dot or speck, or ink that was all erased. Paints ink and eraser
- * strokes in order onto a coarse 50 x 50 coverage grid and measures what
- * ink remains. Conservative: anything bigger goes to the forge to judge.
+ * The strokes painted in order onto a coarse 50 x 50 grid: each cell holds
+ * the colour index + 1 of the last ink over it, or 0 for bare or erased.
  */
-export function isBlankDoodle(strokes: readonly Stroke[]): boolean {
+function coverageGrid(strokes: readonly Stroke[]): Uint8Array {
   const grid = new Uint8Array(COVERAGE_CELLS * COVERAGE_CELLS);
   for (const stroke of strokes) {
     const erase = isEraser(stroke);
     const radius = (erase ? ERASER_WIDTH : BRUSH_WIDTH) / 2;
-    const value = erase ? 0 : 1;
+    const value = erase ? 0 : stroke.c + 1;
     const points = stroke.p;
     if (points.length < 2) continue;
     stamp(grid, points[0]!, points[1]!, radius, value);
@@ -241,7 +241,16 @@ export function isBlankDoodle(strokes: readonly Stroke[]): boolean {
       }
     }
   }
+  return grid;
+}
 
+/**
+ * True when the strokes leave nothing readable on the canvas: no strokes, a
+ * single dot or speck, or ink that was all erased. Measures what ink remains
+ * on the coverage grid. Conservative: anything bigger goes to the forge.
+ */
+export function isBlankDoodle(strokes: readonly Stroke[]): boolean {
+  const grid = coverageGrid(strokes);
   let cells = 0;
   let minX = COVERAGE_CELLS;
   let minY = COVERAGE_CELLS;
@@ -259,6 +268,67 @@ export function isBlankDoodle(strokes: readonly Stroke[]): boolean {
   }
   if (cells < MIN_INK_CELLS) return true;
   return maxX - minX + 1 < MIN_INK_SPAN && maxY - minY + 1 < MIN_INK_SPAN;
+}
+
+/** One material ink's patch on a drawing, for the forge to read. */
+export interface InkPatch {
+  ink: MaterialInk;
+  /** In grid units, 0..STROKE_GRID. */
+  bounds: StrokeBounds;
+}
+
+/** At most this many patches go to the forge, the biggest. */
+export const INK_PATCHES_MAX = 6;
+/** A patch of fewer coverage cells is a speck. */
+const MIN_PATCH_CELLS = 2;
+/** Cells of one ink this many apart or closer are one patch (a gap of one cell joins). */
+const PATCH_JOIN = 2;
+
+/**
+ * Where each material ink still shows once the strokes paint in order (gold
+ * painted over in red, or erased, is gone): patches of one ink on the
+ * coverage grid, biggest first, specks dropped.
+ */
+export function materialInkPatches(strokes: readonly Stroke[]): InkPatch[] {
+  if (!strokes.some((stroke) => materialInk(stroke.c))) return [];
+  const grid = coverageGrid(strokes);
+  const seen = new Uint8Array(grid.length);
+  const found: { patch: InkPatch; cells: number }[] = [];
+  for (let start = 0; start < grid.length; start += 1) {
+    const value = grid[start]!;
+    const ink = seen[start] ? undefined : materialInk(value - 1);
+    if (!ink) continue;
+    seen[start] = 1;
+    const queue = [start];
+    let minX = COVERAGE_CELLS;
+    let minY = COVERAGE_CELLS;
+    let maxX = -1;
+    let maxY = -1;
+    for (let head = 0; head < queue.length; head += 1) {
+      const cell = queue[head]!;
+      const cx = cell % COVERAGE_CELLS;
+      const cy = (cell - cx) / COVERAGE_CELLS;
+      minX = Math.min(minX, cx);
+      minY = Math.min(minY, cy);
+      maxX = Math.max(maxX, cx);
+      maxY = Math.max(maxY, cy);
+      for (let ny = Math.max(0, cy - PATCH_JOIN); ny <= Math.min(COVERAGE_CELLS - 1, cy + PATCH_JOIN); ny += 1) {
+        for (let nx = Math.max(0, cx - PATCH_JOIN); nx <= Math.min(COVERAGE_CELLS - 1, cx + PATCH_JOIN); nx += 1) {
+          const next = ny * COVERAGE_CELLS + nx;
+          if (seen[next] || grid[next] !== value) continue;
+          seen[next] = 1;
+          queue.push(next);
+        }
+      }
+    }
+    if (queue.length < MIN_PATCH_CELLS) continue;
+    const bounds = { minX: minX * CELL, minY: minY * CELL, maxX: (maxX + 1) * CELL, maxY: (maxY + 1) * CELL };
+    found.push({ patch: { ink, bounds }, cells: queue.length });
+  }
+  return found
+    .sort((a, b) => b.cells - a.cells)
+    .slice(0, INK_PATCHES_MAX)
+    .map(({ patch }) => patch);
 }
 
 /** Sets every coverage cell whose centre is within `radius` of (x, y), plus the cell under it. */
@@ -314,12 +384,17 @@ export function strokePointCount(strokes: readonly { p: readonly number[] }[]): 
   return strokes.reduce((count, stroke) => count + stroke.p.length / 2, 0);
 }
 
+/** Capacity left on a layer holding `strokeCount` strokes of `pointCount` points in all. */
+export function layerRoom(strokeCount: number, pointCount: number) {
+  return {
+    strokes: strokeRoom(strokeCount),
+    points: Math.max(0, POINTS_PER_DOODLE - pointCount),
+  };
+}
+
 /** Capacity left on this layer. Earlier upgrade layers have their own allowance. */
 export function doodleRoom(strokes: readonly { p: readonly number[] }[]) {
-  return {
-    strokes: strokeRoom(strokes.length),
-    points: Math.max(0, POINTS_PER_DOODLE - strokePointCount(strokes)),
-  };
+  return layerRoom(strokes.length, strokePointCount(strokes));
 }
 
 /** Stops the last local stroke at the same budget the server enforces. */

@@ -13,7 +13,7 @@ import {
   type Champion,
   type PartRole,
 } from "../sheet";
-import { MARKING_KINDS, TOY_COLORS, TRAITS, type PartSize } from "../vocab";
+import { MARKING_KINDS, MATERIAL_INKS, TOY_COLORS, TRAITS, type PartSize } from "../vocab";
 import { FORGE_EXAMPLES } from "./examples";
 import { FORGE_SCHEMA } from "./forge-schema";
 import {
@@ -25,7 +25,7 @@ import {
 import { houseInstructions, housePrompt, houseSparks } from "./house-prompt";
 import { matchupInstructions, matchupPrompt } from "./matchup-prompt";
 import { recapPrompt, summarizeFight } from "./recap-prompt";
-import { vocabularyText } from "./prompt-parts";
+import { championCard, vocabularyText } from "./prompt-parts";
 import { modelText } from "./shared";
 
 const champion = (index: number) => FORGE_EXAMPLES[index]!.result.champion!;
@@ -204,8 +204,13 @@ describe("forge prompt", () => {
             )
           : value;
     const ours = z.toJSONSchema(FORGE_SCHEMA);
-    // Same types, enums and property order (the streaming order).
-    expect(JSON.stringify(strip(ours))).toBe(JSON.stringify(strip(z.toJSONSchema(ForgeResultSchema))));
+    // Same types, enums and property order (the streaming order); only the
+    // part's finish is required of the model, where the contract leaves it out for vinyl.
+    const contract = JSON.stringify(strip(z.toJSONSchema(ForgeResultSchema))).replace(
+      '"required":["id","role","shape","size","elongation","parent","anchor","color","mirror"]',
+      '"required":["id","role","shape","size","elongation","parent","anchor","color","finish","mirror"]',
+    );
+    expect(JSON.stringify(strip(ours))).toBe(contract);
     const text = JSON.stringify(ours);
     // The champion's text is sized in words (the part id keeps its character cap).
     const champion = JSON.stringify(ours.properties?.["champion"]);
@@ -292,6 +297,26 @@ describe("forge prompt", () => {
     expect(text.match(/<\/submission>/g)).toHaveLength(1);
   });
 
+  it("says where a drawing's material inks show, and teaches what they look like", () => {
+    const png = new Uint8Array([137, 80, 78, 71]);
+    const [gold, , , lava] = MATERIAL_INKS;
+    const inks = [
+      { ink: gold, bounds: { minX: 300, minY: 100, maxX: 700, maxY: 120 } },
+      { ink: lava, bounds: { minX: 400, minY: 800, maxX: 600, maxY: 820 } },
+    ];
+    const line = "Material ink (what it covers is made of that finish): gold at x 30-70%, y 10-12%; lava at x 40-60%, y 80-82%.";
+    expect(JSON.stringify(forgeUserContent({ mode: "submit", png, inks }))).toContain(line);
+    expect(JSON.stringify(forgeUserContent({ mode: "submit", png, text: "a knight", inks }))).toContain(line);
+    expect(JSON.stringify(forgeUserContent({ mode: "upgrade", previous: champion(0), png, inks }))).toContain(line);
+    // No drawing, or no material ink: no line, and the plain drawing stays one line.
+    expect(JSON.stringify(forgeUserContent({ mode: "submit", text: "a knight", inks }))).not.toContain("Material ink");
+    expect(JSON.stringify(forgeUserContent({ mode: "submit", png, inks: [] }))).toContain(
+      '<submission kind=\\"drawing\\">The attached drawing.</submission>',
+    );
+    const legend = FORGE_STATIC.slice(FORGE_STATIC.indexOf("Material inks draw as a glossy tube"));
+    for (const material of MATERIAL_INKS) expect(legend.split("\n")[0]).toContain(material.finish);
+  });
+
   it("caps descriptions and describes an empty lenient submission", () => {
     const long = forgeUserContent({ mode: "submit", text: "x".repeat(1_000) });
     expect(JSON.stringify(long)).not.toContain("x".repeat(281));
@@ -341,6 +366,19 @@ describe("matchup and recap prompts", () => {
     expect(prompt).toContain("Ranger Bramble");
     expect(prompt).toContain("The Gnomenapper");
     expect(prompt).toContain(ARENAS.FLOODED_GARAGE.hazards[0]!.card);
+  });
+
+  it("says what each fighter is made of, without a vinyl rest when one finish covers it all", () => {
+    const base = champion(0);
+    const dress = (finish: (index: number) => "gold" | undefined) => ({
+      ...base,
+      parts: base.parts.map((part, index) => ({ ...part, finish: finish(index) })),
+    });
+    expect(championCard(dress(() => undefined))).not.toContain("made of:");
+    expect(championCard(dress(() => "gold"))).toContain("made of: gold everything\n");
+    expect(championCard(dress((index) => (index === 0 ? "gold" : undefined)))).toMatch(
+      /made of: gold [^\n]+, the rest vinyl\n/,
+    );
   });
 
   it("summarizes a fight log into totals, the biggest hit and the beats", () => {

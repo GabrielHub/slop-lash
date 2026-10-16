@@ -1,24 +1,29 @@
 "use client";
 
-// The stage's own data feeds (build plan decision 5): easel strokes and the
-// foundry's streamed parts stay out of the room view, so phones drawing at
-// 4 Hz and forges streaming parts never resend the view to every client.
+// The stage's own data feeds (build plan decision 5): easel strokes, the
+// foundry's streamed parts and the describers' typing stay out of the room
+// view, so phones drawing at 4 Hz, forges streaming parts and players typing
+// never resend the view to every client.
 //
 // - In a live room (`room.live` and a real seat or a watcher, not a fixture)
-//   the hooks subscribe to `api.slopfight.stage.strokes` / `.foundry`.
+//   the hooks subscribe to `api.slopfight.stage.strokes` (one subscription
+//   per fighter, so a batch resends only its drawer's rows), `.forges` and
+//   `.typing`. A scene that shows none of it passes `enabled: false` and
+//   subscribes to nothing.
 // - Fixtures, the recap and the dev labs never reach the backend: strokes
 //   come from the view's `doodles` (fixtures carry them; the recap's view has
-//   them once the game is over), and an injected `DevFeed` (DevFeedProvider)
-//   wins over everything, so a lab can stream synthetic strokes and growing
-//   parts. Without a dev feed, a FORGING fighter in a fixture grows from a
-//   synthetic part stream (scenes/dev-feed.ts, loaded on demand by
-//   useSceneData so the sample champions stay out of the production chunk).
+//   them), and an injected `DevFeed` (DevFeedProvider) wins over everything,
+//   so a lab can stream synthetic strokes, growing parts and typing. Without
+//   a dev feed, a FORGING fighter in a fixture grows from a synthetic part
+//   stream (scenes/dev-feed.ts, loaded on demand by useSceneData so the
+//   sample champions stay out of the production chunk).
 
 import { useQuery } from "convex/react";
-import { createContext, createElement, useContext, type ReactNode } from "react";
+import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { modeOf } from "@/room/context";
-import type { Champion, Part } from "../sheet";
+import type { Part } from "../sheet";
 import type { Stroke } from "../strokes";
 import { useRoomOrNull } from "./ui3d/room";
 
@@ -31,25 +36,20 @@ export interface StageStrokeRow {
   strokes: readonly Stroke[];
 }
 
-/** One fighter's forge as it grows (`stage.foundry`). */
+/** One fighter's streamed parts while it forges (`stage.forges`). */
 export interface StageFoundryEntry {
   id: string;
-  slot: number;
-  ownerId: string | null;
-  status: string;
-  forge: { kind: string; version: number; startedAt: number } | null;
-  /** The streamed parts so far, while forging. */
   partial: readonly Part[];
-  champion: Champion | null;
-  previous: Champion | null;
-  version: number;
-  failure: string | null;
 }
+
+/** Each describer's last keystroke (server ms) by fighter id (`stage.typing`). */
+export type StageTyping = Readonly<Record<string, number>>;
 
 /** Synthetic or recorded data for labs and tests; each field wins over the backend when set. */
 export interface DevFeed {
   strokes?: readonly StageStrokeRow[] | null;
   foundry?: readonly StageFoundryEntry[] | null;
+  typing?: StageTyping | null;
 }
 
 const DevFeedContext = createContext<DevFeed | null>(null);
@@ -71,38 +71,76 @@ export function useLiveFeeds(): boolean {
   return !dev && !!room && room.live && room.capability !== "fixture";
 }
 
+/** The room code to subscribe with, or null when this stage must not subscribe. */
+function useFeedCode(enabled: boolean): string | null {
+  const room = useRoomOrNull();
+  const live = useLiveFeeds();
+  return enabled && live ? (room?.view.room.code ?? null) : null;
+}
+
+/** The room's fighters by seat (slot order); a SlopFight game always seats four. */
+function useSeats() {
+  const room = useRoomOrNull();
+  const mode = room ? modeOf(room.view, "SLOPFIGHT") : null;
+  return mode ? [...mode.fighters].sort((a, b) => a.slot - b.slot) : [];
+}
+
+function useFighterStrokes(code: string | null, fighterId: Id<"slopFightFighters"> | undefined) {
+  return useQuery(api.slopfight.stage.strokes, code && fighterId ? { roomCode: code, fighterId } : "skip");
+}
+
 /**
  * Every stroke batch of the game (all fighters, all layers). Live rooms
- * subscribe; elsewhere the view's `doodles` or the dev feed. Null while the
- * first live result is loading, or when there is nothing to read.
+ * subscribe per fighter; elsewhere the view's `doodles` or the dev feed. Null
+ * while no live result has loaded, or when there is nothing to read.
  */
-export function useStageStrokes(gameNumber?: number): readonly StageStrokeRow[] | null {
+export function useStageStrokes(enabled = true): readonly StageStrokeRow[] | null {
   const room = useRoomOrNull();
   const dev = useContext(DevFeedContext);
-  const live = useLiveFeeds();
-  const code = room?.view.room.code ?? null;
-  const rows = useQuery(
-    api.slopfight.stage.strokes,
-    live && code ? (gameNumber === undefined ? { roomCode: code } : { roomCode: code, gameNumber }) : "skip",
-  );
+  const code = useFeedCode(enabled);
+  const seats = useSeats();
+  // One hook per seat, in a fixed order (CHAMPIONS is 4).
+  const first = useFighterStrokes(code, seats[0]?.id);
+  const second = useFighterStrokes(code, seats[1]?.id);
+  const third = useFighterStrokes(code, seats[2]?.id);
+  const fourth = useFighterStrokes(code, seats[3]?.id);
+  const live = useMemo(() => {
+    const loaded = [first, second, third, fourth].filter((rows) => rows !== undefined);
+    return loaded.length === 0 ? null : (loaded.flat() as readonly StageStrokeRow[]);
+  }, [first, second, third, fourth]);
   if (dev?.strokes) return dev.strokes;
-  if (live) return (rows as readonly StageStrokeRow[] | undefined) ?? null;
+  if (code) return live;
+  if (!enabled) return null;
   const mode = room ? modeOf(room.view, "SLOPFIGHT") : null;
   return (mode?.doodles as readonly StageStrokeRow[] | null | undefined) ?? null;
 }
 
 /**
- * Each fighter's forge with its streamed parts. Live rooms subscribe; the
- * dev feed wins when it has one; otherwise null (scenes fall back to the
- * view's fighters and, in fixtures, a synthetic part stream).
+ * Each forging fighter's streamed parts. Live rooms subscribe; the dev feed
+ * wins when it has one; otherwise null (scenes fall back to the view's
+ * fighters and, in fixtures, a synthetic part stream).
  */
-export function useStageFoundry(): readonly StageFoundryEntry[] | null {
-  const room = useRoomOrNull();
+export function useStageFoundry(enabled = true): readonly StageFoundryEntry[] | null {
   const dev = useContext(DevFeedContext);
-  const live = useLiveFeeds();
-  const code = room?.view.room.code ?? null;
-  const entries = useQuery(api.slopfight.stage.foundry, live && code ? { roomCode: code } : "skip");
+  const code = useFeedCode(enabled);
+  const streams = useQuery(api.slopfight.stage.forges, code ? { roomCode: code } : "skip");
+  const live = useMemo(
+    () => streams?.map((stream): StageFoundryEntry => ({ id: stream.fighterId, partial: stream.parts })) ?? null,
+    [streams],
+  );
   if (dev?.foundry) return dev.foundry;
-  if (live) return (entries as readonly StageFoundryEntry[] | undefined) ?? null;
-  return null;
+  return code ? live : null;
+}
+
+/** Each describer's last keystroke. Live rooms subscribe; the dev feed wins; otherwise null. */
+export function useStageTyping(enabled = true): StageTyping | null {
+  const dev = useContext(DevFeedContext);
+  const code = useFeedCode(enabled);
+  const rows = useQuery(api.slopfight.stage.typing, code ? { roomCode: code } : "skip");
+  const live = useMemo(
+    () => (rows ? Object.fromEntries(rows.map((row) => [row.fighterId, row.at])) : null),
+    [rows],
+  );
+  if (dev?.typing) return dev.typing;
+  return code ? live : null;
 }

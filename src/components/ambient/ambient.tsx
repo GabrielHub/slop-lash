@@ -2,15 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { getAmbient, subscribeAmbient } from "@/lib/ambient-events";
+import { typingIn } from "@/lib/keyboard-fields";
 import { AmbientEngine } from "./engine";
-
-/** Fields that raise a phone keyboard; the background pauses while one has focus. */
-const TEXT_INPUT =
-  "textarea, [contenteditable=''], [contenteditable='true'], input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]):not([type=reset]):not([type=color]):not([type=file])";
-
-function typingIn(element: Element | null) {
-  return element instanceof Element && element.matches(TEXT_INPUT);
-}
 
 /**
  * The one background behind every page: a fixed canvas under all content,

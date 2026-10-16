@@ -122,18 +122,18 @@ function forgeScenario(players: number, now: number): { view: RoomView; feed: De
         ownerId,
         status: kind === "DESCRIBE" ? "DESCRIBING" : "DRAWING",
         inputKind: kind,
-        typingAt: kind === "DESCRIBE" ? now - (Math.floor(now / 700) % 3 === 0 ? 4_000 : 200) : null,
         champion: null,
         forge: null,
       };
     }
     const forge = { kind: human ? ("SUBMIT" as const) : ("HOUSE" as const), version: 0, startedAt };
-    if (now < doneAt) return { ...fighter, ownerId, status: "FORGING", inputKind: kind, typingAt: null, champion: null, forge };
-    return { ...fighter, ownerId, status: "READY", inputKind: kind, typingAt: null, champion: plan.champion, forge, text: kind === "DESCRIBE" ? plan.champion.bio : null };
+    if (now < doneAt) return { ...fighter, ownerId, status: "FORGING", inputKind: kind, champion: null, forge };
+    return { ...fighter, ownerId, status: "READY", inputKind: kind, champion: plan.champion, forge, text: kind === "DESCRIBE" ? plan.champion.bio : null };
   });
   const humans = base.players.slice(0, players);
   const strokes: StageStrokeRow[] = [];
   const foundry: StageFoundryEntry[] = [];
+  const typing: Record<string, number> = {};
   fighters.forEach((fighter, slot) => {
     const plan = plans[slot]!;
     if (fighter.inputKind === "DRAW") {
@@ -142,18 +142,11 @@ function forgeScenario(players: number, now: number): { view: RoomView; feed: De
       const all = plan.strokes.flatMap((row) => row.strokes);
       strokes.push(...toRows(fighter.id, revealStrokes(all, fraction)));
     }
-    foundry.push({
-      id: fighter.id,
-      slot: fighter.slot,
-      ownerId: fighter.ownerId,
-      status: fighter.status,
-      forge: fighter.forge,
-      partial: fighter.status === "FORGING" && fighter.forge ? syntheticPartial(plan.champion, fighter.forge.startedAt, now) : [],
-      champion: fighter.champion as Champion | null,
-      previous: null,
-      version: 0,
-      failure: null,
-    });
+    // Describers type in bursts: a stamp that is fresh, then a pause.
+    if (fighter.status === "DESCRIBING") typing[fighter.id] = now - (Math.floor(now / 700) % 3 === 0 ? 4_000 : 200);
+    if (fighter.status === "FORGING" && fighter.forge) {
+      foundry.push({ id: fighter.id, partial: syntheticPartial(plan.champion, fighter.forge.startedAt, now) });
+    }
   });
   const view: RoomView = {
     ...base,
@@ -161,7 +154,7 @@ function forgeScenario(players: number, now: number): { view: RoomView; feed: De
     room: { ...base.room, phaseStartedAt: FIXTURE_NOW, phaseDeadline: FIXTURE_NOW + 90_000 },
     mode: { ...mode, fighters, doodles: null } as RoomView["mode"],
   };
-  return { view, feed: { strokes, foundry } };
+  return { view, feed: { strokes, foundry, typing } };
 }
 
 function toRows(fighterId: string, strokes: readonly StageStrokeRow["strokes"][number][]): StageStrokeRow[] {

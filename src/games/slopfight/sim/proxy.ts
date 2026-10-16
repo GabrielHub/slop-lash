@@ -6,7 +6,7 @@
 // anchors and pose targets are plain creature-space offsets.
 
 import { championScale, type Champion } from "../sheet";
-import type { BodyPlan, PartRole } from "../vocab";
+import type { BodyPlan, Finish, PartRole } from "../vocab";
 import { resolveSkeleton, type Bone } from "./skeleton";
 import {
   BODY_MASS_SHARE_MIN,
@@ -40,6 +40,8 @@ export interface ProxyBodyDef {
   tip: V3;
   bones: string[];
   shapes: ProxyShape[];
+  /** What each shape's part is made of (same order as bones and shapes). */
+  finishes: Finish[];
   /** Mass per shape (same order). */
   shapeMass: number[];
   mass: number;
@@ -153,6 +155,7 @@ export function buildProxyDef(champion: Champion): ProxyDef {
       tip,
       bones: [bone.id],
       shapes: [boneShape(bone, head)],
+      finishes: [bone.finish],
       shapeMass: [],
       mass: 0,
       depth: parent ? parent.depth + 1 : 0,
@@ -169,6 +172,7 @@ export function buildProxyDef(champion: Champion): ProxyDef {
     const body = bodies[target]!;
     body.bones.push(bone.id);
     body.shapes.push(boneShape(bone, body.head));
+    body.finishes.push(bone.finish);
     boneBody.set(bone.id, target);
   }
 

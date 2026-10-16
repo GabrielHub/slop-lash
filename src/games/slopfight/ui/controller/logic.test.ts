@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import { STROKE_COALESCE_MS, STROKES_PER_BATCH } from "../../constants";
 import type { Stroke } from "../../strokes";
+import { preserveUpgrade } from "../../ai/upgrade";
+import { SAMPLES } from "../../samples";
 import {
   applyLocal,
   enqueueClear,
@@ -10,6 +12,8 @@ import {
   nextSeq,
   takeHype,
   takeOp,
+  MATERIAL_STARTERS,
+  withStarter,
   type QueueItem,
 } from "./logic";
 
@@ -97,5 +101,33 @@ describe("takeHype", () => {
     expect(takeHype(7)).toEqual({ send: 7, rest: 0 });
     expect(takeHype(33)).toEqual({ send: 20, rest: 13 });
     expect(takeHype(0)).toEqual({ send: 0, rest: 0 });
+  });
+});
+
+describe("material starters", () => {
+  it("start a text and give way to what the player wrote", () => {
+    expect(withStarter("", "solid gold")).toBe("solid gold ");
+    expect(withStarter("solid gold", "lava")).toBe("lava ");
+    expect(withStarter("a cape", "lava")).toBe("a cape lava ");
+  });
+
+  it("finished with a part, change that part; alone, change everything", () => {
+    for (const { champion } of SAMPLES.slice(0, 12)) {
+      const arms = champion.parts.some((part) => part.role === "arm");
+      for (const starter of MATERIAL_STARTERS) {
+        // A model that made every part of it: the upgrade keeps only what the text asked for.
+        const next = { ...champion, parts: champion.parts.map((part) => ({ ...part, finish: starter.finish })) };
+        const finishOf = (text: string) =>
+          preserveUpgrade(champion, next, text).parts.map((part) => [part.id, part.finish ?? "vinyl"]);
+        const before = (id: string) => champion.parts.find((part) => part.id === id)!.finish ?? "vinyl";
+        expect(finishOf(withStarter("", starter.phrase))).toEqual(
+          champion.parts.map((part) => [part.id, starter.finish]),
+        );
+        if (!arms) continue;
+        expect(finishOf(`${withStarter("", starter.phrase)}arms`)).toEqual(
+          champion.parts.map((part) => [part.id, part.role === "arm" ? starter.finish : before(part.id)]),
+        );
+      }
+    }
   });
 });

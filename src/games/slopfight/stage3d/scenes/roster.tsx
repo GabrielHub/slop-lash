@@ -16,9 +16,10 @@ import { useFrame } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
 import { getArena } from "../../arenas";
+import { finishGroups } from "../../finishes";
 import { toVoiceFighter } from "../../narration";
 import { bodyPlanLabel, type Champion } from "../../sheet";
-import { TOY_COLOR_VALUES } from "../../vocab";
+import { TOY_COLOR_VALUES, type Finish } from "../../vocab";
 import { useStage } from "../services";
 import { Card, faceZ } from "../ui3d/card";
 import { Chip, chipWidth, MoveRow, PipRow } from "../ui3d/chips";
@@ -58,7 +59,7 @@ interface Walker {
 
 export function RosterScene({ input, nodes }: PhaseSceneProps) {
   const services = useStage();
-  const data = useSceneData();
+  const data = useSceneData({ feeds: false });
   const phaseSeconds = usePhaseSeconds(input);
   const round = input.round;
 
@@ -204,10 +205,25 @@ interface RosterCardProps {
   settled: boolean;
 }
 
+/** A finish chip's paint: the finish's own signature colour. */
+const FINISH_CHIP: Readonly<Record<Finish, string>> = {
+  vinyl: UI_COLORS.bone,
+  metal: "#A9B2BB",
+  gold: "#E8B53C",
+  crystal: "#BFDFFA",
+  stone: "#8F8B83",
+  wood: "#A86F3C",
+  ice: "#AEE6F2",
+  lava: "#E8552A",
+  slime: "#93D93F",
+  glow: "#4FD9B6",
+};
+
 /**
  * The roster card: the champion's name on its colour, the body-plan tag and
- * owner, its three moves with their type glyphs and power, two trait chips
- * and its three stats as pips.
+ * owner, its three moves with their type glyphs and power, two chips (its
+ * first trait, then what it is made of when that is not all vinyl, else its
+ * second trait) and its three stats as pips.
  */
 export function RosterCard({ fighter, champion, mark, shot, settled }: RosterCardProps) {
   const W = ROSTER_CARD_W;
@@ -224,7 +240,16 @@ export function RosterCard({ fighter, champion, mark, shot, settled }: RosterCar
   const tagSize = 0.08;
   const owner = fighter.ownerName ? `by ${fighter.ownerName}` : "House champion";
   const d = settled ? 0 : 0.45;
-  const traits = champion.traits.slice(0, 2);
+  const finish = finishGroups(champion)[0];
+  const chips = [
+    ...champion.traits.slice(0, finish ? 1 : 2).map((trait, index) => {
+      const color = index === 0 ? secondary : accent;
+      return { key: trait, label: traitLabel(trait), color, textColor: textOn(color) };
+    }),
+    ...(finish
+      ? [{ key: finish.finish, label: finish.label, color: FINISH_CHIP[finish.finish], textColor: textOn(FINISH_CHIP[finish.finish]) }]
+      : []),
+  ];
   // Rows from the top: band 0.2, tag row, three moves, then chips | pips.
   const tagY = H / 2 - 0.33;
   const moveY = (index: number) => tagY - 0.19 - index * 0.15;
@@ -270,17 +295,16 @@ export function RosterCard({ fighter, champion, mark, shot, settled }: RosterCar
             sound={!settled}
           />
         ))}
-        {traits.map((trait, index) => {
-          const label = traitLabel(trait);
+        {chips.map(({ key, label, color, textColor }, index) => {
           // Clear of the pip column (which starts at W / 2 - 0.07 - W * 0.5).
           const size = Math.min(0.08, (W * 0.38) / Math.max(1, label.length * 0.62 + 1.5));
           return (
             <Chip
-              key={trait}
+              key={key}
               label={label}
               size={size}
-              color={index === 0 ? secondary : accent}
-              textColor={textOn(index === 0 ? secondary : accent)}
+              color={color}
+              textColor={textColor}
               position={[left + chipWidth(label, size) / 2, bottomY - index * 0.15, z + 0.01]}
               appearDelay={d + 0.5 + index * 0.1}
               sound={!settled}
