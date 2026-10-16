@@ -29,6 +29,7 @@ import {
   HostParticipationPicker,
   type HostParticipation,
 } from "./host-game-mode-picker";
+import { HostGamePreview } from "./host-game-preview";
 import { HostNarratorSettings, type TtsMode } from "./host-narrator-settings";
 import { MatchSlopDatingSetup, PersonaModelPicker } from "./host-matchslop-settings";
 import { OptionSwitch } from "./host-option-switch";
@@ -344,7 +345,7 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
             void createGame();
           }}
           // On phones a focused field scrolls clear of the sticky Create bar, not under it.
-          className="flex w-full max-w-xl flex-1 flex-col gap-8 max-lg:[&_*]:scroll-mb-32 lg:max-w-[62rem] lg:grid lg:flex-none lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start lg:gap-x-14"
+          className="flex w-full max-w-xl flex-1 flex-col gap-8 max-lg:[&_*]:scroll-mb-32 lg:max-w-[67rem] lg:grid lg:flex-none lg:grid-cols-[minmax(0,1fr)_25rem] lg:items-start lg:gap-x-14"
           variants={listParent(6)}
           initial="hidden"
           animate="visible"
@@ -356,7 +357,7 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
             </motion.div>
 
             {!isMatchSlop && (
-              <motion.div variants={enter} className="order-2">
+              <motion.div variants={enter} className="order-3">
                 <HostParticipationPicker
                   participation={effectiveParticipation}
                   onChange={setHostParticipation}
@@ -479,8 +480,12 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
             </motion.div>
           </div>
 
-          {/* Right column on wide screens: the lineup with Create under it. */}
+          {/* Right column on wide screens: the picked game's preview, then the lineup
+              with Create under it. On phones the preview follows the picker. */}
           <div className="max-lg:contents lg:sticky lg:top-6 lg:flex lg:flex-col">
+            <motion.div variants={enter} className="order-2 lg:mt-12 lg:mb-8">
+              <HostGamePreview gameType={gameType} />
+            </motion.div>
             {lineup}
             {createBar}
           </div>

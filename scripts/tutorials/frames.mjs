@@ -3,13 +3,15 @@
 //
 //   node scripts/tutorials/frames.mjs <game> [times...] [--every 2] [--out dir]
 //        [--sheet] [--theme dark|light] [--width 960] [--base http://localhost:3000]
-//        [--no-captions] [--no-ambient] [--query live=4]
+//        [--no-captions] [--no-ambient] [--query live=4] [--preview]
 //
 // <game> is the slug (sloplash, matchslop, quizslop, slopfight). Times are
 // seconds; --every samples the whole tutorial. --sheet also writes one
 // contact sheet (sheet.png) with every frame labelled by its time.
 // --no-ambient hides the page's live background, which runs on the wall
 // clock, so two captures of the same code match pixel for pixel.
+// --preview captures the game's host-page preview spot (/dev/previews)
+// instead of its tutorial; try --width 336 for the size the host page shows.
 
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -42,6 +44,7 @@ const captions = !flag("no-captions");
 const ambient = !flag("no-ambient");
 // Extra page parameters, e.g. `--query live=4` for a pretend lobby.
 const query = option("query", "");
+const preview = flag("preview");
 const [game, ...rest] = args;
 if (!game) {
   console.error("Usage: node scripts/tutorials/frames.mjs <game> [times...] [--every 2]");
@@ -64,9 +67,10 @@ const pageError = new Promise((resolve) => {
     resolve();
   });
 });
-await page.goto(
-  `${base}/how-to-play/${game}?t=0${captions ? "" : "&captions=0"}${query ? `&${query}` : ""}`,
-);
+const url = preview
+  ? `${base}/dev/previews?game=${game}&t=0`
+  : `${base}/how-to-play/${game}?t=0${captions ? "" : "&captions=0"}`;
+await page.goto(`${url}${query ? `&${query}` : ""}`);
 await Promise.race([
   page.waitForSelector("[data-tutorial-ready]", { timeout: 120_000 }),
   pageError,
@@ -96,7 +100,10 @@ times = [...new Set(times)].sort((a, b) => a - b);
 
 const files = [];
 for (const t of times) {
-  await page.evaluate((time) => window.__tutorial?.seek(time), t);
+  await page.evaluate((time) => {
+    window.__tutorial?.seek(time);
+    window.__preview?.(time);
+  }, t);
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );

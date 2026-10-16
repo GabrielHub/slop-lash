@@ -38,15 +38,20 @@ export class TutorialClock {
 }
 
 interface TutorialContextValue {
-  clock: TutorialClock;
   script: TutorialScript;
   timing: TutorialTiming;
   cues: Cues;
 }
 
+const ClockContext = createContext<TutorialClock | null>(null);
 const TutorialContext = createContext<TutorialContextValue | null>(null);
 /** The global time a `Sequence` starts at, so its children read local time. */
 const OriginContext = createContext(0);
+
+/** A playhead with no voice track: enough for `useTime` and `Sequence`, as in a silent preview. */
+export function ClockProvider({ clock, children }: { clock: TutorialClock; children: ReactNode }) {
+  return <ClockContext.Provider value={clock}>{children}</ClockContext.Provider>;
+}
 
 export function TutorialProvider({
   clock,
@@ -59,11 +64,12 @@ export function TutorialProvider({
   timing: TutorialTiming;
   children: ReactNode;
 }) {
-  const value = useMemo(
-    () => ({ clock, script, timing, cues: cuesFor(timing) }),
-    [clock, script, timing],
+  const value = useMemo(() => ({ script, timing, cues: cuesFor(timing) }), [script, timing]);
+  return (
+    <ClockProvider clock={clock}>
+      <TutorialContext.Provider value={value}>{children}</TutorialContext.Provider>
+    </ClockProvider>
   );
-  return <TutorialContext.Provider value={value}>{children}</TutorialContext.Provider>;
 }
 
 function useTutorialContext(): TutorialContextValue {
@@ -74,7 +80,8 @@ function useTutorialContext(): TutorialContextValue {
 
 /** The global playhead in seconds. Re-renders every frame. */
 export function useTime(): number {
-  const { clock } = useTutorialContext();
+  const clock = useContext(ClockContext);
+  if (!clock) throw new Error("Tutorial components need a ClockProvider or TutorialProvider");
   return useSyncExternalStore(clock.subscribe, clock.read, clock.read);
 }
 

@@ -8,7 +8,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts", "convex/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "convex/**/*.test.ts"],
     // Convex and Rapier each load large module graphs. Bound concurrent cold
     // transforms so they do not consume the five-second test budget.
     maxWorkers: 4,

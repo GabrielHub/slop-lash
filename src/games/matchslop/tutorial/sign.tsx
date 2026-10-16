@@ -25,6 +25,25 @@ export function SignHeart({
   const t = useTime();
   const level = neonLevel(t, strikeAt, 1);
   const beat = heartbeat(t, 1.15, strikeAt + 0.8) * clamp(level);
+  return <HeartArt size={size} level={level} beat={beat} face={face} wink={wink} look={look} />;
+}
+
+/** The sign's heart tube at `level`, swelling with `beat` (0..1); the face as on `SignHeart`. */
+export function HeartArt({
+  size,
+  level,
+  beat,
+  face,
+  wink,
+  look,
+}: {
+  size: number;
+  level: number;
+  beat: number;
+  face: number;
+  wink: number;
+  look: number;
+}) {
   const stroke = tubeCore(C.rose, level);
   const winking = clamp((wink - 0.4) / 0.2);
   return (

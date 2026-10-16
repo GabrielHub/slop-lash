@@ -320,7 +320,7 @@ export function Spotlight({
 // The stage curtain (the chapter transition)
 // ---------------------------------------------------------------------------
 
-const VELVET = "color-mix(in srgb, var(--punch) 62%, #2a0510)";
+export const VELVET = "color-mix(in srgb, var(--punch) 62%, #2a0510)";
 const FOLDS =
   "repeating-linear-gradient(90deg, rgba(0,0,0,0.32) 0px, rgba(0,0,0,0.04) 38px, rgba(255,255,255,0.13) 66px, rgba(0,0,0,0.04) 92px, rgba(0,0,0,0.32) 132px)";
 
@@ -329,6 +329,47 @@ export function curtainCover(t: number, at: number) {
   const close = progress(t, at - 0.5, 0.42, ease.inOut);
   const open = progress(t, at + 0.12, 0.58, ease.inOut);
   return close * (1 - open);
+}
+
+/** The curtain's two velvet drapes, `cover` 0 open to 1 shut, their hems skewed `sway` degrees. */
+export function Drapes({ cover, sway }: { cover: number; sway: number }) {
+  return (["left", "right"] as const).map((side) => {
+    const sign = side === "left" ? -1 : 1;
+    return (
+      <div
+        key={side}
+        className="absolute top-0 h-full"
+        style={{
+          width: BOARD.width / 2 + 60,
+          [side]: 0,
+          transform: `translateX(${sign * (1 - cover) * 104}%) skewX(${sign * sway}deg)`,
+          transformOrigin: "50% 0",
+          background: `linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0) 22%, rgba(0,0,0,0) 80%, rgba(0,0,0,0.3)), ${FOLDS}, ${VELVET}`,
+          boxShadow: `${sign * -24}px 0 50px rgba(0,0,0,0.35)`,
+        }}
+      />
+    );
+  });
+}
+
+/** The bulb-lit valance over the curtain, dropped in by `drop` (0 up out of shot, 1 down). */
+export function Valance({ drop, bulb = 18, chase = 2.2 }: { drop: number; bulb?: number; chase?: number }) {
+  if (drop <= 0.001) return null;
+  return (
+    <div
+      className="absolute inset-x-0 top-0 h-[120px]"
+      style={{
+        transform: `translateY(${(drop - 1) * 140}px)`,
+        background: `linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0) 60%), ${VELVET}`,
+        borderBottom: "6px solid var(--gold)",
+        boxShadow: "0 18px 30px -10px rgba(0,0,0,0.45)",
+      }}
+    >
+      <div className="absolute left-[40px] top-[62px]">
+        <BulbRow length={BOARD.width - 80} spacing={64} size={bulb} chase={chase} />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -345,39 +386,10 @@ export function Curtain({ at, label }: { at: number; label: string }) {
   const sway = closing ? -(1 - cover) * 6 : (1 - cover) * 6;
   const valance = progress(t, at - 0.55, 0.3, ease.out) * (1 - progress(t, at + 0.4, 0.35, ease.in));
   const plaque = progress(t, at - 0.16, 0.22, ease.outBack) * (1 - progress(t, at + 0.1, 0.16, ease.in));
-  const drape = (side: "left" | "right") => {
-    const sign = side === "left" ? -1 : 1;
-    return (
-      <div
-        className="absolute top-0 h-full"
-        style={{
-          width: BOARD.width / 2 + 60,
-          [side]: 0,
-          transform: `translateX(${sign * (1 - cover) * 104}%) skewX(${sign * sway}deg)`,
-          transformOrigin: "50% 0",
-          background: `linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0) 22%, rgba(0,0,0,0) 80%, rgba(0,0,0,0.3)), ${FOLDS}, ${VELVET}`,
-          boxShadow: `${sign * -24}px 0 50px rgba(0,0,0,0.35)`,
-        }}
-      />
-    );
-  };
   return (
     <div className="pointer-events-none absolute inset-0 z-50 overflow-hidden">
-      {drape("left")}
-      {drape("right")}
-      <div
-        className="absolute inset-x-0 top-0 h-[120px]"
-        style={{
-          transform: `translateY(${(valance - 1) * 140}px)`,
-          background: `linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0) 60%), ${VELVET}`,
-          borderBottom: "6px solid var(--gold)",
-          boxShadow: "0 18px 30px -10px rgba(0,0,0,0.45)",
-        }}
-      >
-        <div className="absolute left-[40px] top-[62px]">
-          <BulbRow length={BOARD.width - 80} spacing={64} size={18} chase={2.2} />
-        </div>
-      </div>
+      <Drapes cover={cover} sway={sway} />
+      <Valance drop={valance} />
       {plaque > 0.01 && (
         <div
           className="absolute left-1/2 top-1/2"

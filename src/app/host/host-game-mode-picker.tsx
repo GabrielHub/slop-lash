@@ -6,6 +6,7 @@ import { GAME_TYPES, type GameType } from "@/games/core/types";
 import { GAME_META } from "@/games/meta";
 import { CheckIcon } from "@/components/icons";
 import { hoverLift, pop, SPRING } from "@/lib/animations";
+import { PREVIEWS } from "@/tutorial/previews";
 
 export type HostParticipation = "PLAYER" | "DISPLAY_ONLY";
 
@@ -48,6 +49,9 @@ export function HostGamePicker({
                   ? "border-(--card-accent) shadow-[0_0_32px_-10px_var(--card-accent)]"
                   : "border-edge hover:border-edge-strong"
               }`}
+              // Fetch the game's preview spot as soon as a pick looks likely.
+              onPointerEnter={() => void PREVIEWS[id]()}
+              onFocus={() => void PREVIEWS[id]()}
               {...hoverLift}
             >
               <input

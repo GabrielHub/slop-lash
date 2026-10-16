@@ -257,6 +257,12 @@ function stepTrail(
 }
 
 /**
+ * How far a full sweep cell bleeds past each side, in board px: neighbours
+ * overlap by twice this, over 1 screen px even at the host preview's ~0.2 scale.
+ */
+const SEAM = 3;
+
+/**
  * The chapter transition: LED cells sweep the board left to right, blinking
  * gold at their leading edge, cover it fully at `at + duration / 2` (cut
  * there) and clear off in the same direction.
@@ -290,18 +296,22 @@ export function PixelSweep({
         const fill = on * (1 - off);
         if (fill <= 0.001) return null;
         const hot = Math.min(100, Math.round((1 - on) * 100 + off * 60));
+        const full = fill > 0.985;
+        // Full cells overlap, so a covered board shows no anti-aliased
+        // hairlines between them even when scaled small.
+        const bleed = full ? SEAM : 0.5;
         return (
           <div
             key={index}
             className="absolute"
             style={{
-              left: col * cell,
-              top: row * cell,
-              width: cell + 1,
-              height: cell + 1,
+              left: col * cell - (full ? SEAM : 0),
+              top: row * cell - (full ? SEAM : 0),
+              width: cell + bleed * 2,
+              height: cell + bleed * 2,
               background: `color-mix(in srgb, var(--gold) ${hot}%, var(--punch))`,
-              transform: `scale(${fill > 0.985 ? 1 : fill * 0.9})`,
-              borderRadius: fill > 0.985 ? 0 : cell * 0.1,
+              transform: `scale(${full ? 1 : fill * 0.9})`,
+              borderRadius: full ? 0 : cell * 0.1,
             }}
           />
         );

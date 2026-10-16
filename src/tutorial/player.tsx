@@ -3,7 +3,6 @@
 import {
   useEffect,
   useEffectEvent,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -12,7 +11,7 @@ import {
 import { getAudioStatus, subscribeAudio } from "@/lib/sounds";
 import { TutorialAudio } from "./audio";
 import { TutorialClock, TutorialProvider, useTime, useTutorial } from "./clock";
-import { BOARD } from "./kit";
+import { Board } from "./board";
 import type { SoundCue, TutorialEntry, TutorialScene } from "./spec";
 import { chaptersOf, clamp, cuesFor, ease, progress, type LineTiming } from "./timeline";
 
@@ -43,40 +42,6 @@ export function useTutorialScene(entry: TutorialEntry): TutorialScene | null {
     };
   }, [entry]);
   return scene?.game === entry.game ? scene.scene : null;
-}
-
-/** Scales the 1920x1080 board to fit its container, letterboxed and centred. */
-function Board({ children }: { children: ReactNode }) {
-  const box = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0);
-  useLayoutEffect(() => {
-    const element = box.current;
-    if (!element) return;
-    const measure = () =>
-      setScale(
-        Math.min(element.clientWidth / BOARD.width, element.clientHeight / BOARD.height) || 0,
-      );
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <div ref={box} data-tutorial-box className="absolute inset-0 overflow-hidden">
-      <div
-        data-tutorial-board
-        className="absolute left-1/2 top-1/2 overflow-hidden"
-        style={{
-          width: BOARD.width,
-          height: BOARD.height,
-          transform: `translate(-50%, -50%) scale(${scale})`,
-          visibility: scale > 0 ? "visible" : "hidden",
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
 }
 
 /** The line being said at `t` and how far it has faded in (0 once it is gone). */

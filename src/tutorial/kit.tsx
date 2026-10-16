@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { STAMP_IMPACT_MS } from "@/lib/animations";
 import { playSound, type SoundName } from "@/lib/sounds";
 import { WORN_MASK } from "@/room/moment/stamp";
+import { BOARD } from "./board";
 import { useLocalTime } from "./clock";
 import type { SoundCue } from "./spec";
 import {
@@ -27,7 +28,7 @@ import {
  * player scales the whole board to the screen.
  */
 
-export const BOARD = { width: 1920, height: 1080 } as const;
+export { BOARD };
 
 // ---------------------------------------------------------------------------
 // Transforms
