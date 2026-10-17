@@ -330,10 +330,13 @@ export function HostForm({ initialGameType }: { initialGameType: GameType }) {
   );
 
   return (
-    <div className="min-h-svh flex flex-col">
+    <div className="min-h-svh flex flex-col" data-warp-root>
       <TopBar backHref="/" backLabel="Back to home" />
 
-      <main className="flex-1 flex flex-col items-center px-4 pt-2 lg:pt-[6svh] lg:pb-12">
+      <main
+        data-warp-fade
+        className="flex-1 flex flex-col items-center px-4 pt-2 lg:pt-[6svh] lg:pb-12"
+      >
         {/* The form previews the picked game's palette: its tokens, and its action
               colour as --host-accent. */}
         <motion.form

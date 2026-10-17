@@ -4,7 +4,9 @@ import {
   type AmbientPulse,
   type AmbientScene,
   type AmbientState,
+  type AmbientWarp,
 } from "@/lib/ambient-events";
+import { WARP_GIVE_UP_MS, WARP_REVEAL_MS } from "@/lib/warp-transition";
 import { BubblesField } from "./bubbles";
 import { ConfettiField } from "./confetti";
 import { approach, clamp, type Field, type FieldEnv } from "./field";
@@ -85,7 +87,8 @@ const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 
  * on phones, drops itself to 30fps and half the particles on slow devices,
  * and under reduced motion draws a single still frame. Particles stay off the
  * screen centre, the top band (the rail) and any element marked
- * `data-ambient-calm` (use it on blocks of text that sit off-centre).
+ * `data-ambient-calm` (use it on blocks of text that sit off-centre). A warp
+ * between screens (`warp`) hands the active field a gather or a burst.
  */
 export class AmbientEngine {
   private crisp: CanvasRenderingContext2D;
@@ -113,6 +116,8 @@ export class AmbientEngine {
   private hidden = false;
   private typing = false;
   private destroyed = false;
+  /** A warp keeps the loop running until this time, even on a phone whose next screen took focus. */
+  private warpUntil = 0;
   private dropped = false;
   private softDirty = false;
   private calmZone = {
@@ -291,6 +296,16 @@ export class AmbientEngine {
     );
   }
 
+  /** A screen-change warp: gather into a control, or burst back out of it. Never rate-limited. */
+  warp(warp: AmbientWarp) {
+    if (this.reduced || this.destroyed) return;
+    this.warpUntil =
+      performance.now() + (warp.kind === "gather" ? WARP_GIVE_UP_MS : WARP_REVEAL_MS + 1_500);
+    if (warp.kind === "burst") this.swellAge = 0;
+    this.field(this.active).warp?.(warp, this.env);
+    this.sync();
+  }
+
   setPointer(clientX: number, clientY: number) {
     this.pointer.x = (0.5 - clientX / this.env.w) * 12;
     this.pointer.y = (0.5 - clientY / this.env.h) * 12;
@@ -325,7 +340,8 @@ export class AmbientEngine {
 
   /** Starts, stops, or redraws the still frame to match the current flags. */
   sync() {
-    const run = !this.reduced && !this.hidden && !this.typing && !this.destroyed;
+    const typing = this.typing && performance.now() >= this.warpUntil;
+    const run = !this.reduced && !this.hidden && !typing && !this.destroyed;
     if (run && !this.raf) {
       this.lastDraw = 0;
       this.raf = requestAnimationFrame(this.frame);
@@ -374,6 +390,11 @@ export class AmbientEngine {
 
   private frame = (now: number) => {
     this.raf = requestAnimationFrame(this.frame);
+    // A warp that outran a phone's typing pause has landed: pause now.
+    if (this.typing && now >= this.warpUntil) {
+      this.sync();
+      return;
+    }
     const gap = 1000 / this.targetFps();
     if (this.lastDraw && now - this.lastDraw < gap - 2) return;
     const interval = this.lastDraw ? now - this.lastDraw : gap;

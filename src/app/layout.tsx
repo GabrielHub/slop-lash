@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Ambient } from "@/components/ambient/ambient";
 import { MotionRoot } from "@/components/ambient/motion-root";
 import { PixelDissolveOverlay } from "@/components/pixel-dissolve-overlay";
+import { WarpArrival } from "@/components/warp-transition";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
@@ -79,6 +80,7 @@ export default function RootLayout({
         <ConvexClientProvider>
           <ThemeProvider>
             <Ambient />
+            <WarpArrival />
             <PixelDissolveOverlay />
             <MotionRoot>{children}</MotionRoot>
           </ThemeProvider>

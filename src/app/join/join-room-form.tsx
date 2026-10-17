@@ -99,10 +99,13 @@ export function JoinRoomForm({ initialRoomCode = "" }: { initialRoomCode?: strin
   }
 
   return (
-    <div className="min-h-svh flex flex-col">
+    <div className="min-h-svh flex flex-col" data-warp-root>
       <TopBar backHref="/" backLabel="Back to home" />
 
-      <main className="flex-1 flex flex-col items-center px-4 pt-4 pb-16 sm:justify-center">
+      <main
+        data-warp-fade
+        className="flex-1 flex flex-col items-center px-4 pt-4 pb-16 sm:justify-center"
+      >
         <motion.div
           className="w-full max-w-sm"
           variants={listParent(4)}

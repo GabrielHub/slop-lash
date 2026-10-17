@@ -147,6 +147,87 @@ export function glowDot(
   });
 }
 
+/**
+ * A star: a white-hot centre inside a coloured halo that falls off like a point
+ * of light rather than a disc. `core` is the fraction of the radius that stays
+ * hot. Stamp it at `radius * 2` CSS pixels.
+ */
+export function starDot(
+  cache: SpriteCache,
+  hot: Rgb,
+  halo: Rgb,
+  radius: number,
+  core: number,
+  scale: number,
+): Sprite {
+  const px = radius * scale;
+  const key = `star:${hot.join(",")}:${halo.join(",")}:${radius}:${core}:${scale}`;
+  return cache.get(key, px * 2, px * 2, (g) => {
+    const gradient = g.createRadialGradient(px, px, 0, px, px, px);
+    gradient.addColorStop(0, rgba(hot, 1));
+    gradient.addColorStop(core * 0.5, rgba(hot, 0.95));
+    gradient.addColorStop(core, rgba(mix(hot, halo, 0.5), 0.7));
+    gradient.addColorStop(Math.min(0.9, core * 2.2), rgba(halo, 0.24));
+    gradient.addColorStop(Math.min(0.96, core * 4), rgba(halo, 0.07));
+    gradient.addColorStop(1, rgba(halo, 0));
+    g.fillStyle = gradient;
+    g.fillRect(0, 0, px * 2, px * 2);
+  });
+}
+
+/** Diffraction spikes for the brightest stars: a long thin cross over a short, faint diagonal one. */
+export function spikes(cache: SpriteCache, c: Rgb, radius: number, scale: number): Sprite {
+  const px = radius * scale;
+  const key = `spikes:${c.join(",")}:${radius}:${scale}`;
+  return cache.get(key, px * 2, px * 2, (g) => {
+    g.translate(px, px);
+    g.globalCompositeOperation = "lighter";
+    const ray = (angle: number, length: number, width: number, alpha: number) => {
+      g.save();
+      g.rotate(angle);
+      const gradient = g.createLinearGradient(0, 0, length, 0);
+      gradient.addColorStop(0, rgba(c, alpha));
+      gradient.addColorStop(0.2, rgba(c, alpha * 0.5));
+      gradient.addColorStop(1, rgba(c, 0));
+      g.fillStyle = gradient;
+      g.beginPath();
+      g.moveTo(0, -width / 2);
+      g.lineTo(length, 0);
+      g.lineTo(0, width / 2);
+      g.closePath();
+      g.fill();
+      g.restore();
+    };
+    for (let i = 0; i < 4; i++) ray((i * Math.PI) / 2, px, 1.8 * scale, 0.9);
+    for (let i = 0; i < 4; i++) ray(Math.PI / 4 + (i * Math.PI) / 2, px * 0.38, 1.2 * scale, 0.32);
+  });
+}
+
+/**
+ * A motion streak: a line of light that brightens toward its head at the right
+ * edge. Stamp it stretched along the direction of travel.
+ */
+export function streak(cache: SpriteCache, c: Rgb, scale: number): Sprite {
+  const w = 64 * scale;
+  const h = 6 * scale;
+  return cache.get(`streak:${c.join(",")}:${scale}`, w, h, (g) => {
+    const tail = g.createLinearGradient(0, 0, w, 0);
+    tail.addColorStop(0, rgba(c, 0));
+    tail.addColorStop(0.7, rgba(c, 0.35));
+    tail.addColorStop(1, rgba(c, 1));
+    g.fillStyle = tail;
+    g.fillRect(0, 0, w, h);
+    // Feather it across its width, so it reads as light rather than a bar.
+    g.globalCompositeOperation = "destination-in";
+    const across = g.createLinearGradient(0, 0, 0, h);
+    across.addColorStop(0, rgba(c, 0));
+    across.addColorStop(0.5, rgba(c, 1));
+    across.addColorStop(1, rgba(c, 0));
+    g.fillStyle = across;
+    g.fillRect(0, 0, w, h);
+  });
+}
+
 /** A four-point sparkle, like a star printed on paper. */
 export function sparkle(cache: SpriteCache, c: Rgb, radius: number, scale: number): Sprite {
   const px = radius * scale;

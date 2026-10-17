@@ -11,6 +11,7 @@ import { TopBar } from "@/components/top-bar";
 import { enter, hoverLift, listParent, pop, press, STAGGER } from "@/lib/animations";
 import { originOf, pulseAmbient } from "@/lib/ambient-events";
 import { usePixelDissolve } from "@/hooks/use-pixel-dissolve";
+import { useWarpLink } from "@/components/warp-transition";
 
 const MotionLink = motion.create(Link);
 
@@ -21,16 +22,18 @@ const GLOW_CLASSES = [
   "icon-glow-teal",
   "icon-glow-punch",
   "icon-glow-gold",
+  "icon-glow-teal",
 ];
 
 /** Desktop only: the AI players float around the edges, clear of the centre column. */
 const ICON_POSITIONS = [
-  { top: "13%", left: "10%", delay: 0 },
+  { top: "12%", left: "10%", delay: 0 },
   { top: "15%", right: "8%", delay: 0.3 },
-  { top: "42%", left: "4%", delay: 1.1 },
+  { top: "34%", left: "4%", delay: 1.1 },
   { top: "44%", right: "4%", delay: 0.5 },
-  { top: "70%", left: "9%", delay: 0.9 },
+  { top: "56%", left: "7%", delay: 0.9 },
   { top: "68%", right: "10%", delay: 0.2 },
+  { top: "78%", left: "12%", delay: 0.7 },
 ];
 
 const TAGLINES = [
@@ -89,6 +92,7 @@ const OUTLINE = "bg-surface/50 text-ink border-edge hover:border-edge-strong";
 export default function Home() {
   const { mounted } = useTheme();
   const { triggerElement } = usePixelDissolve();
+  const warp = useWarpLink();
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [tagline] = useState(() => TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
 
@@ -111,7 +115,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-svh flex flex-col relative overflow-hidden">
+    <div className="min-h-svh flex flex-col relative overflow-hidden" data-warp-root>
       <TopBar
         actions={
           <a
@@ -148,6 +152,7 @@ export default function Home() {
                   animationDelay: `${pos.delay}s`,
                 }}
                 variants={pop}
+                data-warp-pull
                 onClick={(e) => {
                   pulseAmbient({ kind: "cheer", origin: originOf(e.currentTarget) });
                   triggerElement(e.currentTarget);
@@ -170,6 +175,7 @@ export default function Home() {
           <motion.h1
             className="font-display text-[3.25rem] leading-[0.95] sm:text-7xl font-extrabold tracking-tight text-punch title-glow"
             variants={enter}
+            data-warp-fade
           >
             SLOPBOX
             <br />
@@ -179,12 +185,13 @@ export default function Home() {
           <motion.p
             className="mt-4 text-lg text-ink-dim font-medium text-balance"
             variants={enter}
+            data-warp-fade
             suppressHydrationWarning
           >
             {tagline}
           </motion.p>
 
-          <motion.div className="mt-8 mx-auto max-w-sm" variants={enter}>
+          <motion.div className="mt-8 mx-auto max-w-sm" variants={enter} data-warp-fade>
             <div className="relative bg-surface/70 border border-edge/70 rounded-2xl px-6 py-3 shadow-[0_0_24px_-6px_color-mix(in_srgb,var(--ink)_14%,transparent)]">
               <div className="h-[4.75rem] flex items-center justify-center">
                 <AnimatePresence mode="wait">
@@ -209,6 +216,8 @@ export default function Home() {
           <motion.div className="mt-10 flex flex-col sm:flex-row gap-3 sm:gap-4" variants={enter}>
             <MotionLink
               href="/host"
+              onClick={warp}
+              data-warp-fade
               className={`flex h-14 sm:h-16 items-center justify-center rounded-xl border-2 px-8 font-display text-xl font-bold transition-colors sm:flex-1 ${OUTLINE} sm:bg-punch sm:text-accent-ink sm:border-punch sm:shadow-[0_0_24px_-6px_var(--punch)] sm:hover:border-punch`}
               {...hoverLift}
             >
@@ -216,6 +225,8 @@ export default function Home() {
             </MotionLink>
             <MotionLink
               href="/join"
+              onClick={warp}
+              data-warp-fade
               className={`order-first sm:order-none flex h-14 sm:h-16 items-center justify-center rounded-xl border-2 px-8 font-display text-xl font-bold transition-colors sm:flex-1 ${FILLED} sm:bg-surface/50 sm:text-ink sm:border-edge sm:shadow-none sm:hover:border-edge-strong`}
               {...hoverLift}
             >
@@ -226,6 +237,8 @@ export default function Home() {
           <motion.div className="mt-6" variants={enter}>
             <MotionLink
               href="/leaderboard"
+              onClick={warp}
+              data-warp-fade
               className="inline-flex h-11 items-center gap-2 px-3 text-sm text-ink-dim hover:text-ink transition-colors font-medium"
               {...press}
             >

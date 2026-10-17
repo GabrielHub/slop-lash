@@ -9,13 +9,7 @@ import { AI_MODELS } from "@/lib/models";
 import { ModelIcon } from "@/components/model-icon";
 import { TopBar } from "@/components/top-bar";
 import { PlayerAvatar } from "@/components/player-avatar";
-import {
-  enter,
-  hoverLift,
-  listParent,
-  SPRING,
-  STAGGER,
-} from "@/lib/animations";
+import { enter, hoverLift, listParent, SPRING, STAGGER } from "@/lib/animations";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -513,12 +507,7 @@ function ModelUsageSection({
 
 function EmptyState() {
   return (
-    <motion.div
-      className="text-center py-16"
-      variants={enter}
-      initial="hidden"
-      animate="visible"
-    >
+    <motion.div className="text-center py-16" variants={enter} initial="hidden" animate="visible">
       <p className="font-display text-2xl font-bold text-ink mb-3">No games yet</p>
       <p className="text-ink-dim text-sm mb-6">Play some games to see who&rsquo;s the funniest!</p>
       <motion.div {...hoverLift}>
@@ -591,9 +580,9 @@ export default function LeaderboardPage() {
   const loading = data === undefined;
 
   return (
-    <div className="min-h-svh flex flex-col">
+    <div className="min-h-svh flex flex-col" data-warp-root>
       <TopBar backHref="/" backLabel="Back to home" />
-      <main className="flex-1 flex flex-col items-center px-4 sm:px-6 pt-2 pb-12">
+      <main data-warp-fade className="flex-1 flex flex-col items-center px-4 sm:px-6 pt-2 pb-12">
         <div className="w-full max-w-2xl lg:max-w-5xl relative z-10">
           {/* Title */}
           <div className="text-center mb-6">

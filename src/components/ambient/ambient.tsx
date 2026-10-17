@@ -32,6 +32,7 @@ export function Ambient() {
     const unsubscribe = subscribeAmbient(
       (state) => engine.setState(state),
       (pulse) => engine.pulse(pulse),
+      (warp) => engine.warp(warp),
     );
     const theme = new MutationObserver(() => engine.refreshPalette());
     theme.observe(document.documentElement, {

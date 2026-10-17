@@ -56,6 +56,16 @@ export interface AmbientPulse {
   strength?: number;
 }
 
+/**
+ * A screen-change warp (`src/lib/warp-transition.ts`), in CSS px of the viewport.
+ * Unlike a pulse it is never rate-limited: a burst always follows its gather.
+ */
+export type AmbientWarp =
+  /** Pull the whole field into this box: the control that was pressed. */
+  | { kind: "gather"; x: number; y: number; w: number; h: number }
+  /** Throw it back out from where it gathered. */
+  | { kind: "burst" };
+
 /** How long the stage stays "hype" after a phase (or step) starts before it settles. */
 export const HYPE_HOLD_MS = 6_000;
 
@@ -83,10 +93,12 @@ export const DEFAULT_AMBIENT: AmbientState = {
 
 type StateListener = (state: AmbientState) => void;
 type PulseListener = (pulse: AmbientPulse) => void;
+type WarpListener = (warp: AmbientWarp) => void;
 
 let current: AmbientState = DEFAULT_AMBIENT;
 const stateListeners = new Set<StateListener>();
 const pulseListeners = new Set<PulseListener>();
+const warpListeners = new Set<WarpListener>();
 
 export function getAmbient(): AmbientState {
   return current;
@@ -118,12 +130,23 @@ export function pulseAmbient(pulse: AmbientPulse) {
   pulseListeners.forEach((listener) => listener(pulse));
 }
 
-export function subscribeAmbient(onState: StateListener, onPulse: PulseListener): () => void {
+/** Gathers the field into a control, or bursts it back out. Ignored under reduced motion. */
+export function warpAmbient(warp: AmbientWarp) {
+  warpListeners.forEach((listener) => listener(warp));
+}
+
+export function subscribeAmbient(
+  onState: StateListener,
+  onPulse: PulseListener,
+  onWarp?: WarpListener,
+): () => void {
   stateListeners.add(onState);
   pulseListeners.add(onPulse);
+  if (onWarp) warpListeners.add(onWarp);
   return () => {
     stateListeners.delete(onState);
     pulseListeners.delete(onPulse);
+    if (onWarp) warpListeners.delete(onWarp);
   };
 }
 

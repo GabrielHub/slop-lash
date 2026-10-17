@@ -1,4 +1,4 @@
-import type { AmbientPulseKind } from "@/lib/ambient-events";
+import type { AmbientPulseKind, AmbientWarp } from "@/lib/ambient-events";
 import type { AmbientPalette, SpriteCache } from "./palette";
 
 /**
@@ -66,6 +66,8 @@ export interface Field {
   /** `alpha` is the crossfade weight while scenes change. */
   draw(layers: FieldLayers, env: FieldEnv, alpha: number): void;
   pulse(pulse: FieldPulse, env: FieldEnv): void;
+  /** A screen-change warp; fields without one sit it out. */
+  warp?(warp: AmbientWarp, env: FieldEnv): void;
 }
 
 /**
