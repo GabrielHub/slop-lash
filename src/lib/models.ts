@@ -4,8 +4,10 @@ export interface ModelInfo {
   name: string;
   shortName: string;
   provider: string;
+  /** Provider icon under `public/icons`, the same one OpenRouter shows. */
   icon: string;
-  iconDark?: string;
+  /** Set for black monochrome icons, which are inverted on the dark theme. */
+  invertOnDark?: true;
   /** Cost per 1M input tokens in USD */
   inputPer1M: number;
   /** Cost per 1M output tokens in USD */
@@ -33,7 +35,7 @@ export const AI_MODELS: AIModel[] = [
     name: "Gemini 3.5 Flash Lite",
     shortName: "Gemini",
     provider: "Google",
-    icon: "/icons/gemini-color.svg",
+    icon: "/icons/gemini.svg",
     inputPer1M: 0.3,
     outputPer1M: 2.5,
   },
@@ -42,8 +44,7 @@ export const AI_MODELS: AIModel[] = [
     name: "GLM 5.3 Flash",
     shortName: "GLM",
     provider: "Zhipu AI",
-    icon: "/icons/zai-light.svg",
-    iconDark: "/icons/zai-dark.svg",
+    icon: "/icons/zai.png",
     inputPer1M: 0.15,
     outputPer1M: 0.5,
   },
@@ -52,7 +53,7 @@ export const AI_MODELS: AIModel[] = [
     name: "DeepSeek V4.1 Flash",
     shortName: "DeepSeek",
     provider: "DeepSeek",
-    icon: "/icons/deepseek-color.svg",
+    icon: "/icons/deepseek.png",
     inputPer1M: 0.3,
     outputPer1M: 1.2,
   },
@@ -61,8 +62,8 @@ export const AI_MODELS: AIModel[] = [
     name: "GPT-6.1 Sol",
     shortName: "GPT",
     provider: "OpenAI",
-    icon: "/icons/openai-light.svg",
-    iconDark: "/icons/openai-dark.svg",
+    icon: "/icons/openai.svg",
+    invertOnDark: true,
     inputPer1M: 2.0,
     outputPer1M: 10.0,
   },
@@ -71,8 +72,7 @@ export const AI_MODELS: AIModel[] = [
     name: "MiMo V2.6 Flash",
     shortName: "MiMo",
     provider: "Xiaomi",
-    icon: "/icons/xiaomimimo-light.svg",
-    iconDark: "/icons/xiaomimimo-dark.svg",
+    icon: "/icons/xiaomi.png",
     inputPer1M: 0.14,
     outputPer1M: 0.28,
   },
@@ -81,7 +81,7 @@ export const AI_MODELS: AIModel[] = [
     name: "Claude Haiku 5.5",
     shortName: "Claude",
     provider: "Anthropic",
-    icon: "/icons/claude-color.svg",
+    icon: "/icons/anthropic.svg",
     inputPer1M: 0.1,
     outputPer1M: 0.5,
     // Anthropic bills cache reads at 0.1x input and 5-minute writes at 1.25x,
@@ -89,6 +89,17 @@ export const AI_MODELS: AIModel[] = [
     cacheReadPer1M: 0.01,
     cacheWritePer1M: 0.125,
     anthropicModelId: "claude-haiku-5-5",
+  },
+  {
+    id: "meta/muse-spark-1.3-contributor",
+    name: "Muse Spark 1.3 Contributor",
+    shortName: "Muse",
+    provider: "Meta",
+    icon: "/icons/meta.png",
+    inputPer1M: 0.1,
+    outputPer1M: 0.2,
+    // AI Gateway lists cache reads at $0.002/M and no cache-write price.
+    cacheReadPer1M: 0.002,
   },
 ];
 
@@ -104,7 +115,7 @@ export const INTERNAL_MODELS: AIModel[] = [
     name: "Claude Sonnet 5.5",
     shortName: "Sonnet",
     provider: "Anthropic",
-    icon: "/icons/claude-color.svg",
+    icon: "/icons/anthropic.svg",
     // Claude API rates (claude-api skill, cached 2026-10-06): $2 / $10 per
     // MTok, cache reads 0.1x input, 5-minute cache writes 1.25x input.
     inputPer1M: 2,
@@ -183,8 +194,4 @@ export function getCostTier(model: AIModel): string {
   if (perGame < 0.001) return "$";
   if (perGame < 0.005) return "$$";
   return "$$$";
-}
-
-export function getModelIconForTheme(model: ModelInfo, theme: "light" | "dark"): string {
-  return theme === "light" && model.iconDark ? model.iconDark : model.icon;
 }
