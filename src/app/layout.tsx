@@ -6,6 +6,7 @@ import { Ambient } from "@/components/ambient/ambient";
 import { MotionRoot } from "@/components/ambient/motion-root";
 import { PixelDissolveOverlay } from "@/components/pixel-dissolve-overlay";
 import { WarpArrival } from "@/components/warp-transition";
+import { GamepadNav } from "@/components/gamepad-nav";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
@@ -82,6 +83,7 @@ export default function RootLayout({
             <Ambient />
             <WarpArrival />
             <PixelDissolveOverlay />
+            <GamepadNav />
             <MotionRoot>{children}</MotionRoot>
           </ThemeProvider>
         </ConvexClientProvider>

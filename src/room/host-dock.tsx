@@ -229,8 +229,10 @@ export function HostDock({ placement }: { placement: "stage" | "docked" }) {
         animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: stage ? -8 : 8 }}
         transition={{ duration: visible ? DUR.fast : DUR.slow, ease: EASE.out }}
         style={{ pointerEvents: visible ? "auto" : "none" }}
-        // Keyboard focus keeps the dock up; a mouse click leaving focus on a button doesn't.
-        onFocus={(event) => setFocused(event.target.matches(":focus-visible"))}
+        // Keyboard or gamepad focus keeps the dock up; a mouse click leaving focus on a button doesn't.
+        onFocus={(event) =>
+          setFocused(event.target.matches(":focus-visible, [data-input='gamepad'] :focus"))
+        }
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
         }}

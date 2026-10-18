@@ -170,7 +170,12 @@ body {
    In the base layer, so a component's own focus style (`focus:outline-none`
    plus a border or ring) replaces this ring instead of doubling it. */
 @layer base {
-  *:focus-visible {
+  *:focus-visible,
+  /* A pad's programmatic focus may not count as :focus-visible after mouse use;
+     `GamepadNav` marks the page until the next pointer press. An sr-only radio
+     rings its label instead. */
+  [data-input="gamepad"] :focus:not(.sr-only),
+  [data-input="gamepad"] label:has(> .sr-only:focus) {
     outline: 2px solid var(--punch);
     outline-offset: 2px;
   }
