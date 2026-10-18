@@ -3,14 +3,15 @@
 // The lobby's room logic, run in the DOM tree around the canvas (the shell's
 // lobby hooks use DOM-only APIs and the host keyboard), shared with the
 // in-canvas lobby scene through a context (R3F bridges context into the
-// canvas). It plays the join/leave sounds, and on the host's stage Enter or
-// Space presses the scene's START button. No three.js here: ui/stage.tsx
-// imports it eagerly.
+// canvas). It plays the join/leave sounds, copies the join link when the
+// marquee is clicked, and on the host's stage Enter or Space presses the
+// scene's START button. No three.js here: ui/stage.tsx imports it eagerly.
 
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRoom } from "@/room/context";
 import { useStageKey } from "@/room/host-dock";
 import { useLobby, usePlayerSounds } from "@/room/lobby";
+import { inviteShareData, useShareLink, type ShareStatus } from "@/room/share-link";
 
 export interface LobbyStage {
   code: string;
@@ -28,6 +29,10 @@ export interface LobbyStage {
   press: () => void;
   /** Bumped on every press (the button animates its push). */
   presses: number;
+  /** Copy the join link to the clipboard (click the marquee). */
+  copyLink: () => void;
+  /** How the last copy went, for two seconds. */
+  linkStatus: ShareStatus;
 }
 
 const LobbyContext = createContext<LobbyStage | null>(null);
@@ -86,6 +91,8 @@ const LobbyDriver = memo(function LobbyDriver({ onChange }: { onChange: (stage: 
     event.preventDefault();
     press();
   });
+  const { status: linkStatus, share } = useShareLink({ native: false });
+  const copyLink = useCallback(() => void share(() => inviteShareData(lobby.code)), [share, lobby.code]);
   const value = useMemo<LobbyStage>(
     () => ({
       code: lobby.code,
@@ -101,8 +108,10 @@ const LobbyDriver = memo(function LobbyDriver({ onChange }: { onChange: (stage: 
       error: errorText(lobby.error),
       press,
       presses,
+      copyLink,
+      linkStatus,
     }),
-    [lobby.code, lobby.joinUrl, lobby.siteHost, lobby.players, lobby.minPlayers, lobby.maxPlayers, lobby.needed, lobby.isHost, lobby.canStart, lobby.pending, lobby.error, press, presses],
+    [lobby.code, lobby.joinUrl, lobby.siteHost, lobby.players, lobby.minPlayers, lobby.maxPlayers, lobby.needed, lobby.isHost, lobby.canStart, lobby.pending, lobby.error, press, presses, copyLink, linkStatus],
   );
   useEffect(() => {
     onChange(value);

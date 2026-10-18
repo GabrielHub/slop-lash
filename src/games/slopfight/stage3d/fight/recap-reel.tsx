@@ -13,7 +13,7 @@
 // default (a recap is not live): the SOUND chip turns the replay's sounds on.
 
 import { Hud, PerspectiveCamera, RenderTexture, useGLTF } from "@react-three/drei";
-import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { MathUtils, Vector3, type Group, type PerspectiveCamera as ThreePerspectiveCamera } from "three";
 import { sfx, type SfxName, type SfxOptions } from "../../audio";
@@ -35,6 +35,7 @@ import { Card, faceZ } from "../ui3d/card";
 import { slabGeometry } from "../ui3d/geometry";
 import { darkOf, lightOf, UI_COLORS, uiOutline, uiToon } from "../ui3d/materials";
 import { MotionGroup } from "../ui3d/motion-group";
+import { usePress } from "../ui3d/press";
 import { fitTextSize, StageText } from "../ui3d/text";
 import { sparkColors } from "./conduct";
 import { sheetsOf, useFightFeed, type FightFeed, type FightRow } from "./feed";
@@ -109,7 +110,6 @@ function ReelHud({ feed, fights }: { feed: FightFeed; fights: readonly FightRow[
     const timer = window.setTimeout(() => setShown(true), REEL_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, []);
-  useEffect(() => () => void (document.body.style.cursor = ""), []);
 
   const count = fights.length;
   const margin = Math.max(0.25, halfW * 0.05);
@@ -186,29 +186,6 @@ function HudRig() {
       <directionalLight position={[2.5, 4, 8]} intensity={2.4} />
     </>
   );
-}
-
-/** Pointer handlers for a clickable group (a pointer cursor while hovered). */
-function usePress(onPress: () => void) {
-  const [hover, setHover] = useState(false);
-  return {
-    hover,
-    handlers: {
-      onClick: (event: ThreeEvent<MouseEvent>) => {
-        event.stopPropagation();
-        onPress();
-      },
-      onPointerOver: (event: ThreeEvent<PointerEvent>) => {
-        event.stopPropagation();
-        setHover(true);
-        document.body.style.cursor = "pointer";
-      },
-      onPointerOut: () => {
-        setHover(false);
-        document.body.style.cursor = "";
-      },
-    },
-  };
 }
 
 function ReelCard({

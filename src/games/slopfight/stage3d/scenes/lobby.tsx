@@ -1,7 +1,8 @@
 "use client";
 
 // LOBBY: the set itself is the lobby (no DOM over the canvas).
-// - The marquee carries the room code and the join address.
+// - The marquee carries the room code and the site to join at. Clicking it
+//   copies the join link (the second line says so for two seconds).
 // - A QR board (uqr, as the shell's JoinPanel) stands stage left; the three
 //   how-to steps are a sign stage right.
 // - Four seats on the front marks: each player's name plate pops in with
@@ -14,7 +15,7 @@
 //   silent until START.
 
 import { useFrame } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import { CylinderGeometry, DataTexture, NearestFilter, RGBAFormat, SRGBColorSpace, type Group, type Mesh } from "three";
 import { encode } from "uqr";
 import type { ArenaNodes } from "../arena/nodes";
@@ -25,6 +26,7 @@ import { slabGeometry } from "../ui3d/geometry";
 import { darkOf, UI_COLORS, uiOutline, uiToon } from "../ui3d/materials";
 import { ringDown, springTo1 } from "../ui3d/motion";
 import { MotionGroup } from "../ui3d/motion-group";
+import { usePress } from "../ui3d/press";
 import { stageSfx } from "../ui3d/sound";
 import { StageText } from "../ui3d/text";
 import { NamePlate } from "../ui3d/tokens";
@@ -85,10 +87,19 @@ export function LobbyScene({ nodes }: PhaseSceneProps) {
   const camera = useMemo(() => cameraPoint(nodes, "Cam_Establish_End", [0, 2.8, 8.6]), [nodes]);
   const face = (at: [number, number, number]): [number, number, number] => [0, Math.atan2(camera.x - at[0], camera.z - at[2]), 0];
   const code = lobby?.code ?? "";
-  const address = lobby?.joinUrl ? lobby.joinUrl.replace(/^https?:\/\//, "") : (lobby?.siteHost ?? "");
+  const linkStatus = lobby?.linkStatus ?? "idle";
+  const services = useStage();
+  useEffect(() => {
+    if (linkStatus === "copied") stageSfx(services).play("confirm", { intensity: 0.5 });
+    if (linkStatus === "failed") stageSfx(services).play("tap", { intensity: 0.3 });
+  }, [linkStatus, services]);
+  // The bare site, not the whole link: the code is already the big line, and
+  // the short line can be set larger. The click copies the whole link.
+  const join = lobby?.siteHost ? `Join at ${lobby.siteHost}` : "Join on your phone";
+  const sub = linkStatus === "copied" ? "Link copied!" : linkStatus === "failed" ? "Couldn't copy the link" : join;
   return (
     <>
-      <SceneMarquee nodes={nodes} text={code ? code.split("").join(" ") : "SLOPFIGHT"} sub={address ? `Join at ${address}` : "Join on your phone"} animate={false} />
+      <SceneMarquee nodes={nodes} text={code ? code.split("").join(" ") : "SLOPFIGHT"} sub={sub} animate={false} onPress={lobby?.joinUrl ? lobby.copyLink : null} />
       <ScoreboardSign nodes={nodes} lines={lobby ? ["TONIGHT: SLOPFIGHT", `${lobby.players.length} OF ${lobby.maxPlayers} SEATS FILLED`] : ["TONIGHT: SLOPFIGHT"]} />
       {lobby && (
         <>
@@ -255,7 +266,7 @@ function StartButton({ lobby, position, rotation }: { lobby: LobbyStage; positio
     return material;
   }, []);
   useEffect(() => () => capMaterial.dispose(), [capMaterial]);
-  const [hover, setHover] = useState(false);
+  const { hover, handlers } = usePress(lobby.press);
   const press = useRef({ t: 9, count: lobby.presses });
   useEffect(() => {
     if (lobby.presses === press.current.count) return;
@@ -282,21 +293,7 @@ function StartButton({ lobby, position, rotation }: { lobby: LobbyStage; positio
   const label = ready ? "START" : lobby.needed > 0 ? `${lobby.needed} MORE` : "START";
   return (
     <MotionGroup position={position} rotation={rotation} enter="rise" enterDistance={1.4} delay={1.1} seed={4}>
-      <group
-        ref={group}
-        onClick={(event) => {
-          event.stopPropagation();
-          lobby.press();
-        }}
-        onPointerOver={() => {
-          setHover(true);
-          document.body.style.cursor = "pointer";
-        }}
-        onPointerOut={() => {
-          setHover(false);
-          document.body.style.cursor = "";
-        }}
-      >
+      <group ref={group} {...handlers}>
         <mesh geometry={baseGeometry} position={[0, 0.31, 0]} material={uiToon("#3a2138", { glow: 0.06 })} castShadow receiveShadow />
         <mesh geometry={baseGeometry} position={[0, 0.31, 0]} material={uiOutline("#3a2138", 2.4)} />
         <mesh ref={cap} geometry={capGeometry} position={[0, 0.72, 0]} material={capMaterial} castShadow />

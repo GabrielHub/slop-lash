@@ -16,7 +16,7 @@ import {
   windFor,
   type Wind,
 } from "../arenas";
-import { SUDDEN_DEATH_MS } from "../constants";
+import { BELL_HOLD_MS, SUDDEN_DEATH_MS } from "../constants";
 import { resolveModifiers, type Side } from "../modifiers";
 import { stableStringify } from "../sheet";
 import type { Finish } from "../vocab";
@@ -110,6 +110,8 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
   let stepIndex = 0;
   let tMs = 0;
   let done = false;
+  /** A KO, decision or sudden death waiting on its winner to land (see `decide`). */
+  let held: { winner: Side; method: FightMethod; untilMs: number } | null = null;
   let disposed = false;
   let suddenDeath = false;
   let outcome: FightOutcome | null = null;
@@ -826,7 +828,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
         }
       }
       const winner: Side = koA && koB ? (referee.chance(0.5) ? "A" : "B") : koA ? "B" : "A";
-      finish(winner, "KO");
+      decide(winner, "KO");
       return;
     }
     if (suddenDeath) {
@@ -837,12 +839,46 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
         const a = bySide("A");
         const b = bySide("B");
         const winner: Side = a === b ? (referee.chance(0.5) ? "A" : "B") : a > b ? "A" : "B";
-        finish(winner, "SUDDEN_DEATH");
+        decide(winner, "SUDDEN_DEATH");
       }
     }
   }
 
   // --- ending ----------------------------------------------------------------
+
+  /** In the air, past the edge, or sliding toward it: it may still be going over. */
+  function unsettled(f: Fighter): boolean {
+    if (f.mode === "out") return false;
+    if (f.airborne || f.edgeDist < 0) return true;
+    if (f.edgeDist >= K.EDGE_WARN) return false;
+    const c = com(f);
+    const v = f.st[0]!.v;
+    const outward = (f.edgeDist - ringOutDistance(geometry, c[0] + v[0] * 0.1, c[2] + v[2] * 0.1)) / 0.1;
+    return outward > K.BELL_SLIDE_SPEED;
+  }
+
+  /**
+   * Ends the fight for a KO, decision or sudden death, unless the winner is
+   * in the air or past the edge: then the bell waits (up to BELL_HOLD_MS) and
+   * a ring-out in that window decides it instead. Otherwise a winner already
+   * falling would win, then drop off in the outro.
+   */
+  function decide(winner: Side, method: FightMethod) {
+    if (done || held) return;
+    if (!unsettled(winner === "A" ? A : B)) return finish(winner, method);
+    held = { winner, method, untilMs: tMs + BELL_HOLD_MS };
+    // Nobody acts while it waits: moves stop where they are (no late throw or
+    // poke, no lunge carrying the winner off) and a hold lets go.
+    for (const f of fighters) {
+      letGo(f);
+      if (f.mode === "move") setMode(f, "ready", 0);
+    }
+  }
+
+  function letGo(f: Fighter) {
+    releaseHolds(f);
+    if (f.move?.joint) world.removeImpulseJoint(f.move.joint, true);
+  }
 
   function finish(winner: Side, method: FightMethod) {
     if (done) return;
@@ -872,11 +908,11 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
       healthTimeline: timeline.map((row) => [row[0], row[1], row[2]]),
       hash,
     };
-    // The outro: the winner poses, a loser still on its feet stands down.
+    // The outro: the winner poses, a loser not knocked out stands down. A
+    // staggered or held fighter stands too (nobody gets up once it is decided).
     for (const f of fighters) {
-      if (!isActive(f)) continue;
-      releaseHolds(f);
-      if (f.move?.joint) world.removeImpulseJoint(f.move.joint, true);
+      if (f.mode === "out" || f.mode === "ko") continue;
+      letGo(f);
       setMode(
         f,
         f.side === winner ? "showboat" : "ready",
@@ -912,17 +948,22 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
 
   function clock() {
     if (done) return;
+    if (held) {
+      const winner = held.winner === "A" ? A : B;
+      if (tMs >= held.untilMs || !unsettled(winner)) finish(held.winner, held.method);
+      return;
+    }
     if (!suddenDeath && tMs >= input.limitMs) {
       emit({ t: tMs, kind: "timeout", side: null });
       const leader = healthLeader();
       if (leader) {
-        finish(leader, "DECISION");
+        decide(leader, "DECISION");
       } else {
         suddenDeath = true;
         emit({ t: tMs, kind: "suddenDeath", side: null });
       }
     } else if (suddenDeath && tMs >= input.limitMs + SUDDEN_DEATH_MS) {
-      finish(healthLeader() ?? (referee.chance(0.5) ? "A" : "B"), "DECISION");
+      decide(healthLeader() ?? (referee.chance(0.5) ? "A" : "B"), "DECISION");
     }
   }
 
@@ -940,7 +981,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     B.reachGap = surfaceReach(B, A);
     if (!done) refereeChecks();
     for (const f of fighters) advanceTimers(f);
-    if (!done) {
+    if (!done && !held) {
       for (const f of fighters) runBrain(f);
       for (const f of fighters) resolveMoves(f);
       applyGrabs();
@@ -949,7 +990,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     clock();
     for (const f of fighters) {
       motion.strengths(f);
-      motion.locomotion(f, foeOf(f), tMs, done);
+      motion.locomotion(f, foeOf(f), tMs, done || held !== null);
     }
     for (const f of fighters) motion.servo(f, foeOf(f), tMs);
     for (const f of fighters) motion.applyImpulses(f, tMs);
@@ -995,7 +1036,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
 export function runFight(R: Rapier, input: FightInput): FightOutcome {
   const sim = createFight(R, input);
   try {
-    const maxSteps = Math.ceil(((input.limitMs + SUDDEN_DEATH_MS) / 1000) * K.STEP_HZ) + 10;
+    const maxSteps = Math.ceil(((input.limitMs + SUDDEN_DEATH_MS + BELL_HOLD_MS) / 1000) * K.STEP_HZ) + 10;
     for (let index = 0; index < maxSteps && !sim.done; index += 1) sim.step();
     const outcome = sim.outcome();
     if (!outcome) throw new Error("fight did not finish");

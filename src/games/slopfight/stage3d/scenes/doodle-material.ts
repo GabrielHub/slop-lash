@@ -2,13 +2,18 @@
 // toward blank cream (the easel after the doodle lifted off), a dissolve
 // (noise threshold with a glowing gold edge, for sketch-to-champion) and a
 // soft rim of light. One instance per doodle plane; dispose with the plane.
+// It applies the map's offset/repeat like three's own materials do: the
+// doodle raster's rows run top to bottom and its texture flips them upright
+// that way.
 
-import { AdditiveBlending, Color, DoubleSide, ShaderMaterial, type Texture } from "three";
+import { AdditiveBlending, Color, DoubleSide, Matrix3, ShaderMaterial, type Texture } from "three";
 import { DRAWING_CANVAS_HEX } from "../../vocab";
 
 export interface DoodleUniforms {
   [name: string]: { value: unknown };
   map: { value: Texture | null };
+  /** The map's uv transform (its offset/repeat), fixed when the material is made. */
+  uvTransform: { value: Matrix3 };
   uFade: { value: number };
   uDissolve: { value: number };
   uEdge: { value: Color };
@@ -21,9 +26,10 @@ export interface DoodleUniforms {
 export type DoodleMaterial = ShaderMaterial & { uniforms: DoodleUniforms };
 
 const vertexShader = /* glsl */ `
+  uniform mat3 uvTransform;
   varying vec2 vUv;
   void main() {
-    vUv = uv;
+    vUv = (uvTransform * vec3(uv, 1.0)).xy;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -70,9 +76,11 @@ const fragmentShader = /* glsl */ `
 `;
 
 export function createDoodleMaterial(map: Texture | null): DoodleMaterial {
+  map?.updateMatrix();
   const material = new ShaderMaterial({
     uniforms: {
       map: { value: map },
+      uvTransform: { value: map ? map.matrix.clone() : new Matrix3() },
       uFade: { value: 0 },
       uDissolve: { value: 0 },
       uEdge: { value: new Color("#f5c94c") },

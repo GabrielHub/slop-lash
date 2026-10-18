@@ -18,7 +18,7 @@ import type { ShotId } from "../director/shots";
 import type { TransitionKind } from "../events";
 import { useArenaNodes, useStage } from "../services";
 import type { StageInput, StagePhase } from "../stage-input";
-import { fitTextSize, OnPlane, StageText } from "../ui3d/text";
+import { fitTextSize, MARQUEE_TEXT, OnPlane, StageText } from "../ui3d/text";
 import { PHASE_SCENES } from "./registry";
 
 export interface PhaseSceneProps {
@@ -109,7 +109,7 @@ export function MarqueeSign({ nodes, text }: { nodes: ArenaNodes | null; text: s
           <meshStandardMaterial color={plane.bgColor} roughness={0.85} />
         </mesh>
       )}
-      <StageText size={size} color={color} glow={0.22} castShadow={false}>
+      <StageText {...MARQUEE_TEXT} size={size} color={color}>
         {text}
       </StageText>
     </OnPlane>

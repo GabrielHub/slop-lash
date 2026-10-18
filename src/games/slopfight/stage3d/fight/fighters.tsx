@@ -299,7 +299,6 @@ export function HealthBar({ player, side, name, owner = null, shown = ALWAYS, ed
             color={UI_COLORS.bone}
             outlineColor={UI_COLORS.plumEdge}
             outline={0.14}
-            glow={0.35}
             overlay
             renderOrder={order + 5}
             castShadow={false}
@@ -313,7 +312,6 @@ export function HealthBar({ player, side, name, owner = null, shown = ALWAYS, ed
               color={lightOf(color, 0.6)}
               outlineColor={UI_COLORS.plumEdge}
               outline={0.22}
-              glow={0.25}
               weight={600}
               overlay
               renderOrder={order + 5}
@@ -324,7 +322,7 @@ export function HealthBar({ player, side, name, owner = null, shown = ALWAYS, ed
           )}
           <group ref={tag} position={[0, -BAR_HEIGHT / 2 - (owner ? 0.24 : 0.14), 0.02]} visible={false}>
             <mesh geometry={slabGeometry(0.66, 0.14, 0.03, 0.05)} material={hudToon(EDGE_RED, 0.6)} renderOrder={order + 1} />
-            <StageText position={[0, 0, 0.02]} size={0.09} color={UI_COLORS.bone} outline={0} glow={0.4} overlay renderOrder={order + 6} castShadow={false}>
+            <StageText position={[0, 0, 0.02]} size={0.09} color={UI_COLORS.bone} outline={0} overlay renderOrder={order + 6} castShadow={false}>
               ON THE EDGE
             </StageText>
           </group>

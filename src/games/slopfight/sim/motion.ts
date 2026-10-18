@@ -2,7 +2,7 @@
 // layer changes velocities only; combat, timers, and outcome ownership stay
 // in fight.ts. Per-fight closure state is limited to immutable arena inputs
 // and a lazily derived gait cache.
-import { windStrengthAt, type ArenaGeometry, type Wind } from "../arenas";
+import { ringOutDistance, windStrengthAt, type ArenaGeometry, type Wind } from "../arenas";
 import { aggressionAt } from "./brain";
 import { aimedDir, com, edgeGradient, flatDir } from "./collision";
 import { atan2, clamp, cos, PI, sin, smoothstep, TAU, wrapAngle } from "./dmath";
@@ -125,22 +125,25 @@ export function createMotion(geometry: ArenaGeometry, wind: Wind | null, limitMs
     const rearSwing = f.mode === "move" && f.move?.rear && f.move.phase !== "recover";
     if (rearSwing) face = wrapAngle(face + PI);
 
-    // Edge avoidance on top of anything voluntary (not mid-lunge).
-    const lunging =
-      f.mode === "move" && f.move && f.move.phase === "active" && f.move.type === "STRIKE";
-    if (f.edgeDist < K.EDGE_AVOID && !lunging && isActive(f)) {
-      const push = ((K.EDGE_AVOID - f.edgeDist) / K.EDGE_AVOID) * vmax * (0.8 + f.profile.caution);
-      vx += edge[0] * push;
-      vz += edge[1] * push;
-    }
-    if (wind && f.hazards.wind && isActive(f)) {
-      const gust = windStrengthAt(wind, tMs);
-      vx += wind.direction[0] * wind.accel * gust * 0.3;
-      vz += wind.direction[1] * wind.accel * gust * 0.3;
-    }
     if (done) {
       vx = 0;
       vz = 0;
+    }
+    // Edge avoidance on top of anything voluntary (not mid-lunge), through the
+    // outro too, so a posing winner never wanders off. Measured here: the
+    // referee stops updating `f.edgeDist` once the fight is decided.
+    const edgeDist = ringOutDistance(geometry, c[0], c[2]);
+    const lunging =
+      f.mode === "move" && f.move && f.move.phase === "active" && f.move.type === "STRIKE";
+    if (edgeDist < K.EDGE_AVOID && !lunging && isActive(f)) {
+      const push = ((K.EDGE_AVOID - edgeDist) / K.EDGE_AVOID) * vmax * (0.8 + f.profile.caution);
+      vx += edge[0] * push;
+      vz += edge[1] * push;
+    }
+    if (wind && f.hazards.wind && isActive(f) && !done) {
+      const gust = windStrengthAt(wind, tMs);
+      vx += wind.direction[0] * wind.accel * gust * 0.3;
+      vz += wind.direction[1] * wind.accel * gust * 0.3;
     }
     f.vDes = [vx, vz];
 

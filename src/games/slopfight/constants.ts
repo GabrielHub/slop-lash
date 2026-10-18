@@ -24,6 +24,8 @@ export const FIGHT_LIMIT_MS = 30_000;
 export const HOUSE_FIGHT_LIMIT_MS = 20_000;
 /** After a tied timeout, the first hit wins inside this window. */
 export const SUDDEN_DEATH_MS = 10_000;
+/** The bell waits up to this long for a winner in the air or going over the edge (a ring-out there loses). */
+export const BELL_HOLD_MS = 1_500;
 /** Playback lead between the FIGHT phase start and the sim's t = 0. */
 export const FIGHT_LEAD_MS = 1_500;
 /** Time after the decisive moment for the ring-out drop or the winner pose. */

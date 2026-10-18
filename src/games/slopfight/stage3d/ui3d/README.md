@@ -300,7 +300,9 @@ in `sanitize.ts`):
 This keeps troika from fetching CDN fallback fonts.
 
 Extra `StageText` props:
-- `overlay`: no depth test or fog
+- `overlay`: no depth test or fog, and unlit
+- `unlit`: flat colour the rig never touches (self-lit signs; `MARQUEE_TEXT`
+  bundles it with no outline and no shadow for marquee letters)
 - `opacity`
 - `renderOrder`
 - `whiteSpace`

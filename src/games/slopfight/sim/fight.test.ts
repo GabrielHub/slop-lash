@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from "vite-plus/test";
-import { ARENA_IDS, type ArenaId } from "../arenas";
-import { SUDDEN_DEATH_MS } from "../constants";
+import { ARENA_IDS, ARENAS, type ArenaId } from "../arenas";
+import { BELL_HOLD_MS, FIGHT_OUTRO_MS, SUDDEN_DEATH_MS } from "../constants";
 import { SAMPLES, sampleById } from "../samples";
 import type { Champion } from "../sheet";
 import { maxHealth } from "../sheet";
 import { createFight, FIGHT_EVENT_KINDS, loadRapier, runFight, type FightEvent, type FightInput, type Rapier } from "./index";
+import { PIT_DROP, STEP_MS } from "./tuning";
 
 let R: Rapier;
 beforeAll(async () => {
@@ -44,7 +45,7 @@ function expectWellFormed(events: FightEvent[], limitMs: number) {
   }
   const end = events.at(-1)!;
   expect(end.kind).toBe("end");
-  expect(end.t).toBeLessThanOrEqual(limitMs + SUDDEN_DEATH_MS);
+  expect(end.t).toBeLessThanOrEqual(limitMs + SUDDEN_DEATH_MS + BELL_HOLD_MS);
   expect(events.filter((event) => event.kind === "end")).toHaveLength(1);
 }
 
@@ -187,6 +188,48 @@ describe("runFight outcomes", () => {
       const outcome = runFight(R, { ...input("crab", "horse", arena, 4), notes: [note] });
       expect(outcome.events.some((event) => event.kind === "grab" && event.side === "A")).toBe(false);
     }
+  });
+});
+
+describe("the bell", () => {
+  // Fights whose winner is in the air or near the edge at the bell: three
+  // decisions that used to end with the winner falling off in the outro, and a KO.
+  const HELD: [string, string, ArenaId, number][] = [
+    ["cat", "giraffe", "ROOFTOP", 1447],
+    ["potato-googly", "frog-suit", "ROOFTOP", 1303],
+    ["storm-cloud", "elephant", "KITCHEN_COUNTER", 1208],
+    ["teapot", "slime", "FLOODED_GARAGE", 1651],
+  ];
+
+  // What a fighter does on its own: none of it once the bell has gone.
+  const ACTS = new Set(["windup", "hit", "whiff", "dodge", "counter", "grab", "throw", "showboat"]);
+
+  it("never gives the win to a champion that then falls off the platform", () => {
+    for (const [a, b, arena, seed] of HELD) {
+      const sim = createFight(R, input(a, b, arena, seed));
+      try {
+        for (let step = 0; !sim.done && step < 3000; step += 1) sim.step();
+        const { winner, events } = sim.outcome()!;
+        const bell = events.findIndex((event) => event.kind === "timeout" || event.kind === "ko");
+        expect(bell).toBeGreaterThan(0);
+        expect(events.at(-1)!.t).toBeGreaterThan(events[bell]!.t);
+        expect(events.slice(bell).filter((event) => ACTS.has(event.kind))).toEqual([]);
+        let lowest = Number.POSITIVE_INFINITY;
+        for (let step = 0; step < FIGHT_OUTRO_MS / STEP_MS; step += 1) {
+          sim.step();
+          lowest = Math.min(lowest, sim.live(winner).position[1]);
+        }
+        expect(lowest, `${a} v ${b} ${arena} ${seed}`).toBeGreaterThan(ARENAS[arena].geometry.topY - PIT_DROP);
+      } finally {
+        sim.dispose();
+      }
+    }
+  });
+
+  it("rings on time for a winner standing firm", () => {
+    const outcome = runFight(R, input("raccoon-lawyer", "land-shark", "FLOODED_GARAGE", 1000));
+    expect(outcome.method).toBe("DECISION");
+    expect(outcome.endMs).toBe(30_000);
   });
 });
 

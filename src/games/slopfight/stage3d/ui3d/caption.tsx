@@ -71,7 +71,6 @@ function CaptionLine({
       color={UI_COLORS.bone}
       outlineColor={UI_COLORS.plumEdge}
       outline={0.04}
-      glow={0.95}
       anchorX="left"
       anchorY="middle"
       textAlign="left"
@@ -214,7 +213,6 @@ export function Caption() {
               size={0.024}
               color={UI_COLORS.ink}
               outline={0}
-              glow={0.1}
               position={[0, 0, 0.012]}
               overlay
               renderOrder={RENDER_ORDER + 2}

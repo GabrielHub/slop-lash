@@ -232,3 +232,5 @@ export const HEALTH_SAMPLE_MS = 250;
 export const CONTACT_GAP_MS = 400;
 /** A torso this far below the platform top inside a pit has fallen in. */
 export const PIT_DROP = 0.25;
+/** Near the edge, a winner moving outward faster than this (m/s) holds the bell. */
+export const BELL_SLIDE_SPEED = 0.1;

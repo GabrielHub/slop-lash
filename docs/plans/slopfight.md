@@ -136,7 +136,9 @@ the sim, and the sim is shaped by the sheets, so design decisions matter:
 
 A fight ends on a KO (health at zero), a ring-out (torso leaves the stage
 volume), or the 30 s limit (more health wins; equal health, 10 s of sudden
-death where the first hit wins).
+death where the first hit wins). If the winner of a KO or a decision is in
+the air or going over the edge at that moment, the bell waits up to 1.5 s:
+nobody acts in that window, and a ring-out in it loses the winner the fight.
 
 ### Arenas and hazards
 

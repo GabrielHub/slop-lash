@@ -75,9 +75,10 @@ export function recapShareData(
 
 /**
  * Shares a link through the phone's native share sheet, or copies it where
- * there is none. `status` reports the outcome for two seconds, then resets.
+ * there is none (always copies with `native: false`). `status` reports the
+ * outcome for two seconds, then resets.
  */
-export function useShareLink() {
+export function useShareLink({ native = true }: { native?: boolean } = {}) {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sharingRef = useRef(false);
@@ -97,7 +98,7 @@ export function useShareLink() {
     try {
       const data = build();
       const nativeShare =
-        typeof navigator.share === "function"
+        native && typeof navigator.share === "function"
           ? (shareData: RoomInviteShareData) => navigator.share(shareData)
           : undefined;
       outcome = await shareRoomInvite(data, { share: nativeShare, copyText: copyTextToClipboard });
@@ -110,7 +111,7 @@ export function useShareLink() {
     if (outcome === "canceled") return;
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     resetTimerRef.current = setTimeout(() => setStatus("idle"), 2200);
-  }, []);
+  }, [native]);
 
   return { status, share, done: status === "shared" || status === "copied" };
 }

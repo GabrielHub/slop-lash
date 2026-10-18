@@ -14,8 +14,9 @@ import type { StageInput } from "../stage-input";
 import { lightOf, UI_COLORS } from "../ui3d/materials";
 import { ringDown, springTo1 } from "../ui3d/motion";
 import { useRoomOrNull } from "../ui3d/room";
+import { usePress } from "../ui3d/press";
 import { stageSfx } from "../ui3d/sound";
-import { fitTextSize, OnPlane, StageText } from "../ui3d/text";
+import { fitTextSize, MARQUEE_TEXT, OnPlane, StageText } from "../ui3d/text";
 import { playerTokenColor } from "../ui3d/tokens";
 import { buildSceneData, needsSynthetic, type SceneData, type SceneFighter } from "./scene-data";
 
@@ -152,8 +153,8 @@ export function marqueeLines(plane: { width: number; height: number }, text: str
   const big = fitTextSize(text, plane.width * 0.9, plane.height * (sub ? 0.5 : 0.66));
   const lines: MarqueeLine[] = [{ text, y: sub ? plane.height * 0.14 : 0, size: big, width: Math.max(1, text.length) * 0.58 * big }];
   if (sub) {
-    const small = fitTextSize(sub, plane.width * 0.9, plane.height * 0.24);
-    lines.push({ text: sub, y: -plane.height * 0.27, size: small, width: Math.max(1, sub.length) * 0.58 * small });
+    const small = fitTextSize(sub, plane.width * 0.9, plane.height * 0.3);
+    lines.push({ text: sub, y: -plane.height * 0.28, size: small, width: Math.max(1, sub.length) * 0.58 * small });
   }
   return lines;
 }
@@ -166,6 +167,8 @@ export interface MarqueeProps {
   sub?: string | null;
   /** Flip in when the text changes (with a clack). */
   animate?: boolean;
+  /** Makes the marquee a button: a pointer cursor and a gold second line on hover, this on click. */
+  onPress?: (() => void) | null;
 }
 
 /**
@@ -173,12 +176,13 @@ export interface MarqueeProps {
  * on the marquee's own background. It flips over (a split-flap clack) when
  * the text changes.
  */
-export function SceneMarquee({ nodes, text, sub = null, animate = true }: MarqueeProps) {
+export function SceneMarquee({ nodes, text, sub = null, animate = true, onPress = null }: MarqueeProps) {
   const services = useStage();
   const plane = nodes?.marqueeText ?? null;
   const flip = useRef<Group>(null);
   const changed = useRef({ key: `${text}|${sub}`, t: 10 });
   const key = `${text}|${sub}`;
+  const press = usePress(onPress);
   useEffect(() => {
     if (changed.current.key !== key) changed.current = { key, t: 0 };
     if (animate && changed.current.t === 0) stageSfx(services).play("tap", { intensity: 0.4, gain: 0.5 });
@@ -209,15 +213,21 @@ export function SceneMarquee({ nodes, text, sub = null, animate = true }: Marque
           <meshStandardMaterial color={plane.bgColor} roughness={0.85} />
         </mesh>
       )}
+      {onPress && (
+        <mesh position={[0, 0, 0.004]} {...press.handlers}>
+          <planeGeometry args={[plane.width, plane.height]} />
+          <meshBasicMaterial colorWrite={false} depthWrite={false} />
+        </mesh>
+      )}
       <group position={[0, plane.height / 2, 0]}>
         <group ref={flip}>
           <group position={[0, -plane.height / 2, 0]}>
             <Suspense fallback={null}>
-              <StageText size={main!.size} color={color} glow={0.25} castShadow={false} position={[0, main!.y, 0]}>
+              <StageText {...MARQUEE_TEXT} size={main!.size} color={color} position={[0, main!.y, 0]}>
                 {text}
               </StageText>
               {second && (
-                <StageText size={second.size} color={lightOf(color, 0.3)} glow={0.34} castShadow={false} position={[0, second.y, 0]}>
+                <StageText {...MARQUEE_TEXT} size={second.size} color={press.hover ? UI_COLORS.gold : lightOf(color, 0.3)} position={[0, second.y, 0]}>
                   {second.text}
                 </StageText>
               )}

@@ -3,8 +3,9 @@
 // Text in the world. Two kinds:
 //
 // - StageText: SDF text (drei <Text>, troika) in Fredoka, lit by the rig and
-//   shadowed, with a tinted outline (never black). For marquees, scoreboards,
-//   cards and labels. Readable from 3 m at 1080p at size >= 0.12.
+//   shadowed (flat for self-lit signs and camera-fixed overlays), with a
+//   tinted outline (never black). For marquees, scoreboards, cards and
+//   labels. Readable from 3 m at 1080p at size >= 0.12.
 // - TitleText: an extruded, bevelled title built from the same font's
 //   outlines (font-geometry.ts): faces in one colour, sides in a darker one,
 //   an ink outline. For slams and the champion's name. If the font cannot be
@@ -48,8 +49,10 @@ export interface StageTextProps extends Omit<GroupProps, "children"> {
   outlineColor?: string;
   /** Outline width as a fraction of the size. */
   outline?: number;
-  /** Self-glow 0..1 (marquee letters); 0 is purely lit. */
+  /** Self-glow 0..1; 0 is purely lit. */
   glow?: number;
+  /** Flat colour that the rig never touches (a self-lit sign); ignores `glow`. Overlay text is always unlit. */
+  unlit?: boolean;
   maxWidth?: number;
   anchorX?: "left" | "center" | "right";
   anchorY?: "top" | "middle" | "bottom";
@@ -58,7 +61,7 @@ export interface StageTextProps extends Omit<GroupProps, "children"> {
   letterSpacing?: number;
   lineHeight?: number;
   castShadow?: boolean;
-  /** Draw on top of the set, unfogged (camera-fixed captions). */
+  /** Draw on top of the set, unfogged and unlit (camera-fixed captions). */
   overlay?: boolean;
   /** Fill and outline opacity 0..1. */
   opacity?: number;
@@ -81,6 +84,13 @@ export interface TroikaTextMesh {
   visible: boolean;
 }
 
+/**
+ * Marquee letters: self-lit and flat, so the rig never dims them, with no
+ * outline (on the dark board an ink outline is lighter than the board, a grey
+ * halo that blurs the letters).
+ */
+export const MARQUEE_TEXT = { unlit: true, outline: 0, castShadow: false } as const;
+
 /** Lit, shadowed SDF text. Suspends while the font loads. Text is sanitized (sanitizeStageText). */
 export function StageText({
   children,
@@ -89,6 +99,7 @@ export function StageText({
   outlineColor,
   outline = 0.06,
   glow = 0,
+  unlit = false,
   maxWidth,
   anchorX = "center",
   anchorY = "middle",
@@ -106,6 +117,14 @@ export function StageText({
   ...group
 }: StageTextProps) {
   const text = useMemo(() => sanitizeStageText(children), [children]);
+  const material = {
+    attach: "material",
+    color,
+    transparent: overlay || opacity < 1,
+    depthTest: !overlay,
+    depthWrite: !overlay,
+    fog: !overlay,
+  } as const;
   return (
     <group {...group}>
       <Text
@@ -131,19 +150,11 @@ export function StageText({
         receiveShadow={!overlay}
       >
         {text}
-        <meshStandardMaterial
-          attach="material"
-          color={color}
-          roughness={0.55}
-          metalness={0}
-          emissive={color}
-          emissiveIntensity={glow}
-          shadowSide={DoubleSide}
-          transparent={overlay || opacity < 1}
-          depthTest={!overlay}
-          depthWrite={!overlay}
-          fog={!overlay}
-        />
+        {unlit || overlay ? (
+          <meshBasicMaterial {...material} />
+        ) : (
+          <meshStandardMaterial {...material} roughness={0.55} metalness={0} emissive={color} emissiveIntensity={glow} shadowSide={DoubleSide} />
+        )}
       </Text>
     </group>
   );

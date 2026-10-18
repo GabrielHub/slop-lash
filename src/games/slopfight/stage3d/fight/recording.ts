@@ -9,7 +9,7 @@
 //
 // Pure TypeScript (no three.js, no React): the same class runs in vitest.
 
-import { SUDDEN_DEATH_MS } from "../../constants";
+import { BELL_HOLD_MS, SUDDEN_DEATH_MS } from "../../constants";
 import {
   createFight,
   STEP_MS,
@@ -178,7 +178,7 @@ export class FightRecording {
       A: this.keys.A.length * BODY_FLOATS + EXTRAS,
       B: this.keys.B.length * BODY_FLOATS + EXTRAS,
     };
-    this.maxSteps = Math.ceil((input.limitMs + SUDDEN_DEATH_MS + this.tailMs) / STEP_MS) + 4;
+    this.maxSteps = Math.ceil((input.limitMs + SUDDEN_DEATH_MS + BELL_HOLD_MS + this.tailMs) / STEP_MS) + 4;
     this.capacity = Math.min(this.maxSteps + 1, 1024);
     this.data = {
       A: new Float32Array(this.capacity * this.stride.A),
