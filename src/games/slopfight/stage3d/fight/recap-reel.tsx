@@ -254,6 +254,8 @@ function ReelCard({
                 size={line.small ? size * 0.75 : line.method ? size * 0.82 : size}
                 color={line.method ? darkOf(accent, 0.35) : line.winner || line.small ? UI_COLORS.ink : UI_COLORS.inkDim}
                 weight={line.winner || line.method ? 700 : 600}
+                outline={0}
+                glow={0.1}
                 maxWidth={width * 0.9}
                 castShadow={false}
               >

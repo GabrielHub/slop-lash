@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import { CHARS_PER_LINE, wrapCaption } from "./caption-layout";
-import { contrastRatio, isLightColor, luminance, onCardTone, textGlowOn, textOn, UI_COLORS, uiOutline, uiToon } from "./materials";
+import { Mesh, MeshStandardMaterial } from "three";
+import { contrastRatio, isLightColor, keepOutlineDark, luminance, onCardTone, textGlowOn, textOn, UI_COLORS, UI_MAX_LUMINANCE, uiOutline, uiToon } from "./materials";
 import { TOY_COLOR_VALUES } from "../../vocab";
+import { ARENA_MOODS } from "../look/moods";
 import { clamp01, createPose, ENTER_SECONDS, enterPose, exitPose, EXIT_SECONDS, ringDown, springTo1 } from "./motion";
 import { sanitizeStageText } from "./sanitize";
 
@@ -124,5 +126,33 @@ describe("caption overlay materials", () => {
       expect(world.depthTest).toBe(true);
       expect(world.depthWrite).toBe(true);
     }
+  });
+});
+
+describe("kit materials and bloom", () => {
+  it("caps lit kit surfaces under every arena's bloom threshold", () => {
+    for (const mood of Object.values(ARENA_MOODS)) expect(UI_MAX_LUMINANCE).toBeLessThan(mood.bloom.threshold);
+    expect(uiToon(UI_COLORS.card).defines?.SLOP_MAX_LUMINANCE).toBe(UI_MAX_LUMINANCE.toFixed(3));
+  });
+
+  it("keeps a text outline (troika's Object.create copy of the fill) from inheriting the fill's glow", () => {
+    const fill = new MeshStandardMaterial({ emissive: "#fff2d6", emissiveIntensity: 0.62 });
+    const outline = Object.assign(Object.create(fill) as MeshStandardMaterial, { isTextOutlineMaterial: true });
+    const drawn: number[] = [];
+    // Troika's Text defines onBeforeRender on its class, as here.
+    class TextMesh extends Mesh {
+      override onBeforeRender(...args: Parameters<Mesh["onBeforeRender"]>): void {
+        drawn.push((args[4] as MeshStandardMaterial).emissiveIntensity);
+      }
+    }
+    const mesh = new TextMesh();
+    keepOutlineDark(mesh);
+    keepOutlineDark(mesh);
+    const draw = (material: MeshStandardMaterial) => mesh.onBeforeRender(null!, null!, null!, null!, material, null!);
+    draw(outline);
+    draw(fill);
+    expect(drawn).toEqual([0, 0.62]);
+    fill.emissiveIntensity = 0.3;
+    expect(outline.emissiveIntensity).toBe(0);
   });
 });

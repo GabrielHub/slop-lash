@@ -3,9 +3,9 @@
 // Text in the world. Two kinds:
 //
 // - StageText: SDF text (drei <Text>, troika) in Fredoka, lit by the rig and
-//   shadowed (flat for self-lit signs and camera-fixed overlays), with a
-//   tinted outline (never black). For marquees, scoreboards, cards and
-//   labels. Readable from 3 m at 1080p at size >= 0.12.
+//   shadowed (flat for self-lit signs, display boards and camera-fixed
+//   overlays), with a near-ink outline that never glows. For marquees,
+//   scoreboards, cards and labels. Readable from 3 m at 1080p at size >= 0.12.
 // - TitleText: an extruded, bevelled title built from the same font's
 //   outlines (font-geometry.ts): faces in one colour, sides in a darker one,
 //   an ink outline. For slams and the champion's name. If the font cannot be
@@ -16,13 +16,14 @@
 
 import { Text } from "@react-three/drei";
 import { useLoader, type ThreeElements } from "@react-three/fiber";
-import { useEffect, useMemo, type ReactNode, type Ref } from "react";
-import { Color, DoubleSide, FileLoader, Loader, type LoadingManager } from "three";
+import { useCallback, useEffect, useMemo, type ReactNode, type Ref } from "react";
+import { Color, DoubleSide, FileLoader, Loader, type LoadingManager, type Object3D } from "three";
 import type { PlaneNode } from "../arena/nodes";
 import { StageBoundary } from "../boundary";
 import { createOutlineMaterial } from "../look/outline";
 import { createToonMaterial } from "../look/toon";
 import { createTitleGeometry, parseWoff, type WoffFont } from "./font-geometry";
+import { darkOf, keepOutlineDark } from "./materials";
 import { sanitizeStageText } from "./sanitize";
 
 export { sanitizeStageText };
@@ -33,11 +34,6 @@ export const FONT_SEMIBOLD = "/fonts/slopfight/fredoka-latin-600-normal.woff";
 /** Characters preloaded into the SDF atlas, so the first title does not hitch. */
 export const TITLE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?.,:'-&#/ ";
 
-/** Darken a colour toward a warm ink (outlines are never pure black). */
-export function inkOf(color: string, amount = 0.72): string {
-  return new Color(color).lerp(new Color("#1d1418"), amount).getStyle();
-}
-
 type GroupProps = ThreeElements["group"];
 
 export interface StageTextProps extends Omit<GroupProps, "children"> {
@@ -45,7 +41,10 @@ export interface StageTextProps extends Omit<GroupProps, "children"> {
   /** Em size in world units. */
   size?: number;
   color?: string;
-  /** Outline colour (defaults to a dark version of `color`). */
+  /**
+   * Outline colour. Defaults to `color` darkened almost to ink, so a light
+   * letter's outline is darker than the darkest board, never a grey halo.
+   */
   outlineColor?: string;
   /** Outline width as a fraction of the size. */
   outline?: number;
@@ -85,9 +84,9 @@ export interface TroikaTextMesh {
 }
 
 /**
- * Marquee letters: self-lit and flat, so the rig never dims them, with no
- * outline (on the dark board an ink outline is lighter than the board, a grey
- * halo that blurs the letters).
+ * Letters on a self-lit sign or display board (marquees, scoreboards, the
+ * timer): flat, so the rig never dims them, with no outline (the dark board
+ * is the contrast).
  */
 export const MARQUEE_TEXT = { unlit: true, outline: 0, castShadow: false } as const;
 
@@ -117,6 +116,14 @@ export function StageText({
   ...group
 }: StageTextProps) {
   const text = useMemo(() => sanitizeStageText(children), [children]);
+  const synced = useCallback(
+    (mesh: TroikaTextMesh & Object3D) => {
+      keepOutlineDark(mesh);
+      onSync?.(mesh);
+    },
+    [onSync],
+  );
+  const outlined = outline > 0;
   const material = {
     attach: "material",
     color,
@@ -129,7 +136,7 @@ export function StageText({
     <group {...group}>
       <Text
         ref={textRef}
-        onSync={onSync}
+        onSync={synced}
         renderOrder={renderOrder}
         whiteSpace={whiteSpace}
         fillOpacity={opacity}
@@ -143,9 +150,9 @@ export function StageText({
         textAlign={textAlign}
         letterSpacing={letterSpacing}
         lineHeight={lineHeight}
-        outlineWidth={outline > 0 ? size * outline : 0}
-        outlineColor={outlineColor ?? inkOf(color)}
-        outlineBlur={size * 0.004}
+        outlineWidth={outlined ? size * outline : 0}
+        outlineColor={outlined ? (outlineColor ?? darkOf(color, 0.9)) : undefined}
+        outlineBlur={outlined ? size * 0.004 : 0}
         castShadow={castShadow && !overlay}
         receiveShadow={!overlay}
       >
@@ -248,7 +255,7 @@ function FlatTitle({
       {...group}
       size={em}
       color={faceColor}
-      outlineColor={outlineColor ?? inkOf(sideColor, 0.55)}
+      outlineColor={outlineColor ?? darkOf(sideColor, 0.55)}
       outline={0.07}
       glow={glow}
       castShadow={castShadow}
@@ -283,7 +290,7 @@ function ExtrudedTitle({
     return [face, side];
   }, [faceColor, sideColor, glow]);
   const outline = useMemo(
-    () => (outlineWidth > 0 ? createOutlineMaterial({ color: outlineColor ?? inkOf(sideColor, 0.55), width: outlineWidth }) : null),
+    () => (outlineWidth > 0 ? createOutlineMaterial({ color: outlineColor ?? darkOf(sideColor, 0.55), width: outlineWidth }) : null),
     [outlineColor, sideColor, outlineWidth],
   );
 

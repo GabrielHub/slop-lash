@@ -131,7 +131,7 @@ export function ScoreboardSign({ nodes, lines }: { nodes: ArenaNodes | null; lin
           <meshStandardMaterial color={plane.bgColor} roughness={0.9} />
         </mesh>
       )}
-      <StageText size={size} color={color} lineHeight={1.2} outline={0.03} castShadow={false}>
+      <StageText {...MARQUEE_TEXT} size={size} color={color} lineHeight={1.2}>
         {lines.join("\n")}
       </StageText>
     </OnPlane>

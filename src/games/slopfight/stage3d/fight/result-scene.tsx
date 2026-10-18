@@ -26,7 +26,7 @@ import { useStage } from "../services";
 import { Confetti, type ConfettiHandle } from "../ui3d/confetti";
 import { UI_COLORS } from "../ui3d/materials";
 import { stageSfx } from "../ui3d/sound";
-import { OnPlane, StageText, type TroikaTextMesh } from "../ui3d/text";
+import { MARQUEE_TEXT, OnPlane, StageText, type TroikaTextMesh } from "../ui3d/text";
 import { AvatarToken } from "../ui3d/tokens";
 import { ownersOf, playerName, sheetsOf, useFightFeed, type FightFeed, type FightRow } from "./feed";
 import { sparkColors } from "./conduct";
@@ -544,11 +544,11 @@ function Payouts({
           <meshStandardMaterial color={plane.bgColor} roughness={0.9} />
         </mesh>
       )}
-      <FitText position={[0, layout.headerY, 0]} maxWidth={layout.inner} size={layout.headerSize} color={fight.isFinal ? UI_COLORS.gold : textColor} glow={0.3}>
+      <FitText position={[0, layout.headerY, 0]} maxWidth={layout.inner} size={layout.headerSize} color={fight.isFinal ? UI_COLORS.gold : textColor}>
         {header}
       </FitText>
       {rows.length === 0 && show && (
-        <FitText position={[0, layout.rowY(0), 0]} maxWidth={layout.inner} size={layout.rowHeight * 0.5} color={textColor} glow={0.2}>
+        <FitText position={[0, layout.rowY(0), 0]} maxWidth={layout.inner} size={layout.rowHeight * 0.5} color={textColor}>
           No payouts this time
         </FitText>
       )}
@@ -572,13 +572,13 @@ function Payouts({
               seed={index + 3}
             >
               {/* Name over its reason on the left, the points at the board's right edge: the columns never meet. */}
-              <FitText position={[layout.nameX, layout.rowHeight * 0.13, 0.02]} anchorX="left" maxWidth={layout.nameWidth} size={layout.rowHeight * 0.46} color={textColor} glow={0.25}>
+              <FitText position={[layout.nameX, layout.rowHeight * 0.13, 0.02]} anchorX="left" maxWidth={layout.nameWidth} size={layout.rowHeight * 0.46} color={textColor}>
                 {row.name}
               </FitText>
-              <FitText position={[layout.nameX, -layout.rowHeight * 0.27, 0.02]} anchorX="left" maxWidth={layout.nameWidth} size={layout.rowHeight * 0.25} color={textColor} glow={0.15} opacity={0.82}>
+              <FitText position={[layout.nameX, -layout.rowHeight * 0.27, 0.02]} anchorX="left" maxWidth={layout.nameWidth} size={layout.rowHeight * 0.25} color={textColor} opacity={0.82}>
                 {row.label}
               </FitText>
-              <FitText position={[layout.pointsX, 0, 0.02]} anchorX="right" maxWidth={layout.pointsWidth} size={layout.rowHeight * 0.6} color={UI_COLORS.gold} glow={0.35}>
+              <FitText position={[layout.pointsX, 0, 0.02]} anchorX="right" maxWidth={layout.pointsWidth} size={layout.rowHeight * 0.6} color={UI_COLORS.gold}>
                 {`+${row.points}`}
               </FitText>
             </AvatarToken>
@@ -640,7 +640,6 @@ function FitText({
   children: string;
   size: number;
   color: string;
-  glow?: number;
   anchorX?: "left" | "center" | "right";
   opacity?: number;
 }) {
@@ -658,7 +657,7 @@ function FitText({
   );
   return (
     <group ref={group} position={position} visible={false}>
-      <StageText {...text} castShadow={false} whiteSpace="nowrap" onSync={onSync}>
+      <StageText {...text} {...MARQUEE_TEXT} whiteSpace="nowrap" onSync={onSync}>
         {children}
       </StageText>
     </group>

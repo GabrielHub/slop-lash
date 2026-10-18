@@ -4,7 +4,7 @@
 // dark version of their colour (never black). Materials are cached per
 // colour and live as long as the page: the kit uses a small, fixed palette.
 
-import { Color, DoubleSide } from "three";
+import { Color, DoubleSide, type Material, type Object3D } from "three";
 import { TOY_COLOR_VALUES, TOY_COLORS, type ToyColor } from "../../vocab";
 import { createOutlineMaterial, type OutlineMaterial } from "../look/outline";
 import { createToonMaterial, type ToonMaterial } from "../look/toon";
@@ -112,6 +112,13 @@ export function nearestToy(hex: string): ToyColor {
   return best;
 }
 
+/**
+ * The kit's lit surfaces stay under the arena moods' bloom threshold (1.5):
+ * cream cardstock under a set's spots otherwise blooms into a veil over its
+ * own text. Bloom is for the arena's emissives.
+ */
+export const UI_MAX_LUMINANCE = 1.4;
+
 const toonCache = new Map<string, ToonMaterial>();
 const outlineCache = new Map<string, OutlineMaterial>();
 
@@ -140,6 +147,7 @@ export function uiToon(color: string, options: UiToonOptions = {}): ToonMaterial
       rim: 0.22,
       translucency: 0.2,
       shade: 0.5,
+      maxLuminance: UI_MAX_LUMINANCE,
     });
     material.emissiveIntensity = glow;
     if (options.doubleSide) material.side = DoubleSide;
@@ -154,6 +162,23 @@ export function uiToon(color: string, options: UiToonOptions = {}): ToonMaterial
     toonCache.set(key, material);
   }
   return material;
+}
+
+/**
+ * Troika draws a text's outline with an Object.create copy of its material,
+ * so the outline inherits the fill's emissive `glow` and shows as a pale ring
+ * around the letters whatever its colour. Call once a text mesh has laid out
+ * (before any glyph draws): from then on the copy gets its own zero
+ * emissiveIntensity before it draws.
+ */
+export function keepOutlineDark(mesh: Object3D): void {
+  if (Object.hasOwn(mesh, "onBeforeRender")) return;
+  const render = mesh.onBeforeRender.bind(mesh);
+  mesh.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
+    const outline = material as Material & { isTextOutlineMaterial?: boolean; emissiveIntensity?: number };
+    if (outline.isTextOutlineMaterial && !Object.hasOwn(outline, "emissiveIntensity")) outline.emissiveIntensity = 0;
+    render(renderer, scene, camera, geometry, material, group);
+  };
 }
 
 /** A cached outline (inverted hull) in a dark version of `color`. */

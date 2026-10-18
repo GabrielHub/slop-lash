@@ -149,6 +149,12 @@ export interface ToonOptions {
   /** Rim width (0..1 of the grazing range). Default 0.28. */
   rimWidth?: number;
   emissive?: ColorRepresentation;
+  /**
+   * Cap the outgoing light's luminance (linear HDR), so a light surface under
+   * the rig never crosses the bloom threshold (bloom is for emissives). Default
+   * none.
+   */
+  maxLuminance?: number;
   /** Add the creature wobble (pass shared uniforms to keep the outline in step). */
   wobble?: WobbleUniforms | boolean;
 }
@@ -273,6 +279,9 @@ vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffu
   if ( slopKind != FINISH_VINYL ) outgoingLight = slopFinishOut( outgoingLight, diffuseColor.rgb, normal, normalize( vViewPosition ), ndv, rim );
   #endif
 }
+#ifdef SLOP_MAX_LUMINANCE
+outgoingLight *= min( 1.0, SLOP_MAX_LUMINANCE / max( dot( outgoingLight, vec3( 0.2126, 0.7152, 0.0722 ) ), 1e-4 ) );
+#endif
 `;
 
 /** The toon material for creatures, props and arenas. */
@@ -301,6 +310,8 @@ export function createToonMaterial(opts: ToonOptions = {}): ToonMaterial {
   material.userData = { toon, wobble };
   // Creatures (the wobbling materials) shade finishes; one program for all of them.
   if (wobble) material.defines = { ...material.defines, SLOP_WOBBLE: "", SLOP_FINISH: "" };
+  const cap = opts.maxLuminance === undefined ? null : opts.maxLuminance.toFixed(3);
+  if (cap) material.defines = { ...material.defines, SLOP_MAX_LUMINANCE: cap };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, toon);
     if (wobble) Object.assign(shader.uniforms, wobble, { uFinishDetail: FINISH_DETAIL });
@@ -313,6 +324,6 @@ export function createToonMaterial(opts: ToonOptions = {}): ToonMaterial {
       .replace("#include <lights_fragment_begin>", LIGHTS_BEGIN)
       .replace(OUTGOING, OUTGOING_TOON);
   };
-  material.customProgramCacheKey = () => `slop-toon-2${wobble ? "-wobble-finish" : ""}`;
+  material.customProgramCacheKey = () => `slop-toon-2${wobble ? "-wobble-finish" : ""}${cap ? `-cap${cap}` : ""}`;
   return material;
 }

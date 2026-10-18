@@ -20,7 +20,7 @@ import { MotionGroup, type MotionGroupProps } from "./motion-group";
 import { ringDown } from "./motion";
 import { useRoomOrNull } from "./room";
 import { stageSfx } from "./sound";
-import { StageText } from "./text";
+import { MARQUEE_TEXT, StageText } from "./text";
 
 const TICKS = 24;
 const TONES = { normal: "#2A9D8F", warning: UI_COLORS.gold, urgent: "#e8553d" } as const;
@@ -122,18 +122,15 @@ export function ClockRing({ deadline, startedAt, radius = 0.45, label = null, so
         })}
         <Suspense fallback={null}>
           <StageText
+            {...MARQUEE_TEXT}
             size={radius * (seconds >= 100 ? 0.62 : 0.8)}
             color={seconds <= 5 ? TONES.urgent : UI_COLORS.bone}
-            outlineColor={UI_COLORS.plumEdge}
-            outline={0.08}
-            glow={0.3}
             position={[0, label ? radius * 0.1 : 0, radius * 0.16]}
-            castShadow={false}
           >
             {String(seconds)}
           </StageText>
           {label && (
-            <StageText size={radius * 0.17} color={UI_COLORS.gold} outline={0} glow={0.2} position={[0, -radius * 0.42, radius * 0.16]} castShadow={false}>
+            <StageText {...MARQUEE_TEXT} size={radius * 0.17} color={UI_COLORS.gold} position={[0, -radius * 0.42, radius * 0.16]}>
               {label}
             </StageText>
           )}

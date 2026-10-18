@@ -22,7 +22,7 @@ import { useStage } from "../services";
 import { discGeometry, slabGeometry } from "../ui3d/geometry";
 import { darkOf, lightOf, textOn, UI_COLORS, uiOutline, uiToon } from "../ui3d/materials";
 import { stageSfx } from "../ui3d/sound";
-import { fitTextSize, OnPlane, StageText } from "../ui3d/text";
+import { fitTextSize, MARQUEE_TEXT, OnPlane, StageText } from "../ui3d/text";
 import { boardColumns, boardPoints, boardRowIndex, boardSlide, recordText, shelfSpots, type BoardRow } from "./board";
 import { boardVisibility, type BoardSpan, type BoardVisibility } from "./board-visibility";
 import { fighterColor } from "./common";
@@ -149,13 +149,13 @@ function BoardFace({ plane, title, rows, time, sound, span }: { plane: PlaneNode
       </mesh>
       <Suspense fallback={null}>
         {/* Centred: clear of the props some sets tape to the board's corners. */}
-        <StageText size={titleSize} color={ink} glow={0.2} outline={0.03} position={[0, top + header * 0.58, 0.004]} castShadow={false}>
+        <StageText {...MARQUEE_TEXT} size={titleSize} color={ink} position={[0, top + header * 0.58, 0.004]}>
           {title}
         </StageText>
-        <StageText size={labelSize} color={lightOf(bg, 0.45)} outline={0} glow={0.15} position={[columns.record, top + labelSize * 0.9, 0.004]} castShadow={false}>
+        <StageText {...MARQUEE_TEXT} size={labelSize} color={lightOf(bg, 0.45)} position={[columns.record, top + labelSize * 0.9, 0.004]}>
           W-L
         </StageText>
-        <StageText size={labelSize} color={lightOf(bg, 0.45)} outline={0} glow={0.15} anchorX="right" position={[columns.points, top + labelSize * 0.9, 0.004]} castShadow={false}>
+        <StageText {...MARQUEE_TEXT} size={labelSize} color={lightOf(bg, 0.45)} anchorX="right" position={[columns.points, top + labelSize * 0.9, 0.004]}>
           PTS
         </StageText>
       </Suspense>
@@ -205,13 +205,13 @@ function BoardRowFace({ row, index, layout, ink, bg, columns, time, sound }: Row
         <StageText size={badgeR * 1.15} color={textOn(color)} outline={0} glow={0.15} position={[badgeX, -badgeR * 0.05, 0.05]} castShadow={false}>
           {String(row.rank)}
         </StageText>
-        <StageText size={nameSize} color={leader ? UI_COLORS.gold : ink} glow={0.22} outline={0.03} anchorX="left" position={[nameX, rowH * 0.1, 0.006]} castShadow={false}>
+        <StageText {...MARQUEE_TEXT} size={nameSize} color={leader ? UI_COLORS.gold : ink} anchorX="left" position={[nameX, rowH * 0.1, 0.006]}>
           {name}
         </StageText>
-        <StageText size={rowH * 0.19} color={lightOf(bg, 0.5)} outline={0} glow={0.15} anchorX="left" position={[nameX, -rowH * 0.24, 0.006]} castShadow={false}>
+        <StageText {...MARQUEE_TEXT} size={rowH * 0.19} color={lightOf(bg, 0.5)} anchorX="left" position={[nameX, -rowH * 0.24, 0.006]}>
           {owner}
         </StageText>
-        <StageText size={rowH * 0.36} color={ink} glow={0.22} outline={0.03} position={[columns.record, 0, 0.006]} castShadow={false}>
+        <StageText {...MARQUEE_TEXT} size={rowH * 0.36} color={ink} position={[columns.record, 0, 0.006]}>
           {recordText(row)}
         </StageText>
       </Suspense>
@@ -239,7 +239,7 @@ function CountUp({ row, index, x, size, color, time, sound }: { row: BoardRow; i
   });
   return (
     <Suspense fallback={null}>
-      <StageText size={size} color={color} glow={0.3} outline={0.03} anchorX="right" position={[x, 0, 0.006]} castShadow={false}>
+      <StageText {...MARQUEE_TEXT} size={size} color={color} anchorX="right" position={[x, 0, 0.006]}>
         {shown === null ? "-" : String(shown)}
       </StageText>
     </Suspense>
