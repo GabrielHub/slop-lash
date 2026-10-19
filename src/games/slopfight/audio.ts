@@ -10,7 +10,7 @@ import {
   type SoundAsset,
   type BusName,
 } from "@/lib/sounds";
-import { getArena, type ArenaId, type RingOutLanding } from "./arenas";
+import { getArena, type ArenaId, type FinaleId, type RingOutLanding } from "./arenas";
 
 /** The synth's sample rate and loop padding (render.mjs LOOP_PRE). */
 const SAMPLE_RATE = 44_100;
@@ -57,6 +57,10 @@ export const SLOPFIGHT_FILES = {
   "fight-crunch": file("fight-crunch", { cooldownMs: 60 }),
   "fight-edge-alarm": file("fight-edge-alarm", { cooldownMs: 1_200 }),
   "fight-ringout-scream": file("fight-ringout-scream"),
+  "fight-finale": file("fight-finale"),
+  "finale-tilt": file("finale-tilt"),
+  "finale-flood": file("finale-flood"),
+  "finale-storm": file("finale-storm"),
   "land-splash": file("land-splash"),
   "land-clang": file("land-clang"),
   "land-thud": file("land-thud"),
@@ -124,6 +128,11 @@ export const SFX_CUES = {
   healthCrunch: { files: ["fight-crunch"], jitter: 1.2, weight: 1.5 },
   edgeAlarm: { files: ["fight-edge-alarm"], jitter: 0 },
   ringOutScream: { files: ["fight-ringout-scream"], jitter: 1 },
+  // The finale: a shared sting, then the arena's own layer (sfx.finale picks it).
+  finale: { files: ["fight-finale"], jitter: 0 },
+  finaleTilt: { files: ["finale-tilt"], jitter: 0 },
+  finaleFlood: { files: ["finale-flood"], jitter: 0 },
+  finaleStorm: { files: ["finale-storm"], jitter: 0 },
   landingSplash: { files: ["land-splash"], jitter: 0.8 },
   landingClang: { files: ["land-clang"], jitter: 0.8 },
   landingThud: { files: ["land-thud"], jitter: 0.8 },
@@ -168,6 +177,12 @@ const AMBIENCE: Record<ArenaId, LoopName> = {
   FLOODED_GARAGE: "ambGarage",
   KITCHEN_COUNTER: "ambKitchen",
   ROOFTOP: "ambRooftop",
+};
+
+const FINALE_LAYER: Record<FinaleId, SfxName> = {
+  tilt: "finaleTilt",
+  flood: "finaleFlood",
+  storm: "finaleStorm",
 };
 
 const LANDING: Record<RingOutLanding, SfxName> = {
@@ -305,6 +320,11 @@ export const sfx = {
   /** The arena's ring-out landing: splash, clang or thud. */
   landing(arena: ArenaId, options?: SfxOptions): void {
     play(LANDING[getArena(arena).ringOutLanding], options);
+  },
+  /** The arena's finale starting: the shared sting and the arena's layer (the counter's creak, the surge, the thunder). */
+  finale(arena: ArenaId, options?: SfxOptions): void {
+    play("finale", options);
+    play(FINALE_LAYER[getArena(arena).finale.id], options);
   },
   /** Hit stop: the beds drop out for `ms` so the impact lands in a gap. */
   hitStop(ms = 70): void {

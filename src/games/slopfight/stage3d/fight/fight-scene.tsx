@@ -8,12 +8,13 @@
 // coin instead.
 
 import { useFrame } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Vector3 } from "three";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Vector3, type Group } from "three";
 import type { ArenaId } from "../../arenas";
 import type { Side } from "../../modifiers";
 import { timeFightLines } from "../../narration";
 import { loadRapier } from "../../sim";
+import { placeOnStage, tiltBody } from "../arena/finale";
 import type { CreatureHandle } from "../creature/creature";
 import type { PhaseSceneProps } from "../scenes/phase-scene";
 import { useStage } from "../services";
@@ -102,7 +103,13 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fightInput, stored?.hash],
   );
-  const fx = useMemo(() => new FxSystem(), []);
+  // Effects spawn where the sim says, tipped with the kitchen counter in its finale.
+  const place = useCallback((point: Vector3) => placeOnStage(services.finale, point), [services]);
+  const fx = useMemo(() => {
+    const system = new FxSystem();
+    system.place = place;
+    return system;
+  }, [place]);
   const handles = useRef<Record<Side, CreatureHandle | null>>({ A: null, B: null });
   const owners = ownersOf(feed, fight);
   const names = useMemo(() => ({ A: fightInput.a.name, B: fightInput.b.name }), [fightInput]);
@@ -178,7 +185,7 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
       const delta = fight.hype[side] - previous[side];
       if (delta <= 0) continue;
       services.cheer(Math.min(1, 0.25 + delta * 0.06));
-      const torso = conductor.torso[side];
+      const torso = conductor.view[side];
       const colors = sparkColors(fightInput[side === "A" ? "a" : "b"].palette);
       confetti.current?.burst({ origin: [torso.x, Math.max(0, torso.y) + 1.4, torso.z], colors, count: Math.min(60, 16 + delta * 6), speed: 3.2 });
     }
@@ -201,8 +208,8 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
   }, []);
   const koHead = useCallback(() => {
     const side = conductor.koSide;
-    return side ? head(side, new Vector3()) : null;
-  }, [conductor, head]);
+    return side ? place(head(side, new Vector3())) : null;
+  }, [conductor, head, place]);
   const roots = useMemo(
     () => ({ A: () => (player.samples ? conductor.torso.A : null), B: () => (player.samples ? conductor.torso.B : null) }),
     [player, conductor],
@@ -212,8 +219,10 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
     <>
       {(["A", "B"] as const).map((side) => (
         <group key={side}>
-          <FightCreature player={player} side={side} timeScale={timeScale} handleRef={setHandle} />
-          <SideMarker side={side} champion={player.champion(side)} arena={fightInput.arena} root={roots[side]} height={player.drivers[side].height} />
+          <FinaleTilt player={player} side={side}>
+            <FightCreature player={player} side={side} timeScale={timeScale} handleRef={setHandle} />
+            <SideMarker side={side} champion={player.champion(side)} arena={fightInput.arena} root={roots[side]} height={player.drivers[side].height} />
+          </FinaleTilt>
         </group>
       ))}
       <FightHud player={player} conductor={conductor} names={names} owners={ownerNames} />
@@ -222,4 +231,22 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
       <Confetti ref={confetti} capacity={300} />
     </>
   );
+}
+
+/**
+ * The kitchen's finale tips the counter and everything on it: each fighter's
+ * whole body tips with it about the counter's centre line, by its torso's
+ * height (one falling off leaves the tilt as it drops, and lands where the
+ * sim has it). Runs after the conductor has presented the frame.
+ */
+function FinaleTilt({ player, side, children }: { player: FightPlayer; side: Side; children: ReactNode }) {
+  const services = useStage();
+  const group = useRef<Group>(null);
+  useFrame(() => {
+    const node = group.current;
+    if (!node) return;
+    const torsoY = player.samples?.[side].root.p[1] ?? 0;
+    tiltBody(services.finale, torsoY, node.position, node.quaternion);
+  }, -40);
+  return <group ref={group}>{children}</group>;
 }

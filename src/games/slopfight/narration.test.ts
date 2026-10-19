@@ -65,11 +65,12 @@ const hit = (
   miracle: extra.miracle ?? false,
 });
 
-/** A busy fight: something happens every 300 ms, ending in a finish at `endMs`. */
+/** A busy fight: something happens every 300 ms, ending in a finish at `endMs`; the arena's finale starts at `finaleAt`. */
 function busyFight(
   endMs: number,
   finish: "ko" | "ringout" | "timeout",
   loser: Side = "B",
+  finaleAt?: number,
 ): FightEvent[] {
   const winner: Side = loser === "A" ? "B" : "A";
   const events: FightEvent[] = [
@@ -97,6 +98,10 @@ function busyFight(
       });
     else if (roll === 3) events.push({ t, kind: "showboat", side });
     else events.push(hit(t, side, { counter: roll === 4, move: roll % 3 }));
+  }
+  if (finaleAt !== undefined && finaleAt < endMs) {
+    const at = events.findIndex((event) => event.t > finaleAt);
+    events.splice(at < 0 ? events.length : at, 0, { t: finaleAt, kind: "finale", side: null });
   }
   if (finish === "ko") events.push({ t: endMs, kind: "ko", side: loser });
   if (finish === "ringout") events.push({ t: endMs, kind: "ringout", side: loser, point: P });
@@ -183,7 +188,7 @@ function playGame(seed: string | number, roster: VoiceFighter[], dense = false):
       };
       add(voice.faceOff(fight));
       const finish = finishes[(round + step) % 3]!;
-      const events = dense ? busyFight(18_000, finish) : busyFight(9_000, finish);
+      const events = dense ? busyFight(18_000, finish, "B", 10_000) : busyFight(9_000, finish);
       add(voice.fight(fight, events));
       add(
         voice.result(fight, {
@@ -338,6 +343,7 @@ describe("the Voice through a whole game", () => {
       "start",
       "ko",
       "ringOut",
+      "finale",
       "suddenDeath",
       "result",
       "standings",
@@ -465,6 +471,25 @@ describe("fight pacing", () => {
     expect(
       decided.find((line) => line.beat === "suddenDeath" || line.beat === "timeout")?.speak,
     ).toBe(true);
+  });
+
+  test("the arena's finale is called as it starts, in that arena's words", () => {
+    const sets = {
+      FLOODED_GARAGE: "finaleFlood",
+      KITCHEN_COUNTER: "finaleTilt",
+      ROOFTOP: "finaleStorm",
+    } as const;
+    for (const [arena, set] of Object.entries(sets)) {
+      const plan = new Voice(`finale-${arena}`).fight(
+        { ...fight, arena: arena as keyof typeof sets },
+        busyFight(26_000, "ringout", "B", 20_000),
+      );
+      const lines = plan.filter((line) => line.beat === "finale");
+      expect(lines, arena).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ atMs: 20_000, speak: true });
+      expect(VOICE_TEMPLATES[set]).toContain(lines[0]!.text);
+      expectHouseStyle(plan);
+    }
   });
 
   test("a busy fight keeps the big moments and drops the small stuff", () => {

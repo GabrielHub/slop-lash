@@ -2,7 +2,8 @@
 // they merge into one full-screen pass with tone mapping):
 //
 // - GradeEffect: the per-arena three-parameter grade (contrast, saturation,
-//   tint) plus a tinted vignette (never pure black). Runs after ACES.
+//   tint) plus a tinted vignette (never pure black), and the rooftop storm's
+//   mood and lightning. Runs after ACES.
 // - StageFxEffect: the director-driven transition layer: letterbox bars, the
 //   iris on a world point, the accent wipe, and the impact frame (one white
 //   flash frame + radial lines converging on the hit). Runs last, after the
@@ -18,6 +19,8 @@ uniform vec3 uTint;
 uniform float uVignette;
 uniform vec3 uVignetteColor;
 uniform float uAspect;
+uniform float uStorm;
+uniform float uFlash;
 
 vec3 toPerceptual(vec3 c) { return pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)); }
 vec3 toLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
@@ -30,6 +33,13 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   c *= toPerceptual(uTint);
   vec2 d = (uv - 0.5) * vec2(uAspect, 1.0);
   float v = smoothstep(0.35, 1.05, length(d) * 1.15);
+  // The storm (the rooftop's finale): a cooler, heavier frame with a darker
+  // edge, and lightning that lifts everything toward a cold white.
+  if (uStorm > 0.0 || uFlash > 0.0) {
+    c = mix(c, c * vec3(0.84, 0.9, 1.08) * (1.0 - 0.12 * uStorm), uStorm);
+    v = mix(v, smoothstep(0.2, 0.95, length(d) * 1.15), uStorm * 0.6);
+    c = c + uFlash * (0.22 + 0.75 * c) * vec3(0.9, 0.93, 1.0);
+  }
   c = mix(c, c * toPerceptual(uVignetteColor), v * uVignette);
   outputColor = vec4(toLinear(clamp(c, 0.0, 1.0)), inputColor.a);
 }
@@ -45,8 +55,16 @@ export class GradeEffect extends Effect {
         ["uVignette", new Uniform(0.4)],
         ["uVignetteColor", new Uniform(new Color("#1a0f14"))],
         ["uAspect", new Uniform(16 / 9)],
+        ["uStorm", new Uniform(0)],
+        ["uFlash", new Uniform(0)],
       ]),
     });
+  }
+
+  /** The rooftop storm's mood (0..1) and its lightning flash (0..1), per frame. */
+  setStorm(storm: number, flash: number): void {
+    this.uniforms.get("uStorm")!.value = storm;
+    this.uniforms.get("uFlash")!.value = flash;
   }
 
   set(values: { contrast: number; saturation: number; tint: string; vignette: number; vignetteColor: string }): void {

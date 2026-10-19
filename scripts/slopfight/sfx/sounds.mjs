@@ -353,6 +353,83 @@ function splashDroplets(seed, out, from, to, count) {
   }
 }
 
+/** A timpani: near-harmonic drum-head modes that sag a touch in pitch, plus a felt-mallet thump. */
+function timpani(seed, hz, { length = 0.9, hard = 1 } = {}) {
+  const head = modal(
+    length,
+    hz,
+    [
+      [1, 1, 0.42],
+      [1.5, 0.55, 0.3],
+      [1.98, 0.32, 0.22],
+      [2.44, 0.16, 0.14],
+      [2.9, 0.08, 0.09],
+    ],
+    { pitch: glide(1.035, 1, 0.05) },
+  );
+  const mallet = shape(lowpass(noise(0.06, seed), 700 + 900 * hard, 0.8), ar(0.001, 0.012));
+  return fade(drive(sum(head, [mallet, 0.5 * hard]), 1.3), 0.0005, 0.05);
+}
+
+/** A game-show alarm whoop: a chunky square sweeping up that cuts off at the top. */
+function whoop(length, from, to) {
+  const freq = (t) => from * (to / from) ** (Math.min(1, t / length) ** 0.7);
+  const tone = sum(osc("square", length, freq, { pw: 0.42 }), [
+    osc("saw", length, (t) => freq(t) * 1.007),
+    0.5,
+  ]);
+  return shape(
+    lowpass(tone, (t) => Math.min(5000, freq(t) * 2.5), 0.9),
+    env([
+      [0, 0],
+      [0.03, 0.6],
+      [length * 0.8, 1],
+      [length, 0],
+    ]),
+  );
+}
+
+/**
+ * A wooden creak: stick-slip clicks at a wandering rate (`rate(t)` per
+ * second, jittered) ringing a few body resonances [hz, q, gain], which
+ * `bend(t)` can drift. A slow rate is a groan; a fast one is a squeal.
+ */
+function creak(seed, length, { rate, amp, bodies, jitter = 0.2, bend = () => 1 }) {
+  const random = rng(seed);
+  const clicks = new Float32Array(samples(length));
+  for (let t = 0.002; t < length; t += (1 + between(random, -jitter, jitter)) / rate(t)) {
+    const at = Math.round(t * SR);
+    const level = amp(t) * between(random, 0.5, 1);
+    // A slip is a spike and a few samples of grit, not a clean impulse.
+    clicks[at] += level;
+    for (let k = 1; k < 6 && at + k < clicks.length; k += 1) {
+      clicks[at + k] += level * 0.4 * (random() * 2 - 1) * Math.exp(-k / 2);
+    }
+  }
+  const out = new Float32Array(clicks.length);
+  for (const [hz, q, gain] of bodies) {
+    // A click rings a band-pass at about 2*pi*bandwidth/SR, so each body is
+    // scaled back up to ring at roughly `gain`.
+    const ring = (TAU * hz) / (q * SR);
+    mixInto(out, svf(clicks, { type: "bpn", cutoff: (t) => hz * bend(t), q }), 0, gain / ring);
+  }
+  return out;
+}
+
+/** A china clink: a cup or plate knocked, bright modes that die fast. */
+function clink(hz, length = 0.12) {
+  return fade(
+    modal(length, hz, [
+      [1, 1, 0.05],
+      [1.58, 0.55, 0.035],
+      [2.31, 0.35, 0.022],
+      [3.12, 0.18, 0.012],
+    ]),
+    0.0003,
+    0.02,
+  );
+}
+
 // The noise crack of a strike overshoots by up to ~3 dB after 96 kbps coding,
 // so strikes keep extra headroom (the browser decode check flags clipping).
 const STRIKE_CEILING_DB = -4.5;
@@ -639,6 +716,386 @@ const fight = [
         lowpass(mix, (t) => 9000 * (1400 / 9000) ** Math.min(1, t / length), 0.8),
         -50,
       );
+    },
+  },
+  {
+    name: "fight-finale",
+    group: "Fight",
+    target: -14,
+    render: (seed) => {
+      const out = new Float32Array(samples(1.9));
+      // "Uh-oh": a diminished brass stab with the title slam (which brings the boom)...
+      mixInto(
+        out,
+        brass([49, 55, 61, 64, 67], 0.16, { attack: 0.01, release: 0.12, bright: 1.25 }),
+        0,
+        0.8,
+      );
+      // ...an alarm whooping twice over a timpani and snare roll that swells...
+      for (const at of [0.2, 0.5]) mixInto(out, whoop(0.27, 420, 1250), at, 0.28);
+      const random = rng(seed + 1);
+      for (let index = 0; index < 15; index += 1) {
+        const u = index / 14;
+        const at = 0.2 + index * 0.044 + between(random, -0.006, 0.006);
+        mixInto(
+          out,
+          timpani(seed + 20 + index, midiHz(45), { length: 0.4, hard: 0.4 + 0.5 * u }),
+          at,
+          0.05 + 0.15 * u * u,
+        );
+        mixInto(out, snare(seed + 40 + index, { snap: 0.6 }), at + 0.02, 0.05 + 0.2 * u * u);
+      }
+      // ...into the same stab a half step up: the arena just turned on you.
+      const hit = 0.86;
+      mixInto(
+        out,
+        brass([50, 56, 62, 65, 68], 0.42, { attack: 0.012, release: 0.28, bright: 1.35 }),
+        hit,
+        1.2,
+      );
+      mixInto(out, timpani(seed + 2, midiHz(38), { hard: 1.2 }), hit, 0.45);
+      mixInto(out, kick(seed + 3, { tone: 0.9 }), hit, 0.4);
+      mixInto(out, snare(seed + 4), hit, 0.4);
+      mixInto(out, crash(seed + 5, 0.95), hit, 0.22);
+      return trimTail(highpass(room(out, 0.12, 0.42), 40), -50);
+    },
+  },
+  {
+    name: "finale-tilt",
+    group: "Fight",
+    target: -16.5,
+    render: (seed) => {
+      const out = new Float32Array(samples(2.3));
+      // The laminate squeals under the strain...
+      mixInto(
+        out,
+        creak(seed, 0.42, {
+          rate: env([
+            [0, 150],
+            [0.28, 250],
+            [0.42, 210],
+          ]),
+          amp: env([
+            [0, 0],
+            [0.06, 0.5],
+            [0.3, 1],
+            [0.42, 0],
+          ]),
+          bodies: [
+            [950, 9, 0.6],
+            [1600, 10, 1],
+            [2500, 10, 0.45],
+          ],
+        }),
+        0,
+        0.6,
+      );
+      // ...the counter lurches over with a wooden klunk...
+      const lurch = 0.3;
+      mixInto(out, thump(seed + 1, { hz: 72, length: 0.45, weight: 1.6 }), lurch, 0.6);
+      mixInto(
+        out,
+        modal(0.35, 150, [
+          [1, 1, 0.07],
+          [2.3, 0.6, 0.04],
+          [3.7, 0.25, 0.02],
+        ]),
+        lurch + 0.004,
+        0.5,
+      );
+      // ...and groans as it tips, the creak slowing as it settles.
+      const groanRate = env([
+        [0, 55],
+        [0.3, 80],
+        [0.9, 58],
+        [1.65, 30],
+      ]);
+      mixInto(
+        out,
+        creak(seed + 2, 1.65, {
+          rate: (t) => groanRate(t) * (1 + 0.07 * Math.sin(TAU * 3.3 * t)),
+          amp: env([
+            [0, 0],
+            [0.08, 1],
+            [0.9, 0.85],
+            [1.65, 0],
+          ]),
+          bodies: [
+            [210, 3, 1],
+            [380, 5, 0.9],
+            [690, 7, 0.6],
+            [1150, 8, 0.35],
+            [1900, 8, 0.15],
+          ],
+          bend: (t) => 1.05 - 0.1 * Math.min(1, t / 1.65),
+        }),
+        lurch + 0.02,
+        0.8,
+      );
+      // A chunky synth slides down under it: the whole world tipping.
+      mixInto(
+        out,
+        shape(
+          lowpass(
+            osc("saw", 0.95, (t) => 110 * 0.5 ** Math.min(1, t / 0.8)),
+            520,
+            1.1,
+          ),
+          env([
+            [0, 0],
+            [0.04, 1],
+            [0.6, 0.6],
+            [0.95, 0],
+          ]),
+        ),
+        lurch,
+        0.2,
+      );
+      // Everything on it slides: a low scrape, a plate skating, crockery rattling downhill.
+      mixInto(
+        out,
+        shape(
+          lowpass(noise(1.5, seed + 3, "pink"), 380, 0.8),
+          env([
+            [0, 0],
+            [0.2, 1],
+            [0.9, 0.7],
+            [1.5, 0],
+          ]),
+        ),
+        lurch + 0.05,
+        0.35,
+      );
+      const skate = env([
+        [0, 0],
+        [0.15, 1],
+        [0.6, 0],
+      ]);
+      mixInto(
+        out,
+        shape(
+          svf(noise(0.6, seed + 4, "pink"), { type: "bpn", cutoff: (t) => 2100 - 700 * t, q: 1.6 }),
+          (t) => skate(t) * (0.6 + 0.4 * Math.abs(Math.sin(TAU * 23 * t))),
+        ),
+        lurch + 0.25,
+        0.12,
+      );
+      const random = rng(seed + 5);
+      for (let index = 0; index < 11; index += 1) {
+        const u = index / 11;
+        const at = lurch + 0.12 + 1.25 * u ** 1.15 + between(random, -0.03, 0.03);
+        const hz = between(random, 1500, 2600);
+        const level = between(random, 0.5, 1) * (1 - 0.5 * u);
+        mixInto(out, clink(hz), at, 0.35 * level);
+        if (random() < 0.6) {
+          const bounce = clink(hz * between(random, 0.97, 1.04), 0.08);
+          mixInto(out, bounce, at + between(random, 0.025, 0.045), 0.2 * level);
+        }
+      }
+      // Something fetches up at the low end.
+      mixInto(out, thump(seed + 6, { hz: 90, length: 0.2, weight: 0.5 }), 1.85, 0.3);
+      mixInto(out, clink(1900), 1.86, 0.15);
+      return trimTail(highpass(drive(room(out, 0.1, 0.4), 1.4), 30), -50);
+    },
+  },
+  {
+    name: "finale-flood",
+    group: "Fight",
+    target: -16.5,
+    render: (seed) => {
+      const length = 2.2;
+      const out = new Float32Array(samples(length));
+      // The pipe bursts: a dull clank and a spray...
+      mixInto(out, clang(185, 0.45, 0.6), 0, 0.3);
+      mixInto(out, thump(seed, { hz: 80, length: 0.3, weight: 0.9 }), 0, 0.4);
+      mixInto(
+        out,
+        shape(lowpass(bandpass(noise(0.5, seed + 1), 2400, 0.7), 6500), ar(0.004, 0.11)),
+        0.005,
+        1,
+      );
+      // ...and glugs: big low bubbles out of the pipe.
+      const glugs = [
+        [0.07, 130, 330],
+        [0.17, 160, 400],
+        [0.26, 140, 350],
+        [0.36, 175, 430],
+      ];
+      for (const [index, [at, from, to]] of glugs.entries()) {
+        mixInto(out, bloop(from, to, 0.11, { tau: 0.025 }), at, 0.5);
+        mixInto(
+          out,
+          shape(lowpass(noise(0.08, seed + 10 + index), 900, 2), ar(0.004, 0.02)),
+          at,
+          0.25,
+        );
+      }
+      // The surge: rushing water swelling as it rises, its colour climbing.
+      const swell = env([
+        [0, 0],
+        [0.15, 0.22],
+        [1.1, 1],
+        [1.4, 0.85],
+        [1.95, 0],
+      ]);
+      const random = rng(seed + 2);
+      const phases = [random() * TAU, random() * TAU, random() * TAU];
+      const churn = (t) =>
+        1 +
+        0.25 * Math.sin(TAU * 5.3 * t + phases[0]) +
+        0.15 * Math.sin(TAU * 8.7 * t + phases[1]) +
+        0.1 * Math.sin(TAU * 13.1 * t + phases[2]);
+      const rush = svf(noise(length, seed + 3, "pink"), {
+        type: "bpn",
+        cutoff: (t) => 650 * (2000 / 650) ** Math.min(1, t / 1.5),
+        q: 0.6,
+      });
+      mixInto(
+        out,
+        shape(rush, (t) => swell(t) * churn(t)),
+        0,
+        2.2,
+      );
+      mixInto(out, shape(lowpass(noise(length, seed + 4, "brown"), 260, 0.8), swell), 0, 0.55);
+      // Bubbles all through it, climbing with the water.
+      for (let index = 0; index < 70; index += 1) {
+        const at = between(random, 0.12, 1.95);
+        const f0 = between(random, 450, 800) * (1 + 0.9 * (at / 1.95));
+        const bubble = osc("sine", 0.05, (t) => f0 * (1 + 1.6 * Math.min(1, t / 0.025)), {
+          amp: ar(0.001, 0.01),
+        });
+        mixInto(out, bubble, at, swell(at) * between(random, 0.2, 0.5));
+      }
+      // Waves slop over the pad.
+      for (const [index, at] of [0.6, 0.98, 1.32].entries()) {
+        mixInto(
+          out,
+          shape(lowpass(noise(0.2, seed + 20 + index), 2400), ar(0.002, 0.045)),
+          at,
+          0.5,
+        );
+        const wash = svf(noise(0.4, seed + 30 + index, "pink"), {
+          type: "bpn",
+          cutoff: (t) => 1300 * (600 / 1300) ** Math.min(1, t / 0.3),
+          q: 0.8,
+        });
+        mixInto(out, shape(wash, ar(0.008, 0.12)), at, 0.5);
+        splashDroplets(seed + 40 + index, out, at + 0.03, at + 0.35, 8);
+      }
+      // A chunky synth rising underneath: the tide coming up.
+      mixInto(
+        out,
+        shape(
+          lowpass(
+            osc("tri", 1.5, (t) => 62 * 2 ** Math.min(1, t / 1.3)),
+            400,
+          ),
+          env([
+            [0, 0],
+            [0.3, 1],
+            [1.2, 0.9],
+            [1.5, 0],
+          ]),
+        ),
+        0.2,
+        0.2,
+      );
+      return trimTail(
+        highpass(reverb(out, { size: 0.6, damp: 0.4, mix: 0.25, tail: 0.3 }), 30),
+        -50,
+      );
+    },
+  },
+  {
+    name: "finale-storm",
+    group: "Fight",
+    target: -16,
+    ceilingDb: -3,
+    render: (seed) => {
+      const length = 2.9;
+      const out = new Float32Array(samples(length));
+      const random = rng(seed);
+      // The crack: a ripping cluster of snaps over a broad bang...
+      const crack = new Float32Array(samples(0.5));
+      for (let index = 0; index < 24; index += 1) {
+        const at = 0.16 * (index / 24) ** 1.4 + between(random, 0, 0.004);
+        const snap = shape(
+          highpass(noise(0.02, seed + 10 + index), between(random, 700, 1600)),
+          decay(between(random, 0.002, 0.006)),
+        );
+        mixInto(crack, snap, at, between(random, 0.3, 1) * (1 - index / 32));
+      }
+      mixInto(crack, shape(noise(0.4, seed + 1), ar(0.002, 0.09)), 0, 0.6);
+      mixInto(out, lowpass(crack, 6500, 0.7), 0, 1.5);
+      // ...then the boom, and a rumble that rolls a few times as it dies away.
+      mixInto(out, osc("sine", 0.9, glide(140, 45, 0.07), { amp: ar(0.004, 0.3) }), 0.01, 0.5);
+      const roll = env([
+        [0, 0],
+        [0.06, 1],
+        [0.4, 0.6],
+        [0.7, 0.8],
+        [1.1, 0.45],
+        [1.45, 0.55],
+        [2.3, 0],
+      ]);
+      const phases = [random() * TAU, random() * TAU];
+      const flutter = (t) =>
+        1 +
+        0.18 * Math.sin(TAU * 7.3 * t + phases[0]) +
+        0.12 * Math.sin(TAU * 11.9 * t + phases[1]);
+      mixInto(
+        out,
+        shape(
+          svf(noise(2.4, seed + 2, "pink"), { type: "bpn", cutoff: 95, q: 0.7 }),
+          (t) => roll(t) * flutter(t),
+        ),
+        0.02,
+        2.6,
+      );
+      mixInto(
+        out,
+        shape(lowpass(noise(2.4, seed + 3, "pink"), 420, 0.7), (t) => roll(t) ** 1.5 * flutter(t)),
+        0.02,
+        1.2,
+      );
+      // The wind howls up behind it and doesn't let go.
+      const wind = env([
+        [0, 0],
+        [0.25, 0.05],
+        [1.7, 1],
+        [2.25, 0.85],
+        [2.9, 0],
+      ]);
+      const gusts = (t) => 0.78 + 0.22 * Math.sin(TAU * 1.3 * t + phases[0]);
+      const howlHz = (t) =>
+        560 * (1 + 0.6 * Math.min(1, t / 1.7) ** 1.5) * (1 + 0.04 * Math.sin(TAU * 2.1 * t));
+      const gust = svf(noise(length, seed + 4, "pink"), {
+        type: "bpn",
+        cutoff: (t) => 380 + 320 * Math.min(1, t / 1.8),
+        q: 0.85,
+      });
+      mixInto(
+        out,
+        shape(gust, (t) => wind(t) * gusts(t)),
+        0,
+        1.6,
+      );
+      const howl = svf(noise(length, seed + 5), { type: "bpn", cutoff: howlHz, q: 10 });
+      mixInto(
+        out,
+        shape(howl, (t) => wind(t) ** 1.5 * gusts(t)),
+        0,
+        3.3,
+      );
+      mixInto(
+        out,
+        osc("sine", length, (t) => howlHz(t) * (1 + 0.006 * Math.sin(TAU * 5 * t)), {
+          amp: (t) => wind(t) ** 2,
+        }),
+        0,
+        0.05,
+      );
+      return trimTail(highpass(out, 40), -50);
     },
   },
   {

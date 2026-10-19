@@ -18,7 +18,9 @@ It writes `public/sfx/slopfight/<name>.mp3` (96 kbps) and
 `public/sfx/slopfight/manifest.json` (duration, bytes, loudness, peak, loop
 points). Rendering is deterministic: every sound is seeded from its name, so a
 re-run reproduces the files. A full render takes about 6 seconds; the set is
-about 1.3 MB. After changing a loop's length, update its loop points in
+about 1.4 MB. `--only` rewrites just those MP3s and leaves the manifest alone,
+so finish with a full render when a sound is added or changes length. After
+changing a loop's length, update its loop points in
 `src/games/slopfight/audio.ts` (the audio test checks them against the
 manifest).
 
@@ -61,7 +63,7 @@ cycles per loop, or crossfading an overrun (`crossfadeLoop`).
 | --- | --- |
 | UI | `ui-tap`, `ui-confirm`, `ui-tick` (countdown), `ui-bet`, `ui-hype` (a crowd whoop; the player stacks it) |
 | Foundry | `foundry-pop-1..3` (part pops), `foundry-inflate` (mesh re-form squeak), `foundry-ding` (name card), `foundry-shimmer` (sketch dissolve), `loop-foundry-conveyor` (4 s) |
-| Fight | `fight-strike-1..3` (Strike thwacks), `fight-grapple-lift`, `fight-grapple-slam`, `fight-trick-whiff`, `fight-trick-bonk`, `fight-slowmo`, `fight-thud-1..2` and `fight-boing` (ragdoll), `fight-crunch` (health chunk), `fight-edge-alarm`, `fight-ringout-scream` (slide whistle and a cartoon yell), `land-splash` / `land-clang` / `land-thud` (ring-out landing per arena), `fight-ko` (hit, stab and boxing bell), `fight-win` (fanfare), `fight-lose` (sad trombone), `crowd-cheer`, `crowd-gasp`, `loop-crowd-murmur` (8 s) |
+| Fight | `fight-strike-1..3` (Strike thwacks), `fight-grapple-lift`, `fight-grapple-slam`, `fight-trick-whiff`, `fight-trick-bonk`, `fight-slowmo`, `fight-thud-1..2` and `fight-boing` (ragdoll), `fight-crunch` (health chunk), `fight-edge-alarm`, `fight-ringout-scream` (slide whistle and a cartoon yell), `fight-finale` (the arena finale sting: a diminished brass stab, two alarm whoops over a timpani and snare roll, the stab a half step up), `finale-tilt` / `finale-flood` / `finale-storm` (each arena's layer under the sting: the counter's squeal, klunk and groan with crockery sliding; a pipe bursting and glugging into a rising surge; a thunder crack and rolling rumble with a howling wind swelling), `land-splash` / `land-clang` / `land-thud` (ring-out landing per arena), `fight-ko` (hit, stab and boxing bell), `fight-win` (fanfare), `fight-lose` (sad trombone), `crowd-cheer`, `crowd-gasp`, `loop-crowd-murmur` (8 s) |
 | Transitions | `trans-slam`, `trans-wipe`, `trans-letterbox` |
 | Ambience (8 s loops) | `loop-amb-garage` (drips, buzzing tube, water), `loop-amb-kitchen` (clock, fridge hum, a bird outside), `loop-amb-rooftop` (wind, distant traffic, a far horn) |
 | Music (loops, F major / D minor) | `loop-music-build` (108 BPM, 4 bars, pizzicato and xylophone), `loop-music-foundry` (100 BPM, 4 bars, machine arp), `loop-music-fight` (160 BPM, 8 bars, chase), `loop-music-result` (100 BPM, 4 bars, oom-pah) |

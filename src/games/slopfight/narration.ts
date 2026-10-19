@@ -32,6 +32,7 @@ import {
 import {
   T,
   DROP_BY_ARENA,
+  FINALE_SET,
   RING_OUT_SET,
   RESULT_SET,
   ROUND_WORDS,
@@ -609,6 +610,12 @@ export function fightBeats(fight: VoiceFight, events: readonly FightEvent[]): Fi
         break;
       case "showboat":
         add(event.t, "showboat", event.side, { sets: ["showboat"], vars: pair(event.side) });
+        break;
+      case "finale":
+        add(event.t, "finale", undefined, {
+          sets: [FINALE_SET[fight.arena]],
+          vars: { a: fight.a.name, b: fight.b.name },
+        });
         break;
       case "suddenDeath":
         add(event.t, "suddenDeath", undefined, { sets: ["suddenDeath"], vars: {} }, false);

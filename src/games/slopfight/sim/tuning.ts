@@ -119,6 +119,8 @@ export const STRIDE = 0.55;
 export const HOP_VY = 2.9;
 export const HOP_RECOVER_MS = 150;
 export const HOP_SPEED = 1.35;
+/** A fighter on its feet drifts with a push (wind, slope) at this many units/s per unit/s^2. */
+export const PUSH_DRIFT = 0.3;
 /** Pounce (hopper strike) aim error, radians-ish, scaled by 0.4 + chaos. */
 export const HOP_AIM_ERROR = 0.35;
 /** A limb reaching less than this far past the torso's front surface strikes and grabs together with the body. */
@@ -232,5 +234,9 @@ export const HEALTH_SAMPLE_MS = 250;
 export const CONTACT_GAP_MS = 400;
 /** A torso this far below the platform top inside a pit has fallen in. */
 export const PIT_DROP = 0.25;
+/** In the finale a hurt fighter flies farther: knockback x (1 + this x finale strength x share of health lost). */
+export const FINALE_HURT_KNOCKBACK = 1;
+/** In the flood, a torso this far past the waterline is swept away (a hovering flier is not). */
+export const FLOOD_SWEEP = 0.1;
 /** Near the edge, a winner moving outward faster than this (m/s) holds the bell. */
 export const BELL_SLIDE_SPEED = 0.1;

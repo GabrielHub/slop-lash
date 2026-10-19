@@ -9,11 +9,17 @@
 import { stableHash } from "../../../lib/hash";
 import {
   ARENAS,
+  dryHalfAt,
+  finaleFor,
+  finaleStrengthAt,
+  floodedGeometry,
   isOverFloor,
   isRingOut,
   platformColliders,
   ringOutDistance,
+  stormWindAt,
   windFor,
+  type Box,
   type Wind,
 } from "../arenas";
 import { BELL_HOLD_MS, SUDDEN_DEATH_MS } from "../constants";
@@ -53,7 +59,7 @@ import {
 } from "./fighter";
 import { brainSituation, fighterLive, fighterPose } from "./fighter-view";
 import { moveHit, throwHit, type HitRecord } from "./hits";
-import { createMotion } from "./motion";
+import { createMotion, type ArenaField } from "./motion";
 import { rngStream } from "./prng";
 import type { Rapier } from "./rapier";
 import * as K from "./tuning";
@@ -84,16 +90,21 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
   world.numSolverIterations = K.SOLVER_ITERATIONS;
   world.integrationParameters.numInternalPgsIterations = K.PGS_ITERATIONS;
 
+  /** The platform slab's tiles: the flood shrinks them to the dry floor. */
+  const slabs: Array<{ box: Box; collider: ReturnType<typeof world.createCollider> }> = [];
   for (const box of platformColliders(geometry)) {
     const hx = (box.max[0] - box.min[0]) / 2;
     const hy = (box.max[1] - box.min[1]) / 2;
     const hz = (box.max[2] - box.min[2]) / 2;
-    world.createCollider(
+    const collider = world.createCollider(
       R.ColliderDesc.cuboid(hx, hy, hz)
         .setTranslation(box.min[0] + hx, box.min[1] + hy, box.min[2] + hz)
         .setFriction(K.ARENA_FRICTION)
         .setCollisionGroups(groups(ARENA_GROUP, SIDE_GROUP.A | SIDE_GROUP.B)),
     );
+    if (box.max[1] === geometry.topY && box.min[1] === geometry.topY - geometry.thickness) {
+      slabs.push({ box, collider });
+    }
   }
 
   const A = createFighter(R, world, "A", input.a, resolved.A, input.b, resolved.B, arena, seed);
@@ -104,8 +115,18 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
   const wind: Wind | null = arena.dynamic.some((hazard) => hazard.id === "wind")
     ? windFor(seed)
     : null;
+  const finale = finaleFor(input.arena, seed, input.limitMs);
+  const storm = finale.spec.id === "storm" ? finale.spec : null;
+  const flood = finale.spec.id === "flood" ? finale.spec : null;
+  const tilt = finale.spec.id === "tilt" ? finale.spec : null;
+  let finaleStarted = false;
+  /** Finale strength this step, 0..1. */
+  let finaleNow = 0;
+  /** The arena as the fighters feel it this step; `updateField` moves it on. */
+  const field: ArenaField = { geometry, wind: [0, 0], slope: [0, 0] };
+  let dryHalf = geometry.halfSize;
 
-  const motion = createMotion(geometry, wind, input.limitMs);
+  const motion = createMotion(field, input.limitMs);
 
   let stepIndex = 0;
   let tMs = 0;
@@ -159,11 +180,17 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
 
   function fellIn(f: Fighter): boolean {
     const c = com(f);
-    if (isRingOut(geometry, c)) return true;
-    const half = geometry.halfSize;
+    const live = field.geometry;
+    if (isRingOut(live, c)) return true;
+    // In the flood, a torso over deep water is swept away whatever its legs still stand on (a hovering flier stays up).
+    if (live !== geometry && !(f.def.bodyPlan === "FLIER" && isActive(f))) {
+      const sweep = live.halfSize + K.FLOOD_SWEEP;
+      if (Math.abs(c[0]) > sweep || Math.abs(c[2]) > sweep) return true;
+    }
+    const half = live.halfSize;
     const inPit =
-      Math.abs(c[0]) <= half && Math.abs(c[2]) <= half && !isOverFloor(geometry, c[0], c[2]);
-    return inPit && c[1] < geometry.topY - K.PIT_DROP;
+      Math.abs(c[0]) <= half && Math.abs(c[2]) <= half && !isOverFloor(live, c[0], c[2]);
+    return inPit && c[1] < live.topY - K.PIT_DROP;
   }
 
   function refereeChecks() {
@@ -185,7 +212,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
 
     for (const f of fighters) {
       const c = com(f);
-      f.edgeDist = ringOutDistance(geometry, c[0], c[2]);
+      f.edgeDist = ringOutDistance(field.geometry, c[0], c[2]);
       f.onEdge = f.edgeDist < K.EDGE_WARN;
       if (f.edgeDist > K.EDGE_REARM) {
         f.edgeArmed = true;
@@ -254,9 +281,11 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     f.modeT = 0;
     f.modeDur = dur;
     if (mode !== "move") f.move = null;
+    // A flier knocked out of the air floats down, but not in the finale's
+    // weather: by full strength it drops like anything else.
     const gravity =
       f.def.bodyPlan === "FLIER" && (mode === "stagger" || mode === "held")
-        ? K.FLIER_STAGGER_GRAVITY
+        ? K.FLIER_STAGGER_GRAVITY + (1 - K.FLIER_STAGGER_GRAVITY) * finaleNow
         : 1;
     if (gravity !== f.gravityScale) {
       f.gravityScale = gravity;
@@ -338,7 +367,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
         : move.type === "GRAPPLE"
           ? K.GRAPPLE_APPROACH_MS
           : K.TRICK_SETUP_MS * jitter;
-    const edge = edgeGradient(geometry, com(f)[0], com(f)[2]);
+    const edge = edgeGradient(field.geometry, com(f)[0], com(f)[2]);
     const dir = flatDir(f, foeOf(f));
     // Dodge sideways, away from the nearest drop when there is one close.
     const perpDot = -dir[1] * edge[0] + dir[0] * edge[1];
@@ -719,7 +748,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
       return;
     }
     foe.heldBy = null;
-    hitsThisStep.push(throwHit(f, foe, geometry));
+    hitsThisStep.push(throwHit(f, foe, field.geometry));
     enterPhase(f, "recover", K.GRAPPLE_THROW_RECOVER_MS / f.speedMul);
   }
 
@@ -736,10 +765,13 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
       const throwing = hit.kind === "throw";
       const up = throwing ? K.THROW_UP : K.KB_UP;
       const impulseScale = Math.sqrt(K.KB_MASS_REF * def.def.totalMass);
-      const j = hit.dv * impulseScale;
+      // In the finale a hurt fighter flies farther.
+      const hurt = 1 + K.FINALE_HURT_KNOCKBACK * finaleNow * (1 - def.health / def.maxHealth);
+      const dv = hit.dv * hurt;
+      const j = dv * impulseScale;
       def.dragGraceMs = K.DRAG_GRACE_MS;
       if (throwing) {
-        def.launch = [hit.dir[0] * hit.dv, up * hit.dv, hit.dir[2] * hit.dv];
+        def.launch = [hit.dir[0] * dv, up * dv, hit.dir[2] * dv];
       } else {
         def.impulses.push({ j: [hit.dir[0] * j, up * j, hit.dir[2] * j] });
       }
@@ -853,7 +885,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     if (f.edgeDist >= K.EDGE_WARN) return false;
     const c = com(f);
     const v = f.st[0]!.v;
-    const outward = (f.edgeDist - ringOutDistance(geometry, c[0] + v[0] * 0.1, c[2] + v[2] * 0.1)) / 0.1;
+    const outward = (f.edgeDist - ringOutDistance(field.geometry, c[0] + v[0] * 0.1, c[2] + v[2] * 0.1)) / 0.1;
     return outward > K.BELL_SLIDE_SPEED;
   }
 
@@ -967,6 +999,49 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     }
   }
 
+  // --- the arena field ---------------------------------------------------------
+
+  /**
+   * Moves the arena on to this step: the wind's gusts and the finale (the
+   * counter's tilt, the flood's shrinking floor, the storm). The finale holds
+   * where it was once the fight is decided.
+   */
+  function updateField() {
+    const s = finaleStrengthAt(finale, outcome ? outcome.endMs : tMs);
+    finaleNow = s;
+    // Called once, and only while the fight is on: not after the bell.
+    if (s > 0 && !finaleStarted && !done && !held) {
+      finaleStarted = true;
+      emit({ t: tMs, kind: "finale", side: null });
+    }
+    if (wind) {
+      const w = stormWindAt(wind, storm, s, tMs);
+      field.wind = [wind.direction[0] * wind.accel * w, wind.direction[1] * wind.accel * w];
+    }
+    if (tilt && finale.direction) {
+      field.slope = [finale.direction[0] * tilt.accel * s, finale.direction[1] * tilt.accel * s];
+    }
+    if (flood) {
+      const dry = dryHalfAt(geometry, flood, s);
+      if (dry !== dryHalf) {
+        dryHalf = dry;
+        field.geometry = floodedGeometry(geometry, dry);
+        for (const { box, collider } of slabs) {
+          const x0 = Math.max(box.min[0], -dry);
+          const x1 = Math.min(box.max[0], dry);
+          const z0 = Math.max(box.min[2], -dry);
+          const z1 = Math.min(box.max[2], dry);
+          if (x1 <= x0 || z1 <= z0) {
+            collider.setEnabled(false);
+            continue;
+          }
+          collider.setHalfExtents({ x: (x1 - x0) / 2, y: (box.max[1] - box.min[1]) / 2, z: (z1 - z0) / 2 });
+          collider.setTranslation({ x: (x0 + x1) / 2, y: (box.min[1] + box.max[1]) / 2, z: (z0 + z1) / 2 });
+        }
+      }
+    }
+  }
+
   // --- the step ----------------------------------------------------------------
 
   function step(): FightEvent[] {
@@ -975,6 +1050,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
     if (stepIndex > 0) stepEvents = [];
     stepIndex += 1;
     tMs = Math.round(stepIndex * K.STEP_MS);
+    updateField();
     readState(A);
     readState(B);
     A.reachGap = surfaceReach(A, B);
@@ -993,7 +1069,7 @@ export function createFight(R: Rapier, input: FightInput): FightSim {
       motion.locomotion(f, foeOf(f), tMs, done || held !== null);
     }
     for (const f of fighters) motion.servo(f, foeOf(f), tMs);
-    for (const f of fighters) motion.applyImpulses(f, tMs);
+    for (const f of fighters) motion.applyImpulses(f);
     world.step();
     if (!done) pushTimeline();
     return stepEvents;

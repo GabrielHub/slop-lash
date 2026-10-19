@@ -20,16 +20,27 @@
 //   fall cuts there just before the landing), then the crowd erupts with
 //   RING OUT;
 // - KO, DECISION and SUDDEN DEATH title slams; KO stars; the winner's
-//   showboat close-up in the outro.
+//   showboat close-up in the outro;
+// - the arena's finale (the last FINALE_MS): it publishes the finale's state
+//   every frame (`services.finale`, from the presented sim time, frozen at
+//   the end like the sim) and drives the rooftop's wind with the storm; at
+//   its start, the arena's sting, the title slam (TIP OVER!, HIGH TIDE!,
+//   THE STORM!), a gasp then a roar, and `edge_drama` on the fighter in the
+//   most danger. The floor lights pulse on the side it pushes toward.
+//
+// The sim's positions are flat; the kitchen's finale tips the counter, so
+// `view` (and every camera target) is the torso where the stage draws it.
 //
 // Plain class (no React); FightStage owns one per fight.
 
 import { Vector3 } from "three";
-import { ARENAS, windFor, windStrengthAt, type ArenaId } from "../../arenas";
+import { ARENAS, finaleFor, windFor, type ArenaId, type EdgeSide, type Finale } from "../../arenas";
 import { sfx, type SfxName, type SfxOptions } from "../../audio";
 import type { Side } from "../../modifiers";
 import { STEP_MS, type FightEvent } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
+import { finaleSlamText, floodDryHalf, placeOnStage, publishFinale, waterLevelAt } from "../arena/finale";
+import type { CameraAnchorName } from "../arena/nodes";
 import type { EdgeAlerts, StageServices } from "../services";
 import { ClearShotSearch, type ClearShot } from "./clearance";
 import type { FxSystem } from "./fx";
@@ -38,6 +49,9 @@ import type { SampledFighter } from "./recording";
 
 const other = (side: Side): Side => (side === "A" ? "B" : "A");
 const SIDES: readonly Side[] = ["A", "B"];
+const EDGE_CODES: ReadonlyArray<keyof EdgeAlerts> = ["N", "E", "S", "W"];
+/** arenas.ts edge names to the floor lights' compass codes. */
+const EDGE_CODE: Record<EdgeSide, keyof EdgeAlerts> = { front: "S", back: "N", left: "W", right: "E" };
 
 /** Debt (ms behind the server) that asks for a repaying cut. */
 const DEBT_CUT_MS = 900;
@@ -87,6 +101,29 @@ const SLOWMO_LOW_HEALTH = 0.3;
 const SLOWMO_FINISH_GAP_S = 1.5;
 /** An edge shot cuts in over a ragdoll follow or a stale fight shot, but not twice for one side this close together (real s). */
 const EDGE_FORCE_GAP_S = 3;
+/** The finale's edge shot follows its slam by this long (real s): the wide shot shows the arena turn first. */
+const FINALE_EDGE_SHOT_S = 1.5;
+/**
+ * It waits for a fighter this close (m) to the edge the finale pushes toward
+ * (or to the waterline), looking again every FINALE_EDGE_RETRY_S for this many
+ * tries; with nobody near, the wide shot keeps showing the arena.
+ */
+const FINALE_EDGE_NEAR = 1.2;
+const FINALE_EDGE_RETRY_S = 0.4;
+const FINALE_EDGE_TRIES = 12;
+/** Each edge's anchor, for the finale's edge shot toward where it pushes. */
+const EDGE_ANCHOR: Record<EdgeSide, CameraAnchorName> = { front: "Cam_Edge_S", back: "Cam_Edge_N", left: "Cam_Edge_W", right: "Cam_Edge_E" };
+/** The finale's slam sub-line. */
+function finaleSub(finale: Finale): string {
+  switch (finale.spec.id) {
+    case "tilt":
+      return `The counter tips ${finale.edge ?? "over"}!`;
+    case "flood":
+      return "The water is rising!";
+    case "storm":
+      return "Hold on to something!";
+  }
+}
 
 export interface ConductorOptions {
   services: StageServices;
@@ -113,7 +150,10 @@ interface Pending {
 }
 
 export class FightConductor {
+  /** Torso positions in sim space (flat). */
   readonly torso: Record<Side, Vector3> = { A: new Vector3(), B: new Vector3() };
+  /** Torso positions where the stage draws them (tipped with the kitchen counter); camera targets use these. */
+  readonly view: Record<Side, Vector3> = { A: new Vector3(), B: new Vector3() };
   /** The KO'd fighter, once down (KO stars). */
   koSide: Side | null = null;
   /** A fighter that left the stage (its bar flicks off). */
@@ -145,6 +185,7 @@ export class FightConductor {
   /** A long fall's early cut to its landing shot happened. */
   private deepCut = false;
   private readonly wind;
+  private readonly finale: Finale;
   private readonly unsubscribe: Array<() => void> = [];
   private readonly tmp = new Vector3();
   private readonly tmp2 = new Vector3();
@@ -153,9 +194,10 @@ export class FightConductor {
 
   constructor(options: ConductorOptions) {
     this.o = options;
-    const { drivers } = options.player;
+    const { drivers, input } = options.player;
     this.pair = { targets: this.targets, subjectHeight: Math.max(drivers.A.height, drivers.B.height) };
-    this.wind = options.arena === "ROOFTOP" ? windFor(options.player.input.seed) : null;
+    this.wind = ARENAS[options.arena].dynamic.some((hazard) => hazard.id === "wind") ? windFor(input.seed) : null;
+    this.finale = finaleFor(options.arena, input.seed, input.limitMs);
   }
 
   // --- lifecycle -------------------------------------------------------------
@@ -176,6 +218,8 @@ export class FightConductor {
     const { services } = this.o;
     for (const key of Object.keys(services.edgeAlerts) as Array<keyof EdgeAlerts>) services.edgeAlerts[key] = 0;
     services.wind.driven = false;
+    // The set eases the finale back to calm (under the next phase's wipe).
+    services.finale.driven = false;
   }
 
   /** The base shot's targets: both torsos, held over the platform when one falls away. */
@@ -190,7 +234,12 @@ export class FightConductor {
   private clampTarget(source: Vector3, out: Vector3): Vector3 {
     const half = ARENAS[this.o.arena].geometry.halfSize + 0.4;
     out.set(Math.max(-half, Math.min(half, source.x)), Math.max(0, Math.min(2.5, source.y)), Math.max(-half, Math.min(half, source.z)));
-    return out;
+    return this.place(out);
+  }
+
+  /** A sim-space point to where the stage draws it, in place. */
+  private place(point: Vector3): Vector3 {
+    return placeOnStage(this.o.services.finale, point);
   }
 
   // --- sound -------------------------------------------------------------------
@@ -235,11 +284,14 @@ export class FightConductor {
     }
     const played = player.update(target, clock.delta, this.skipped);
     this.skipped = null;
+    // The finale at the presented time, frozen at the end like the sim.
+    publishFinale(services.finale, this.o.arena, this.finale, this.wind, player.t, player.result?.endMs ?? null);
     const samples = player.samples;
     if (samples) {
       for (const side of SIDES) {
         const p = samples[side].root.p;
         this.torso[side].set(p[0], p[1], p[2]);
+        this.place(this.view[side].copy(this.torso[side]));
       }
     }
     for (const { event, fresh } of played) this.onEvent(event, fresh);
@@ -284,13 +336,24 @@ export class FightConductor {
         alerts[code] = Math.max(alerts[code], this.edge[side]);
       }
     }
-    for (const key of Object.keys(alerts) as Array<keyof EdgeAlerts>) services.edgeAlerts[key] = alerts[key];
+    // The finale: the lights pulse on the edge it pushes toward (all round as the water rises).
+    const finale = services.finale;
+    if (finale.strength > 0 && this.koSide === null && this.outSide === null) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.realTime * 6);
+      if (this.finale.edge) {
+        const code = EDGE_CODE[this.finale.edge];
+        alerts[code] = Math.max(alerts[code], finale.strength * (0.25 + 0.5 * pulse));
+      } else {
+        for (const code of EDGE_CODES) alerts[code] = Math.max(alerts[code], finale.strength * (0.2 + 0.2 * pulse));
+      }
+    }
+    for (const key of EDGE_CODES) services.edgeAlerts[key] = alerts[key];
 
-    // The rooftop's gusts move the laundry with the sim's wind.
+    // The rooftop's gusts move the laundry with the sim's wind (the storm's, in the finale).
     if (this.wind) {
       services.wind.x = this.wind.direction[0];
       services.wind.z = this.wind.direction[1];
-      services.wind.strength = windStrengthAt(this.wind, Math.max(0, t));
+      services.wind.strength = finale.wind;
       services.wind.driven = true;
     }
 
@@ -341,7 +404,7 @@ export class FightConductor {
     if (result && !this.outroCut && settledDust) {
       this.outroCut = true;
       const winner = result.winner;
-      director.request("fight_close", { targets: [() => this.torso[winner]], priority: 4, hold: 3, force: true });
+      director.request("fight_close", { targets: [() => this.view[winner]], priority: 4, hold: 3, force: true });
     }
 
     // A deep drop's landing shot: search the set for a clear angle while the victim falls.
@@ -455,6 +518,9 @@ export class FightConductor {
           this.play("crowdCheer", { intensity: 0.3, gain: 0.55 });
         }
         break;
+      case "finale":
+        this.onFinale(fresh);
+        break;
       case "suddenDeath":
         this.slam("SUDDEN DEATH", "First hit wins");
         break;
@@ -489,11 +555,13 @@ export class FightConductor {
     const { services, fx } = this.o;
     const director = services.director;
     const point = this.impactPoint(event).clone();
+    // Effects place themselves; the impact frame and the camera take the drawn point.
+    const shown = this.place(point.clone());
     const strength = Math.min(1, Math.max(0.15, event.damage / 30));
     const big = event.big;
     const victim = other(event.side);
     const slowmo = big && this.slowmoFor(event);
-    services.impact({ point, strength, big: slowmo, hitStopFrames: 4 });
+    services.impact({ point: shown, strength, big: slowmo, hitStopFrames: 4 });
     // A big hit without its slow-mo still lands harder than a plain one.
     if (big && !slowmo) director.punchIn(0.8);
     if (this.o.live) sfx.hitStop(big ? 110 : 70);
@@ -519,14 +587,14 @@ export class FightConductor {
         if (!sample || this.koSide === victim) return;
         const speed = Math.hypot(sample.velocity[0], sample.velocity[1], sample.velocity[2]);
         if (speed > 1.6 || sample.live.airborne) {
-          director.request("ragdoll_follow", { targets: [() => this.torso[victim]], priority: 2, hold: 1.4 });
+          director.request("ragdoll_follow", { targets: [() => this.view[victim]], priority: 2, hold: 1.4 });
         }
       });
     }
     if (slowmo) {
       this.play("slowMo", { intensity: 0.7 });
       const side = this.lastHitSide === event.side ? (this.hits % 2 ? "A" : "B") : event.side;
-      director.request("slowmo_orbit", { targets: [point], priority: 3, hold: 1.0, ttl: 0.35, side });
+      director.request("slowmo_orbit", { targets: [shown], priority: 3, hold: 1.0, ttl: 0.35, side });
     } else if (director.shotAge > 1.6 && this.hits % 3 === 0) {
       // Keep cutting on beats: every few hits, a fresh angle (and the debt repaid).
       director.request(director.shot === "fight_close" ? "fight_wide" : "fight_close", {
@@ -557,7 +625,7 @@ export class FightConductor {
     const { services, fx } = this.o;
     const point = this.impactPoint(event).clone();
     const strength = Math.min(1, Math.max(0.3, event.damage / 25));
-    services.impact({ point, strength, big: false, hitStopFrames: 4 });
+    services.impact({ point: this.place(point.clone()), strength, big: false, hitStopFrames: 4 });
     if (this.o.live) sfx.hitStop(90);
     fx.spark(point, { colors: this.o.colors[event.side], strength });
     this.play("grappleSlam", { intensity: 0.6 + strength * 0.35, pan: this.pan(point) });
@@ -565,7 +633,7 @@ export class FightConductor {
     const victim = other(event.side);
     this.later(0.7, () => {
       if (this.koSide === victim) return;
-      services.director.request("ragdoll_follow", { targets: [() => this.torso[victim]], priority: 2, hold: 1.3, ttl: 0.4 });
+      services.director.request("ragdoll_follow", { targets: [() => this.view[victim]], priority: 2, hold: 1.3, ttl: 0.4 });
     });
   }
 
@@ -582,8 +650,87 @@ export class FightConductor {
     const shot = director.shot;
     const stale = (shot === "fight_wide" || shot === "fight_close") && director.shotAge > 0.5;
     const force = (shot === "ragdoll_follow" || stale) && this.realTime - this.lastEdgeShot[side] >= EDGE_FORCE_GAP_S;
-    const result = director.request("edge_drama", { targets: [() => this.torso[side]], priority: 3, hold: 1.6, force });
+    const result = director.request("edge_drama", { targets: [() => this.view[side]], priority: 3, hold: 1.6, force });
     if (result === "cut") this.lastEdgeShot[side] = this.realTime;
+  }
+
+  /**
+   * The finale starts: the arena's sting, its title, a gasp and then a roar,
+   * a jolt; the wide shot shows the whole arena turn on the fighters, then
+   * the camera finds the one in the most danger.
+   */
+  private onFinale(fresh: boolean): void {
+    if (!fresh) return;
+    const { services, arena } = this.o;
+    const spec = this.finale.spec;
+    if (this.o.live) {
+      try {
+        sfx.finale(arena, { intensity: 0.9 });
+      } catch {
+        // decoration
+      }
+    }
+    this.play("crowdGasp", { intensity: 0.8, gain: 0.85 });
+    services.director.shake(spec.id === "storm" ? 0.55 : 0.4);
+    void services.transitions.play("slam", { text: finaleSlamText(spec), sub: finaleSub(this.finale), shake: 0.7, holdMs: 1_100 });
+    this.later(0.6, () => {
+      services.cheer(0.85);
+      this.play("crowdCheer", { intensity: 0.7, gain: 0.8 });
+    });
+    const director = services.director;
+    const closeIn = director.shot === "fight_close" || director.shot === "ragdoll_follow";
+    if (!services.clock.slowMotion && closeIn && director.shotAge > 0.5) {
+      director.request("fight_wide", { targets: this.targets, priority: 2, hold: FINALE_EDGE_SHOT_S + 0.3, force: true });
+    }
+    this.later(FINALE_EDGE_SHOT_S, () => this.finaleEdgeShot());
+  }
+
+  /**
+   * `edge_drama` on the fighter the finale threatens most, once one is near
+   * its edge (it looks again for a few seconds), rationed like the edge's own
+   * shots: one per finale.
+   */
+  private finaleEdgeShot(tries = FINALE_EDGE_TRIES): void {
+    const { services, player } = this.o;
+    const director = services.director;
+    const result = player.result;
+    if (this.ringOut || this.koSide || (result && player.t >= result.endMs)) return;
+    const retry = () => {
+      if (tries > 1) this.later(FINALE_EDGE_RETRY_S, () => this.finaleEdgeShot(tries - 1));
+    };
+    // An edge shot already on screen tells the same story.
+    if (director.shot === "edge_drama") return;
+    const danger = this.finaleDanger();
+    // A big hit's slow-mo orbit owns its moment.
+    const busy = services.clock.slowMotion || director.shot === "slowmo_orbit" || director.shot === "impact_pop";
+    if (!danger || danger.margin > FINALE_EDGE_NEAR || busy) return retry();
+    const { side } = danger;
+    const shot = director.shot;
+    const stale = (shot === "fight_wide" || shot === "fight_close" || shot === "ragdoll_follow") && director.shotAge > 0.5;
+    const force = stale && this.realTime - this.lastEdgeShot[side] >= EDGE_FORCE_GAP_S;
+    const anchor = this.finale.edge ? EDGE_ANCHOR[this.finale.edge] : undefined;
+    const request = director.request("edge_drama", { targets: [() => this.view[side]], priority: 3, hold: 2, force, anchor });
+    if (request === "cut") this.lastEdgeShot[side] = this.realTime;
+    else if (request === "ignored") retry();
+  }
+
+  /**
+   * The fighter nearest the finale's danger (the downhill or downwind edge, or
+   * the waterline) and how far (m) they are from it.
+   */
+  private finaleDanger(): { side: Side; margin: number } | null {
+    const direction = this.finale.direction;
+    const geometry = ARENAS[this.o.arena].geometry;
+    const limit = direction ? geometry.halfSize : floodDryHalf(this.o.services.finale, geometry);
+    let best: { side: Side; margin: number } | null = null;
+    for (const side of SIDES) {
+      if (side === this.outSide || side === this.koSide) continue;
+      const p = this.torso[side];
+      const reach = direction ? p.x * direction[0] + p.z * direction[1] : Math.max(Math.abs(p.x), Math.abs(p.z));
+      const margin = limit - reach;
+      if (!best || margin < best.margin) best = { side, margin };
+    }
+    return best;
   }
 
   private onRingOut(side: Side, t: number): void {
@@ -598,7 +745,7 @@ export class FightConductor {
     const lead = new Vector3();
     const target = () => {
       const velocity = this.o.player.samples?.[side].velocity ?? [0, 0, 0];
-      return lead.set(this.torso[side].x + velocity[0] * 0.12, this.torso[side].y + Math.min(0, velocity[1]) * 0.22, this.torso[side].z + velocity[2] * 0.12);
+      return this.place(lead.set(this.torso[side].x + velocity[0] * 0.12, this.torso[side].y + Math.min(0, velocity[1]) * 0.22, this.torso[side].z + velocity[2] * 0.12));
     };
     const follow = () => director.request("ragdoll_follow", { targets: [target], priority: 5, hold: 3.2, force: true });
     if (director.shot === "edge_drama" && director.shotAge < 2.5) {
@@ -671,7 +818,8 @@ export class FightConductor {
       }
     }
     if (geometry.surround.kind === "water") {
-      point.y = geometry.surround.y;
+      // At the water's surface as it is now (the flood raises it over the pad).
+      point.y = waterLevelAt(services.finale, geometry, point.x, point.z);
       fx.splash(point);
     } else {
       fx.puff(point, { color: this.o.dust, count: 10, size: 0.28, spread: 1.6 });
@@ -679,7 +827,7 @@ export class FightConductor {
     services.director.shake(0.35);
     // Two beats of silence, the camera and the iris holding on the victim; the
     // iris opens as RING OUT! slams in (the slam is drawn under the iris).
-    const victim = () => this.torso[side];
+    const victim = () => this.view[side];
     const hold = silenceMs / 1000 + RINGOUT_SLAM_HOLD_S;
     const closeMs = Math.min(RINGOUT_IRIS_CLOSE_MS, silenceMs * 0.6);
     if (point.y < geometry.topY - DEEP_DROP) {
@@ -693,7 +841,7 @@ export class FightConductor {
         search?.step(DEEP_SEARCH_BUDGET_MS * 2);
         const shot: ClearShot | null = search?.best ?? null;
         const shift = shot?.shift ?? null;
-        const target = shift ? () => this.deepTarget.copy(this.torso[side]).add(shift) : victim;
+        const target = shift ? () => this.deepTarget.copy(this.view[side]).add(shift) : victim;
         services.director.request("fight_close", { targets: [target], priority: 5, hold, force: true, from: shot?.from });
       });
     } else {
@@ -701,7 +849,7 @@ export class FightConductor {
     }
     if (this.o.live) sfx.duck(0.04, silenceMs);
     void services.transitions.play("iris", {
-      target: () => this.torso[side],
+      target: () => this.view[side],
       radius: 0.24,
       closeMs,
       holdMs: silenceMs - closeMs,
@@ -717,7 +865,7 @@ export class FightConductor {
     this.later(0.3, () => this.erupt("K.O.!", side));
     this.later(1.1, () => {
       if (this.outSide) return;
-      services.director.request("ragdoll_follow", { targets: [() => this.torso[side]], priority: 3, hold: 1.8 });
+      services.director.request("ragdoll_follow", { targets: [() => this.view[side]], priority: 3, hold: 1.8 });
     });
   }
 
