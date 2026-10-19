@@ -1,35 +1,72 @@
 // The face-off's timing and content, as plain functions (unit-tested): the
-// walk-on schedule sized to each line, the walk arc from the roster mark to
-// the face-off mark, which hazard card to hang, and how a matchup note reads.
+// walk to the marks under the slam, The Voice's lines in turn, the walk arc
+// from the roster mark to the face-off mark, which hazard card to hang, and
+// how a matchup note reads.
 
 import { MathUtils, type Vector3, type Vector3Tuple } from "three";
 import { ARENAS, type ArenaId, type Hazard } from "../../arenas";
 import { formatEffect, MODIFIER_SPECS, type ModifierKey, type Side } from "../../modifiers";
-import { speechMs } from "../../narration";
+import { scheduleLines, speechMs, type TimedVoiceLine, type VoiceLine } from "../../narration";
 import type { Champion } from "../../sheet";
 import type { FightRow } from "./feed";
 
 export interface FaceOffPlan {
-  /** Seconds from the phase start: each walk-on segment [start, end). */
+  /** Seconds from the phase start: each champion's walk to its mark [start, end). */
   walk: Record<Side, [number, number]>;
-  /** The slam and face_off_low. */
+  /** Both on their marks. */
   standAt: number;
   /** The hazard card; notes follow NOTE_GAP_S apart. */
   cardsAt: number;
+  /** The Voice's face-off call; the walk-on lines follow it in turn. */
+  callAt: number;
 }
 
 export const NOTE_GAP_S = 0.5;
 export const SIDE_SWAP_S = 3.4;
+/** Silence between The Voice's face-off lines. */
+export const FACE_OFF_LINE_GAP_MS = 500;
 
 /**
- * Walk-ons long enough for their line (the face-off can close after 8 s when
- * every bet is in, so the whole entrance stays under ~5.5 s).
+ * The face-off opens on the slam (the stage's entry for the phase): both
+ * champions walk from their roster marks to the fight's spawns together,
+ * under it, a step apart, and the cards follow once they stand. The low
+ * face-off holds from the first frame.
  */
-export function faceOffPlan(walkOn: readonly string[] | null): FaceOffPlan {
-  const length = (text: string | undefined) => (text ? MathUtils.clamp(speechMs(text) + 250, 1_700, 2_600) / 1000 : 1.7);
-  const a = length(walkOn?.[0]);
-  const b = length(walkOn?.[1]);
-  return { walk: { A: [0, a], B: [a, a + b] }, standAt: a + b, cardsAt: a + b + 0.45 };
+export const FACE_OFF_PLAN: FaceOffPlan = {
+  walk: { A: [0.2, 2.2], B: [0.3, 2.3] },
+  standAt: 2.3,
+  cardsAt: 2.75,
+  callAt: 0.35,
+};
+
+/**
+ * What The Voice reads at a face-off: both champions' walk-on lines once the
+ * matchup has written them (the slam already named the pair, and a call
+ * first would push the second walk-on past an early close), else the call.
+ * The Final and third place keep their call first: it says what is at stake.
+ */
+export function faceOffLines(lines: readonly VoiceLine[], stakes: boolean): VoiceLine[] {
+  const walkOns = lines.filter((line) => line.beat === "walkOn");
+  return walkOns.length === 2 && !stakes ? walkOns : [...lines];
+}
+
+/**
+ * The face-off's lines laid end to end from `fromMs` (the call first, then
+ * each walk-on), skipping lines already placed; `endMs` is where the next
+ * line may start.
+ */
+export function chainFaceOffLines(
+  lines: readonly VoiceLine[],
+  placed: ReadonlySet<string>,
+  fromMs: number,
+): { timed: TimedVoiceLine[]; endMs: number } {
+  const timed = scheduleLines(
+    lines.filter((line) => !placed.has(line.key)),
+    fromMs,
+    FACE_OFF_LINE_GAP_MS,
+  );
+  const last = timed.at(-1);
+  return { timed, endMs: last ? last.at + speechMs(last.text) + FACE_OFF_LINE_GAP_MS : fromMs };
 }
 
 export interface WalkPath {

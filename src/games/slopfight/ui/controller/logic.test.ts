@@ -5,6 +5,8 @@ import { preserveUpgrade } from "../../ai/upgrade";
 import { SAMPLES } from "../../samples";
 import {
   applyLocal,
+  betsWaiting,
+  championsWaiting,
   enqueueClear,
   enqueueStroke,
   enqueueUndo,
@@ -129,5 +131,30 @@ describe("material starters", () => {
         );
       }
     }
+  });
+});
+
+describe("waiting lines", () => {
+  it("counts champions not yet done at this round's version", () => {
+    const fighters = [
+      { status: "READY", version: 2 },
+      { status: "READY", version: 1 },
+      { status: "FORGING", version: 1 },
+    ];
+    expect(championsWaiting(fighters, 2)).toBe("Waiting on 2 more champions");
+    expect(championsWaiting(fighters.slice(0, 2), 2)).toBe("Waiting on one more champion");
+    expect(championsWaiting(fighters.slice(0, 2), 0)).toBe("All forged. Eyes on the TV");
+  });
+
+  it("counts the players here who have not bet", () => {
+    const players = [
+      { id: "a", type: "HUMAN", online: true },
+      { id: "b", type: "HUMAN", online: true },
+      { id: "c", type: "HUMAN", online: false },
+      { id: "d", type: "AI", online: true },
+    ];
+    expect(betsWaiting(players, { A: [], B: [] })).toBe("Waiting on 2 more bets");
+    expect(betsWaiting(players, { A: ["a"], B: [] })).toBe("Waiting on one more bet");
+    expect(betsWaiting(players, { A: ["a"], B: ["b"] })).toBe("All bets in. Fight starts soon");
   });
 });

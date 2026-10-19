@@ -79,37 +79,24 @@ export interface RosterBeat {
   start: number;
   /** Scene seconds it reaches its mark. */
   arrive: number;
-  /** The camera's walk-on track starts... */
-  trackAt: number;
-  /** ...and holds this long before returning to the roster wide. */
-  trackHold: number;
   /** Its roster card starts rising. */
   cardAt: number;
-  /** The Voice reads it. */
-  sayAt: number;
 }
 
-/** The roster wide before the first walk-on (s). */
-export const ROSTER_FIRST_S = 1.5;
-/** Seconds on the roster wide between walk-ons (the card rises here). */
-export const ROSTER_WIDE_S = 1.6;
-/** The track starts once the walker is clear of its pedestal neighbours. */
-export const ROSTER_TRACK_DELAY_S = HOP_DOWN_S * 0.6;
-/** The track ends this long before the walker arrives (the wide shows the arrival). */
-export const ROSTER_TRACK_LEAD_S = 0.8;
-/** The director's minimum shot length, plus a margin. */
-const MIN_TRACK_S = 1.3;
+/** Scene seconds the first walker sets off (the entry wipe is opening). */
+export const ROSTER_FIRST_S = 0.4;
+/** Seconds between walkers setting off: they walk out together, a step apart. */
+export const ROSTER_STAGGER_S = 0.3;
+/** The Voice's one line for the round, once the walk-out is under way. */
+export const ROSTER_LINE_S = 0.8;
+/** A card starts rising this long before its champion reaches the mark. */
+const CARD_LEAD_S = 0.45;
 
-/** One walk-on after another: track the walker, cut wide for its arrival and card, then the next. */
+/** All four walk out together on the roster wide, a step apart; each card rises as its champion arrives. */
 export function rosterSchedule(durations: readonly number[]): RosterBeat[] {
-  const beats: RosterBeat[] = [];
-  let start = ROSTER_FIRST_S;
-  for (const duration of durations) {
+  return durations.map((duration, index) => {
+    const start = ROSTER_FIRST_S + index * ROSTER_STAGGER_S;
     const arrive = start + duration;
-    const trackAt = start + ROSTER_TRACK_DELAY_S;
-    const wideAt = Math.max(trackAt + MIN_TRACK_S, arrive - ROSTER_TRACK_LEAD_S);
-    beats.push({ start, arrive, trackAt, trackHold: wideAt - trackAt, cardAt: Math.max(wideAt + 0.15, arrive - 0.45), sayAt: arrive });
-    start = wideAt + ROSTER_WIDE_S - ROSTER_TRACK_DELAY_S;
-  }
-  return beats;
+    return { start, arrive, cardAt: arrive - CARD_LEAD_S };
+  });
 }

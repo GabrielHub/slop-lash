@@ -528,9 +528,11 @@ export async function createRoundFights(
   }
 }
 
-/** Walk-on lines when the matchup call wrote none: each champion's own. */
-export function fallbackWalkOn(a: Champion | null, b: Champion | null): string[] {
-  return [a?.narration.walkOn[0] ?? "", b?.narration.walkOn[0] ?? ""];
+/** Walk-on lines when the matchup call wrote none: each champion's own for the round. */
+export function fallbackWalkOn(a: Champion | null, b: Champion | null, round: number): string[] {
+  const own = (champion: Champion | null) =>
+    champion?.narration.walkOn[round - 1] ?? champion?.narration.walkOn[0] ?? "";
+  return [own(a), own(b)];
 }
 
 /** Runs the server sim for a fight (again), unless it already has an outcome. */
@@ -559,7 +561,7 @@ export async function abandonMatchup(ctx: MutationCtx, fight: Fight): Promise<Fi
     ctx.db.get("slopFightFighters", fight.a),
     ctx.db.get("slopFightFighters", fight.b),
   ]);
-  const walkOn = fallbackWalkOn(a && championOf(a), b && championOf(b));
+  const walkOn = fallbackWalkOn(a && championOf(a), b && championOf(b), fight.round);
   await ctx.db.patch("slopFightFights", fight._id, { matchup: "FAILED", walkOn });
   return { ...fight, matchup: "FAILED", walkOn };
 }

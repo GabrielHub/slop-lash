@@ -22,6 +22,7 @@ import {
   startForge,
   type Fighter,
 } from "./data";
+import { queueMatchups } from "./mode";
 import {
   arenaIdValidator,
   bodyPlanValidator,
@@ -197,6 +198,8 @@ export const applyForge = internalMutation({
         });
         // The stage reveals it now; the phase holds for that and is re-checked when it ends.
         await settleAfterReveals(ctx, game, await loadFighters(ctx, game._id));
+        // Its fight's matchup can start while the others are still forging.
+        await queueMatchups(ctx, game);
       } else {
         await ctx.db.patch("slopFightFighters", fighter._id, {
           ...done,

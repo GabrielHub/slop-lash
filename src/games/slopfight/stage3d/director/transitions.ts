@@ -161,6 +161,12 @@ export class TransitionController {
     return kind ? this.running.has(kind) : this.running.size > 0;
   }
 
+  /** Is a transition still on its way to its covered moment (its swap not made yet)? */
+  isCovering(): boolean {
+    for (const run of this.running.values()) if (!run.covered) return true;
+    return false;
+  }
+
   play<K extends TransitionKind>(kind: K, options: TransitionOptionMap[K]): Promise<void> {
     this.finish(kind);
     return new Promise<void>((resolve) => {

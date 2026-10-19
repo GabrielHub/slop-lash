@@ -23,7 +23,7 @@ import {
   type FighterView,
 } from "./shared";
 import { ChampionSilhouette } from "./silhouette";
-import { withStarter } from "./logic";
+import { championsWaiting, withStarter } from "./logic";
 import { MaterialStarters } from "./materials";
 import { useStrokeSync, type StrokeSync } from "./use-strokes";
 
@@ -451,7 +451,7 @@ function useTypingPing() {
 // ---------------------------------------------------------------------------
 
 export function BuildScreen() {
-  const { fighter } = useMine();
+  const { mode, fighter } = useMine();
   const saw = useSawForging(fighter?.status);
   if (!fighter) return <Spectating />;
   if (fighter.status === "FORGING") return <ForgingScreen fighter={fighter} />;
@@ -460,7 +460,7 @@ export function BuildScreen() {
       <ReadyScreen
         champion={fighter.champion}
         landed={saw}
-        footer="Watch it come alive on the TV"
+        footer={championsWaiting(mode.fighters, 0)}
       />
     );
   }
@@ -598,7 +598,7 @@ function BuildWork({ fighter }: { fighter: FighterView }) {
 /** The upgrade phase and the Foundry that follows it, for this phone's fighter. */
 export function UpgradeScreen() {
   const { view } = useRoom();
-  const { fighter } = useMine();
+  const { mode, fighter } = useMine();
   const round = view.room.round;
   const saw = useSawForging(fighter?.status);
   if (!fighter?.champion) return <Spectating />;
@@ -612,7 +612,7 @@ export function UpgradeScreen() {
         previous={added ? fighter.previous : null}
         kept={!added}
         landed={saw}
-        footer={view.room.phase === "FOUNDRY" ? "Waiting for the other champions" : undefined}
+        footer={championsWaiting(mode.fighters, round)}
       />
     );
   }
@@ -623,7 +623,7 @@ export function UpgradeScreen() {
         champion={fighter.champion}
         kept
         landed={false}
-        footer="Waiting for the other champions"
+        footer={championsWaiting(mode.fighters, round)}
       />
     );
   }

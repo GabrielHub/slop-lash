@@ -50,21 +50,23 @@ export const T = {
     "The Foundry improved {x}. Allegedly.",
     "{x} has evolved. Darwin is furious.",
   ],
-  roster: [
-    "{x}, the {plan}. {Trait} and proud of it.",
-    "Next up, {x}. Stats say yes. Vibes say maybe.",
-    "{x} is here, and somehow still {trait}.",
-    "{x} walks out like it owns the place. It does not.",
-    "{x}, a {plan} with a plan. Probably.",
-    "It's {x}. The crowd pretends to know it.",
-    "{x} trained for this. For about four seconds.",
-    "Please welcome {x}, brought to you by {owner}.",
-    "{x} brought a {item}. Bold choice. Correct choice.",
-    "{x} enters {arena}. Mistake or masterpiece?",
-    "Here's {x}. Lower your expectations accordingly.",
-    "{x} is back, and still very {trait}.",
-    "{x}: one {plan}, zero chill.",
-    "Look alive, everyone. It's {x}.",
+  // The line-up: one line for the round, where it is and who opens it.
+  lineupFirst: [
+    "Round one, {arena}. Two fights. Bet on both.",
+    "{a} versus {b} opens the night. Phones out.",
+    "Round one: {a} and {b} first. Get your bets in.",
+    "Two fights in {arena}. Bet on every one.",
+  ],
+  lineup: [
+    "Round {n}, {arena}. {a} and {b} go first.",
+    "Round {n}. Same champions, worse ideas.",
+    "Round {n} opens with {a} versus {b}.",
+    "Welcome to {arena}. Round {n}, two fights.",
+  ],
+  lineupFinal: [
+    "Last stop, {arena}. Third place first, then the Final.",
+    "Round three. Third place, then the Final for double points.",
+    "The last round. Bets on the Final pay double.",
   ],
   faceOff: [
     "{a} versus {b}. Place your bets.",

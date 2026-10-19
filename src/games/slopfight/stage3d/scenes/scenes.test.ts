@@ -9,6 +9,7 @@ import { clearShift, overlapArea } from "./clearance";
 import { doodleFromChampion, hashString, LAB_ROW_STROKES, revealStrokes, sampleFor, sampleStream, syntheticDoneAt, syntheticPartial, SYNTH_FIRST_PART_MS } from "./dev-feed";
 import { pedestalCast, popInterval, POP_RATE, POP_RATE_BURST, SETTLED_AFTER_MS, settledForgeAtMount } from "./forge-plan";
 import { buildSceneData, fighterLabel, fighterPoints, needsSynthetic, podiumFighters, standingsRows, type SceneData, type SceneFighter } from "./scene-data";
+import { ROSTER_SECONDS } from "../../constants";
 import { HOP_DOWN_S, pedestalWalk, rosterSchedule, walkDuration, walkPose } from "./walk";
 
 function sceneData(fixture: string): SceneData {
@@ -200,18 +201,18 @@ describe("walk-ons", () => {
     expect(end.yaw).toBeCloseTo(0.2, 5);
   });
 
-  it("schedules one walk-on after another inside the roster phase, each track long enough to cut to", () => {
+  it("walks all four out together, a step apart, with every card up well before the face-off", () => {
     const durations = [0, 1, 2, 3].map((slot) => walkDuration(pedestalWalk([7.5, 0.75, [-2.75, -0.92, 0.92, 2.75][slot]!], [-2.25 + 1.5 * slot, 0, -0.4], 0)));
     const beats = rosterSchedule(durations);
     expect(beats).toHaveLength(4);
     beats.forEach((beat, index) => {
-      expect(beat.trackHold).toBeGreaterThanOrEqual(1.2);
-      expect(beat.cardAt).toBeGreaterThan(beat.trackAt + beat.trackHold);
-      expect(beat.sayAt).toBe(beat.arrive);
-      if (index > 0) expect(beat.start).toBeGreaterThan(beats[index - 1]!.arrive);
+      expect(beat.arrive - beat.start).toBeCloseTo(durations[index]!);
+      expect(beat.cardAt).toBeLessThan(beat.arrive);
+      // Together: each sets off before the one ahead arrives.
+      if (index > 0) expect(beat.start).toBeLessThan(beats[index - 1]!.arrive);
     });
-    // The last card is up with time to spare before the face-off (ROSTER is 20 s).
-    expect(beats.at(-1)!.cardAt).toBeLessThan(16);
+    // The whole line-up is on its marks with its cards up, with seconds left to read them.
+    expect(Math.max(...beats.map((beat) => beat.arrive))).toBeLessThan(ROSTER_SECONDS - 3);
   });
 });
 

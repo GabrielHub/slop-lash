@@ -1,26 +1,28 @@
 "use client";
 
-// FACE_OFF: a match cut from the roster framing onto fighter A, who walks
-// from its roster mark to its face-off mark under a side-tracking dolly
-// (`walk_on_track`) while The Voice reads its walk-on line; then B does the
-// same; then the slam ("FACE-OFF" / "THE FINAL"), the letterboxed, Dutch-tilted
-// `face_off_low` alternating sides, the arena's hazard card and the matchup
-// notes flying in one by one between the fighters ("the Voice is thinking..."
-// while the matchup call runs), and every bet arriving as the bettor's avatar
-// tossed from the crowd onto the fighter they backed, with the count per side.
-// The fighters end on the sim's spawns, so FIGHT starts where this ends.
+// FACE_OFF: the stage slams the title and the names ("FACE-OFF" / "THE
+// FINAL", PhaseScene's entry) and this scene opens under it on the
+// letterboxed, Dutch-tilted `face_off_low`: both champions walk from their
+// roster marks to their face-off marks together while The Voice reads each
+// walk-on line (the Final and third place get their call first), the shot
+// alternating sides; the
+// arena's hazard card and the matchup notes fly in one by one between the
+// fighters ("the Voice is thinking..." while the matchup call runs), and every
+// bet arrives as the bettor's avatar tossed from the crowd onto the fighter
+// they backed, with the count per side. The fighters end on the sim's
+// spawns, so FIGHT starts where this ends.
 
 import { useFrame } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { MathUtils, Vector3, type Group, type PerspectiveCamera, type Vector3Tuple } from "three";
 import { ARENAS } from "../../arenas";
 import type { Side } from "../../modifiers";
-import type { TimedVoiceLine } from "../../narration";
 import type { Champion } from "../../sheet";
 import { buildProxyDef, loadRapier } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import type { ArenaNodes } from "../arena/nodes";
 import { Creature, createDriver, type CreatureDriver } from "../creature/creature";
+import type { ShotRequest } from "../director/director";
 import type { PhaseSceneProps } from "../scenes/phase-scene";
 import { useStage } from "../services";
 import { Card, faceZ } from "../ui3d/card";
@@ -35,7 +37,9 @@ import {
   cardBodySize,
   cardGap,
   cardGrid,
-  faceOffPlan,
+  chainFaceOffLines,
+  FACE_OFF_PLAN,
+  faceOffLines,
   HAZARD_H,
   HAZARD_W,
   NOTE_GAP_S,
@@ -56,9 +60,6 @@ import { voiceFightOf } from "./voice";
 const SIDES: readonly Side[] = ["A", "B"];
 const tmpP = new Vector3();
 const tmpV = new Vector3();
-
-/** Phase keys whose entry (match cut / wipe, the slam) already played on this stage. */
-const directed = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Timing
@@ -102,15 +103,7 @@ export function FaceOffScene({ input, nodes }: PhaseSceneProps) {
   }, []);
   if (!feed || !fight || !sheets?.A || !sheets.B) return <FaceOffWaiting nodes={nodes} />;
   return (
-    <FaceOff
-      key={fight.id}
-      feed={feed}
-      fight={fight}
-      sheets={{ A: sheets.A, B: sheets.B }}
-      phaseKey={input.phaseKey}
-      phaseStartedAt={input.phaseStartedAt}
-      nodes={nodes}
-    />
+    <FaceOff key={fight.id} feed={feed} fight={fight} sheets={{ A: sheets.A, B: sheets.B }} phaseStartedAt={input.phaseStartedAt} nodes={nodes} />
   );
 }
 
@@ -124,16 +117,15 @@ interface FaceOffProps {
   feed: FightFeed;
   fight: FightRow;
   sheets: Record<Side, Champion>;
-  phaseKey: string;
   phaseStartedAt: number | null;
   nodes: ArenaNodes | null;
 }
 
-function FaceOff({ feed, fight, sheets, phaseKey, phaseStartedAt, nodes }: FaceOffProps) {
+function FaceOff({ feed, fight, sheets, phaseStartedAt, nodes }: FaceOffProps) {
   const services = useStage();
   const [startedAt] = useState(() => phaseStartedAt ?? services.clock.now);
   const elapsed = useRef(() => (services.clock.now - startedAt) / 1000).current;
-  const plan = useMemo(() => faceOffPlan(fight.walkOn), [fight.walkOn]);
+  const plan = FACE_OFF_PLAN;
   const [mountedAt] = useState(() => elapsed());
   const arena = fight.arena;
 
@@ -152,7 +144,7 @@ function FaceOff({ feed, fight, sheets, phaseKey, phaseStartedAt, nodes }: FaceO
       let from = rosterMarkOf(nodes, slots[side]) ?? ([sign * 2.9, 0, 1.1] as [number, number, number]);
       if (Math.hypot(from[0] - to[0], from[2] - to[2]) < 0.5) from = [to[0] + sign * 1.3, 0, to[2] + 0.9];
       const control: Vector3Tuple = [(from[0] + to[0]) / 2, 0, Math.max(from[2], to[2]) + 0.9];
-      out[side] = { from, control, to, window: [plan.walk[side][0] + 0.1, plan.walk[side][1] - 0.25], restYaw: spawnOf(arena, side).yaw };
+      out[side] = { from, control, to, window: plan.walk[side], restYaw: spawnOf(arena, side).yaw };
     }
     return out;
   }, [arena, nodes, slots, plan]);
@@ -176,22 +168,27 @@ function FaceOff({ feed, fight, sheets, phaseKey, phaseStartedAt, nodes }: FaceO
   const cardsFocus = useMemo(() => () => cards, [cards]);
 
   const title = fight.isFinal ? "THE FINAL" : fight.isThirdPlace ? "THIRD PLACE" : "FACE-OFF";
-  useFaceOffDirection({ phaseKey, plan, elapsed, chest, cardsFocus, title, sub: `${sheets.A.name} vs ${sheets.B.name}`, final: fight.isFinal });
+  useFaceOffDirection({ plan, elapsed, chest, cardsFocus });
 
-  // The Voice: the walk-on lines on their segments, the face-off call with the slam.
+  // The Voice: as the slam lands, each walk-on line in turn (or the call
+  // while the matchup is still out; late walk-ons follow whatever was said).
+  const voiced = useRef({ placed: new Set<string>(), endMs: 0 });
   useEffect(() => {
     const voice = services.voice;
     const voiceFight = voiceFightOf(feed, fight);
     if (!voiceFight) return;
-    const lines = voice.voice.faceOff(voiceFight);
-    const timed: TimedVoiceLine[] = lines.map((line) => {
-      const offset = line.beat === "walkOn" ? plan.walk[line.side ?? "A"][0] + 0.2 : plan.standAt + 0.35;
-      return { ...line, at: startedAt + offset * 1000 };
-    });
-    voice.schedule(timed);
+    const said = voiced.current;
+    const from = Math.max(startedAt + plan.callAt * 1000, said.endMs, services.clock.now + 250);
+    const lines = faceOffLines(voice.voice.faceOff(voiceFight), fight.isFinal || fight.isThirdPlace);
+    const { timed, endMs } = chainFaceOffLines(lines, said.placed, from);
+    if (timed.length > 0) {
+      for (const line of timed) said.placed.add(line.key);
+      said.endMs = endMs;
+      voice.schedule(timed);
+    }
     const opening = voice.voice.fightStart(fight);
     if (opening) voice.prefetch([opening]);
-    // Once per fight (the walk-on lines arrive with the matchup; schedule dedupes by key).
+    // Once per fight, and again when the walk-on lines arrive with the matchup.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [services, fight.id, fight.walkOn, startedAt, plan]);
 
@@ -218,90 +215,43 @@ function FaceOff({ feed, fight, sheets, phaseKey, phaseStartedAt, nodes }: FaceO
 // Direction
 // ---------------------------------------------------------------------------
 
-type Segment = "A" | "B" | "stand";
-
+/**
+ * The low face-off from the first frame (the stage's slam covers the cut),
+ * framing both champions and the cards; once they stand it cuts to the other
+ * side's angle every few seconds.
+ */
 function useFaceOffDirection({
-  phaseKey,
   plan,
   elapsed,
   chest,
   cardsFocus,
-  title,
-  sub,
-  final,
 }: {
-  phaseKey: string;
   plan: FaceOffPlan;
   elapsed: () => number;
   chest: Record<Side, () => Vector3>;
   /** The hanging cards' centre: the low shots focus on them, so the notes read. */
   cardsFocus: () => Vector3;
-  title: string;
-  sub: string;
-  final: boolean;
 }) {
   const services = useStage();
-  const state = useRef<{ segment: Segment | null; side: Side; swapAt: number }>({ segment: null, side: "A", swapAt: Infinity });
+  const framing = useMemo(
+    () => (side: Side): ShotRequest => ({ side, targets: [chest.A, chest.B, cardsFocus], focus: 2 }),
+    [chest, cardsFocus],
+  );
+  const opening = useMemo(() => framing("A"), [framing]);
+  const supersede = useBaseShot("face_off_low", opening);
+  // The bars close in with the low face-off (not on a late open).
+  useEffect(() => {
+    if (elapsed() < 1.5) stageSfx(services).play("letterbox", { intensity: 0.6 });
+  }, [services, elapsed]);
+  const state = useRef({ side: "A" as Side, swapAt: plan.standAt + SIDE_SWAP_S });
   useFrame(() => {
-    const { director, transitions, clock } = services;
-    const sfx = stageSfx(services);
     const t = elapsed();
     const s = state.current;
-    const segment: Segment = t < plan.walk.B[0] ? "A" : t < plan.standAt ? "B" : "stand";
-    if (segment === s.segment) {
-      // Hold the low face-off, cutting to the other side's angle now and then.
-      if (segment === "stand" && t >= s.swapAt && !transitions.isPlaying()) {
-        s.side = s.side === "A" ? "B" : "A";
-        s.swapAt = t + SIDE_SWAP_S;
-        director.setBase("face_off_low", { side: s.side, targets: [chest.A, chest.B, cardsFocus], focus: 2 });
-      }
-      return;
-    }
-    const entry = s.segment === null && !directed.has(phaseKey);
-    directed.add(phaseKey);
-    s.segment = segment;
-    if (segment === "A" || segment === "B") {
-      const request = { targets: [chest[segment]], side: segment };
-      if (entry && director.shot === "roster" && services.camera) {
-        // The match cut: the subject stays where the roster framing had it.
-        void transitions.play("matchCut", {
-          to: "walk_on_track",
-          request: { ...request, hold: 60 },
-          target: chest[segment](),
-          seconds: 0.8,
-          onCover: () => clock.resync(),
-        });
-      } else if (entry) {
-        sfx.play("wipe", { intensity: 0.5 });
-        void transitions.play("wipe", {
-          onCover: () => {
-            clock.resync();
-            director.setBase("walk_on_track", request);
-          },
-        });
-      } else {
-        director.setBase("walk_on_track", request);
-      }
-      // The crowd greets each entrance.
-      services.cheer(0.5);
-      sfx.play("crowdCheer", { intensity: 0.4, gain: 0.55 });
-      return;
-    }
-    // The stand: slam the title, then the low, letterboxed, tilted face-off.
-    s.side = "A";
-    s.swapAt = t + SIDE_SWAP_S + 0.6;
-    const toFaceOff = () => {
-      clock.resync();
-      director.setBase("face_off_low", { side: "A", targets: [chest.A, chest.B, cardsFocus], focus: 2 });
-      sfx.play("letterbox", { intensity: 0.6 });
-    };
-    if (t - plan.standAt < 1.5 || entry) {
-      sfx.play("slam", { intensity: final ? 1 : 0.8 });
-      services.cheer(final ? 1 : 0.7);
-      void transitions.play("slam", { text: title, sub: final ? `${sub} - double points` : sub, holdMs: 700, shake: 0.4, onCover: toFaceOff });
-    } else {
-      toFaceOff();
-    }
+    if (t < s.swapAt || services.transitions.isPlaying()) return;
+    s.side = s.side === "A" ? "B" : "A";
+    s.swapAt = t + SIDE_SWAP_S;
+    supersede();
+    services.director.setBase("face_off_low", framing(s.side));
   }, -40);
 }
 

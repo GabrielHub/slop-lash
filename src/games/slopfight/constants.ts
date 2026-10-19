@@ -8,8 +8,9 @@ export const CHAMPIONS = 4;
 
 // Phase timers, in seconds.
 export const BUILD_SECONDS = 90;
-export const ROSTER_SECONDS = 20;
-export const FACE_OFF_SECONDS = 15;
+/** The line-up: all four walk out together, their cards rise, one line for the round. */
+export const ROSTER_SECONDS = 10;
+export const FACE_OFF_SECONDS = 12;
 /** Face-off never settles early before this many seconds, so the notes read. */
 export const FACE_OFF_MIN_SECONDS = 8;
 export const RESULT_SECONDS = 6;

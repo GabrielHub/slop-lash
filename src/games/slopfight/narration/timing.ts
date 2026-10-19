@@ -65,6 +65,11 @@ export class VoiceQueue {
     return { ...line, at: nowMs };
   }
 
+  /** Drop the waiting lines. The one being said keeps its time, and dropped lines never come back. */
+  clear(): void {
+    this.pending = [];
+  }
+
   get size(): number {
     return this.pending.length;
   }

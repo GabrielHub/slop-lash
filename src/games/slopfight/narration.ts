@@ -204,25 +204,26 @@ export class Voice {
     });
   }
 
-  /** One line per fighter as they reach their marks. Pool walk-ons first, then templates. */
-  roster(fighters: readonly VoiceFighter[], round: number, arena?: ArenaId): VoiceLine[] {
-    return fighters
-      .map((fighter, index) =>
-        this.line(
-          `roster:${round}:${index}`,
-          "roster",
-          {
-            pool: [fighter.narration.walkOn[round - 1]],
-            sets: ["roster"],
-            vars: {
-              ...fighterVars(fighter, null, round + index),
-              arena: arena ? getArena(arena).spokenName : null,
-            },
-          },
-          { priority: PRIORITY.roster },
-        ),
-      )
-      .filter((line): line is VoiceLine => line !== null);
+  /**
+   * The line-up: one line for the round, as the four walk out together. The
+   * champions were each introduced as they were forged; this says where the
+   * round is and who opens it (round one also says to bet).
+   */
+  lineup(round: number, arena: ArenaId, first: { a: string; b: string } | null): VoiceLine | null {
+    return this.line(
+      `lineup:${round}`,
+      "roster",
+      {
+        sets: round >= 3 ? ["lineupFinal"] : round === 1 ? ["lineupFirst"] : ["lineup"],
+        vars: {
+          n: ROUND_WORDS[round] ?? String(round),
+          arena: getArena(arena).spokenName,
+          a: first?.a ?? null,
+          b: first?.b ?? null,
+        },
+      },
+      { priority: PRIORITY.roster },
+    );
   }
 
   /** The face-off: who versus who (the Final and third place get their own), then the matchup walk-ons. */

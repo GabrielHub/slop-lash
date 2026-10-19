@@ -164,7 +164,8 @@ function playGame(seed: string | number, roster: VoiceFighter[], dense = false):
         add(voice.upgradeReveal(entry, { ...entry, name: `Old ${slot}` }, slot, round - 1)),
       );
     }
-    add(voice.roster(roster, round, arenas[round - 1]));
+    const [opener] = pairings[round - 1];
+    add(voice.lineup(round, arenas[round - 1], { a: roster[opener[0]]!.name, b: roster[opener[1]]!.name }));
     pairings[round - 1].forEach(([left, right], index) => {
       const step = index + 1;
       const a = roster[left]!;
@@ -361,7 +362,7 @@ describe("the Voice through a whole game", () => {
     const fight: VoiceFight = { round: 1, step: 1, arena: "ROOFTOP", a: roster[0]!, b: roster[1]! };
     const events = busyFight(9_000, "ko");
     expect(voice.fight(fight, events)).toBe(voice.fight(fight, events));
-    expect(voice.roster(roster, 1)).toEqual(voice.roster(roster, 1));
+    expect(voice.lineup(1, "ROOFTOP", null)).toEqual(voice.lineup(1, "ROOFTOP", null));
     expect(voice.faceOff(fight)).toEqual(voice.faceOff(fight));
     const keys = playGame("keys", roster, true).map((line) => line.key);
     expect(new Set(keys).size).toBe(keys.length);
@@ -372,14 +373,14 @@ describe("champion pools", () => {
   const raccoon = fighter(0);
   const jelly = fighter(1);
 
-  test("the roster opens with each champion's walk-on, by round", () => {
-    const voice = new Voice("pool");
-    const [first] = voice.roster([raccoon], 1);
-    expect(first!.text).toBe(cleanLine(raccoon.narration.walkOn[0]!));
-    const [second] = voice.roster([raccoon], 2);
-    expect(second!.text).toBe(cleanLine(raccoon.narration.walkOn[1]!));
-    const [third] = voice.roster([raccoon], 3);
-    expect(raccoon.narration.walkOn.map(cleanLine)).not.toContain(third!.text);
+  test("the line-up is one line per round: round one says to bet, round three names the Final", () => {
+    for (const seed of ["lineup-a", "lineup-b", "lineup-c"]) {
+      const voice = new Voice(seed);
+      const first = { a: raccoon.name, b: jelly.name };
+      expect(voice.lineup(1, "ROOFTOP", first)!.text).toMatch(/bet|phones/i);
+      expect(voice.lineup(2, "KITCHEN_COUNTER", first)!.key).toBe("lineup:2");
+      expect(voice.lineup(3, "FLOODED_GARAGE", first)!.text).toMatch(/final/i);
+    }
   });
 
   test("a fight uses the hitter's landHit, then the target's takeHit, and the ring-out line", () => {
@@ -413,8 +414,8 @@ describe("champion pools", () => {
     const voice = new Voice("pool-repeat");
     const fight: VoiceFight = { round: 1, step: 1, arena: "FLOODED_GARAGE", a: raccoon, b: jelly };
     const walkOn = raccoon.narration.walkOn[0]!;
-    voice.roster([raccoon], 1);
-    const lines = voice.faceOff({ ...fight, walkOn: [walkOn, "Fresh words."] });
+    voice.faceOff({ ...fight, walkOn: [walkOn, "Other words."] });
+    const lines = voice.faceOff({ ...fight, step: 2, walkOn: [walkOn, "Fresh words."] });
     expect(lines.map((line) => line.text)).not.toContain(cleanLine(walkOn));
     expect(lines.map((line) => line.text)).toContain("Fresh words.");
   });
@@ -662,6 +663,17 @@ describe("live pacing", () => {
     expect(queue.next(0)?.key).toBe("first");
     expect(queue.next(5_000)).toBeNull();
     expect(queue.size).toBe(0);
+  });
+
+  test("clearing drops the waiting lines but keeps the floor and the keys", () => {
+    const queue = new VoiceQueue({ gapMs: 2_500, staleMs: 10_000 });
+    queue.push([line("said", 90), line("waiting", 10)], 0);
+    expect(queue.next(0)?.key).toBe("said");
+    queue.clear();
+    expect(queue.size).toBe(0);
+    queue.push([line("waiting", 10), line("fresh", 10)], 500);
+    expect(queue.next(1_000)).toBeNull();
+    expect(queue.next(2_500)?.key).toBe("fresh");
   });
 
   test("a batch of phase lines is laid end to end", () => {

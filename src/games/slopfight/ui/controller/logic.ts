@@ -1,6 +1,6 @@
 // Pure helpers behind the phone screens: the stroke send queue, the live
-// health bars, hype batching, the per-phase "still has something to do" and
-// the upgrade's material starters. No React, no Convex: tested in logic.test.ts.
+// health bars, hype batching, the per-phase "still has something to do", the
+// upgrade's material starters and the waiting lines (champions, bets). No React, no Convex: tested in logic.test.ts.
 
 import { STROKES_PER_BATCH } from "../../constants";
 import { takeStrokeBatch, type Stroke } from "../../strokes";
@@ -162,4 +162,26 @@ export function withStarter(text: string, phrase: string): string {
   const written = text.trim();
   const lone = written === "" || MATERIAL_STARTERS.some((starter) => starter.phrase === written);
   return `${lone ? "" : `${written} `}${phrase} `;
+}
+
+// ---------------------------------------------------------------------------
+// Waiting on the others
+// ---------------------------------------------------------------------------
+
+const count = (n: number, one: string, many: string) => (n === 1 ? `one more ${one}` : `${n} more ${many}`);
+
+/** A finished champion's footer: how many are still coming (done means READY at `version`), then where to look. */
+export function championsWaiting(fighters: readonly { status: string; version: number }[], version: number): string {
+  const waiting = fighters.filter((fighter) => fighter.status !== "READY" || fighter.version < version).length;
+  return waiting > 0 ? `Waiting on ${count(waiting, "champion", "champions")}` : "All forged. Eyes on the TV";
+}
+
+/** The face-off's footer: the players here who have not bet yet (the fight starts early once all have). */
+export function betsWaiting(
+  players: readonly { id: string; type: string; online: boolean }[],
+  bets: { A: readonly string[]; B: readonly string[] },
+): string {
+  const backed = new Set([...bets.A, ...bets.B]);
+  const waiting = players.filter((player) => player.type === "HUMAN" && player.online && !backed.has(player.id)).length;
+  return waiting > 0 ? `Waiting on ${count(waiting, "bet", "bets")}` : "All bets in. Fight starts soon";
 }

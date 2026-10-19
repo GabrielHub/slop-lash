@@ -136,6 +136,14 @@ export class VoiceService {
     if (!match) this.queue = new VoiceQueue({ gapMs: SAY_GAP_MS, staleMs: SAY_STALE_MS });
   }
 
+  /**
+   * Drop live beats still waiting their turn (the scene they were about has
+   * gone). Lines already released keep their moment: the narrator has them.
+   */
+  dropQueued(): void {
+    this.queue.clear();
+  }
+
   /** Take the caption down now (it flicks off). */
   hideCaption(): void {
     if (this.caption) this.caption = { ...this.caption, until: this.now() };

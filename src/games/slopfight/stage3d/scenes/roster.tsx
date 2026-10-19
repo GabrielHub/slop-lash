@@ -1,23 +1,21 @@
 "use client";
 
-// ROSTER: the walk-ons. One champion at a time hops off its pedestal and
-// walks (hops, slithers, flies: the creature's own gait) to its roster mark
-// while the camera tracks it (`walk_on_track`), then the shot opens back out
-// to the roster wide as it arrives, its roster card rises from the floor
-// behind it and The Voice reads its line. The next one sets off while the
-// card settles. The phase ends on the roster wide (the base shot) with all
-// four on their marks, so the face-off can match-cut from it.
+// ROSTER: the line-up. All four champions hop off their pedestals and walk
+// out together, a step apart (hops, slithers, flies: each creature's own
+// gait), to their roster marks on the roster wide (the base shot). Each card
+// rises behind its champion as it arrives, and The Voice has one line for
+// the round: where it is and who opens it. Each champion was introduced when
+// it was forged, so nobody gets a second introduction here.
 //
 // The schedule is pure (walk.ts: rosterSchedule) and keyed to the phase
-// clock, so a stage that mounts mid-phase shows the walk-ons already done
-// (cards up, no repeated lines).
+// clock, so a stage that mounts mid-phase shows the walk-out already done
+// (cards up, no repeated line).
 
 import { useFrame } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
 import { getArena } from "../../arenas";
 import { finishGroups } from "../../finishes";
-import { toVoiceFighter } from "../../narration";
 import { bodyPlanLabel, type Champion } from "../../sheet";
 import { TOY_COLOR_VALUES, type Finish } from "../../vocab";
 import { useStage } from "../services";
@@ -30,7 +28,7 @@ import { WalkingChampion } from "./champions";
 import { cameraPoint, nodePoint, pedestalTop, SceneMarquee, usePhaseSeconds, useSceneData, yawToward } from "./common";
 import { ScoreboardSign, type PhaseSceneProps } from "./phase-scene";
 import type { SceneFighter } from "./scene-data";
-import { pedestalWalk, rosterSchedule, walkDuration, type RosterBeat, type WalkPath } from "./walk";
+import { pedestalWalk, ROSTER_LINE_S, rosterSchedule, walkDuration, type RosterBeat, type WalkPath } from "./walk";
 import type { ArenaNodes } from "../arena/nodes";
 
 /** Roster card size (world units) and how far upstage of its mark it stands. */
@@ -81,48 +79,45 @@ export function RosterScene({ input, nodes }: PhaseSceneProps) {
   );
   const beats = useMemo(() => rosterSchedule(walkers.map((walker) => walkDuration(walker.path))), [walkers]);
 
-  // One Voice line per fighter (prefetched now, read on arrival).
-  const lines = useMemo(() => {
-    const cast = walkers.map((walker) => toVoiceFighter(walker.champion, walker.fighter.ownerName));
-    return services.voice.voice.roster(cast, round, input.arena);
-  }, [services, walkers, round, input.arena]);
+  // The Voice's one line for the round: where it is, and who opens it.
+  const opener = useMemo(() => {
+    const first = (data?.mode.fights ?? []).filter((fight) => fight.round === round).toSorted((x, y) => x.step - y.step)[0];
+    const name = (id: string | undefined) => fighters.find((fighter) => fighter.id === id)?.champion?.name;
+    const a = name(first?.a);
+    const b = name(first?.b);
+    return a && b ? { a, b } : null;
+  }, [data, fighters, round]);
+  const line = useMemo(() => services.voice.voice.lineup(round, input.arena, opener), [services, round, input.arena, opener]);
   useEffect(() => {
-    if (lines.length) services.voice.prefetch(lines);
-  }, [services, lines]);
+    if (line) services.voice.prefetch(line);
+  }, [services, line]);
 
   // Cards up so far (state: they mount as they rise); those already up at mount skip the rise.
   const mountedAt = useRef<number | null>(null);
-  const [cards, setCards] = useState(0);
-  const cardCount = useRef(0);
-  const fired = useRef({ track: new Set<number>(), say: new Set<number>() });
+  const [cards, setCards] = useState<readonly boolean[]>([]);
+  const cardKey = useRef("");
+  const fired = useRef({ arrived: new Set<number>(), said: false });
 
   useFrame(() => {
     const t = phaseSeconds();
     if (mountedAt.current === null) mountedAt.current = t;
-    let count = 0;
-    while (count < beats.length && t >= beats[count]!.cardAt) count += 1;
-    if (count !== cardCount.current) {
-      cardCount.current = count;
-      setCards(count);
+    const up = beats.map((beat) => t >= beat.cardAt);
+    const key = up.map(Number).join("");
+    if (key !== cardKey.current) {
+      cardKey.current = key;
+      setCards(up);
+    }
+    if (!fired.current.said && t >= ROSTER_LINE_S) {
+      fired.current.said = true;
+      if (line && t < ROSTER_LINE_S + 3) services.voice.say(line);
     }
     beats.forEach((beat, index) => {
-      const walker = walkers[index];
-      if (!walker) return;
-      if (!fired.current.track.has(index) && t >= beat.trackAt) {
-        fired.current.track.add(index);
-        // Only track a walk-on that is happening now (not one a late mount missed).
-        if (t < beat.trackAt + 0.6) {
-          services.director.request("walk_on_track", { targets: [walker.point], hold: beat.trackHold, force: true, priority: 1 });
-        }
-      }
-      if (!fired.current.say.has(index) && t >= beat.sayAt) {
-        fired.current.say.add(index);
-        if (t < beat.sayAt + 2) {
-          const line = lines.find((candidate) => candidate.key === `roster:${round}:${index}`);
-          if (line) services.voice.say(line);
-          services.cheer(0.45);
-          stageSfx(services).play("crowdCheer", { intensity: 0.35, gain: 0.45 });
-        }
+      if (fired.current.arrived.has(index) || t < beat.arrive) return;
+      fired.current.arrived.add(index);
+      // The crowd greets each arrival (not the ones a late mount missed).
+      if (t < beat.arrive + 1) {
+        services.cheer(0.4);
+        stageSfx(services).play("crowdCheer", { intensity: 0.3, gain: 0.4 });
       }
     });
   });
@@ -142,16 +137,18 @@ export function RosterScene({ input, nodes }: PhaseSceneProps) {
           time={() => phaseSeconds() - (beats[index]?.start ?? 0)}
         />
       ))}
-      {walkers.slice(0, cards).map((walker, index) => (
-        <RosterCard
-          key={walker.fighter.id}
-          fighter={walker.fighter}
-          champion={walker.champion}
-          mark={walker.mark}
-          shot={shot}
-          settled={isSettled(beats[index], mountedAt.current)}
-        />
-      ))}
+      {walkers.map((walker, index) =>
+        cards[index] ? (
+          <RosterCard
+            key={walker.fighter.id}
+            fighter={walker.fighter}
+            champion={walker.champion}
+            mark={walker.mark}
+            shot={shot}
+            settled={isSettled(beats[index], mountedAt.current)}
+          />
+        ) : null,
+      )}
     </>
   );
 }

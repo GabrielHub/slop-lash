@@ -200,10 +200,25 @@ export async function outcomeLanded(
   await enterPhase(ctx, game, transition);
 }
 
-/** Queues the MATCHUP call for every fight of the round that still needs one. */
-async function queueMatchups(ctx: MutationCtx, game: Doc<"games">): Promise<void> {
-  for (const fight of await loadRoundFights(ctx, game._id, game.round)) {
-    if (fight.matchup !== "PENDING" || fight.outcome) continue;
+/**
+ * Queues the MATCHUP call, once, for every fight of the round whose two
+ * champions are final for it. A forge landing calls this, so a fight's notes
+ * and sim run while the rest of the room is still forging; ROSTER calls it
+ * again for any fight left.
+ */
+export async function queueMatchups(ctx: MutationCtx, game: Doc<"games">): Promise<void> {
+  const fights = (await loadRoundFights(ctx, game._id, game.round)).filter(
+    (fight) => fight.matchup === "PENDING" && fight.matchupAttempt === 0 && !fight.outcome,
+  );
+  if (fights.length === 0) return;
+  const version = targetVersion(game);
+  const done = new Set(
+    (await loadFighters(ctx, game._id))
+      .filter((fighter) => isDone(fighter, version))
+      .map((fighter) => fighter._id),
+  );
+  for (const fight of fights) {
+    if (!done.has(fight.a) || !done.has(fight.b)) continue;
     const attempt = fight.matchupAttempt + 1;
     await ctx.db.patch("slopFightFights", fight._id, { matchupAttempt: attempt });
     await enqueueJob(ctx, game, MATCHUP_KIND, `matchup:${fight._id}:${attempt}`, {

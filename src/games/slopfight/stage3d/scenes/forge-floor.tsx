@@ -5,10 +5,13 @@
 // the other (the forge beats, see forge.tsx), the marquee and the clock.
 //
 // Direction: PhaseScene runs the entry (wipe) and the base shot (the easels
-// at Build and Upgrade, the foundry in FOUNDRY). This scene adds transient
-// cuts to the foundry for the beats there: a forge starting (after its
-// drawing peels off the easel), the name card dropping, the sketch
-// dissolving. The conveyor hum runs while anything forges (live rooms only).
+// at Build and Upgrade). The scene carries over between Build or Upgrade and
+// the Foundry. It adds transient cuts to the foundry for the beats there: a
+// forge starting (after its drawing peels off the easel), the name card
+// dropping, the sketch dissolving. Once every player's champion is in, the
+// base moves to the foundry for good (after the last drawing's peel), so the
+// room watches the forging instead of empty easels and FOUNDRY opens there
+// with no cut. The conveyor hum runs while anything forges (live rooms only).
 
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
@@ -31,6 +34,40 @@ const NO_ARENAS: readonly ArenaId[] = [];
 interface Pending {
   at: number;
   run: () => void;
+}
+
+/** A drawing's peel off the easel plays this long before the camera leaves it. */
+const PEEL_WATCH_MS = 1_500;
+/** A typed champion's easel shows its send this long. */
+const SEND_WATCH_MS = 300;
+
+/** The layer this phase draws on: 0 at Build, the round's at Upgrade (and its Foundry). */
+function topLayerOf(phase: StagePhase, round: number): number {
+  return phase === "UPGRADE" || (phase === "FOUNDRY" && round > 1) ? round : 0;
+}
+
+/** Its champion for this phase has gone to the Foundry (or come back from it). */
+function sentThisPhase(fighter: SceneFighter, topLayer: number): boolean {
+  const sent = fighter.status === "FORGING" || fighter.status === "READY" || fighter.status === "FAILED";
+  const upgraded = topLayer > 0 ? fighter.version >= topLayer || fighter.status === "FORGING" : true;
+  return sent && upgraded;
+}
+
+/**
+ * Server ms when the camera turns to the foundry for good: once every
+ * player's champion is in (always in FOUNDRY), after the last one's send
+ * played on its easel. Null while anyone is still drawing or typing.
+ */
+export function foundryTurnAt(fighters: readonly SceneFighter[], phase: StagePhase, round: number): number | null {
+  const players = fighters.filter((fighter) => !fighter.house);
+  const topLayer = topLayerOf(phase, round);
+  if (phase !== "FOUNDRY" && (players.length === 0 || !players.every((fighter) => sentThisPhase(fighter, topLayer)))) return null;
+  let at = 0;
+  for (const fighter of players) {
+    if (!fighter.forge) continue;
+    at = Math.max(at, fighter.forge.startedAt + (fighter.inputKind === "DRAW" ? PEEL_WATCH_MS : SEND_WATCH_MS));
+  }
+  return at;
 }
 
 export function ForgeFloorScene({ input, nodes }: PhaseSceneProps) {
@@ -94,6 +131,23 @@ export function ForgeFloorScene({ input, nodes }: PhaseSceneProps) {
     for (const item of due) item.run();
   });
 
+  // Everyone's in: the base moves to the foundry (FOUNDRY's direction is this scene's).
+  const turnAt = foundryTurnAt(fighters, phase, round);
+  useEffect(() => {
+    if (turnAt === null) return;
+    const { director, clock } = services;
+    const turn = () => {
+      if (director.baseShot !== "foundry") director.setBase("foundry", {}, director.shot !== "foundry");
+    };
+    const wait = turnAt - clock.now;
+    if (wait <= 0) {
+      turn();
+      return;
+    }
+    const timer = window.setTimeout(turn, wait);
+    return () => window.clearTimeout(timer);
+  }, [services, turnAt]);
+
   // The conveyor hums while anything forges (live rooms only).
   const anyForging = fighters.some((fighter) => fighter.status === "FORGING");
   useEffect(() => {
@@ -152,13 +206,12 @@ function Station({
   parked: boolean;
   onBeat: (beat: ForgeBeat, fighter: SceneFighter) => void;
 }) {
-  const topLayer = phase === "UPGRADE" || (phase === "FOUNDRY" && round > 1) ? round : 0;
+  const topLayer = topLayerOf(phase, round);
   const doodle = useDoodleTexture(fighter.strokes, topLayer);
   const easel = easelFor(nodes, fighter.slot);
   const layerStrokes = fighter.strokes.some((row) => row.layer === topLayer);
-  const sent = fighter.status === "FORGING" || fighter.status === "READY" || fighter.status === "FAILED";
-  const upgraded = topLayer > 0 ? fighter.version >= topLayer || fighter.status === "FORGING" : true;
-  const lifted = fighter.inputKind === "DRAW" && sent && layerStrokes && upgraded && phase !== "FOUNDRY";
+  // Stays lifted into the Foundry: the scene carries over, so a late peel plays out.
+  const lifted = fighter.inputKind === "DRAW" && layerStrokes && sentThisPhase(fighter, topLayer);
   const hasDoodle = fighter.inputKind === "DRAW" && fighter.strokes.length > 0;
   return (
     <>

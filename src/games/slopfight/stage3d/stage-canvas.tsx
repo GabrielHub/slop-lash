@@ -12,14 +12,17 @@
 //    0.8  contact shadows depth pass (after animated transforms)
 //      1  EffectComposer renders the frame
 //
-// The arena swaps under a deferred value, so the old set stays up while the
-// next one loads; only the very first load shows the loading card. The title
+// A phase change keeps the old phase on stage (scene, lighting, set) until its
+// entry transition covers the swap (useStagedPhase). The arena swaps under a
+// deferred value, so the old set stays up while the next one loads; only the
+// very first load shows the loading card. The title
 // font warms up in parallel, outside that Suspense: a slow or broken font must
 // never hold the loading card or take the canvas down.
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useCallback, useDeferredValue, useEffect, useState, type ReactNode } from "react";
 import { ACESFilmicToneMapping, SRGBColorSpace, type PerspectiveCamera } from "three";
+import { useOptionalRoom } from "@/room/context";
 import { ARENAS } from "../arenas";
 import { ArenaSet } from "./arena/arena";
 import { StageBoundary } from "./boundary";
@@ -32,7 +35,7 @@ import { ALL_POST_ON, type PostToggles } from "./look/post-fx";
 import type { QualityTier } from "./look/quality";
 import { FINISH_DETAIL } from "./look/toon";
 import { compileStageObjects, createProgramWarmup } from "./program-cache";
-import { PHASE_DIRECTION, PhaseScene } from "./scenes/phase-scene";
+import { PHASE_DIRECTION, PhaseScene, StagedRoom, useStagedPhase } from "./scenes/phase-scene";
 import { StageProvider, useArenaNodes, useCreateStageServices, useQuality, useStage, type StageServices } from "./services";
 import type { StageInput } from "./stage-input";
 import { Caption } from "./ui3d/caption";
@@ -179,7 +182,10 @@ function StageContents({
   children?: ReactNode;
   onReady: () => void;
 }) {
-  const arena = useDeferredValue(input.arena);
+  const room = useOptionalRoom();
+  const staged = useStagedPhase(input, room, scene === undefined);
+  const shown = staged.input;
+  const arena = useDeferredValue(shown.arena);
   const mood = moodFor(arena);
   return (
     <>
@@ -187,13 +193,13 @@ function StageContents({
       <ProgramKeeper />
       <CameraRig />
       <QualityFollower />
-      <StageLighting mood={mood} geometry={ARENAS[arena].geometry} phase={input.phase} />
+      <StageLighting mood={mood} geometry={ARENAS[arena].geometry} phase={shown.phase} />
       <Suspense fallback={null}>
         <ArenaSet
           arena={arena}
           mood={mood}
           order={input.arenaOrder}
-          showPodium={PHASE_DIRECTION[input.phase].showPodium === true}
+          showPodium={PHASE_DIRECTION[shown.phase].showPodium === true}
         />
         <Ready onReady={onReady} />
       </Suspense>
@@ -203,7 +209,15 @@ function StageContents({
         </Suspense>
       </StageBoundary>
       {/* Scene content suspends on its own (fonts, models): it must never block the canvas. */}
-      <Suspense fallback={null}>{scene === undefined ? <PhaseScene input={input} /> : scene}</Suspense>
+      <Suspense fallback={null}>
+        {scene === undefined ? (
+          <StagedRoom room={staged.room}>
+            <PhaseScene input={shown} />
+          </StagedRoom>
+        ) : (
+          scene
+        )}
+      </Suspense>
       <Suspense fallback={null}>{children}</Suspense>
       <StageBoundary label="slam title" fallback={null}>
         <SlamTitle />

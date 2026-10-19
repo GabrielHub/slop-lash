@@ -88,7 +88,12 @@ export function FightFeedProvider({ feed, children }: { feed: FightFeed; childre
   return <FeedContext.Provider value={feed}>{children}</FeedContext.Provider>;
 }
 
-function feedFromRoom(room: RoomContextValue): FightFeed | null {
+/** The dev provider's fight data, if any (no room subscriptions). */
+export function useProvidedFightFeed(): FightFeed | null {
+  return useContext(FeedContext);
+}
+
+export function feedFromRoom(room: RoomContextValue): FightFeed | null {
   const view = room.view.mode;
   if (view.kind !== "SLOPFIGHT") return null;
   const fights: readonly FightRow[] = view.fights;

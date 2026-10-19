@@ -2,12 +2,14 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { compactOutcome } from "../../../../../convex/slopfight/outcome";
 import { ARENAS } from "../../arenas";
+import { FACE_OFF_MIN_SECONDS } from "../../constants";
+import { speechMs, type VoiceLine } from "../../narration";
 import { sampleById } from "../../samples";
 import type { Champion } from "../../sheet";
 import { loadRapier, runFight, type FightEvent, type FightInput, type Rapier } from "../../sim";
 import { createPose, createShotState, SHOTS } from "../director/shots";
 import { formatFightTime, readableEventLog } from "./event-log";
-import { cardBodySize, cardGap, cardGrid, faceOffPlan, HAZARD_H, HAZARD_W, NOTE_H, NOTE_W, noteLine, notesOf, relevantHazard, walkAt, type WalkPath } from "./faceoff-plan";
+import { cardBodySize, cardGap, cardGrid, chainFaceOffLines, FACE_OFF_LINE_GAP_MS, FACE_OFF_PLAN, faceOffLines, HAZARD_H, HAZARD_W, NOTE_H, NOTE_W, noteLine, notesOf, relevantHazard, walkAt, type WalkPath } from "./faceoff-plan";
 import { checkHash, EventCursor, fightInputOf, healthAt } from "./playback";
 import { FightPlayer, inputKey } from "./player";
 import { FightRecording } from "./recording";
@@ -137,17 +139,42 @@ describe("healthAt", () => {
 });
 
 describe("face-off plan", () => {
-  it("sizes each walk-on to its line, within bounds", () => {
-    const plain = faceOffPlan(null);
-    expect(plain.walk.A).toEqual([0, 1.7]);
-    expect(plain.walk.B).toEqual([1.7, 3.4]);
-    expect(plain.standAt).toBeCloseTo(3.4);
-    expect(plain.cardsAt).toBeCloseTo(3.85);
-    const long = faceOffPlan(["word ".repeat(80), "short"]);
-    expect(long.walk.A[1]).toBeLessThanOrEqual(2.6);
-    expect(long.walk.B[0]).toBe(long.walk.A[1]);
-    // The whole entrance fits before the face-off can close (8 s minimum).
-    expect(long.standAt).toBeLessThan(5.5);
+  it("walks both champions in together under the slam, cards once they stand", () => {
+    const { walk, standAt, cardsAt, callAt } = FACE_OFF_PLAN;
+    // Both set off before either arrives: one entrance, not two.
+    expect(walk.B[0]).toBeLessThan(walk.A[1]);
+    expect(standAt).toBe(Math.max(walk.A[1], walk.B[1]));
+    expect(cardsAt).toBeGreaterThan(standAt);
+    expect(callAt).toBeLessThan(1);
+    // Everything is in place well before the face-off can close.
+    expect(cardsAt + 2).toBeLessThan(FACE_OFF_MIN_SECONDS);
+  });
+
+  it("reads the walk-ons instead of the call once both are written, except when the stakes need saying", () => {
+    const call: VoiceLine = { key: "faceoff:1:0", text: "Up next: Blender versus Toaster.", speak: true, beat: "faceOff", priority: 1 };
+    const walk = (side: "A" | "B"): VoiceLine => ({ key: `walkon:1:0:${side}`, text: `${side} walks on.`, speak: true, beat: "walkOn", priority: 1, side });
+    expect(faceOffLines([call, walk("A"), walk("B")], false).map((line) => line.key)).toEqual(["walkon:1:0:A", "walkon:1:0:B"]);
+    expect(faceOffLines([call, walk("A"), walk("B")], true)[0]).toBe(call);
+    expect(faceOffLines([call], false)).toEqual([call]);
+    expect(faceOffLines([call, walk("A")], false)).toHaveLength(2);
+    // Two typical walk-ons (about 50 characters): the second starts with time to land before the earliest close.
+    const typical = (side: "A" | "B"): VoiceLine => ({ ...walk(side), text: "Marjorie wades in. The jury is out, and it's diamond." });
+    const { timed } = chainFaceOffLines(faceOffLines([call, typical("A"), typical("B")], false), new Set(), FACE_OFF_PLAN.callAt * 1000);
+    expect(timed[1]!.at).toBeLessThan((FACE_OFF_MIN_SECONDS - 3) * 1000);
+  });
+
+  it("chains the call and the walk-on lines, skipping lines already placed", () => {
+    const line = (key: string, text: string): VoiceLine => ({ key, text, speak: true, beat: "walkOn", priority: 1 });
+    const lines = [line("call", "Two champions, one floor."), line("a", "Here comes the blender."), line("b", "And the toaster.")];
+    const first = chainFaceOffLines(lines.slice(0, 1), new Set(), 1_000);
+    expect(first.timed.map((timed) => timed.at)).toEqual([1_000]);
+    expect(first.endMs).toBe(1_000 + speechMs("Two champions, one floor.") + FACE_OFF_LINE_GAP_MS);
+    // The walk-ons arrive later: they follow the call instead of talking over it.
+    const later = chainFaceOffLines(lines, new Set(["call"]), first.endMs);
+    expect(later.timed.map((timed) => timed.key)).toEqual(["a", "b"]);
+    expect(later.timed[0]!.at).toBe(first.endMs);
+    expect(later.timed[1]!.at).toBe(first.endMs + speechMs("Here comes the blender.") + FACE_OFF_LINE_GAP_MS);
+    expect(chainFaceOffLines(lines, new Set(["call", "a", "b"]), 5_000)).toEqual({ timed: [], endMs: 5_000 });
   });
 
   it("walks the arc from the mark to the spawn, still at both ends", () => {

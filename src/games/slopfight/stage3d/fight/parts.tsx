@@ -32,12 +32,12 @@ export function FightMarquee({ nodes, text }: { nodes: ArenaNodes | null; text: 
 }
 
 /**
- * Set the phase's base shot with live targets. When the phase's entry
- * transition is running (PhaseScene starts it in the same commit, after this
- * effect), the shot goes in at its covered moment, right after PhaseScene's
- * own target-less cut; otherwise (a remount mid-phase, the dev lab) at once.
- * Returns `supersede()`: call it before the scene cuts to a later base shot
- * of its own, so a pending fallback never cuts back over it.
+ * Set the phase's base shot with live targets. The stage mounts a phase's
+ * scene at its entry's covered moment, right after its own target-less cut,
+ * so the shot goes in at once; a scene mounted while a transition is still
+ * covering waits for its cover. Returns `supersede()`: call it before the
+ * scene cuts to a later base shot of its own, so a pending fallback never
+ * cuts back over it.
  */
 export function useBaseShot(shot: ShotId, request: ShotRequest): () => void {
   const services = useStage();
@@ -65,14 +65,11 @@ export function useBaseShot(shot: ShotId, request: ShotRequest): () => void {
     const off = events.on("transition", ({ phase }) => {
       if (phase === "cover") apply();
     });
-    const frame = requestAnimationFrame(() => {
-      if (!transitions.isPlaying()) apply();
-    });
+    if (!transitions.isCovering()) apply();
     const timer = window.setTimeout(apply, 2_500);
     return () => {
       done = true;
       off();
-      cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
   }, [services, shot]);

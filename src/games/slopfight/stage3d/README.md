@@ -99,7 +99,7 @@ narrator or a caption themselves.
 
 - `voice.voice`: the game's `Voice`. Write lines with its beat methods:
   - `arenas`, `forged`, `upgradeReveal`
-  - `roster`, `faceOff`
+  - `lineup` (the roster's one line for the round), `faceOff`
   - `fightStart`, `fight`, `result`
   - `standings`, `upgrade`, `podium`
 - `voice.say(lineOrLines)`: a live beat (a forge finished, the roster,
@@ -122,6 +122,10 @@ narrator or a caption themselves.
   opening call during FACE_OFF).
 - `voice.cancel(match?)`: drops waiting lines, all of them or the ones
   that match (a fight skipped mid-plan).
+- `voice.dropQueued()`: drops the live beats still waiting their turn. The
+  stage calls it at the cover of a phase change that changes scenes, so a
+  backlog (forge lines) never spills into the next scene; lines already
+  released keep their moment.
 - `voice.hideCaption()`: flicks the current caption away now.
 - `voice.waiting`: how many lines are still queued or scheduled.
 
@@ -323,25 +327,35 @@ Register a scene in `scenes/registry.ts`:
 `PHASE_SCENES.FIGHT = FightScene`. It receives `{ input, nodes }`.
 
 `PHASE_DIRECTION` in `phase-scene.tsx` sets each phase's marquee text, base
-shot and entry transition (slam / wipe / cut). PhaseScene plays the entry
-transition when `phaseKey` changes and cuts to the base shot at the cover.
-Set `ownsDirection: true` to run your own. `PlaceholderScene`, `MarqueeSign`
-and `ScoreboardSign` are reusable.
+shot and entry transition (slam / wipe / cut); `slamFor` builds a slam from
+the room (the face-off's title and names). The canvas calls
+`useStagedPhase`, which plays the entry transition when `phaseKey` changes
+and, at the cover, cuts to the base shot, resyncs the clock and drops the
+Voice's queued beats when the scene changes. Until that cover the stage
+keeps showing the phase it is leaving (its scene, lighting and set) on the
+room as it last was (`StagedRoom`), so the new scene mounts under the cover
+instead of the old one popping out before it. Phases in one scene group
+(BUILD, FOUNDRY and UPGRADE share the forge floor) keep their scene mounted.
+Set `ownsDirection: true` to run your own (FOUNDRY does: the forge floor
+turns to the foundry itself). `PlaceholderScene`, `MarqueeSign` and
+`ScoreboardSign` are reusable. `useBaseShot` (fight scenes) sets a base shot
+with live targets at once, or at the cover when a transition is still
+covering.
 
 ### The non-fight scenes
 
 | phase | scene | files |
 | --- | --- | --- |
 | LOBBY | `LobbyScene`: the room sign, the join card, a seat per player with their token, the how-to steps, the START button on the host's stage, and the back-wall sign (tonight's seats). | `lobby.tsx`, `lobby-bridge.tsx` |
-| BUILD, FOUNDRY, UPGRADE | `ForgeFloorScene`: an easel per player (the live doodle, "Describing...", the rejection note, the sketch that dissolves once sent), and a pedestal per fighter (the lump, the shimmer, parts popping in, the name card). It cuts to the foundry for each beat. Lines: the arenas at BUILD, the upgrade call at UPGRADE, and one per finished forge. | `forge-floor.tsx`, `easel.tsx`, `forge.tsx`, `forge-plan.ts`, `doodle-texture.ts`, `doodle-material.ts`, `fx.tsx` |
-| ROSTER | `RosterScene`: one after another, each champion hops off its pedestal and walks to its roster mark. Each walk-on gets a forced `walk_on_track` request; the Voice introduces the champion as it arrives, then its card rises behind the mark. | `roster.tsx`, `walk.ts`, `champions.tsx` |
+| BUILD, FOUNDRY, UPGRADE | `ForgeFloorScene`: an easel per player (the live doodle, "Describing...", the rejection note, the sketch that dissolves once sent), and a pedestal per fighter (the lump, the shimmer, parts popping in, the name card). It cuts to the foundry for each beat, and once every player's champion is in (after the last drawing's peel, `foundryTurnAt`) the base stays on the foundry, so FOUNDRY and the reveals play there. Lines: the arenas at BUILD, the upgrade call at UPGRADE, and one per finished forge. | `forge-floor.tsx`, `easel.tsx`, `forge.tsx`, `forge-plan.ts`, `doodle-texture.ts`, `doodle-material.ts`, `fx.tsx` |
+| ROSTER | `RosterScene`: the line-up on the roster wide. All four champions hop off their pedestals and walk to their roster marks together, a step apart; each card rises behind its mark as the champion arrives. The Voice says one line for the round (`lineup`: who opens it, the Final's double points). | `roster.tsx`, `walk.ts`, `champions.tsx` |
 | STANDINGS | `StandingsScene`: the back-wall scoreboard. Rows slide from their order before the round, then the points count up, and the leader's row turns gold. Figurines walk the shelf into rank order. The Voice names the leader, or calls a tie. The columns and figurines stay inside the part of the board `Cam_Scoreboard` can see (see below). | `standings.tsx`, `scoreboard.tsx`, `board.ts`, `board-visibility.ts` |
 | FINISHED | `PodiumScene`: the podium crane, then fanfare and confetti cannons. The champions stand on the steps (the winner showboats), and each runner-up hangs under a place card, slid outward until it clears the marquee's lines in the final framing. The Voice calls the podium. The camera visits the FINAL SCORES board at 15 s, then every 22 s. In the recap, the recap reel mounts after the crane. | `podium.tsx`, `clearance.ts`, `scoreboard.tsx`, `champions.tsx` |
 
 How the scenes are built:
-- None of them sets `ownsDirection`. They keep PhaseScene's base shot and
-  entry transition, and add transient `director.request` cuts for their
-  beats.
+- Only the forge floor's FOUNDRY sets `ownsDirection`. They keep the
+  stage's base shot and entry transition, and add transient
+  `director.request` cuts for their beats.
 - Shared helpers are in `common.tsx`: `useSceneData`, `usePhaseSeconds`,
   `SceneMarquee`, the node lookups, `fighterColor` and `yawToward`.
 - `scene-data.ts` (pure) turns the room view and the feeds into

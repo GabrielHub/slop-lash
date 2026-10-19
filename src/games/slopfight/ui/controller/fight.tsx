@@ -11,7 +11,7 @@ import { Avatar } from "@/room/avatar";
 import { Stamp, buzz } from "@/room/moment";
 import { getArena } from "../../arenas";
 import { bodyPlanLabel } from "../../sheet";
-import { HYPE_FLUSH_MS, healthAt, takeHype } from "./logic";
+import { betsWaiting, HYPE_FLUSH_MS, healthAt, takeHype } from "./logic";
 import {
   Kicker,
   Screen,
@@ -143,6 +143,7 @@ function FighterButton({
 export function FaceOffScreen() {
   const state = useFight();
   const { act, error } = useRoomAction();
+  const { players } = usePlayers();
   const play = useSfx();
   const [optimistic, setOptimistic] = useState<Side | null>(null);
   useLastSecondsTicks(state !== null && state.fight.mine === null && optimistic === null);
@@ -176,6 +177,9 @@ export function FaceOffScreen() {
         </div>
         <FighterButton fighter={b} side="B" picked={picked === "B"} mine={mySide === "B"} bettors={fight.bets.B} onPick={() => pick("B")} />
       </div>
+      <p className="text-center text-base text-ink-dim" aria-live="polite">
+        {betsWaiting(players, fight.bets)}
+      </p>
     </Screen>
   );
 }

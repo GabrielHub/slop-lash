@@ -54,16 +54,22 @@ This is the north star. Build toward this sequence.
    player drew it, the doodle lifts off the easel, floats beside the creature
    for two seconds, and dissolves into it: the "sketch to champion" beat.
    This is what people film. Protect it.
-4. **Roster (20 s).** Four champions walk, hop, slither, or fly to their
-   marks. A card rises from the floor beside each: body-plan tag ("Hopper",
-   "Hexapod", "Flier"), three moves with type icons, two trait chips, three
-   stat rows of pips. The Voice reads one line per fighter.
-5. **Face-off (15 s).** Two champions, low angle, letterbox, a slight Dutch
-   tilt. The arena's hazard card and the AI's **Matchup Notes** hang in the
+4. **Roster (10 s).** The line-up: all four champions walk, hop, slither,
+   or fly to their marks together, a step apart. A card rises from the floor
+   beside each as it arrives: body-plan tag ("Hopper", "Hexapod", "Flier"),
+   three moves with type icons, two trait chips, three stat rows of pips.
+   The Voice says one line for the round (who opens it). Each fight's
+   matchup call starts as soon as both its champions are forged, so it is
+   usually ready before the line-up ends.
+5. **Face-off (8 to 12 s).** The names slam in, and under the slam both
+   champions walk to their marks together: low angle, letterbox, a slight
+   Dutch tilt. The Voice reads each champion's walk-on line (the Final and
+   third place get their call first). The arena's hazard card and the AI's **Matchup Notes** hang in the
    air between them: two or three cards like "Leaf blower is useless
    underwater: Strike -1" or "Jellyfish cannot be grappled". Everyone bets on
-   a winner with one tap. Bettors' avatars fly in from the crowd and land on
-   the fighter they picked.
+   a winner with one tap; the phones count the bets still to come, and the
+   fight starts early once everyone here has bet. Bettors' avatars fly in
+   from the crowd and land on the fighter they picked.
 6. **Fight (up to 30 s).** The champions fight on their own. They circle,
    lunge, whiff, connect. Hits are real physics impulses into ragdolls: a big
    strike sends a hopper tumbling across the floor and off the edge. Hit
@@ -412,7 +418,13 @@ section before starting.
 - Wipe: a full-screen shader wipe in the arena's accent color with a whoosh.
 - Letterbox in/out: bars for face-offs and results, done in the post pass.
 - Iris: on the ring-out victim, done in the post pass.
-- Match cut: Roster to Face-off cuts on the fighter's position.
+- Match cut: cuts to a new shot keeping a subject where it sits on screen.
+
+The stage keeps the phase it is leaving on screen until the entry covers the
+swap (the wipe fully across, the slam's impact), so a scene never pops out
+before the cover. Build, the Foundry and Upgrade share the forge floor, which
+carries over between them instead of remounting; once every player's
+champion is in, the camera turns to the foundry for good.
 
 ## 7. Look and character tech
 

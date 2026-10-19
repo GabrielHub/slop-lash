@@ -139,7 +139,7 @@ async function settleMatchup(
     await startSim(ctx, await abandonMatchup(ctx, fight));
     return;
   }
-  const fallback = fallbackWalkOn(champions.a, champions.b);
+  const fallback = fallbackWalkOn(champions.a, champions.b, fight.round);
   const walkOn = [0, 1].map(
     (index) =>
       cleanText(decodeXmlEntities(output.walkOn[index] ?? ""), NARRATION_LINE_MAX) ||
@@ -172,7 +172,7 @@ export const slopfightJobHandlers: JobHandlers<SlopfightJobs> = {
   },
 
   SLOPFIGHT_MATCHUP: {
-    // Queued at ROSTER, read through the round's face-offs.
+    // Queued once both champions are final for the round (ROSTER at the latest), read at the face-offs.
     phaseBound: false,
     pool: getAiTask("slopfight.matchup").pool,
     async prepare(ctx, game, job) {

@@ -10,6 +10,7 @@ import { Avatar } from "@/room/avatar";
 import { Stamp } from "@/room/moment";
 import { ChampionCard, PLATE } from "./champion-card";
 import { ForgingScreen, ReadyScreen } from "./forging";
+import { championsWaiting } from "./logic";
 import { UpgradeScreen } from "./build";
 import { BigButton, Kicker, Screen, championName, fighterById, useMine, type SlopfightMode } from "./shared";
 import { ChampionSilhouette } from "./silhouette";
@@ -68,14 +69,7 @@ export function FoundryScreen() {
   if (fighter?.status === "FORGING") return <ForgingScreen fighter={fighter} />;
   if (mode.foundryParked) return <Jammed mine={false} />;
   if (fighter?.champion) {
-    const waiting = mode.fighters.filter((entry) => entry.status !== "READY").length;
-    return (
-      <ReadyScreen
-        champion={fighter.champion}
-        landed={false}
-        footer={waiting > 0 ? `Waiting on ${waiting === 1 ? "one more champion" : `${waiting} more champions`}` : "All forged"}
-      />
-    );
+    return <ReadyScreen champion={fighter.champion} landed={false} footer={championsWaiting(mode.fighters, 0)} />;
   }
   return (
     <Screen center>

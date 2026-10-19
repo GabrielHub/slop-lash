@@ -429,7 +429,7 @@ function LabStage({ params, fight }: { params: LabParams; fight: LabFight }) {
   );
 }
 
-/** The roster lead-in: both champions on their roster marks, so FACE_OFF's match cut has something to cut from. */
+/** The roster lead-in: both champions on their roster marks, where FACE_OFF's walk-in starts. */
 function RosterStandIn({ a, b }: { a: Champion; b: Champion }) {
   const nodes = useArenaNodes();
   const arena = nodes?.arena ?? "FLOODED_GARAGE";
