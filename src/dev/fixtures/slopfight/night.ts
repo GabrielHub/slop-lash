@@ -1,6 +1,6 @@
 import type { ModeView, RoomPlayer, RoomView } from "@/room/context";
 import type { ArenaId } from "@/games/slopfight/arenas";
-import { FIGHT_LEAD_MS } from "@/games/slopfight/constants";
+import { FIGHT_LEAD_MS, RESULT_SECONDS } from "@/games/slopfight/constants";
 import { resolveModifiers, type MatchupNote } from "@/games/slopfight/modifiers";
 import { sampleById } from "@/games/slopfight/samples";
 import {
@@ -349,7 +349,7 @@ function play(game: Game, cursor: Cursor, viewer: RoomPlayer | null = game.playe
       },
       mine: betsShown ? (bets.find((bet) => bet.playerId === viewer?.id)?.side ?? null) : null,
       revealed,
-      seed: revealed ? fightSeed(GAME_SEED, bout.round, bout.step) : null,
+      seed: revealed ? (bout.seed ?? fightSeed(GAME_SEED, bout.round, bout.step)) : null,
       startsAt: revealed ? FIXTURE_NOW - 10_000 + FIGHT_LEAD_MS : null,
       outcome: revealed ? outcome : null,
       decidedBySeed: false,
@@ -439,6 +439,7 @@ const NIGHT: Game = {
     {
       round: 1,
       step: 0,
+      seed: 2,
       a: 0,
       b: 2,
       hits: [
@@ -477,6 +478,7 @@ const NIGHT: Game = {
     {
       round: 1,
       step: 1,
+      seed: 32,
       a: 1,
       b: 3,
       hits: [
@@ -502,6 +504,7 @@ const NIGHT: Game = {
     {
       round: 2,
       step: 0,
+      seed: 32,
       a: 2,
       b: 3,
       hits: [
@@ -591,6 +594,7 @@ const NIGHT: Game = {
     {
       round: 3,
       step: 1,
+      seed: 5,
       a: 3,
       b: 0,
       hits: [
@@ -823,11 +827,14 @@ export const faceOffRoom = (round: number, step: number) =>
   });
 export const fightRoom = (round: number, step: number) =>
   playing("FIGHT", round, { step, phaseStartedAt: FIXTURE_NOW - 10_000, phaseDeadline: null });
+// Settled past the instant replay's latest start (about 1.5 s in), so the first
+// load is stable; replay the fixture (R) to see the replay itself.
+const RESULT_SETTLED_MS = 3_000;
 export const resultRoom = (round: number, step: number) =>
   playing("RESULT", round, {
     step,
-    phaseStartedAt: FIXTURE_NOW - 1_500,
-    phaseDeadline: FIXTURE_NOW + 4_500,
+    phaseStartedAt: FIXTURE_NOW - RESULT_SETTLED_MS,
+    phaseDeadline: FIXTURE_NOW - RESULT_SETTLED_MS + RESULT_SECONDS * 1_000,
   });
 
 export function withoutBets(round: number, step: number) {

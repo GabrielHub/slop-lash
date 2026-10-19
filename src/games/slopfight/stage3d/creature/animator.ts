@@ -268,6 +268,15 @@ export class CreatureAnimator {
     this.squashV -= amount * 8;
   }
 
+  /** The body was moved somewhere else at a cut (a replay): plant the feet and settle the springs where it stands now. */
+  replant() {
+    this.initialized = false;
+    this.footsInitialized = false;
+    for (const spring of this.springs.values()) spring.init = false;
+    this.lag.set(0, 0, 0);
+    this.lagV.set(0, 0, 0);
+  }
+
   /** Re-forming growth: start the body offset (creature space) and scale from where the old body was. */
   reform(offset: Vector3, scaleFrom: number) {
     this.rootOffset.copy(offset);

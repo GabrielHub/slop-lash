@@ -27,6 +27,12 @@ export interface Bout {
   notes: MatchupNote[];
   walkOn: [string, string];
   recapLine: string;
+  /**
+   * The sim seed, when the night's derived one would not end this bout the
+   * way its story does: picked so the real sim (which the stage plays, and
+   * RESULT's instant replay replays) ends with the same method and winner.
+   */
+  seed?: number;
 }
 
 const other = (side: FightSide): FightSide => (side === "A" ? "B" : "A");

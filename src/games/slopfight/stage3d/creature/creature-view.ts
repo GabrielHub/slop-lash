@@ -567,6 +567,11 @@ export class CreatureView {
     this.anim?.squash(amount);
   }
 
+  /** Moved somewhere else at a cut: the feet plant afresh. */
+  replant() {
+    this.anim?.replant();
+  }
+
   /** A bone's current centre in parent space (for effects); false when unknown. */
   boneCentre(id: string, out: Vector3): boolean {
     const rig = this.rig;

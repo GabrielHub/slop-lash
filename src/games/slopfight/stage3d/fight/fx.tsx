@@ -564,8 +564,8 @@ function Pool({ system, kind, geometry, material }: { system: FxSystem; kind: Ki
   return <primitive object={mesh} />;
 }
 
-/** Renders and advances an FxSystem on the presentation clock. */
-export function FightFx({ system }: { system: FxSystem }) {
+/** Renders and advances an FxSystem on the presentation clock (or `delta`'s, e.g. a replay's slowed time). */
+export function FightFx({ system, delta }: { system: FxSystem; delta?: () => number }) {
   const clock = useStageClock();
   const geometries = useMemo(
     () => ({
@@ -592,7 +592,7 @@ export function FightFx({ system }: { system: FxSystem }) {
   const goo = useFxMaterial({ emissive: "#000000", glow: 0, specular: 1.1 });
   const halo = useFxMaterial({ emissive: "#ffffff", glow: 1.9, specular: 0 });
   useEffect(() => () => Object.values(geometries).forEach((geometry) => geometry.dispose()), [geometries]);
-  useFrame(() => system.update(clock.delta), -10);
+  useFrame(() => system.update(delta ? delta() : clock.delta), -10);
   return (
     <>
       <Pool system={system} kind="core" geometry={geometries.core} material={hot} />

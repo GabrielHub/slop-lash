@@ -20,6 +20,7 @@ export const SHOT_IDS = [
   "ragdoll_follow",
   "edge_drama",
   "slowmo_orbit",
+  "replay",
   "winner_pose",
   "podium",
   // Anchor holds for the non-fight phases.
@@ -61,8 +62,10 @@ export interface ShotParams {
   duration?: number;
   /** Which target the depth of field focuses (default 0). */
   focus?: number;
-  /** fight_close: horizontal direction (x, z) from the targets to the camera, in place of the fight anchor's angle. */
+  /** fight_close and replay: horizontal direction (x, z) from the targets to the camera, in place of the fight anchor's angle. */
   from?: readonly [number, number];
+  /** replay: camera height above the action (low for a hit, higher to show a ring-out's drop). */
+  rise?: number;
   /** fight_wide / fight_close on two targets: the taller fighter's standing height (framing sizes their boxes by it). */
   subjectHeight?: number;
 }
@@ -612,6 +615,38 @@ export const SHOTS: Readonly<Record<ShotId, ShotDef>> = {
       out.target.copy(point);
       out.target.y += 0.3;
       out.fov = input.prev.fov;
+      out.roll = 0;
+    },
+  },
+
+  /**
+   * RESULT's instant replay: low and long-lensed from `from` (off the
+   * attacker's shoulder), tracking slowly across the action over `duration`
+   * and pushing in a touch. Targets: [attacker, victim]; it favours the victim.
+   */
+  replay: {
+    letterbox: 0,
+    dof: 0.35,
+    solve(input, state, out) {
+      const [a, b] = input.targets;
+      const centre = a && b ? tmpA.copy(a).lerp(b, 0.55) : centroid(input.targets, tmpA);
+      const radius = Math.max(0.9, (a && b ? a.distanceTo(b) / 2 : 0) + 0.6);
+      const duration = input.params.duration ?? 3;
+      const s = easeInOutCubic(clamp01(input.t / duration));
+      const distance = MathUtils.clamp(fitDistance(radius, 30, input.aspect), 2.2, 6);
+      const from = input.params.from ?? [0, 1];
+      const forward = tmpB.set(from[0], 0, from[1]);
+      if (forward.lengthSq() < 1e-6) forward.set(0, 0, 1);
+      forward.normalize().applyAxisAngle(UP, MathUtils.degToRad(16) * (s - 0.5));
+      const desired = tmpC.copy(centre).addScaledVector(forward, distance);
+      desired.y = centre.y + (input.params.rise ?? 0.15);
+      springVec(state.pos, state.posVel, desired, input.dt, 0.35, input.first);
+      const aim = tmpD.copy(centre);
+      aim.y += 0.25;
+      springVec(state.aim, state.aimVel, aim, input.dt, 0.15, input.first);
+      out.position.copy(state.pos);
+      out.target.copy(state.aim);
+      out.fov = 30 - 2.5 * s;
       out.roll = 0;
     },
   },
