@@ -208,6 +208,12 @@ vec3 slopSaturate( vec3 c, float amount ) {
 }
 ${FINISH_FRAGMENT_PARS}
 void RE_Direct_Toon( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in ToonMaterial material, inout ReflectedLight reflectedLight ) {
+  // Every term scales with the light's colour, so a dark light (a padding
+  // slot, see practicalSlots, or a lamp out of range) adds nothing: skip it.
+  if ( directLight.color == vec3( 0.0 ) ) {
+    toonShadow = 1.0;
+    return;
+  }
   #ifdef SLOP_FINISH
   float shadeK = fShade;
   vec3 shadeTint = fShadeTint;

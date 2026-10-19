@@ -16,6 +16,7 @@
 //   then=<fixture id>&switch=<s>     at lab time `switch` seconds, change to that fixture's view
 //                                    (its phase starting then): watch a phase change, e.g. START
 //                                    from the lobby (window.__sceneLab.canvas is the canvas at load)
+//   thenArena=garage|kitchen|rooftop  force the arena for the `then` view's round (default: arena)
 //   quality=high|medium|low, debug=1 (read by StageRoot)
 
 import { useEffect, useMemo, useState } from "react";
@@ -43,6 +44,7 @@ interface LabParams {
   host: boolean;
   fresh: boolean;
   thenFixture: string | null;
+  thenArena: ArenaId | null;
   switchAt: number;
 }
 
@@ -59,6 +61,7 @@ function readParams(): LabParams {
     host: search.get("host") !== "0",
     fresh: search.get("fresh") === "1",
     thenFixture: search.get("then"),
+    thenArena: ARENA_PARAM[search.get("thenArena") ?? ""] ?? null,
     switchAt: Number(search.get("switch") ?? 4) || 4,
   };
 }
@@ -204,7 +207,7 @@ export default function SceneLab() {
   }, [params, now, switched, switchAt]);
 
   if (!built) return <p className="p-4 text-ink-dim">No such fixture or scenario.</p>;
-  const view = withArena(built.view, params.arena);
+  const view = withArena(built.view, (switched && params.thenArena) || params.arena);
   const content = (
     <LobbyBridge>
       <StageRoot />

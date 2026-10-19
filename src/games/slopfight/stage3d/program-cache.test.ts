@@ -21,7 +21,9 @@ describe("stage program warmup", () => {
       expect(material.defines).toHaveProperty("SLOP_FINISH");
       expect(mesh.geometry.getAttribute(FINISH_ATTRIBUTE)?.itemSize).toBe(2);
     }
-    expect(materials.filter((material) => !material.fog && material.transparent && !material.depthTest)).toHaveLength(2);
+    // Health bars and the kit's caption overlay (toon and outline).
+    expect(materials.filter((material) => !material.fog && material.transparent && !material.depthTest)).toHaveLength(4);
+    expect(materials.some((material) => material.type === "MeshStandardMaterial")).toBe(true);
     const disposed = materials.map((material) => vi.spyOn(material, "dispose"));
     const instanceDisposals = instances.map((mesh) => vi.spyOn(mesh, "dispose"));
     const geometry = vi.spyOn(meshes[0]!.geometry, "dispose");

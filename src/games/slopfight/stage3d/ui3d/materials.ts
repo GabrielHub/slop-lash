@@ -139,27 +139,33 @@ export function uiToon(color: string, options: UiToonOptions = {}): ToonMaterial
   const key = `${color}|${glow}|${options.doubleSide ? 1 : 0}|${options.overlay ? 1 : 0}|${options.specular ?? 0.25}`;
   let material = toonCache.get(key);
   if (!material) {
-    material = createToonMaterial({
-      vertexColors: false,
-      color,
-      emissive: color,
-      specular: options.specular ?? 0.25,
-      rim: 0.22,
-      translucency: 0.2,
-      shade: 0.5,
-      maxLuminance: UI_MAX_LUMINANCE,
-    });
-    material.emissiveIntensity = glow;
-    if (options.doubleSide) material.side = DoubleSide;
-    if (options.overlay) {
-      // renderOrder only sorts within a render queue. Keep the caption in the
-      // transparent queue so water, contact shadows and FX draw underneath it.
-      material.transparent = true;
-      material.depthTest = false;
-      material.depthWrite = false;
-      material.fog = false;
-    }
+    material = createUiToon(color, options);
     toonCache.set(key, material);
+  }
+  return material;
+}
+
+/** A new kit toon material (uiToon's, uncached: the caller disposes it). */
+export function createUiToon(color: string, options: UiToonOptions = {}): ToonMaterial {
+  const material = createToonMaterial({
+    vertexColors: false,
+    color,
+    emissive: color,
+    specular: options.specular ?? 0.25,
+    rim: 0.22,
+    translucency: 0.2,
+    shade: 0.5,
+    maxLuminance: UI_MAX_LUMINANCE,
+  });
+  material.emissiveIntensity = options.glow ?? 0.06;
+  if (options.doubleSide) material.side = DoubleSide;
+  if (options.overlay) {
+    // renderOrder only sorts within a render queue. Keep the caption in the
+    // transparent queue so water, contact shadows and FX draw underneath it.
+    material.transparent = true;
+    material.depthTest = false;
+    material.depthWrite = false;
+    material.fog = false;
   }
   return material;
 }
@@ -186,14 +192,20 @@ export function uiOutline(color: string, width = 2.2, options: { overlay?: boole
   const key = `${color}|${width}|${options.overlay ? 1 : 0}`;
   let material = outlineCache.get(key);
   if (!material) {
-    material = createOutlineMaterial({ color: darkOf(color, 0.62), width });
-    if (options.overlay) {
-      material.transparent = true;
-      material.depthTest = false;
-      material.depthWrite = false;
-      material.fog = false;
-    }
+    material = createUiOutline(color, width, options);
     outlineCache.set(key, material);
+  }
+  return material;
+}
+
+/** A new kit outline material (uiOutline's, uncached: the caller disposes it). */
+export function createUiOutline(color: string, width = 2.2, options: { overlay?: boolean } = {}): OutlineMaterial {
+  const material = createOutlineMaterial({ color: darkOf(color, 0.62), width });
+  if (options.overlay) {
+    material.transparent = true;
+    material.depthTest = false;
+    material.depthWrite = false;
+    material.fog = false;
   }
   return material;
 }

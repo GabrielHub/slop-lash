@@ -20,8 +20,8 @@
 // never hold the loading card or take the canvas down.
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useCallback, useDeferredValue, useEffect, useState, type ReactNode } from "react";
-import { ACESFilmicToneMapping, SRGBColorSpace, type PerspectiveCamera } from "three";
+import { Suspense, useCallback, useDeferredValue, useEffect, useRef, useState, type ReactNode } from "react";
+import { ACESFilmicToneMapping, SRGBColorSpace, type Group, type Object3D, type PerspectiveCamera } from "three";
 import { useOptionalRoom } from "@/room/context";
 import { ARENAS } from "../arenas";
 import { ArenaSet } from "./arena/arena";
@@ -39,7 +39,7 @@ import { PHASE_DIRECTION, PhaseScene, StagedRoom, useStagedPhase } from "./scene
 import { StageProvider, useArenaNodes, useCreateStageServices, useQuality, useStage, type StageServices } from "./services";
 import type { StageInput } from "./stage-input";
 import { Caption } from "./ui3d/caption";
-import { useTitleFont } from "./ui3d/text";
+import { MARQUEE_TEXT, StageText, useTitleFont } from "./ui3d/text";
 import { VoiceNarration } from "./ui3d/voice-narration";
 
 /** Rolling frame-time stats for the debug readout and the fps measurement. */
@@ -118,24 +118,57 @@ function QualityFollower() {
   return null;
 }
 
-/** Keep compiled shader programs across phase changes (see program-cache.ts). */
-function ProgramKeeper() {
+/** Compile `objects` against the stage's lights, again whenever the arena (its lights) changes. */
+function useStageCompile(objects: () => Object3D | null, label: string) {
   const { gl, camera, scene } = useThree();
   const nodes = useArenaNodes();
   useEffect(() => {
-    const warmup = createProgramWarmup();
     // The arena's practical lights mount in the same commit as its nodes.
     const timer = window.setTimeout(() => {
-      void compileStageObjects(gl, warmup.root, camera, scene).catch((error: unknown) => {
-        console.warn("[slopfight] Shader warmup failed", error);
+      const root = objects();
+      if (!root) return;
+      void compileStageObjects(gl, root, camera, scene).catch((error: unknown) => {
+        console.warn(`[slopfight] ${label} warmup failed`, error);
       });
     }, 100);
+    return () => window.clearTimeout(timer);
+  }, [gl, camera, scene, nodes, objects, label]);
+}
+
+/**
+ * Keep compiled shader programs across phase changes (see program-cache.ts).
+ * One warmup set lives as long as the canvas: disposing it while its programs
+ * were still linking (as the arena's nodes arrived) deleted them mid-link.
+ */
+function ProgramKeeper() {
+  const warmup = useRef<ReturnType<typeof createProgramWarmup> | null>(null);
+  useEffect(() => {
+    const created = createProgramWarmup();
+    warmup.current = created;
     return () => {
-      window.clearTimeout(timer);
-      warmup.dispose();
+      warmup.current = null;
+      created.dispose();
     };
-  }, [gl, camera, scene, nodes]);
+  }, []);
+  useStageCompile(useCallback(() => warmup.current?.root ?? null, []), "Shader");
   return null;
+}
+
+/**
+ * Keep the SDF text programs too: a lit label, a sign's unlit letters and a
+ * camera-fixed caption, hidden. Troika derives each text's material, so these
+ * are real StageTexts rather than entries in createProgramWarmup.
+ */
+function TextPrograms() {
+  const texts = useRef<Group>(null);
+  useStageCompile(useCallback(() => texts.current, []), "Text shader");
+  return (
+    <group ref={texts} visible={false}>
+      <StageText glow={0.1}>Aa</StageText>
+      <StageText {...MARQUEE_TEXT}>Aa</StageText>
+      <StageText overlay>Aa</StageText>
+    </group>
+  );
 }
 
 /** Parse the slam font before the first slam needs it (a failure only costs the 3D title). */
@@ -206,6 +239,11 @@ function StageContents({
       <StageBoundary label="title font warm-up" fallback={null}>
         <Suspense fallback={null}>
           <TitleFontWarmup />
+        </Suspense>
+      </StageBoundary>
+      <StageBoundary label="text warm-up" fallback={null}>
+        <Suspense fallback={null}>
+          <TextPrograms />
         </Suspense>
       </StageBoundary>
       {/* Scene content suspends on its own (fonts, models): it must never block the canvas. */}

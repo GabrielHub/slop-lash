@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { Object3D, Vector3, type LightProbe } from "three";
 import { describe, expect, it } from "vite-plus/test";
 import { readLight } from "../arena/nodes";
+import { STAGE_PHASES, type StagePhase } from "../stage-input";
 import { readIrradianceProbe } from "./irradiance";
+import { PRACTICAL_BUDGET, practicalSlots } from "./lighting";
 
 interface ArenaAsset {
   nodes: { name: string; translation?: number[]; extras?: Record<string, unknown> }[];
@@ -100,5 +102,29 @@ describe.each([
     expect(primary.target?.distanceTo(new Vector3(0, 0.2, 0))).toBeLessThan(0.001);
     expect(lights.find((light) => light.name === "Light_Work_Build")?.phases).toEqual(["BUILD", "UPGRADE"]);
     expect(lights.find((light) => light.name === "Light_Work_Foundry")?.phases).toEqual(["FOUNDRY"]);
+  });
+});
+
+describe.each(["garage", "kitchen", "rooftop"])("%s practical slots", (arena) => {
+  const lights = readLights(readArena(arena));
+  // Every lit shader is built for the light count, so a phase change must not change it.
+  const signature = (phase: StagePhase) =>
+    practicalSlots(lights, phase).map(({ key, marker }) => `${key}:${marker.kind === "rect" ? "spot" : marker.kind}:${!!marker.castShadow}`);
+
+  it("keeps the same lights in every phase and lights each work lamp only in its phases", () => {
+    for (const phase of STAGE_PHASES) expect(signature(phase)).toEqual(signature("FIGHT"));
+    const lit = (phase: StagePhase) => practicalSlots(lights, phase).filter((slot) => slot.on && slot.marker.phases).map((slot) => slot.marker.name);
+    expect(lit("BUILD")).toEqual(["Light_Work_Build"]);
+    expect(lit("UPGRADE")).toEqual(["Light_Work_Build"]);
+    expect(lit("FOUNDRY")).toEqual(["Light_Work_Foundry"]);
+    expect(lit("ROSTER")).toEqual([]);
+    expect(lit("FIGHT")).toEqual([]);
+  });
+
+  it("fills the light budget every set shares, with one shadow", () => {
+    const slots = practicalSlots(lights, "FIGHT");
+    const count = (kind: string) => slots.filter(({ marker }) => (marker.kind === "rect" ? "spot" : marker.kind) === kind).length;
+    expect({ spot: count("spot"), point: count("point"), directional: count("directional") }).toEqual(PRACTICAL_BUDGET);
+    expect(slots.filter(({ marker }) => marker.castShadow)).toHaveLength(1);
   });
 });

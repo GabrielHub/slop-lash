@@ -1,16 +1,21 @@
 // Keep a small set of real materials alive across phase changes. Three owns
 // their shader references; disposing this set releases them through its public
-// API. These invisible meshes also compile instanced hit effects before the
-// first particle, when a zero-count particle pool would not yet render.
+// API. A scene leaving the stage disposes its own materials, and when it held
+// the last user of a program Three deletes it, so the next scene would link it
+// again under the transition's cover. These invisible meshes also compile
+// instanced hit effects before the first particle, when a zero-count particle
+// pool would not yet render. The SDF text variants are kept by <TextPrograms>
+// (stage-canvas.tsx): troika derives their materials.
 
 import {
   Bone, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, Group, InstancedMesh,
-  Mesh, MeshBasicMaterial, Skeleton, SkinnedMesh, Texture, Uint16BufferAttribute,
+  Mesh, MeshBasicMaterial, MeshStandardMaterial, Skeleton, SkinnedMesh, Texture, Uint16BufferAttribute,
   WebGLRenderTarget, type Camera, type Material, type Object3D, type Scene, type WebGLRenderer,
 } from "three";
 import { eyeMaterial } from "./creature/face-materials";
 import { createOutlineMaterial } from "./look/outline";
 import { createToonMaterial, FINISH_ATTRIBUTE } from "./look/toon";
+import { createUiOutline, createUiToon } from "./ui3d/materials";
 
 export function createProgramWarmup() {
   const root = new Group();
@@ -61,6 +66,18 @@ export function createProgramWarmup() {
     materials.push(material);
     root.add(new Mesh(geometry, material));
   }
+  // The in-scene UI kit's materials (cards, chips, captions), as copies with
+  // the cached ones' programs. Captions draw the overlay kind, first at the face-off.
+  for (const overlay of [false, true]) {
+    for (const material of [createUiToon("#ffffff", { overlay }), createUiOutline("#ffffff", 2.2, { overlay })]) {
+      materials.push(material);
+      root.add(new Mesh(geometry, material));
+    }
+  }
+  // Sign boards behind marquee and scoreboard text.
+  const board = new MeshStandardMaterial({ roughness: 0.85 });
+  materials.push(board);
+  root.add(new Mesh(geometry, board));
   return {
     root,
     dispose() {
