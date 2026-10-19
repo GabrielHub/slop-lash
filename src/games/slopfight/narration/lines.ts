@@ -37,6 +37,7 @@ export type VoiceBeat =
   | "ko"
   | "selfDamage"
   | "showboat"
+  | "finale"
   | "suddenDeath"
   | "timeout"
   | "result"
@@ -105,6 +106,7 @@ export const PRIORITY = {
   ko: 100,
   ringOut: 100,
   suddenDeath: 90,
+  finale: 88,
   start: 85,
   timeout: 85,
   firstContact: 80,

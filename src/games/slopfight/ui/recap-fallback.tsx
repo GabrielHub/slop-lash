@@ -148,7 +148,7 @@ const TONE_CLASS: Record<LogTone, string> = {
 function FightCard({ fight, view, fighterOf }: { fight: FallbackFight; view: RoomView; fighterOf: (id: string) => FighterView | undefined }) {
   const winnerName = fight.winner ? (fight.sheets[fight.winner]?.name ?? "?") : null;
   const how = fight.decidedBySeed ? "on the judges' coin" : fight.method ? `by ${methodWords(fight.method)}` : "";
-  const log = readableEventLog(fight.events, fight.sheets);
+  const log = readableEventLog(fight.events, fight.sheets, fight.arena);
   return (
     <article className="flex flex-col gap-3 rounded-[1.5rem] border border-edge bg-surface p-4">
       <header className="flex flex-wrap items-baseline justify-between gap-2">

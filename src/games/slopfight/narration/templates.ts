@@ -253,6 +253,25 @@ export const T = {
     "{x} is milking it. {y} is not amused.",
     "{x} pauses for applause. Get on with it.",
   ],
+  // The arena's finale, said as it starts (the last 10 s).
+  finaleFlood: [
+    "High tide! The water is coming up!",
+    "The garage is flooding! Find some dry floor!",
+    "The tide is in. Stay dry or go swimming.",
+    "Water rising! The dry bit is getting very small.",
+  ],
+  finaleTilt: [
+    "The counter is tipping! Everything slides!",
+    "Tip over! The whole counter is going sideways.",
+    "Somebody leaned on the counter. Hold on!",
+    "The counter tilts! Downhill is the floor.",
+  ],
+  finaleStorm: [
+    "Here comes the storm! Hold on to something!",
+    "Storm on the roof! The wind won't let up.",
+    "The storm hits! Somebody is going over.",
+    "Gale force on the roof! Lean into it.",
+  ],
   suddenDeath: [
     "It's a tie! Sudden death! Next hit wins!",
     "Dead even! Sudden death!",
@@ -323,6 +342,12 @@ export const RING_OUT_SET: Record<ArenaId, TemplateSet> = {
   FLOODED_GARAGE: "ringOutSplash",
   KITCHEN_COUNTER: "ringOutKitchen",
   ROOFTOP: "ringOutStreet",
+};
+
+export const FINALE_SET: Record<ArenaId, TemplateSet> = {
+  FLOODED_GARAGE: "finaleFlood",
+  KITCHEN_COUNTER: "finaleTilt",
+  ROOFTOP: "finaleStorm",
 };
 
 export const RESULT_SET: Record<FightMethod, TemplateSet> = {

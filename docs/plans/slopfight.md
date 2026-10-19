@@ -134,6 +134,13 @@ the sim, and the sim is shaped by the sheets, so design decisions matter:
 - Traits and Matchup Notes become parameter modifiers (damage, knockback,
   speed, self-damage, immunities) applied before the sim starts.
 
+In the last 10 s of every fight the arena turns on both fighters (the
+finale), so most fights end on a KO or a ring-out instead of on the clock.
+Each arena has its own (below). The finale is deterministic (from the arena
+and the seed), opens with a title slam and a Voice line, and stays on through
+sudden death. In it a hurt fighter flies farther when hit, and a flier
+knocked out of the air drops instead of floating down.
+
 A fight ends on a KO (health at zero), a ring-out (torso leaves the stage
 volume), or the 30 s limit (more health wins; equal health, 10 s of sudden
 death where the first hit wins). If the winner of a KO or a decision is in
@@ -147,11 +154,15 @@ three hazard rules keyed to traits, authored in a catalog:
 
 - **Flooded Garage.** `electric` fighters shock themselves for 15 on every
   hit they take; `aquatic` +15% speed; the water slows hoppers' landings.
+  Finale, **High Tide**: the water rises over the pad and the dry floor
+  shrinks to half its width; past the waterline is a ring-out.
 - **Kitchen Counter.** `tiny` fighters are harder to hit (smaller hurtbox);
   `heavy` fighters crack the counter and stagger on landing; the ring-out is
-  the sink.
+  the sink. Finale, **Tip Over**: the counter tips toward one side edge and
+  everything slides downhill.
 - **Rooftop.** Wind pushes everyone toward one edge in gusts; `flier` +1
-  Reach; `heavy` immune to knockback from Strikes.
+  Reach; `heavy` immune to knockback from Strikes. Finale, **The Storm**:
+  the gusts blow twice as hard and a steady wind never lets up.
 
 Hazards are shown as one card at the face-off and are deterministic.
 
@@ -542,6 +553,9 @@ emergent look.
 **Pacing.** A fight is at most 30 s plus sudden death. The brains are tuned
 to produce a first contact within 5 s and a decisive moment by 20 s on
 average. If playtests show stalemates, raise aggression with time elapsed.
+Measured before the finale (2026-10-19), 44% of fights went to a decision on
+health; the arena finale (section 3) brings that to about 10%. A stronger
+late aggression ramp was tried first and moved it by about a point.
 
 **Failure.** If the host's stage disconnects mid-fight, host controls fail
 over as they already do, and the new host's stage reports the fight it

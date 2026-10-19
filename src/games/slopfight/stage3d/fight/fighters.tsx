@@ -117,6 +117,8 @@ export interface HealthBarProps {
   edge?: Record<Side, number>;
   /** Keeps the two bars apart on screen and inside the frame (it then places the bar). */
   stack?: BarStack;
+  /** Moves a sim-space point to where the stage draws it, in place (the kitchen counter's tilt). */
+  place?: (point: Vector3) => Vector3;
 }
 
 const ALWAYS = { current: 1 };
@@ -221,7 +223,7 @@ function plateExtent(nameSize: number, owner: boolean): { top: number; bottom: n
  * shows a red ON THE EDGE tag at the brink. With a `stack`, the two bars stack
  * instead of overlapping when the fighters line up on screen.
  */
-export function HealthBar({ player, side, name, owner = null, shown = ALWAYS, edge, stack }: HealthBarProps) {
+export function HealthBar({ player, side, name, owner = null, shown = ALWAYS, edge, stack, place }: HealthBarProps) {
   const group = useRef<Group>(null);
   const tag = useRef<Group>(null);
   const scaler = useRef<Group>(null);
@@ -247,6 +249,7 @@ export function HealthBar({ player, side, name, owner = null, shown = ALWAYS, ed
     const sample = player.samples?.[side];
     if (sample) {
       target.set(sample.root.p[0], Math.max(sample.root.p[1], 0.2) + height * 0.62 + 0.46, sample.root.p[2]);
+      place?.(target);
       if (!s.init) {
         s.position.copy(target);
         s.init = true;

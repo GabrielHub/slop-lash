@@ -9,6 +9,8 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Quaternion, Vector3, type Group, type PerspectiveCamera, type PointLight } from "three";
+import { ARENA_IDS, ARENAS } from "../../arenas";
+import { finaleSlamText } from "../arena/finale";
 import { compileStageObjects } from "../program-cache";
 import { useArenaNodes, useStage } from "../services";
 import { StageText, TitleText } from "../ui3d/text";
@@ -24,7 +26,20 @@ const MAX_CAP_HEIGHT = 0.2;
 const KEY_INTENSITY = 2.4;
 // Build these during the lobby, then keep their geometry and materials alive.
 // A slam changes visibility; it does not parse a font or extrude a new title.
-const PREPARED_TITLES = ["FIGHT!", "FACE-OFF", "THE FINAL", "THIRD PLACE", "K.O.!", "RING OUT!", "DECISION", "SUDDEN DEATH", "WINNER!", "CHAMPION"];
+const PREPARED_TITLES = [
+  "FIGHT!",
+  "FACE-OFF",
+  "THE FINAL",
+  "THIRD PLACE",
+  "K.O.!",
+  "RING OUT!",
+  "DECISION",
+  // The arenas' finales: TIP OVER!, HIGH TIDE!, THE STORM!
+  ...ARENA_IDS.map((id) => finaleSlamText(ARENAS[id].finale)),
+  "SUDDEN DEATH",
+  "WINNER!",
+  "CHAMPION",
+];
 
 const Z_AXIS = new Vector3(0, 0, 1);
 const tmpForward = new Vector3();

@@ -78,6 +78,16 @@ the skeleton and visual geometry used by the simulation and mesher.
 - `services.wind`: `{ x, z, strength, driven }` for the laundry and windsock.
   Set `driven = true` and drive it from `windFor` / `windStrengthAt`;
   otherwise the arena runs idle gusts.
+- `services.finale`: the arena finale's state (`arena/finale.ts`). The fight
+  conductor publishes it every frame with `publishFinale` from the presented
+  sim time, frozen at the fight's end like the sim; once no fight drives it
+  (`driven = false`) the set eases it back to calm. Read it through the
+  helpers: `tiltAngle` / `placeOnStage` / `tiltBody` (the kitchen counter
+  tips, and everything the sim places on it tips with it), `floodDryHalf` /
+  `waterLevelAt` (the garage's waterline, exactly the sim's `dryHalfAt`), and
+  `stormLook` (the rooftop's grade and lightning). Only the live fight
+  drives it: a replay or the recap shows a calm arena unless it publishes the
+  state at its own time and tips its fighters the same way.
 - `services.live`: mirrors `input.live` (set by the canvas). It is true in
   a live room, and false in the recap and in fixtures rendered as the recap.
   Play scene sounds through `stageSfx(services).play(name, opts)`
@@ -247,7 +257,11 @@ preloads the next arena. It dresses the set:
 
 It also animates the set: laundry and windsock in the wind, toast pops, the
 sink drip, floaters, grounded crowd breathing/turning and staggered cheer
-jumps. Cheers use absolute timestamps for anticipation, takeoff and landing,
+jumps. In the arena finale (`services.finale`) the kitchen's counter pieces
+(`Floor`, `Edge`, `Set_Crumbs`, `Pit`) tip, the garage's surround water rises
+and a flood sheet (the arena's water cut at the dry line, foam along it)
+covers the pad, and the rooftop gets `StormFx` (rain and a lightning bolt)
+plus the post grade's storm mood and flash. Cheers use absolute timestamps for anticipation, takeoff and landing,
 so their poses agree across frame rates and freeze with presentation time.
 Only exact garment nodes animate; their outline children inherit the motion.
 

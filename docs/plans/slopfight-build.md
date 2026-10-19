@@ -65,6 +65,18 @@ file wins (it records a deliberate decision).
     but hidden from every player and persona picker. SlopFight pins Haiku 5.5
     at `high` reasoning with Sonnet 5.5 at `medium` as the fallback, in every
     room including Free Play.
+13. **Every fight ends with an arena finale.** With only the 30 s limit, 44%
+    of fights went to a decision on health (tuner, 2,000 fights, 2026-10-19),
+    the flattest finish on a TV. In the last `FINALE_MS` (10 s) before the
+    limit each arena turns on both fighters: the Kitchen Counter tips toward
+    a seeded side edge, the Flooded Garage's water rises and the dry floor
+    shrinks from half-size 3 to 1.5, and the Rooftop's storm doubles the
+    gusts and adds a steady wind. The kitchen tips sideways, not toward the
+    sink as first proposed: a sink-ward tilt pins fighters on the backsplash
+    and still leaves 30% decisions in that arena. In the finale a hurt
+    fighter takes up to 2x knockback and a flier knocked out of the air falls
+    at full gravity. A late aggression ramp and braver edge play were tried
+    and moved the rate by about a point, so they are not in. Numbers in 3.4.
 
 ## 2. Module map and ownership
 
@@ -207,7 +219,7 @@ contract has no undo marker.
 pit rectangles such as the kitchen sink; a torso below y = −0.6 or outside the
 volume is rung out), `hazards` (two or three, each with card text and data
 effects), and `dynamic` hazards the sim implements by id (`wind`,
-`waterLanding`, `counterCrack`).
+`waterLanding`, `counterCrack`), and a `finale` (decision 13).
 
 `ModifierKey`: `strikePower | grapplePower | trickPower` (additive −2..+2),
 `damageDealt | damageTaken | knockbackDealt | knockbackTaken | speed |
@@ -245,6 +257,14 @@ As built:
   `ringOutDistance()` and `isOverFloor()` the tests, and `windFor(seed)` /
   `windStrengthAt()` the gusts (axis-aligned direction, ramped envelope, no
   trig).
+- Finale: `finale: FinaleSpec` (`tilt | flood | storm`, each with a `title`,
+  a face-off `card`, a `rampMs` and its own values). `finaleFor(arena, seed,
+  limitMs)` gives the start (`limitMs - FINALE_MS`, or at once in a shorter
+  fight) and the edge it pushes toward: the tilt's downhill side (seeded,
+  left or right) or the wind's edge for the storm. `finaleStrengthAt` ramps
+  0..1 with a smoothstep and holds; `dryHalfAt`, `floodedGeometry` and
+  `stormWindAt` turn a strength into the flood's dry floor and the storm's
+  wind. The sim, the stage and the Voice all read these, so they agree.
 
 As built (balance, after the Sim tuner): explosive is knockback +20% and
 self-damage 2 per hit taken (was +25% and 6); the Flooded Garage shocks
@@ -274,7 +294,7 @@ index and its 0..1 progress, `ragdoll` weight). The creature renderer blends
 procedural animation with the proxies by the `ragdoll` weight.
 `FightEvent = { t: ms; kind; side; ... }` with kinds `start, contact, windup,
 hit, whiff, stagger, getup, grab, throw, dodge, counter, edge, ringout, ko,
-selfDamage, showboat, suddenDeath, timeout, end`; `hit` carries `move`,
+selfDamage, showboat, finale, suddenDeath, timeout, end`; `hit` carries `move`,
 `type`, `damage`, `knockback`, `big`, `point`. The health timeline samples at
 4 Hz plus every change. Determinism test: two `runFight` calls with the same
 input produce deep-equal outcomes; the `hash` covers the event log and final
@@ -289,6 +309,22 @@ to grab (30% slip) rather than immune. Decisions and sudden death go by share
 of the health bar. `createFight` throws on an unknown arena. Hits on a downed
 fighter do 60% damage and never re-stagger. Every limb weighs at least 15% of
 the torso, and downed ragdolls get floor drag (stops long slides).
+
+As built (arena finale, decision 13): each step moves an `ArenaField`
+(`motion.ts`: the live play geometry, the wind push and the slope push) on
+from the finale. The tilt is a downhill pull on a flat floor (the stage tips
+the drawn counter and the fighters together); the flood resizes the slab
+colliders to the dry square and rings out a torso 0.1 past the waterline
+(hovering fliers excepted); active fighters drift with any push
+(`PUSH_DRIFT`), inactive ones take it as an impulse. The finale freezes at
+the fight's end. `finale` is logged once, on its first step, if the fight is
+still on (not after a bell). Tuner (2,000 fights over 3 seeds): before, KO 24% /
+ring-out 32% / decision 44%; after, KO 13% / ring-out 77% / decision 10%
+(garage 9%, kitchen 11%, rooftop 10%). Body-plan win rates 42-58% (were
+43-61%), champions 32-66% (were 30-73%), mean fight 22.5 s (was 24.5 s).
+Fights decided before the finale are unchanged. The decisive moment
+moved later (median 23 s, was 19 s among decisive fights) because the finale
+is now where most close fights end.
 
 ### 3.5 AI (`ai/`, `src/lib/ai/`)
 
@@ -482,6 +518,16 @@ As built (Backend workstream):
       plan/stat/move-type win rate within 35–65%, whiff rate and miracles rise
       with chaos; Chromium and Node hashes match; ~113 ms per 30 s fight;
       Sonnet recheck SHIP)
+- [x] Arena finale (decision 13, 2026-10-19): Tip Over, High Tide and The
+      Storm in the last 10 s; decisions 44% to 10% (2,000-fight tuner), body
+      plans 42-58%. Stage: the counter and its fighters tip, the flood sheet's
+      waterline matches the sim, storm rain, grade and lightning, a title
+      slam, a finale `edge_drama` shot, pulsing edge lights. Sound:
+      `fight-finale` plus `finale-tilt` / `finale-flood` / `finale-storm`.
+      Voice: a `finale` beat per arena. Left: the RESULT instant replay and
+      the recap reel show a calm arena (only the live fight publishes
+      `services.finale`), and the kitchen cabinet does not tip with the
+      counter (the uphill side lifts off it in low shots)
 - [x] Arenas and props in Blender (`build_all.py` rebuilds byte-identical GLBs
       and runs `verify_glb.py`, which checks the node contract, `COLOR_0`, the
       camera axes, Collision against `platformColliders()` and Floor against
@@ -539,7 +585,8 @@ As built (Backend workstream):
         world warms Rapier during loading, and conservative bone bounds avoid
         per-vertex skinning on first draw. The captured real-room first entry
         fell from 112.4 ms to 24.9 ms. See the release review for full live-run
-        evidence. Pacing accepted as tuned: the decision rate depends on the
+        evidence. Pacing accepted as tuned (superseded by the arena finale,
+        decision 13): the decision rate depends on the
         matchup (2–5 of 12–30 seeds in the fixer's scans, 17 of 30 for
         cat/elephant in the reviewer's); the sim already ramps aggression
         with time, so revisit after a real playtest

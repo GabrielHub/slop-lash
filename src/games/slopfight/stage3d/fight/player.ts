@@ -31,7 +31,7 @@ export interface SkippedSpan {
 }
 
 /** Beats that always play, even inside a skipped span: they change what the room is watching. */
-const STORY_EVENTS: ReadonlySet<FightEvent["kind"]> = new Set(["edge", "ringout", "ko", "suddenDeath", "timeout", "end"]);
+const STORY_EVENTS: ReadonlySet<FightEvent["kind"]> = new Set(["edge", "ringout", "ko", "finale", "suddenDeath", "timeout", "end"]);
 
 /** One crossed event and whether its effects should play (false for a skipped span). */
 export interface PlayedEvent {

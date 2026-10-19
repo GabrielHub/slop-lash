@@ -240,6 +240,13 @@ function report(results: Result[], wall: number, jobs: number) {
     console.log(`  ${method.padEnd(13)} ${String(count).padStart(5)}  ${pct(count, n)}`);
   }
   console.log(`  side A wins ${pct(results.filter((r) => r.winner === "A").length, n)}`);
+  console.log(`  by arena (KO / ring-out / decision):`);
+  for (const arena of ARENA_IDS) {
+    const fights = results.filter((r) => r.arena === arena);
+    if (!fights.length) continue;
+    const share = (method: string) => pct(fights.filter((r) => r.method === method).length, fights.length);
+    console.log(`    ${arena.padEnd(16)} ${share("KO")} / ${share("RINGOUT")} / ${share("DECISION")}  (${fights.length})`);
+  }
 
   const champ = (r: Result, side: Side) => roster[side === "A" ? r.a : r.b]!.champion;
   const tally = (label: string, keyOf: (c: Champion) => string | null) => {

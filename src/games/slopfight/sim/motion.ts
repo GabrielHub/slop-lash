@@ -1,8 +1,8 @@
 // Voluntary locomotion, active ragdoll servos, and external impulses. This
 // layer changes velocities only; combat, timers, and outcome ownership stay
-// in fight.ts. Per-fight closure state is limited to immutable arena inputs
-// and a lazily derived gait cache.
-import { ringOutDistance, windStrengthAt, type ArenaGeometry, type Wind } from "../arenas";
+// in fight.ts. Per-fight closure state is limited to the arena field (which
+// fight.ts updates each step) and a lazily derived gait cache.
+import { ringOutDistance, type ArenaGeometry } from "../arenas";
 import { aggressionAt } from "./brain";
 import { aimedDir, com, edgeGradient, flatDir } from "./collision";
 import { atan2, clamp, cos, PI, sin, smoothstep, TAU, wrapAngle } from "./dmath";
@@ -38,8 +38,22 @@ const yawOf = (q: Q4): number => {
   return atan2(f[0], f[2]);
 };
 
-export function createMotion(geometry: ArenaGeometry, wind: Wind | null, limitMs: number) {
+/** The arena as the fighters feel it this step. fight.ts updates it; the finale changes it. */
+export interface ArenaField {
+  /** The play geometry: the flood shrinks the floor. */
+  geometry: ArenaGeometry;
+  /** The wind's push on the floor plane, units/s^2 (fighters with the wind hazard). */
+  wind: [x: number, z: number];
+  /** The tilt's downhill pull, units/s^2 (fighters on the floor, but not pushImmune ones). */
+  slope: [x: number, z: number];
+}
+
+/** Does the tilt pull on this fighter? Not a hovering flier, not one that ignores pushes. */
+const onSlope = (f: Fighter) => !f.mods.pushImmune && !(f.def.bodyPlan === "FLIER" && isActive(f));
+
+export function createMotion(field: ArenaField, limitMs: number) {
   function locomotion(f: Fighter, foe: Fighter, tMs: number, done: boolean) {
+    const geometry = field.geometry;
     const dir = flatDir(f, foe);
     const c = com(f);
     const edge = edgeGradient(geometry, c[0], c[2]);
@@ -140,10 +154,16 @@ export function createMotion(geometry: ArenaGeometry, wind: Wind | null, limitMs
       vx += edge[0] * push;
       vz += edge[1] * push;
     }
-    if (wind && f.hazards.wind && isActive(f) && !done) {
-      const gust = windStrengthAt(wind, tMs);
-      vx += wind.direction[0] * wind.accel * gust * 0.3;
-      vz += wind.direction[1] * wind.accel * gust * 0.3;
+    // A fighter on its feet leans into a push: it drifts with it rather than being shoved.
+    if (isActive(f) && !done) {
+      if (f.hazards.wind) {
+        vx += field.wind[0] * K.PUSH_DRIFT;
+        vz += field.wind[1] * K.PUSH_DRIFT;
+      }
+      if (onSlope(f)) {
+        vx += field.slope[0] * K.PUSH_DRIFT;
+        vz += field.slope[1] * K.PUSH_DRIFT;
+      }
     }
     f.vDes = [vx, vz];
 
@@ -453,7 +473,7 @@ export function createMotion(geometry: ArenaGeometry, wind: Wind | null, limitMs
     }
   }
 
-  function applyImpulses(f: Fighter, tMs: number) {
+  function applyImpulses(f: Fighter) {
     const total = f.def.totalMass;
     if (f.launch) {
       const launch = vec(f.launch);
@@ -478,15 +498,22 @@ export function createMotion(geometry: ArenaGeometry, wind: Wind | null, limitMs
         f.bodies[index]!.applyImpulse({ x: jx * share, y: jy * share, z: jz * share }, true);
       });
     }
-    if (wind && f.hazards.wind && !isActive(f) && f.mode !== "out") {
-      const gust = windStrengthAt(wind, tMs);
-      if (gust > 0) {
+    // Down or held, a push shoves the whole body; the slope only pulls on what lies on the floor.
+    if (!isActive(f) && f.mode !== "out") {
+      let ax = 0;
+      let az = 0;
+      if (f.hazards.wind) {
+        ax += field.wind[0];
+        az += field.wind[1];
+      }
+      if (onSlope(f) && f.supported) {
+        ax += field.slope[0];
+        az += field.slope[1];
+      }
+      if (ax !== 0 || az !== 0) {
         f.def.bodies.forEach((body, index) => {
-          const k = body.mass * wind.accel * gust * K.DT;
-          f.bodies[index]!.applyImpulse(
-            { x: wind.direction[0] * k, y: 0, z: wind.direction[1] * k },
-            true,
-          );
+          const k = body.mass * K.DT;
+          f.bodies[index]!.applyImpulse({ x: ax * k, y: 0, z: az * k }, true);
         });
       }
     }

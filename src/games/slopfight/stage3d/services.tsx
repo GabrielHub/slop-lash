@@ -10,6 +10,7 @@ import { createContext, useContext, useState, useSyncExternalStore, type ReactNo
 import { Vector3, type PerspectiveCamera } from "three";
 import type { ArenaNodes } from "./arena/nodes";
 import { CrowdController } from "./arena/crowd";
+import { createStageFinale, type StageFinale } from "./arena/finale";
 import type { WindState } from "./arena/hazards";
 import { StageClock } from "./director/clock";
 import { Director } from "./director/director";
@@ -81,6 +82,12 @@ export class StageServices {
   readonly arena = new ArenaStore();
   readonly edgeAlerts: EdgeAlerts = { N: 0, E: 0, S: 0, W: 0 };
   readonly wind: StageWind = { x: 1, z: 0, strength: 0, driven: false };
+  /**
+   * The arena's finale (the counter's tilt, the flood, the storm): published
+   * each frame by the fight (`publishFinale`), eased back by the set once it
+   * lets go. Read it through the helpers in arena/finale.ts.
+   */
+  readonly finale: StageFinale = createStageFinale();
   /** The canvas camera, set by the camera rig. */
   camera: PerspectiveCamera | null = null;
   /**

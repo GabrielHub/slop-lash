@@ -10,21 +10,28 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import {
   Color,
+  Euler,
   Mesh,
   MeshBasicMaterial,
   MeshDepthMaterial,
   OrthographicCamera,
   PlaneGeometry,
+  Quaternion,
   ShaderMaterial,
+  Vector3,
   WebGLRenderTarget,
   type Group,
 } from "three";
 import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
 import type { ArenaGeometry } from "../../arenas";
+import { tiltPivot, tiltQuaternion } from "../arena/finale";
+import { useStage } from "../services";
 import { ContactShadowCasters, createContactShadowReceiver } from "./contact-shadow-geometry";
 
 const clearColor = new Color();
+/** The capture camera looks straight up from under the receiver. */
+const LOOK_UP = new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0));
 
 export interface ContactShadowsProps {
   geometry: ArenaGeometry;
@@ -52,7 +59,10 @@ export function ContactShadows({
 }: ContactShadowsProps) {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
+  const services = useStage();
   const group = useRef<Group>(null);
+  const tilt = useMemo(() => new Quaternion(), []);
+  const pivot = useMemo(() => new Vector3(), []);
 
   const kit = useMemo(() => {
     const target = new WebGLRenderTarget(resolution, resolution);
@@ -87,7 +97,7 @@ export function ContactShadows({
     horizontal.depthTest = false;
     vertical.depthTest = false;
     const camera = new OrthographicCamera(-size / 2, size / 2, size / 2, -size / 2, 0, far);
-    camera.rotation.x = Math.PI / 2;
+    camera.quaternion.copy(LOOK_UP);
     const material = new MeshBasicMaterial({
       map: target.texture,
       transparent: true,
@@ -115,10 +125,19 @@ export function ContactShadows({
     const root = group.current;
     if (!root) return;
     const { target, targetBlur, blurPlane, depth, horizontal, vertical, camera } = kit;
-    camera.position.set(0, y, 0);
+    // The kitchen's finale tips the counter: the receiver and the capture tip with it.
+    tiltQuaternion(services.finale, 1, tilt);
+    tiltPivot(services.finale, pivot);
+    const place = (out: Vector3, height: number) => out.set(0, height, 0).sub(pivot).applyQuaternion(tilt).add(pivot);
+    place(root.position, y);
+    root.quaternion.copy(tilt);
+    place(camera.position, y);
+    camera.quaternion.copy(tilt).multiply(LOOK_UP);
     camera.updateMatrixWorld();
     // The camera looks up from y; a quad left at y=0 sits behind its near plane.
-    blurPlane.position.y = y + far / 2;
+    place(blurPlane.position, y + far / 2);
+    blurPlane.quaternion.copy(tilt);
+    blurPlane.updateMatrixWorld();
 
     const background = scene.background;
     const override = scene.overrideMaterial;
