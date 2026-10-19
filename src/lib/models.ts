@@ -49,13 +49,13 @@ export const AI_MODELS: AIModel[] = [
     outputPer1M: 0.5,
   },
   {
-    id: "deepseek/deepseek-v4.1-flash",
+    id: "deepseek/deepseek-v4.1-flash-1017",
     name: "DeepSeek V4.1 Flash",
     shortName: "DeepSeek",
     provider: "DeepSeek",
     icon: "/icons/deepseek.png",
-    inputPer1M: 0.3,
-    outputPer1M: 1.2,
+    inputPer1M: 0.041,
+    outputPer1M: 0.1,
   },
   {
     id: "openai/gpt-6.1-sol",
@@ -101,6 +101,16 @@ export const AI_MODELS: AIModel[] = [
     // AI Gateway lists cache reads at $0.002/M and no cache-write price.
     cacheReadPer1M: 0.002,
   },
+  {
+    id: "minimax/minimax-m3.1-flash",
+    name: "MiniMax M3.1 Flash",
+    shortName: "MiniMax",
+    provider: "MiniMax",
+    icon: "/icons/minimax.png",
+    // AI Gateway lists it as free at launch (2026-10-19).
+    inputPer1M: 0,
+    outputPer1M: 0,
+  },
 ];
 
 /**
@@ -131,7 +141,7 @@ export const INTERNAL_MODELS: AIModel[] = [
  * text, so it judges but never plays. Output tokens are free.
  */
 export const JEV_MODEL = {
-  id: "typesafe-ai/jev",
+  id: "typesafe-ai/jev-1.14.0",
   name: "Jev",
   shortName: "Jev",
   provider: "TypeSafe AI",

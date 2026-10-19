@@ -8,6 +8,7 @@ import {
   type AttemptPolicy,
 } from "./attempts";
 import { callBudget, callSignal, callTimeoutMs, DEADLINE_MARGIN_MS } from "./deadline";
+import { JEV_MODEL } from "../models";
 import { slotKeys } from "./prompt";
 import { AI_TASK_IDS, getAiTask } from "./tasks";
 import { estimateCostUsd, normalizeDecisionUsage, normalizeUsage, rollUpUsage } from "./usage";
@@ -263,14 +264,14 @@ describe("usage", () => {
   });
 
   it("rolls calls up into one usage row per model", () => {
-    const decision = normalizeDecisionUsage("typesafe-ai/jev", { inputTokens: 100 });
+    const decision = normalizeDecisionUsage(JEV_MODEL.id, { inputTokens: 100 });
     const calls = [
-      { modelId: "typesafe-ai/jev", usage: decision },
-      { modelId: "typesafe-ai/jev", usage: decision },
+      { modelId: JEV_MODEL.id, usage: decision },
+      { modelId: JEV_MODEL.id, usage: decision },
     ];
     expect(rollUpUsage(calls)).toEqual([
       {
-        modelId: "typesafe-ai/jev",
+        modelId: JEV_MODEL.id,
         inputTokens: 200,
         outputTokens: 0,
         costUsd: decision.costUsd * 2,

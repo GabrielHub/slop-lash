@@ -23,6 +23,7 @@ const GLOW_CLASSES = [
   "icon-glow-punch",
   "icon-glow-gold",
   "icon-glow-teal",
+  "icon-glow-punch",
 ];
 
 /** Desktop only: the AI players float around the edges, clear of the centre column. */
@@ -34,6 +35,7 @@ const ICON_POSITIONS = [
   { top: "56%", left: "7%", delay: 0.9 },
   { top: "68%", right: "10%", delay: 0.2 },
   { top: "78%", left: "12%", delay: 0.7 },
+  { top: "82%", right: "14%", delay: 1.3 },
 ];
 
 const TAGLINES = [
