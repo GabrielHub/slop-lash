@@ -1,13 +1,14 @@
 // RESULT's instant replay, planned: which moment of the fight to show again
 // and how fast to play it. A KO replays the finishing blow, a ring-out the
-// victim going over the edge (with the push, when it came just before), a
-// decision the winner's biggest hit and sudden death the winning hit.
+// victim going over the edge (with the push, when it came just before; one
+// the arena's finale did on its own says so on the bug), a decision the winner's biggest hit and sudden death the winning hit.
 //
 // The replay plays a short window of sim time around that moment: at full
 // speed into a ramp, slow motion (0.3x) from just before contact through the
 // reaction, then a ramp back up. The window comes from the recording's own
 // events, so it always matches the motion on screen. Pure TypeScript.
 
+import type { FinaleSpec } from "../../arenas";
 import type { FightEvent, FightMethod, Side } from "../../sim";
 
 export type ReplayKind = "KO" | "RINGOUT" | "HIT";
@@ -54,6 +55,8 @@ export interface RingOutScan {
   overEdgeMs?: number | null;
   /** The victim landed (water, street, floor or sink). */
   landingMs?: number | null;
+  /** The arena's finale (the replay labels a ring-out it caused, with no push before the fall). */
+  finale?: FinaleSpec["id"];
 }
 
 export const REPLAY_RATES = { lead: 1, core: 0.3, tail: 1 } as const;
@@ -92,6 +95,13 @@ const LABELS: Record<FightMethod, string> = {
   RINGOUT: "THE RING-OUT",
   DECISION: "BIGGEST HIT",
   SUDDEN_DEATH: "THE WINNING HIT",
+};
+
+/** A ring-out the finale did on its own: the counter tipped them off, the flood took them, the storm blew them off. */
+const FINALE_LABELS: Record<FinaleSpec["id"], string> = {
+  tilt: "TIPPED OFF",
+  flood: "SWEPT AWAY",
+  storm: "BLOWN AWAY",
 };
 
 const other = (side: Side): Side => (side === "A" ? "B" : "A");
@@ -139,14 +149,17 @@ export function planReplay(
     if (!ringout) return null;
     const moment = Math.min(ringout.t, scan.overEdgeMs ?? ringout.t - 250);
     const push = lastImpact(events, winner, moment - PUSH_WINDOW_MS, moment);
+    const pushed = push !== null && moment - push.t <= PUSH_SHARE_MS;
     let coreFrom = moment - RINGOUT_CORE_BEFORE_MS;
-    if (push && moment - push.t <= PUSH_SHARE_MS) coreFrom = push.t - HIT_CORE_BEFORE_MS;
+    if (pushed) coreFrom = push.t - HIT_CORE_BEFORE_MS;
     const coreTo = Math.min(moment + RINGOUT_CORE_AFTER_MS, coreFrom + CORE_MAX_MS);
     let toMs = coreTo + TAIL_MS;
     const landing = scan.landingMs ?? null;
     const landed = landing !== null && landing >= coreFrom && landing <= toMs + LANDING_GRACE_MS;
     if (landed) toMs = Math.max(toMs, landing + LANDING_AFTER_MS);
-    return build({ kind: "RINGOUT", label, attacker: winner, victim: loser, impact: push, momentMs: moment, landingMs: landed ? landing : null }, coreFrom, coreTo, toMs);
+    const finale = events.find((event) => event.kind === "finale");
+    const byFinale = scan.finale !== undefined && !pushed && finale !== undefined && finale.t <= moment;
+    return build({ kind: "RINGOUT", label: byFinale ? FINALE_LABELS[scan.finale!] : label, attacker: winner, victim: loser, impact: push, momentMs: moment, landingMs: landed ? landing : null }, coreFrom, coreTo, toMs);
   }
 
   let impact: ImpactEvent | null = null;

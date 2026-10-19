@@ -88,8 +88,11 @@ the skeleton and visual geometry used by the simulation and mesher.
   helpers: `tiltAngle` / `placeOnStage` / `tiltBody` (the kitchen counter
   tips, and everything the sim places on it tips with it), `floodDryHalf` /
   `waterLevelAt` (the garage's waterline, exactly the sim's `dryHalfAt`), and
-  `stormLook` (the rooftop's grade and lightning). Only the live fight
-  drives it. The recap reel's replay (`fight/recap-reel.tsx`) keeps its own
+  `stormLook` (the rooftop's grade and lightning). The live fight drives
+  it, and so does RESULT's instant replay (`fight/result-replay.ts`) at its
+  own sim time while it plays; it calms the stage at once (`calmFinale`)
+  under the cut back's wipe, and RESULT tips its creatures with `tiltBody`
+  meanwhile. The recap reel's replay (`fight/recap-reel.tsx`) keeps its own
   `StageFinale` (it draws into a texture over the podium, whose grade and
   shadows must stay calm), publishes it at the replay's sim time, feeds it to
   its set's `prepared.finale`, tips its fighters with `tiltBody`, draws

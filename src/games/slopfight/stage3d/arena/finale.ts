@@ -93,6 +93,11 @@ export function relaxFinale(state: StageFinale, realDelta: number): void {
   }
 }
 
+/** Calm at once, no easing (a cut under a wipe's cover: RESULT's replay handing back the stage). */
+export function calmFinale(state: StageFinale): void {
+  Object.assign(state, createStageFinale());
+}
+
 // ---------------------------------------------------------------------------
 // The tilt (Kitchen Counter)
 // ---------------------------------------------------------------------------

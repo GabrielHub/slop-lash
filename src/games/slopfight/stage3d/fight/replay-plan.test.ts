@@ -19,6 +19,7 @@ const hit = (t: number, side: Side, damage: number, big = false): FightEvent => 
 const thrown = (t: number, side: Side, damage: number): FightEvent => ({ t, kind: "throw", side, move: 1, damage, knockback: 6, point: [0, 0.5, 0], health: 40 });
 const ko = (t: number, side: Side): FightEvent => ({ t, kind: "ko", side });
 const ringout = (t: number, side: Side): FightEvent => ({ t, kind: "ringout", side, point: [2, -0.6, 0] });
+const finale = (t: number): FightEvent => ({ t, kind: "finale", side: null });
 
 /** Real ms into the replay at which sim time `simMs` is shown. */
 function realAt(plan: ReplayPlan, simMs: number): number {
@@ -70,6 +71,21 @@ describe("instant replay plan", () => {
     const plan = planReplay(events, { winner: "B", method: "RINGOUT", endMs: 12_600 }, { overEdgeMs: 12_000 })!;
     expect(plan.coreFromMs).toBe(11_850);
     expect(replayRateAt(plan, 11_000)).toBe(REPLAY_RATES.lead);
+  });
+
+  it("a ring-out the finale did on its own says which finale on the bug", () => {
+    const events = [hit(20_000, "B", 9), finale(21_000), ringout(24_600, "A")];
+    const scan = { overEdgeMs: 24_000 };
+    expect(planReplay(events, { winner: "B", method: "RINGOUT", endMs: 24_600 }, { ...scan, finale: "tilt" })!.label).toBe("TIPPED OFF");
+    expect(planReplay(events, { winner: "B", method: "RINGOUT", endMs: 24_600 }, { ...scan, finale: "flood" })!.label).toBe("SWEPT AWAY");
+    expect(planReplay(events, { winner: "B", method: "RINGOUT", endMs: 24_600 }, { ...scan, finale: "storm" })!.label).toBe("BLOWN AWAY");
+  });
+
+  it("a pushed ring-out in the finale, or one before it, stays THE RING-OUT", () => {
+    const pushed = [finale(21_000), hit(23_700, "B", 9), ringout(24_600, "A")];
+    expect(planReplay(pushed, { winner: "B", method: "RINGOUT", endMs: 24_600 }, { overEdgeMs: 24_000, finale: "storm" })!.label).toBe("THE RING-OUT");
+    const early = [ringout(12_600, "A"), finale(21_000)];
+    expect(planReplay(early, { winner: "B", method: "RINGOUT", endMs: 12_600 }, { overEdgeMs: 12_000, finale: "storm" })!.label).toBe("THE RING-OUT");
   });
 
   it("a ring-out without a scan goes back from the ring-out call", () => {

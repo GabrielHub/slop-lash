@@ -16,7 +16,7 @@
 // never saw the fight) the winner gets the letterboxed `winner_pose`.
 
 import { useFrame } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { MathUtils, Quaternion, Vector3, type Group, type Object3D, type Vector3Tuple } from "three";
 import { FIGHT_OUTRO_MS, RESULT_SECONDS } from "../../constants";
 import type { Side } from "../../modifiers";
@@ -24,6 +24,7 @@ import type { VoiceLine } from "../../narration/lines";
 import type { Champion } from "../../sheet";
 import { loadRapier } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
+import { placeOnStage, tiltBody } from "../arena/finale";
 import type { ArenaNodes, PlaneNode } from "../arena/nodes";
 import { Creature, createDriver, type CreatureDriver, type CreatureHandle } from "../creature/creature";
 import type { TargetLike } from "../director/director";
@@ -255,7 +256,12 @@ function Result({ feed, fight, outcome, sheets, phaseStartedAt, nodes }: ResultP
   const replayBeats = lateSlam ? REPLAY_SLAM_BEATS : REPLAY_BEATS;
 
   // The instant replay (a coin has no moment to show): from FIGHT's recording, else the fight recorded here first.
-  const fx = useMemo(() => new FxSystem(), []);
+  // Effects spawn where the sim says, tipped with the kitchen counter when the replay is in its finale.
+  const fx = useMemo(() => {
+    const system = new FxSystem();
+    system.place = (point) => placeOnStage(services.finale, point);
+    return system;
+  }, [services]);
   const [replay] = useState(() => {
     const input = coin ? null : fightInputOf(fight, sheets);
     if (!input) return null;
@@ -284,6 +290,8 @@ function Result({ feed, fight, outcome, sheets, phaseStartedAt, nodes }: ResultP
       alive = false;
     };
   }, [replay]);
+  // RESULT ending with the replay still on (a skip, a late stage): the set eases the finale back to calm.
+  useEffect(() => () => replay?.release(), [replay]);
   // The beats count from the cut back after a replay (from the start without one) and hold while one is to come.
   const post = useCallback(() => (replay ? replay.since(elapsed()) : elapsed()), [replay, elapsed]);
   const beats = useRef<ResultBeats>({ ...(coin ? COIN_RESULT_BEATS : lateSlam ? LATE_SLAM_BEATS : RESULT_BEATS) }).current;
@@ -427,8 +435,12 @@ function Result({ feed, fight, outcome, sheets, phaseStartedAt, nodes }: ResultP
         </Suspense>
       ) : (
         <>
-          <Winner side={winner} champion={sheets[winner]} end={ends[winner]} elapsed={post} beats={beats} replay={replay} />
-          <Loser side={loser} champion={sheets[loser]} end={ends[loser]} method={outcome.method} elapsed={post} beats={beats} replay={replay} />
+          <ReplayTilt replay={replay} side={winner}>
+            <Winner side={winner} champion={sheets[winner]} end={ends[winner]} elapsed={post} beats={beats} replay={replay} />
+          </ReplayTilt>
+          <ReplayTilt replay={replay} side={loser}>
+            <Loser side={loser} champion={sheets[loser]} end={ends[loser]} method={outcome.method} elapsed={post} beats={beats} replay={replay} />
+          </ReplayTilt>
         </>
       )}
       {replay && (
@@ -618,6 +630,29 @@ function useReplayDrive(replay: ResultReplay | null, side: Side, handle: RefObje
     handle.current?.replant();
   }, [view.driving, handle]);
   return { driving: view.driving, timeScale: view.timeScale, driver: view.driving && replay ? replay.player.drivers[side].driver : null };
+}
+
+/**
+ * A fighter tips with the kitchen counter while the replay is in its finale
+ * (like FIGHT's `FinaleTilt`), by its replayed torso's height. Off the replay
+ * the stage is calm and it stands as it is. Runs after the replay has
+ * published this frame's finale.
+ */
+function ReplayTilt({ replay, side, children }: { replay: ResultReplay | null; side: Side; children: ReactNode }) {
+  const services = useStage();
+  const group = useRef<Group>(null);
+  useFrame(() => {
+    const node = group.current;
+    if (!node) return;
+    const sample = replay?.driving ? replay.player.samples?.[side] : null;
+    if (sample) {
+      tiltBody(services.finale, sample.root.p[1], node.position, node.quaternion);
+    } else {
+      node.position.set(0, 0, 0);
+      node.quaternion.identity();
+    }
+  }, -40);
+  return <group ref={group}>{children}</group>;
 }
 
 interface FighterProps {

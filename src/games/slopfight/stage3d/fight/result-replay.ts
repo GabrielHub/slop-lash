@@ -14,13 +14,20 @@
 // it, the impact frame and a hit stop on the decisive one, the ring-out's
 // scream and landing, and the crowd swelling into the cut back.
 //
+// A moment in the arena's finale replays in it: the replay publishes the
+// finale at its own sim time (`services.finale`, as FIGHT's conductor does),
+// so the counter tips, the flood stands where it stood and the storm blows,
+// and RESULT tips its creatures with the counter. The stage goes calm again at
+// the cut back, under the wipe's cover.
+//
 // Plain class (no React); RESULT owns one per fight.
 
 import { Vector3 } from "three";
-import { ARENAS } from "../../arenas";
+import { ARENAS, finaleFor, windFor, type Finale, type Wind } from "../../arenas";
 import { sfx, type SfxName, type SfxOptions } from "../../audio";
 import type { Side } from "../../modifiers";
 import type { FightEvent, FightInput, Rapier } from "../../sim";
+import { calmFinale, placeOnStage, publishFinale, waterLevelAt } from "../arena/finale";
 import type { ShotRequest } from "../director/director";
 import type { StageServices } from "../services";
 import { stageSfx } from "../ui3d/sound";
@@ -105,10 +112,17 @@ export class ResultReplay {
   private landed = false;
   private elapsed: number;
   private readonly victimPoint = new Vector3();
+  private readonly finale: Finale;
+  private readonly wind: Wind | null;
+  /** This replay publishes `services.finale` (from the cut in to the cut back). */
+  private publishing = false;
 
   constructor(options: ResultReplayOptions) {
     this.o = options;
     this.elapsed = options.elapsed;
+    const { arena, seed, limitMs } = options.input;
+    this.finale = finaleFor(arena, seed, limitMs);
+    this.wind = ARENAS[arena].dynamic.some((hazard) => hazard.id === "wind") ? windFor(seed) : null;
     this.player = new FightPlayer(options.input, options.stored, { label: "result replay" });
     const targets = [() => this.torso[this.plan?.attacker ?? "A"], () => this.victimTarget()];
     this.request = { targets, from: this.from, rise: RISE.hit, duration: 3, focus: 1 };
@@ -203,7 +217,7 @@ export class ResultReplay {
     const ringout = recording.events.find((event) => event.kind === "ringout" && event.side === victim);
     if (!ringout) return {};
     const step = findOverEdgeStep(recording, victim, ringout.t);
-    return { overEdgeMs: step === null ? null : msOfStep(step), landingMs: this.player.landingMs[victim] };
+    return { overEdgeMs: step === null ? null : msOfStep(step), landingMs: this.player.landingMs[victim], finale: this.finale.spec.id };
   }
 
   /** The clear-angle search (no wall between the lens and the action), a little per frame until the replay starts. */
@@ -254,6 +268,8 @@ export class ResultReplay {
     this.state = "playing";
     this.t = 0;
     this.player.seek(plan.fromMs);
+    this.publishing = true;
+    this.publishFinale();
   }
 
   private play(realDelta: number, hooks: ReplayHooks): void {
@@ -266,6 +282,7 @@ export class ResultReplay {
     this.rate = this.stop > 0 ? 0 : replayRateAt(plan, sim);
     this.simDelta = dt * this.rate;
     const played = this.player.update(sim, this.simDelta);
+    this.publishFinale();
     this.readTorsos();
     for (const { event, fresh } of played) if (fresh) this.onEvent(event);
     const sound = stageSfx(services);
@@ -300,7 +317,34 @@ export class ResultReplay {
     this.state = "done";
     this.doneAt = this.elapsed;
     this.rate = 1;
+    this.release(true);
     hooks.cutBack();
+  }
+
+  /**
+   * Hand the stage's finale back: at once under the cut back's cover, or eased
+   * by the set (`calm` false) when RESULT ends with the replay still on.
+   */
+  release(calm = false): void {
+    if (!this.publishing) return;
+    this.publishing = false;
+    const { services } = this.o;
+    if (this.wind) services.wind.driven = false;
+    if (calm) calmFinale(services.finale);
+    else services.finale.driven = false;
+  }
+
+  /** The finale at the replay's sim time, frozen at the fight's end like the sim (and the rooftop's gusts with it). */
+  private publishFinale(): void {
+    if (!this.publishing) return;
+    const { services, input } = this.o;
+    publishFinale(services.finale, input.arena, this.finale, this.wind, this.player.t, this.player.result?.endMs ?? null);
+    if (this.wind) {
+      services.wind.x = this.wind.direction[0];
+      services.wind.z = this.wind.direction[1];
+      services.wind.strength = services.finale.wind;
+      services.wind.driven = true;
+    }
   }
 
   /** No replay: RESULT plays its beats on their own times. */
@@ -314,7 +358,8 @@ export class ResultReplay {
     if (!samples) return;
     for (const side of ["A", "B"] as const) {
       const p = samples[side].root.p;
-      this.torso[side].set(p[0], p[1], p[2]);
+      // Where the stage draws it: tipped with the counter in the kitchen's finale.
+      placeOnStage(this.o.services.finale, this.torso[side].set(p[0], p[1], p[2]));
     }
   }
 
@@ -380,7 +425,8 @@ export class ResultReplay {
     }
     const point = this.torso[side].clone();
     if (geometry.surround.kind === "water") {
-      point.y = geometry.surround.y;
+      // At the water's surface as it is now (the flood raises it over the pad).
+      point.y = waterLevelAt(services.finale, geometry, point.x, point.z);
       fx.splash(point);
     } else {
       fx.puff(point, { color: "#c9c1b3", count: 8, size: 0.24, spread: 1.4 });
