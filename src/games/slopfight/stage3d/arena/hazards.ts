@@ -74,10 +74,12 @@ export function createHazardAnimators(root: Object3D): HazardAnimator {
 
   return {
     update(t, wind) {
+      // The storm's wind can blow past a full gust (stormWindAt): it adds a fast, hard flap.
+      const whip = Math.min(1.6, Math.max(0, wind.strength - 1));
       for (const piece of laundry) {
         // Sway around the line, harder in gusts, with a flutter on top.
-        const gust = wind.strength * 0.18;
-        const flutter = fbm1(t * 1.2 + piece.seed, piece.seed) * 0.025;
+        const gust = Math.min(2.6, wind.strength) * 0.18;
+        const flutter = fbm1(t * 1.2 + piece.seed, piece.seed) * 0.025 + fbm1(t * 5.3 + piece.seed, piece.seed + 1) * 0.09 * whip;
         const swing = Math.sin(t * 1.35 + piece.seed) * 0.035 + flutter;
         piece.object.rotation.set(
           piece.rotation.x + (swing + wind.z * gust) * 0.9,
@@ -116,8 +118,9 @@ export function createHazardAnimators(root: Object3D): HazardAnimator {
         // The sock points along its local +X: yaw it toward the wind (a slow
         // turn) and let it droop when the gust dies.
         const target = Math.atan2(-wind.z, wind.x);
-        const wobble = fbm1(t * 1.4 + piece.seed, piece.seed) * 0.25 * (0.3 + wind.strength);
-        const droop = (1 - wind.strength) * 0.9;
+        const wobble =
+          fbm1(t * 1.4 + piece.seed, piece.seed) * 0.25 * (0.3 + Math.min(1, wind.strength)) + fbm1(t * 6.1 + piece.seed, piece.seed + 2) * 0.12 * whip;
+        const droop = (1 - Math.min(1, wind.strength)) * 0.9;
         piece.object.rotation.set(piece.rotation.x, target + wobble, piece.rotation.z - droop);
       }
     },

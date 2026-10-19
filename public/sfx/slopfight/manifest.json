@@ -268,6 +268,46 @@
       "loop": null
     },
     {
+      "name": "fight-finale",
+      "group": "Fight",
+      "file": "fight-finale.mp3",
+      "seconds": 1.8472,
+      "bytes": 22570,
+      "lufs": -14.1,
+      "peakDb": -1.5,
+      "loop": null
+    },
+    {
+      "name": "finale-tilt",
+      "group": "Fight",
+      "file": "finale-tilt.mp3",
+      "seconds": 2.2835,
+      "bytes": 27899,
+      "lufs": -16.5,
+      "peakDb": -6,
+      "loop": null
+    },
+    {
+      "name": "finale-flood",
+      "group": "Fight",
+      "file": "finale-flood.mp3",
+      "seconds": 2.5,
+      "bytes": 30407,
+      "lufs": -16.5,
+      "peakDb": -5,
+      "loop": null
+    },
+    {
+      "name": "finale-storm",
+      "group": "Fight",
+      "file": "finale-storm.mp3",
+      "seconds": 2.8983,
+      "bytes": 35109,
+      "lufs": -16.1,
+      "peakDb": -3,
+      "loop": null
+    },
+    {
       "name": "land-splash",
       "group": "Fight",
       "file": "land-splash.mp3",

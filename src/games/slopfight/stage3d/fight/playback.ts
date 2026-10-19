@@ -3,10 +3,11 @@
 // time crosses it, the hash check, and the ring-out landing scan. Pure
 // TypeScript (no three.js, no React).
 
-import { ARENAS, isOverFloor } from "../../arenas";
+import { ARENAS, dryHalfAt, finaleFor, finaleStrengthAt, floodedGeometry, isOverFloor } from "../../arenas";
 import type { MatchupNote, Side } from "../../modifiers";
 import type { Champion } from "../../sheet";
 import { STEP_MS, type FightEvent, type FightInput, type FightMethod } from "../../sim";
+import { waterSurfaceAt } from "../arena/flood-level";
 import type { FightRecording } from "./recording";
 
 /** The parts of a fight row (views.room / views.recap) playback reads. */
@@ -155,8 +156,14 @@ export function checkHash(recording: FightRecording, stored: StoredOutcomeLike |
  * lands inside the recording.
  */
 export function findLandingStep(recording: FightRecording, side: Side, fromMs: number): number | null {
-  const geometry = ARENAS[recording.input.arena].geometry;
-  const surfaceY = geometry.surround.y;
+  const { arena, seed, limitMs } = recording.input;
+  const geometry = ARENAS[arena].geometry;
+  // The flood finale moves the waterline in and raises the water; a ring-out
+  // ends the fight, so it holds where it was then.
+  const finale = finaleFor(arena, seed, limitMs);
+  const flood = finale.spec.id === "flood" ? finale.spec : null;
+  const strength = flood ? finaleStrengthAt(finale, fromMs) : 0;
+  const floor = flood ? floodedGeometry(geometry, dryHalfAt(geometry, flood, strength)) : geometry;
   const torso: [number, number, number] = [0, 0, 0];
   const start = Math.max(0, Math.floor(fromMs / STEP_MS) - 90);
   let leftFloor = false;
@@ -164,10 +171,10 @@ export function findLandingStep(recording: FightRecording, side: Side, fromMs: n
   for (let k = start; k <= recording.steps; k += 1) {
     recording.torsoAt(side, k, torso);
     if (!leftFloor) {
-      leftFloor = !isOverFloor(geometry, torso[0], torso[2]) || torso[1] < geometry.topY - 0.3;
+      leftFloor = !isOverFloor(floor, torso[0], torso[2]) || torso[1] < geometry.topY - 0.3;
       if (!leftFloor) continue;
     }
-    if (torso[1] <= surfaceY + 0.15) return k;
+    if (torso[1] <= waterSurfaceAt(geometry, flood, strength, torso[0], torso[2]) + 0.15) return k;
     // The sink basin: a fast fall that suddenly stops.
     const vy = recording.torsoVyAt(side, k);
     if (vy < -2.5) fastFall = true;

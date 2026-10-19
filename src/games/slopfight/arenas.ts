@@ -8,6 +8,7 @@
 // right as the camera sees it. Fighter A spawns at -x facing +x.
 
 import { mixedHash, seededShuffle } from "../../lib/hash";
+import { FINALE_MS } from "./constants";
 import type { ModifierEffect } from "./modifiers";
 import type { BodyPlan, ToyColor, Trait } from "./vocab";
 
@@ -108,6 +109,53 @@ export interface CounterCrackHazard {
 
 export type DynamicHazard = WindHazard | WaterLandingHazard | CounterCrackHazard;
 
+export type FinaleId = "tilt" | "flood" | "storm";
+
+interface FinaleBase {
+  /** The slam and the face-off card's title. */
+  title: string;
+  /** Face-off card line, at most HAZARD_CARD_MAX characters. */
+  card: string;
+  /** From the finale's start to full strength. */
+  rampMs: number;
+}
+
+/**
+ * Kitchen Counter: the counter tips toward one edge and everything on it
+ * slides downhill. The sim keeps the floor flat and adds the slope's pull
+ * (what a tilted floor feels like from on top of it); the stage tips the
+ * counter and everything on it together.
+ */
+export interface TiltFinale extends FinaleBase {
+  id: "tilt";
+  /** The edges it may tip toward; the fight's seed picks one. */
+  toward: readonly EdgeSide[];
+  /** Downhill pull at full tilt, units/s^2. pushImmune fighters and hovering fliers ignore it. */
+  accel: number;
+  /** The rendered tilt at full strength, radians. */
+  angle: number;
+}
+
+/** Flooded Garage: the water rises over the pad from its edges and the dry floor shrinks under the fighters. */
+export interface FloodFinale extends FinaleBase {
+  id: "flood";
+  /** Half-size of the dry floor at full flood (the pad's is geometry.halfSize). Past it is deep water. */
+  dryHalf: number;
+  /** Water level at full flood, for the stage. */
+  waterY: number;
+}
+
+/** Rooftop: a storm. Gusts blow harder and a steady wind fills the gaps between them. */
+export interface StormFinale extends FinaleBase {
+  id: "storm";
+  /** Gust strength multiplier at full storm. */
+  gustScale: number;
+  /** Steady wind between gusts at full storm, as a share of a base gust. */
+  steady: number;
+}
+
+export type FinaleSpec = TiltFinale | FloodFinale | StormFinale;
+
 export interface Arena {
   id: ArenaId;
   /** Title-case name for cards and the marquee. */
@@ -120,6 +168,8 @@ export interface Arena {
   geometry: ArenaGeometry;
   hazards: readonly Hazard[];
   dynamic: readonly DynamicHazard[];
+  /** What the arena does in the last FINALE_MS of the fight, to finish it before the bell. */
+  finale: FinaleSpec;
 }
 
 export const HAZARD_CARD_MAX = 70;
@@ -182,6 +232,14 @@ export const ARENAS: Readonly<Record<ArenaId, Arena>> = {
         hopSpeedFactor: 0.75,
       },
     ],
+    finale: {
+      id: "flood",
+      title: "High Tide",
+      card: "Last 10 s: the water rises and the dry floor shrinks.",
+      rampMs: 5_000,
+      dryHalf: 1.5,
+      waterY: 0.02,
+    },
   },
   KITCHEN_COUNTER: {
     id: "KITCHEN_COUNTER",
@@ -225,6 +283,15 @@ export const ARENAS: Readonly<Record<ArenaId, Arena>> = {
     dynamic: [
       { id: "counterCrack", appliesTo: { trait: "heavy" }, minImpactSpeed: 2.5, staggerMs: 600 },
     ],
+    finale: {
+      id: "tilt",
+      title: "Tip Over",
+      card: "Last 10 s: the counter tips and everything slides downhill.",
+      rampMs: 3_000,
+      toward: ["left", "right"],
+      accel: 3,
+      angle: 0.12,
+    },
   },
   ROOFTOP: {
     id: "ROOFTOP",
@@ -276,6 +343,14 @@ export const ARENAS: Readonly<Record<ArenaId, Arena>> = {
         accel: 2.5,
       },
     ],
+    finale: {
+      id: "storm",
+      title: "The Storm",
+      card: "Last 10 s: the storm hits and the wind never lets up.",
+      rampMs: 3_000,
+      gustScale: 2,
+      steady: 0.4,
+    },
   },
 };
 
@@ -346,6 +421,62 @@ export function windStrengthAt(wind: Wind, tMs: number): number {
   if (phase < wind.rampMs) return phase / wind.rampMs;
   if (phase > wind.gustMs - wind.rampMs) return (wind.gustMs - phase) / wind.rampMs;
   return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Finale (the last FINALE_MS of every fight)
+// ---------------------------------------------------------------------------
+
+/** One fight's finale: the arena's spec plus what the seed decides. */
+export interface Finale {
+  spec: FinaleSpec;
+  /** Sim ms when it starts. */
+  startMs: number;
+  /** The edge it pushes toward (the tilt's downhill, the storm's downwind); null for the flood. */
+  edge: EdgeSide | null;
+  /** Unit push direction on the floor plane toward `edge`. */
+  direction: readonly [x: number, z: number] | null;
+}
+
+/** The fight's finale, from its arena, seed and time limit alone, so the sim, the stage and the Voice agree. */
+export function finaleFor(arena: ArenaId, seed: number, limitMs: number): Finale {
+  const spec = ARENAS[arena].finale;
+  let edge: EdgeSide | null = null;
+  if (spec.id === "tilt") {
+    edge = spec.toward[mixedHash(`slopfight-tilt:${seed >>> 0}`) % spec.toward.length]!;
+  } else if (spec.id === "storm") {
+    edge = windFor(seed).edge;
+  }
+  return {
+    spec,
+    startMs: Math.max(0, limitMs - FINALE_MS),
+    edge,
+    direction: edge ? EDGE_DIRECTIONS[edge] : null,
+  };
+}
+
+/** Finale strength 0..1 at sim time tMs: nothing before it starts, a smooth ramp, then full through sudden death. */
+export function finaleStrengthAt(finale: Finale, tMs: number): number {
+  if (tMs <= finale.startMs) return 0;
+  const x = Math.min(1, (tMs - finale.startMs) / finale.spec.rampMs);
+  return x * x * (3 - 2 * x);
+}
+
+/** The flood's dry floor half-size at a strength. */
+export function dryHalfAt(geometry: ArenaGeometry, flood: FloodFinale, strength: number): number {
+  return geometry.halfSize - (geometry.halfSize - flood.dryHalf) * strength;
+}
+
+/** The play geometry with the floor ending at the waterline: past it is deep water, a drop like any edge. */
+export function floodedGeometry(geometry: ArenaGeometry, dryHalf: number): ArenaGeometry {
+  return dryHalf >= geometry.halfSize ? geometry : { ...geometry, halfSize: dryHalf };
+}
+
+/** Wind strength (1 = a base gust) at tMs: the gusts, scaled up by a storm, plus its steady wind. */
+export function stormWindAt(wind: Wind, storm: StormFinale | null, strength: number, tMs: number): number {
+  const gust = windStrengthAt(wind, tMs);
+  if (!storm || strength <= 0) return gust;
+  return gust * (1 + (storm.gustScale - 1) * strength) + storm.steady * strength;
 }
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ export const FIGHT_EVENT_KINDS = [
   "ko",
   "selfDamage",
   "showboat",
+  "finale",
   "suddenDeath",
   "timeout",
   "end",
@@ -104,6 +105,8 @@ export type FightEvent =
   | (EventBase & { kind: "ko"; side: Side })
   | (EventBase & { kind: "selfDamage"; side: Side; damage: number; health: number })
   | (EventBase & { kind: "showboat"; side: Side })
+  /** The arena's finale begins, FINALE_MS before the limit: the counter tips, the water rises, the storm hits. */
+  | (EventBase & { kind: "finale"; side: null })
   | (EventBase & { kind: "suddenDeath"; side: null })
   | (EventBase & { kind: "timeout"; side: null })
   | (EventBase & { kind: "end"; side: Side; method: FightMethod });

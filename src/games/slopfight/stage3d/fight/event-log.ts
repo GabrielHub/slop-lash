@@ -1,9 +1,10 @@
 // A fight's stored event log as readable lines (the recap without WebGL, and
 // anything else that wants the story in words): hits with their move and
-// damage, the edge, ring-outs, KOs, sudden death and the finish. Pure
-// TypeScript with type-only imports, so the DOM fallback never pulls in
-// three.js or the sim.
+// damage, the edge, ring-outs, KOs, the arena's finale, sudden death and the
+// finish. Pure TypeScript with type-only imports, so the DOM fallback never
+// pulls in three.js or the sim.
 
+import type { ArenaId } from "../../arenas";
 import type { Champion } from "../../sheet";
 import type { FightEvent, FightMethod, Side } from "../../sim";
 
@@ -29,6 +30,13 @@ export function methodWords(method: FightMethod): string {
   return METHOD_WORDS[method];
 }
 
+/** The arena's finale in words (arenas.ts `finale`). */
+const FINALE_WORDS: Record<ArenaId, string> = {
+  FLOODED_GARAGE: "High tide: the water rises over the pad",
+  KITCHEN_COUNTER: "Tip over: the counter tips",
+  ROOFTOP: "The storm hits",
+};
+
 /** m:ss.t from sim milliseconds. */
 export function formatFightTime(ms: number): string {
   const tenths = Math.max(0, Math.floor(ms / 100));
@@ -43,6 +51,7 @@ const other = (side: Side): Side => (side === "A" ? "B" : "A");
 export function readableEventLog(
   events: readonly FightEvent[],
   sheets: { A: Pick<Champion, "name" | "moves"> | null; B: Pick<Champion, "name" | "moves"> | null },
+  arena?: ArenaId,
 ): LogLine[] {
   const name = (side: Side) => sheets[side]?.name ?? (side === "A" ? "Fighter A" : "Fighter B");
   const move = (side: Side, index: number) => sheets[side]?.moves[index]?.name ?? "a move";
@@ -83,6 +92,9 @@ export function readableEventLog(
         break;
       case "ko":
         push(event.t, `${name(event.side)} is knocked out`, "ko");
+        break;
+      case "finale":
+        push(event.t, arena ? FINALE_WORDS[arena] : "The arena turns on them", "info");
         break;
       case "suddenDeath":
         push(event.t, "Sudden death: next hit wins", "info");

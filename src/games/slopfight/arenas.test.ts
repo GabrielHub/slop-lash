@@ -3,15 +3,23 @@ import {
   ARENA_IDS,
   ARENAS,
   HAZARD_CARD_MAX,
+  dryHalfAt,
+  finaleFor,
+  finaleStrengthAt,
+  floodedGeometry,
   isOverFloor,
   isRingOut,
   pickArenaOrder,
   platformColliders,
   ringOutDistance,
+  stormWindAt,
   windFor,
   windStrengthAt,
   type Box,
+  type FloodFinale,
+  type StormFinale,
 } from "./arenas";
+import { FINALE_MS } from "./constants";
 import { MODIFIER_KEYS } from "./modifiers";
 import { TOY_COLORS } from "./vocab";
 
@@ -93,6 +101,72 @@ describe("wind", () => {
     expect(windStrengthAt(wind, 3_600)).toBe(0.5);
     expect(windStrengthAt(wind, 4_000)).toBe(0);
     expect(windStrengthAt(wind, 8_000)).toBe(1);
+  });
+});
+
+describe("finale", () => {
+  test("every arena has one, with a title and a short card", () => {
+    expect(ARENA_IDS.map((id) => ARENAS[id].finale.id)).toEqual(["flood", "tilt", "storm"]);
+    for (const id of ARENA_IDS) {
+      const { finale } = ARENAS[id];
+      expect(finale.title.length).toBeGreaterThan(0);
+      expect(finale.card.length).toBeLessThanOrEqual(HAZARD_CARD_MAX);
+      expect(finale.rampMs).toBeGreaterThan(0);
+      expect(finale.rampMs).toBeLessThan(FINALE_MS);
+    }
+  });
+
+  test("starts FINALE_MS before the limit (at once in a shorter fight), from the seed alone", () => {
+    const edges = new Set<string>();
+    for (let seed = 0; seed < 50; seed += 1) {
+      const tilt = finaleFor("KITCHEN_COUNTER", seed, 30_000);
+      expect(finaleFor("KITCHEN_COUNTER", seed, 30_000)).toEqual(tilt);
+      expect(tilt.startMs).toBe(30_000 - FINALE_MS);
+      expect(["left", "right"]).toContain(tilt.edge);
+      edges.add(tilt.edge!);
+      // The storm blows the way the rooftop's wind does.
+      const storm = finaleFor("ROOFTOP", seed, 20_000);
+      expect(storm.startMs).toBe(20_000 - FINALE_MS);
+      expect(storm.edge).toBe(windFor(seed).edge);
+      expect(storm.direction).toEqual(windFor(seed).direction);
+    }
+    expect(edges.size).toBe(2);
+    const flood = finaleFor("FLOODED_GARAGE", 3, 4_000);
+    expect(flood).toMatchObject({ startMs: 0, edge: null, direction: null });
+  });
+
+  test("ramps smoothly from nothing to full and stays there", () => {
+    const finale = finaleFor("ROOFTOP", 1, 30_000);
+    const ramp = finale.spec.rampMs;
+    expect(finaleStrengthAt(finale, 0)).toBe(0);
+    expect(finaleStrengthAt(finale, 20_000)).toBe(0);
+    expect(finaleStrengthAt(finale, 20_000 + ramp / 2)).toBe(0.5);
+    expect(finaleStrengthAt(finale, 20_000 + ramp)).toBe(1);
+    expect(finaleStrengthAt(finale, 45_000)).toBe(1);
+    let last = 0;
+    for (let t = 20_000; t <= 20_000 + ramp; t += 100) {
+      const s = finaleStrengthAt(finale, t);
+      expect(s).toBeGreaterThanOrEqual(last);
+      last = s;
+    }
+  });
+
+  test("the flood shrinks the dry floor to its square; the storm adds to the gusts", () => {
+    const { geometry } = ARENAS.FLOODED_GARAGE;
+    const flood = ARENAS.FLOODED_GARAGE.finale as FloodFinale;
+    expect(dryHalfAt(geometry, flood, 0)).toBe(geometry.halfSize);
+    expect(dryHalfAt(geometry, flood, 1)).toBe(flood.dryHalf);
+    expect(floodedGeometry(geometry, geometry.halfSize)).toBe(geometry);
+    expect(floodedGeometry(geometry, 2)).toEqual({ ...geometry, halfSize: 2 });
+
+    const storm = ARENAS.ROOFTOP.finale as StormFinale;
+    const wind = { ...windFor(7), firstGustMs: 2_000, periodMs: 5_000, gustMs: 1_800, rampMs: 400 };
+    for (const t of [0, 2_200, 3_000, 4_500]) {
+      expect(stormWindAt(wind, null, 1, t)).toBe(windStrengthAt(wind, t));
+      expect(stormWindAt(wind, storm, 0, t)).toBe(windStrengthAt(wind, t));
+    }
+    expect(stormWindAt(wind, storm, 1, 3_000)).toBe(storm.gustScale + storm.steady);
+    expect(stormWindAt(wind, storm, 1, 4_500)).toBe(storm.steady);
   });
 });
 

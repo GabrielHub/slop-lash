@@ -161,6 +161,8 @@ export class FxSystem {
   readonly particles: Record<Kind, Particle[]>;
   /** The glow halo's colour (the last glowing hit's paint). */
   readonly haloColor = new Color("#ffffff");
+  /** Moves a spawn point from sim space to where the stage draws it, in place (the kitchen counter's tilt). */
+  place: ((point: Vector3) => Vector3) | null = null;
   private random = rng(7);
   /** Finish layers draw from their own stream, so vinyl hits replay exactly as before. */
   private finishRandom = rng(11);
@@ -216,6 +218,7 @@ export class FxSystem {
     particle.age = 0;
     particle.life = init.life ?? 0.3;
     particle.p.copy(init.p);
+    this.place?.(particle.p);
     particle.v.copy(init.v ?? tmpV.set(0, 0, 0));
     particle.gravity = init.gravity ?? 0;
     particle.drag = init.drag ?? 0;

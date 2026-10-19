@@ -19,11 +19,13 @@ import { TOY_COLOR_VALUES } from "../../vocab";
 import { flickerAt, hash01 } from "../director/noise";
 import type { ArenaMood } from "../look/moods";
 import { useStage } from "../services";
+import { createFinaleSetAnimator, relaxFinale, type FinaleSetAnimator } from "./finale";
 import { checkFloor, type GeometryCheck } from "./geometry-check";
 import { createHazardAnimators, type HazardAnimator } from "./hazards";
 import { arenaSurface, createArenaToon, createEmissiveMaterial, OutlinePalette, type ArenaSurface, type EmissiveUniforms } from "./materials";
 import { buildArenaNodes, isEmissiveNode, missingContractNodes, type ArenaNodes, type EdgeSideCode } from "./nodes";
-import { createRippleMaterial, createWaterMaterial } from "./water";
+import { StormFx } from "./storm";
+import { createFloodSheet, createRippleMaterial, createWaterMaterial } from "./water";
 
 export const ARENA_FILES: Readonly<Record<ArenaId, string>> = {
   FLOODED_GARAGE: "/models/slopfight/garage.glb",
@@ -74,6 +76,7 @@ export interface PreparedSet {
   glows: Glow[];
   timed: ShaderMaterial[];
   hazards: HazardAnimator;
+  finale: FinaleSetAnimator;
   check: GeometryCheck;
   missing: string[];
 }
@@ -131,6 +134,8 @@ export function prepareSet(arena: ArenaId, source: Object3D, mood: ArenaMood): P
     // Static reflections must not include work lights that are off in fights.
     .filter((light) => light.kind !== "directional" && !light.phases)
     .map((light) => ({ position: light.position, color: light.color, intensity: light.intensity }));
+  const spec = ARENAS[arena];
+  let sheet: ReturnType<typeof createFloodSheet> | null = null;
   const meshes: MeshLike[] = [];
   root.traverse((object) => {
     if ((object as Mesh).isMesh) meshes.push(object as MeshLike);
@@ -148,6 +153,13 @@ export function prepareSet(arena: ArenaId, source: Object3D, mood: ArenaMood): P
       own.push(water);
       timed.push(water);
       mesh.receiveShadow = false;
+      if (spec.finale.id === "flood" && !sheet) {
+        // The finale's flood over the pad (hidden until the water rises).
+        const material = createWaterMaterial({ ...mood.water, lights: practicals, flood: true });
+        sheet = createFloodSheet(material, spec.geometry.halfSize, spec.finale.waterY);
+        own.push(material);
+        timed.push(material);
+      }
       continue;
     }
     if (mesh.name === "Hazard_Water_Ripples") {
@@ -192,6 +204,7 @@ export function prepareSet(arena: ArenaId, source: Object3D, mood: ArenaMood): P
 
   // The podium waits for the final.
   if (nodes.podium) nodes.podium.node.object.visible = false;
+  if (sheet) root.add(sheet);
 
   return {
     root,
@@ -200,7 +213,8 @@ export function prepareSet(arena: ArenaId, source: Object3D, mood: ArenaMood): P
     glows,
     timed,
     hazards: createHazardAnimators(root),
-    check: checkFloor(ARENAS[arena].geometry, nodes.floorBounds),
+    finale: createFinaleSetAnimator(root, arena, sheet),
+    check: checkFloor(spec.geometry, nodes.floorBounds),
     missing: missingContractNodes(nodes),
   };
 }
@@ -220,6 +234,7 @@ function useDressedSet(arena: ArenaId, prepared: PreparedSet, showPodium: boolea
     services.transitions.setAccent(accent.hex, accent.dark);
     return () => {
       prepared.hazards.reset();
+      prepared.finale.reset();
       if (services.arena.nodes !== nodes) return;
       services.crowd.reset();
       services.arena.set(null);
@@ -234,7 +249,7 @@ function useDressedSet(arena: ArenaId, prepared: PreparedSet, showPodium: boolea
   useEffect(() => () => prepared.materials.forEach((material) => material.dispose()), [prepared]);
 
   useFrame(() => {
-    const { clock, edgeAlerts, wind, crowd } = services;
+    const { clock, edgeAlerts, wind, crowd, finale } = services;
     const t = clock.elapsed;
     for (const material of prepared.timed) material.uniforms.uTime!.value = t;
     for (const glow of prepared.glows) {
@@ -252,6 +267,9 @@ function useDressedSet(arena: ArenaId, prepared: PreparedSet, showPodium: boolea
           : 0;
     }
     prepared.hazards.update(t, wind);
+    // The finale (published by the fight, or easing back to calm after it).
+    relaxFinale(finale, clock.realDelta);
+    prepared.finale.update(finale);
     crowd.update(clock.delta);
   });
 }
@@ -269,7 +287,12 @@ function GltfSet({ arena, mood, showPodium }: { arena: ArenaId; mood: ArenaMood;
       console.info(`[slopfight] ${arena} set is missing: ${prepared.missing.join(", ")}`);
     }
   }, [arena, prepared]);
-  return <primitive object={prepared.root} />;
+  return (
+    <>
+      <primitive object={prepared.root} />
+      {ARENAS[arena].finale.id === "storm" && <StormFx />}
+    </>
+  );
 }
 
 /** A stand-in set from the canonical geometry (the platform's collider boxes) while a GLB is missing. */

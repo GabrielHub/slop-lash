@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 import { ARENA_IDS, ARENAS, type ArenaId } from "../arenas";
-import { BELL_HOLD_MS, FIGHT_OUTRO_MS, SUDDEN_DEATH_MS } from "../constants";
+import { BELL_HOLD_MS, FIGHT_OUTRO_MS, FINALE_MS, SUDDEN_DEATH_MS } from "../constants";
 import { SAMPLES, sampleById } from "../samples";
 import type { Champion } from "../sheet";
 import { maxHealth } from "../sheet";
@@ -26,6 +26,9 @@ const input = (a: string, b: string, arena: ArenaId, seed: number, limitMs = 30_
   notes: [],
   limitMs,
 });
+
+/** The events that decide a fight (a KO's or a decision's bell may wait for the winner to settle). */
+const BELL_KINDS: ReadonlySet<FightEvent["kind"]> = new Set(["ko", "ringout", "timeout", "end"]);
 
 // Different body plans, delivery types and sizes on purpose.
 const PAIRS: [string, string][] = [
@@ -114,6 +117,10 @@ describe("runFight outcomes", () => {
         expect(outcome.maxHealth).toEqual({ A: maxHealth(a.champion), B: maxHealth(b.champion) });
         const end = outcome.events.at(-1)!;
         expect(end).toMatchObject({ kind: "end", side: outcome.winner, method: outcome.method, t: outcome.endMs });
+        // The finale is called once if the fight is still on when it starts.
+        const bell = outcome.events.find((event) => BELL_KINDS.has(event.kind))!;
+        const finales = outcome.events.filter((event) => event.kind === "finale");
+        expect(finales).toHaveLength(bell.t > 30_000 - FINALE_MS ? 1 : 0);
         if (outcome.method === "KO") expect(outcome.events.some((event) => event.kind === "ko")).toBe(true);
         if (outcome.method === "RINGOUT") expect(outcome.events.some((event) => event.kind === "ringout")).toBe(true);
         if (outcome.method === "DECISION") {
@@ -192,13 +199,15 @@ describe("runFight outcomes", () => {
 });
 
 describe("the bell", () => {
-  // Fights whose winner is in the air or near the edge at the bell: three
-  // decisions that used to end with the winner falling off in the outro, and a KO.
+  // Fights whose winner is in the air or near the edge at the bell: two
+  // decisions, a time-out the loser then falls out of, and two KOs (one
+  // before the finale, one in it).
   const HELD: [string, string, ArenaId, number][] = [
-    ["cat", "giraffe", "ROOFTOP", 1447],
-    ["potato-googly", "frog-suit", "ROOFTOP", 1303],
-    ["storm-cloud", "elephant", "KITCHEN_COUNTER", 1208],
-    ["teapot", "slime", "FLOODED_GARAGE", 1651],
+    ["stool-creature", "horse", "ROOFTOP", 1343],
+    ["frog", "smudge", "KITCHEN_COUNTER", 1163],
+    ["stool-creature", "frog", "KITCHEN_COUNTER", 1453],
+    ["slime", "storm-cloud", "FLOODED_GARAGE", 1858],
+    ["storm-cloud", "smudge", "KITCHEN_COUNTER", 1434],
   ];
 
   // What a fighter does on its own: none of it once the bell has gone.
@@ -227,9 +236,55 @@ describe("the bell", () => {
   });
 
   it("rings on time for a winner standing firm", () => {
-    const outcome = runFight(R, input("raccoon-lawyer", "land-shark", "FLOODED_GARAGE", 1000));
+    const outcome = runFight(R, input("raccoon-lawyer", "horse", "FLOODED_GARAGE", 1121));
     expect(outcome.method).toBe("DECISION");
     expect(outcome.endMs).toBe(30_000);
+  });
+});
+
+describe("the arena finale", () => {
+  // Fights that go the distance, one per arena.
+  const LONG: [string, string, ArenaId, number][] = [
+    ["raccoon-lawyer", "horse", "FLOODED_GARAGE", 1121],
+    ["raccoon-lawyer", "stool-creature", "KITCHEN_COUNTER", 1066],
+    ["raccoon-lawyer", "skunk", "ROOFTOP", 1341],
+  ];
+
+  it("is called once, on the first step of the last FINALE_MS", () => {
+    for (const [a, b, arena, seed] of LONG) {
+      const outcome = runFight(R, input(a, b, arena, seed));
+      const finales = outcome.events.filter((event) => event.kind === "finale");
+      expect(finales, arena).toHaveLength(1);
+      expect(finales[0]!.t).toBeGreaterThan(30_000 - FINALE_MS);
+      expect(finales[0]!.t).toBeLessThanOrEqual(30_000 - FINALE_MS + Math.ceil(STEP_MS));
+    }
+  });
+
+  it("starts with the fight when the limit is shorter than the finale", () => {
+    const events = runFight(R, input("horse", "giraffe", "ROOFTOP", 1, 4_000)).events;
+    expect(events.filter((event) => event.kind === "finale").map((event) => event.t)).toEqual([
+      Math.round(STEP_MS),
+    ]);
+  });
+
+  it("shrinks the garage floor: nobody stands past the waterline at full flood", () => {
+    const sim = createFight(R, input("raccoon-lawyer", "horse", "FLOODED_GARAGE", 1121));
+    try {
+      const flood = ARENAS.FLOODED_GARAGE.finale;
+      if (flood.id !== "flood") throw new Error("the garage floods");
+      const full = 30_000 - FINALE_MS + flood.rampMs;
+      for (let step = 1; !sim.done && step < 3000; step += 1) {
+        sim.step();
+        if (step * STEP_MS < full + 500) continue;
+        for (const side of ["A", "B"] as const) {
+          const [x, y, z] = sim.live(side).position;
+          if (y < ARENAS.FLOODED_GARAGE.geometry.topY) continue;
+          expect(Math.max(Math.abs(x), Math.abs(z)), side).toBeLessThan(flood.dryHalf + 0.6);
+        }
+      }
+    } finally {
+      sim.dispose();
+    }
   });
 });
 

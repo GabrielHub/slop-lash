@@ -24,6 +24,7 @@ import {
 import { ToneMappingMode, type ChromaticAberrationEffect, type DepthOfFieldEffect, type EffectComposer as PostComposer } from "postprocessing";
 import { useEffect, useMemo, useRef } from "react";
 import { HalfFloatType, Vector2, type Color } from "three";
+import { stormLook } from "../arena/finale";
 import { useQuality, useStage } from "../services";
 import { GradeEffect, StageFxEffect } from "./effects";
 import type { ArenaMood } from "./moods";
@@ -81,6 +82,8 @@ export function PostStack({ mood, toggles = ALL_POST_ON }: { mood: ArenaMood; to
     const camera = state.camera;
     fx.update(clock.realDelta, camera);
     grade.setAspect(aspect);
+    const storm = stormLook(services.finale);
+    grade.setStorm(toggles.grade ? storm.dim : 0, storm.flash);
 
     const u = <T,>(name: string) => stageFx.uniform<T>(name);
     const on = toggles.stageFx;
