@@ -7,6 +7,7 @@ import { MathUtils, Vector3 } from "three";
 import { ARENAS } from "../../arenas";
 import type { ArenaNodes, CameraAnchorName } from "../arena/nodes";
 import { anchorFor, type Anchor } from "./anchors";
+import { FIGHT_SAFE, forwardOf, frameSubjects, sideOnYaw, wrapAngle, yawOf, type SideOn } from "./framing";
 import { clamp01, easeInOutCubic, easeOutCubic, springStep } from "./noise";
 
 export const SHOT_IDS = [
@@ -62,6 +63,18 @@ export interface ShotParams {
   focus?: number;
   /** fight_close: horizontal direction (x, z) from the targets to the camera, in place of the fight anchor's angle. */
   from?: readonly [number, number];
+  /** fight_wide / fight_close on two targets: the taller fighter's standing height (framing sizes their boxes by it). */
+  subjectHeight?: number;
+}
+
+/** What shots remember across cuts (the director keeps one). */
+export interface ShotMemory {
+  /** The two-shots' side of the line between the fighters (null: none yet). */
+  sideOn: SideOn | null;
+}
+
+export function createShotMemory(): ShotMemory {
+  return { sideOn: null };
 }
 
 export interface ShotInput {
@@ -78,6 +91,8 @@ export interface ShotInput {
   params: ShotParams;
   /** True on the shot's first frame (springs snap). */
   first: boolean;
+  /** Kept across cuts, so a cut between two-shots keeps the fighters' screen order. */
+  memory: ShotMemory;
 }
 
 /** Per-shot mutable state (springs and cached anchors), reset on every cut. */
@@ -92,6 +107,9 @@ export interface ShotState {
   last: Vector3;
   velocity: Vector3;
   value: number;
+  /** The two-shots' yaw spring. */
+  yaw: number;
+  yawVel: number;
 }
 
 export function createShotState(): ShotState {
@@ -105,6 +123,8 @@ export function createShotState(): ShotState {
     last: new Vector3(),
     velocity: new Vector3(),
     value: 0,
+    yaw: 0,
+    yawVel: 0,
   };
 }
 
@@ -194,6 +214,109 @@ function push(anchor: Anchor, t: number, amount: number, seconds: number, out: S
   out.target.copy(anchor.target);
   out.fov = anchor.fov;
   out.roll = anchor.roll;
+}
+
+/** How a two-shot (fight_wide, fight_close on both fighters) frames the pair. */
+interface TwoShotStyle {
+  /** Turn from the anchor's yaw toward side-on by this much (0..1), at most `limit` (rad). */
+  bias: number;
+  limit: number;
+  /** Seconds for the yaw to go halfway to a new side-on angle. */
+  yawHalfLife: number;
+  /** Pitch (rad, negative looks down); null keeps the anchor's, within [-24, -10] degrees. */
+  pitch: number | null;
+  /** Field of view (degrees); null keeps the anchor's. */
+  fov: number | null;
+  /** The pair's share of the safe area, and each fighter's least share of its height (framing.ts). */
+  fill: number;
+  minSingle: number;
+  minDistance: number;
+  /** The farthest the camera goes, as a multiple of the anchor's distance to its target. */
+  maxDistanceScale: number;
+  /** A slow sideways yaw drift (rad) and its period (s), so the frame is never still. */
+  drift: number;
+  driftPeriod: number;
+  positionHalfLife: number;
+  aimHalfLife: number;
+}
+
+const TWO_SHOTS: Readonly<Record<"wide" | "close", TwoShotStyle>> = {
+  // The platform in context: the pair most of the safe area, from the anchor's height.
+  wide: {
+    bias: 0.7,
+    limit: MathUtils.degToRad(50),
+    yawHalfLife: 0.8,
+    pitch: null,
+    fov: null,
+    fill: 0.78,
+    minSingle: 0.5,
+    minDistance: 3.2,
+    maxDistanceScale: 1.1,
+    drift: MathUtils.degToRad(3),
+    driftPeriod: 13,
+    positionHalfLife: 0.4,
+    aimHalfLife: 0.22,
+  },
+  // In the scrap: low, side-on, the pair filling the safe area.
+  close: {
+    bias: 0.92,
+    limit: MathUtils.degToRad(72),
+    yawHalfLife: 0.45,
+    pitch: MathUtils.degToRad(-10),
+    fov: 34,
+    fill: 0.8,
+    minSingle: 0,
+    minDistance: 2.2,
+    maxDistanceScale: 0.7,
+    drift: MathUtils.degToRad(1.5),
+    driftPeriod: 9,
+    positionHalfLife: 0.3,
+    aimHalfLife: 0.16,
+  },
+};
+
+const PITCH_MIN = MathUtils.degToRad(-24);
+const PITCH_MAX = MathUtils.degToRad(-10);
+
+/** Frame the two targets (torsos): side-on yaw (kept across cuts in `memory`), then distance and aim from framing.ts. */
+function twoShot(input: ShotInput, state: ShotState, out: ShotPose, anchor: Anchor, style: TwoShotStyle): void {
+  const [a, b] = input.targets as [Vector3, Vector3];
+  const forward = horizontalForward(anchor, tmpA);
+  const side = sideOnYaw(a, b, yawOf(forward), input.memory.sideOn, style.bias, style.limit);
+  input.memory.sideOn = side;
+  if (input.first) {
+    state.yaw = side.yaw;
+    state.yawVel = 0;
+  } else {
+    [state.yaw, state.yawVel] = springStep(state.yaw, state.yawVel, state.yaw + wrapAngle(side.yaw - state.yaw), input.dt, style.yawHalfLife);
+  }
+  const anchorDistance = anchor.position.distanceTo(anchor.target);
+  const anchorPitch = Math.asin(MathUtils.clamp((anchor.target.y - anchor.position.y) / Math.max(1e-4, anchorDistance), -1, 1));
+  const pitch = style.pitch ?? MathUtils.clamp(anchorPitch, PITCH_MIN, PITCH_MAX);
+  const yaw = state.yaw + Math.sin(input.t * ((2 * Math.PI) / style.driftPeriod)) * style.drift;
+  const fov = style.fov ?? anchor.fov;
+  frameSubjects(
+    input.targets,
+    input.params.subjectHeight ?? 1,
+    {
+      forward: forwardOf(yaw, pitch, tmpB),
+      fov,
+      aspect: input.aspect,
+      safe: FIGHT_SAFE,
+      fill: style.fill,
+      minSingle: style.minSingle,
+      minDistance: style.minDistance,
+      maxDistance: Math.max(style.minDistance, anchorDistance * style.maxDistanceScale),
+    },
+    tmpC,
+    tmpD,
+  );
+  springVec(state.pos, state.posVel, tmpC, input.dt, style.positionHalfLife, input.first);
+  springVec(state.aim, state.aimVel, tmpD, input.dt, style.aimHalfLife, input.first);
+  out.position.copy(state.pos);
+  out.target.copy(state.aim);
+  out.fov = fov;
+  out.roll = 0;
 }
 
 function anchorHold(name: CameraAnchorName): ShotDef {
@@ -301,12 +424,20 @@ export const SHOTS: Readonly<Record<ShotId, ShotDef>> = {
     },
   },
 
-  /** The fight default: both fighters framed, drifting sideways. */
+  /**
+   * The fight default: both fighters framed, drifting. On two targets it
+   * turns part of the way from the anchor's angle to side-on and comes in
+   * until the pair has its share of the frame (see TWO_SHOTS).
+   */
   fight_wide: {
     letterbox: 0,
     dof: 0,
     solve(input, state, out) {
       const anchor = anchorOf(input, state, "Cam_FightWide");
+      if (input.targets.length >= 2) {
+        twoShot(input, state, out, anchor, TWO_SHOTS.wide);
+        return;
+      }
       const centre = centroid(input.targets, tmpA);
       const radius = Math.max(1.7, spread(input.targets, centre) + 1);
       const anchorDistance = anchor.position.distanceTo(anchor.target);
@@ -333,12 +464,20 @@ export const SHOTS: Readonly<Record<ShotId, ShotDef>> = {
     },
   },
 
-  /** Fighters within reach: closer, lower, a three-quarter angle. */
+  /**
+   * Fighters within reach: closer and lower. On two targets it looks across
+   * the line between them (both faces read); on one (the winner, a deep
+   * drop's landing) a three-quarter angle, or `from`.
+   */
   fight_close: {
     letterbox: 0,
     dof: 0,
     solve(input, state, out) {
       const anchor = anchorOf(input, state, "Cam_FightWide");
+      if (input.targets.length >= 2 && !input.params.from) {
+        twoShot(input, state, out, anchor, TWO_SHOTS.close);
+        return;
+      }
       const centre = centroid(input.targets, tmpA);
       const radius = Math.max(1.05, spread(input.targets, centre) + 0.7);
       const fov = 34;

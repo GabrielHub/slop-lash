@@ -153,6 +153,8 @@ export class FightConductor {
 
   constructor(options: ConductorOptions) {
     this.o = options;
+    const { drivers } = options.player;
+    this.pair = { targets: this.targets, subjectHeight: Math.max(drivers.A.height, drivers.B.height) };
     this.wind = options.arena === "ROOFTOP" ? windFor(options.player.input.seed) : null;
   }
 
@@ -181,6 +183,9 @@ export class FightConductor {
     () => this.clampTarget(this.torso.A, this.targetA),
     () => this.clampTarget(this.torso.B, this.targetB),
   ];
+
+  /** The two-shots' request: both targets, and the taller fighter's height to frame them by. */
+  readonly pair: { targets: ReadonlyArray<() => Vector3>; subjectHeight: number };
 
   private clampTarget(source: Vector3, out: Vector3): Vector3 {
     const half = ARENAS[this.o.arena].geometry.halfSize + 0.4;
@@ -322,11 +327,11 @@ export class FightConductor {
     const decided = this.koSide !== null || this.outSide !== null;
     if (!decided && director.shot === director.baseShot && director.shotAge > 2.2 && t > 0) {
       const distance = Math.hypot(this.torso.A.x - this.torso.B.x, this.torso.A.z - this.torso.B.z);
-      if (distance < 1.45) director.request("fight_close", { targets: this.targets, priority: 1, hold: 2.4 });
+      if (distance < 1.45) director.request("fight_close", { ...this.pair, priority: 1, hold: 2.4 });
     }
     if (clock.debtMs > DEBT_CUT_MS && clock.settled && director.shotAge > 1.3 && !this.ringOut) {
-      if (director.shot === "fight_close") director.request("fight_wide", { targets: this.targets, priority: 1 });
-      else director.request("fight_close", { targets: this.targets, priority: 1, hold: 1.8 });
+      if (director.shot === "fight_close") director.request("fight_wide", { ...this.pair, priority: 1 });
+      else director.request("fight_close", { ...this.pair, priority: 1, hold: 1.8 });
     }
 
     // The outro: once the dust settles, a close-up of the winner showboating
@@ -399,7 +404,7 @@ export class FightConductor {
           this.firstContact = true;
           if (fresh) {
             director.request("fight_close", {
-              targets: this.targets,
+              ...this.pair,
               priority: 2,
               hold: 2.2,
               force: director.shotAge > 0.6,
@@ -525,7 +530,7 @@ export class FightConductor {
     } else if (director.shotAge > 1.6 && this.hits % 3 === 0) {
       // Keep cutting on beats: every few hits, a fresh angle (and the debt repaid).
       director.request(director.shot === "fight_close" ? "fight_wide" : "fight_close", {
-        targets: this.targets,
+        ...this.pair,
         priority: 1,
         hold: director.shot === "fight_close" ? undefined : 2,
       });

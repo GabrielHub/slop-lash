@@ -49,6 +49,8 @@ export interface BarProps {
   onChunk?: (lost: number) => void;
   sound?: boolean;
   position?: [number, number, number];
+  /** Draw over the set from this render order up (a camera-fixed HUD); the parts still write depth (ui3d/screen.ts). */
+  overlay?: number;
 }
 
 interface Piece {
@@ -74,6 +76,7 @@ export const Bar = forwardRef<BarHandle, BarProps>(function Bar(
     onChunk,
     sound = true,
     position,
+    overlay,
   },
   ref,
 ) {
@@ -187,13 +190,21 @@ export const Bar = forwardRef<BarHandle, BarProps>(function Bar(
   });
 
   const pale = chunkColor ?? lightOf(color, 0.75);
+  const over = overlay !== undefined;
+  const look = { overlay: over, depthWrite: over };
+  const order = (step: number) => (over ? overlay + step : 0);
   return (
     <group position={position}>
       <group ref={shakeGroup}>
-        <mesh geometry={track} material={[uiToon(trackColor, { glow: 0.05 }), uiToon(darkOf(trackColor, 0.3))]} castShadow />
-        <mesh geometry={track} material={uiOutline(trackColor, 2)} />
-        <mesh ref={chunk} geometry={fillGeometry} material={uiToon(pale, { glow: 0.35 })} position={[0, 0, height * 0.12]} />
-        <mesh ref={fill} geometry={fillGeometry} material={uiToon(color, { glow: 0.22, specular: 0.5 })} position={[0, 0, height * 0.14]} />
+        <mesh
+          geometry={track}
+          material={[uiToon(trackColor, { glow: 0.05, ...look }), uiToon(darkOf(trackColor, 0.3), look)]}
+          castShadow={!over}
+          renderOrder={order(1)}
+        />
+        <mesh geometry={track} material={uiOutline(trackColor, 2, { overlay: over })} renderOrder={order(0)} />
+        <mesh ref={chunk} geometry={fillGeometry} material={uiToon(pale, { glow: 0.35, ...look })} position={[0, 0, height * 0.12]} renderOrder={order(2)} />
+        <mesh ref={fill} geometry={fillGeometry} material={uiToon(color, { glow: 0.22, specular: 0.5, ...look })} position={[0, 0, height * 0.14]} renderOrder={order(3)} />
         {pieceRefs.current.map((piece, index) => (
           <mesh
             key={index}
@@ -202,7 +213,8 @@ export const Bar = forwardRef<BarHandle, BarProps>(function Bar(
             }}
             visible={false}
             geometry={fillGeometry}
-            material={uiToon(pale, { glow: 0.35 })}
+            material={uiToon(pale, { glow: 0.35, ...look })}
+            renderOrder={order(3)}
           />
         ))}
         {label && (

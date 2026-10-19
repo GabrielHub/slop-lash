@@ -2,6 +2,7 @@
 // @vitest-environment edge-runtime
 
 import { afterEach, beforeEach, expect, vi } from "vite-plus/test";
+import { FACE_OFF_MIN_SECONDS } from "../../src/games/slopfight/constants";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { heartbeat, runFor, view, type Backend } from "../test.harness";
@@ -210,8 +211,8 @@ export async function playFight(room: Room, side: "A" | "B" = "A") {
   expect((await phase(room)).phase).toBe("FACE_OFF");
   await pump(room, 1_000);
   await betAll(room, side);
-  // The face-off minimum (8 s) holds it, then the settle ping closes it.
-  await pump(room, 9_000);
+  // The face-off minimum holds it, then the settle ping closes it.
+  await pump(room, FACE_OFF_MIN_SECONDS * 1_000);
   expect((await phase(room)).phase).toBe("FIGHT");
   // FIGHT lasts lead + endMs + outro, then RESULT.
   await pump(room, 18_000);

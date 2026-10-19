@@ -29,6 +29,7 @@ import {
   SHOTS,
   copyPose,
   createPose,
+  createShotMemory,
   createShotState,
   type ShotId,
   type ShotParams,
@@ -129,6 +130,7 @@ export class Director {
   private readonly matchOffset = new Vector3();
   private matchFrom: { uv: [number, number]; target: TargetLike; seconds: number; t: number } | null = null;
   private readonly targetBuffer: Vector3[] = [];
+  private readonly memory = createShotMemory();
   private readonly events: StageEvents | undefined;
   private readonly fx: PostFx | undefined;
   private readonly clock: StageClock | undefined;
@@ -153,6 +155,16 @@ export class Director {
 
   get baseShot(): ShotId {
     return this.base.id;
+  }
+
+  /** The current shot's targets as solved this frame (world; reused buffer, do not keep). */
+  get targets(): readonly Vector3[] {
+    return this.targetBuffer;
+  }
+
+  /** The current shot's subject height (two-shots size the fighters by it; 1 when not given). */
+  get subjectHeight(): number {
+    return this.current.request.subjectHeight ?? 1;
   }
 
   setNodes(nodes: ArenaNodes | null): void {
@@ -259,6 +271,7 @@ export class Director {
         prev: this.prevPose,
         params: current.request,
         first: current.first,
+        memory: this.memory,
       },
       current.state,
       this.pose,

@@ -1,7 +1,8 @@
 "use client";
 
 // FIGHT: the deterministic sim played back against the server clock, the two
-// creatures on their proxies, floating health bars, impact VFX and the
+// creatures on their proxies, the health bars along the top of the frame and
+// each fighter's side ring and chevron (fight/hud.tsx), impact VFX and the
 // conductor that turns every event into its beat (fight/conduct.ts). With no
 // outcome (the server sim failed or the seed decided it), the judges flip a
 // coin instead.
@@ -19,8 +20,9 @@ import { useStage } from "../services";
 import { Confetti, type ConfettiHandle } from "../ui3d/confetti";
 import { FightConductor, sparkColors } from "./conduct";
 import { ownersOf, playerName, sheetsOf, useFightFeed, type FightFeed, type FightRow } from "./feed";
-import { BarStack, BarStackResolver, FightCreature, HealthBar, useClockScale } from "./fighters";
+import { FightCreature, useClockScale } from "./fighters";
 import { FightFx, FxSystem, KoStars } from "./fx";
+import { FightHud, SideMarker } from "./hud";
 import { CoinFlip, FightMarquee, methodSlammed, StandingFighters, useBaseShot } from "./parts";
 import { fightInputOf, storedEvents } from "./playback";
 import { FightPlayer, inputKey } from "./player";
@@ -101,10 +103,10 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
     [fightInput, stored?.hash],
   );
   const fx = useMemo(() => new FxSystem(), []);
-  const barStack = useMemo(() => new BarStack(), []);
   const handles = useRef<Record<Side, CreatureHandle | null>>({ A: null, B: null });
   const owners = ownersOf(feed, fight);
   const names = useMemo(() => ({ A: fightInput.a.name, B: fightInput.b.name }), [fightInput]);
+  const ownerNames = { A: playerName(feed, owners.A), B: playerName(feed, owners.B) };
 
   const head = useCallback(
     (side: Side, out: Vector3) => {
@@ -154,7 +156,7 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
   }, [player]);
 
   // The base shot frames both fighters (re-applied after the phase's entry cover).
-  useBaseShot("fight_wide", { targets: conductor.targets });
+  useBaseShot("fight_wide", conductor.pair);
 
   // The Voice: the whole fight's lines, timed from the stored log.
   useEffect(() => {
@@ -201,44 +203,23 @@ function FightStage({ feed, fight, fightInput, live }: FightStageProps) {
     const side = conductor.koSide;
     return side ? head(side, new Vector3()) : null;
   }, [conductor, head]);
+  const roots = useMemo(
+    () => ({ A: () => (player.samples ? conductor.torso.A : null), B: () => (player.samples ? conductor.torso.B : null) }),
+    [player, conductor],
+  );
 
   return (
     <>
       {(["A", "B"] as const).map((side) => (
         <group key={side}>
           <FightCreature player={player} side={side} timeScale={timeScale} handleRef={setHandle} />
-          <FightBar player={player} conductor={conductor} side={side} name={names[side]} owner={playerName(feed, owners[side])} stack={barStack} />
+          <SideMarker side={side} champion={player.champion(side)} arena={fightInput.arena} root={roots[side]} height={player.drivers[side].height} />
         </group>
       ))}
-      <BarStackResolver stack={barStack} />
+      <FightHud player={player} conductor={conductor} names={names} owners={ownerNames} />
       <KoStars head={koHead} visible={() => conductor.koSide !== null} />
       <FightFx system={fx} />
       <Confetti ref={confetti} capacity={300} />
     </>
   );
-}
-
-function FightBar({
-  player,
-  conductor,
-  side,
-  name,
-  owner,
-  stack,
-}: {
-  player: FightPlayer;
-  conductor: FightConductor;
-  side: Side;
-  name: string;
-  owner: string | null;
-  stack: BarStack;
-}) {
-  // The loser's bar flicks off once they have left the arena. Both duck under
-  // a title slam (they draw over the set, so they would cover it).
-  const services = useStage();
-  const shown = useRef(1);
-  useFrame(() => {
-    shown.current = conductor.outSide === side || services.transitions.slam.visible ? 0 : 1;
-  });
-  return <HealthBar player={player} side={side} name={name} owner={owner} shown={shown} edge={conductor.edge} stack={stack} />;
 }

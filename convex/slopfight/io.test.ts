@@ -2,6 +2,7 @@
 // @vitest-environment edge-runtime
 
 import { expect, test } from "vite-plus/test";
+import { FACE_OFF_MIN_SECONDS } from "../../src/games/slopfight/constants";
 import { api, internal } from "../_generated/api";
 import { runFor, setup } from "../test.harness";
 import {
@@ -26,7 +27,7 @@ test.each(["result", "early end"])("hype preserves room documents and freezes to
   expect(await room.t.query(api.slopfight.stage.hype, { roomCode: room.code })).toBeNull();
   await hostNext(room);
   await betAll(room, "B");
-  await pump(room, 9_000);
+  await pump(room, FACE_OFF_MIN_SECONDS * 1_000 + 1_000);
   expect((await phase(room)).phase).toBe("FIGHT");
 
   const beforeFights = await fights(room);
