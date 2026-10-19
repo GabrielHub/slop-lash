@@ -11,19 +11,26 @@
 // post stack), so the podium's depth of field and crane never blur or clip
 // it; the replay renders into a texture with its own camera. Quiet by
 // default (a recap is not live): the SOUND chip turns the replay's sounds on.
+//
+// The replay plays the arena's finale too (the counter tips, the garage
+// floods, the storm blows in) at its own sim time. It keeps its own finale
+// state rather than `services.finale`: the stage's is read by the podium's
+// post grade and contact shadows, which must stay calm behind the screen.
 
 import { Hud, PerspectiveCamera, RenderTexture, useGLTF } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { MathUtils, Vector3, type Group, type PerspectiveCamera as ThreePerspectiveCamera } from "three";
+import { MathUtils, Vector3, type AmbientLight, type DirectionalLight, type Group, type PerspectiveCamera as ThreePerspectiveCamera } from "three";
 import { sfx, type SfxName, type SfxOptions } from "../../audio";
-import { ARENAS } from "../../arenas";
+import { ARENAS, finaleFor, windFor } from "../../arenas";
 import type { Side } from "../../modifiers";
 import type { Champion } from "../../sheet";
 import { loadRapier, type FightEvent, type FightInput } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import { ARENA_FILES, prepareSet } from "../arena/arena";
 import { CrowdController } from "../arena/crowd";
+import { createStageFinale, placeOnStage, publishFinale, stormLook, tiltBody, waterLevelAt, type StageFinale } from "../arena/finale";
+import { StormFx } from "../arena/storm";
 import { copyPose, createPose, createShotState, SHOTS, type ShotId, type ShotParams } from "../director/shots";
 import { moodFor } from "../look/moods";
 import { readIrradianceProbe } from "../look/irradiance";
@@ -324,7 +331,8 @@ function ReplayScreen({
   onSound: () => void;
 }) {
   const services = useStage();
-  const sheets = sheetsOf(feed, fight);
+  // Memoised: a fresh input would rebuild the player on every render (the end's state change), replaying every event.
+  const sheets = useMemo(() => sheetsOf(feed, fight), [feed, fight]);
   const input = useMemo(() => fightInputOf(fight, sheets), [fight, sheets]);
   const player = useMemo(
     () => (input && fight.outcome ? new FightPlayer(input, fight.outcome, { label: `recap ${fight.id}` }) : null),
@@ -513,15 +521,27 @@ function ReplayWorld({
   const prepared = useMemo(() => prepareSet(arena, gltf.scene, mood), [arena, gltf.scene, mood]);
   const probe = useMemo(() => readIrradianceProbe(prepared.nodes.get("Probe_Ambient")?.userData.sf_probe_sh), [prepared]);
   const crowd = useMemo(() => new CrowdController(), []);
+  // The fight's finale, published at the replay's sim time (frozen at its end, like the sim).
+  const finale = useMemo(() => createStageFinale(), []);
+  const plan = useMemo(
+    () => ({ finale: finaleFor(arena, input.seed, input.limitMs), wind: ARENAS[arena].dynamic.some((hazard) => hazard.id === "wind") ? windFor(input.seed) : null }),
+    [arena, input],
+  );
   useEffect(() => {
     crowd.bind(prepared.nodes.crowd);
     return () => {
       crowd.reset();
       prepared.hazards.reset();
+      prepared.finale.reset();
     };
   }, [crowd, prepared]);
   useEffect(() => () => prepared.materials.forEach((material) => material.dispose()), [prepared]);
-  const fx = useMemo(() => new FxSystem(), []);
+  // Effects spawn where the sim says, tipped with the kitchen counter in its finale.
+  const fx = useMemo(() => {
+    const system = new FxSystem();
+    system.place = (point) => placeOnStage(finale, point);
+    return system;
+  }, [finale]);
   const camera = useRef<ThreePerspectiveCamera>(null);
   const director = useMemo(() => new ReplayDirector(), []);
   const torso = useMemo(() => ({ A: new Vector3(-1.6, 0.5, 0), B: new Vector3(1.6, 0.5, 0) }), []);
@@ -630,7 +650,6 @@ function ReplayWorld({
     }
     const quantized = Math.round(rate * 10) / 10;
     crowd.update(dt * rate);
-    prepared.hazards.update(Math.max(0, c.ms) / 1000, { x: 1, z: 0, strength: 0 });
     if (quantized !== scaleRef.current) {
       scaleRef.current = quantized;
       setTimeScale(quantized);
@@ -639,12 +658,18 @@ function ReplayWorld({
     const limit = endMs + END_HOLD_MS;
     c.ms = Math.min(limit, c.ms + dt * 1000 * rate);
     const played = player.update(Math.max(0, c.ms), dt * rate);
+    publishFinale(finale, arena, plan.finale, plan.wind, player.t, player.result?.endMs ?? fight.outcome?.endMs ?? null);
+    // The set's hazards first (the floaters bob from their rest), then its finale pieces.
+    const wind = plan.wind;
+    prepared.hazards.update(Math.max(0, c.ms) / 1000, wind ? { x: wind.direction[0], z: wind.direction[1], strength: finale.wind } : { x: 1, z: 0, strength: 0 });
+    prepared.finale.update(finale);
     for (const { event, fresh } of played) if (fresh) onEvent(event);
     const samples = player.samples;
     if (samples) {
       for (const side of ["A", "B"] as const) {
         const p = samples[side].root.p;
-        torso[side].set(p[0], p[1], p[2]);
+        // Camera targets where the stage draws the fighter (tipped with the counter).
+        placeOnStage(finale, torso[side].set(p[0], p[1], p[2]));
         const landing = player.landingMs[side];
         if (landing !== null && !c.landed[side] && player.t >= landing) {
           c.landed[side] = true;
@@ -655,7 +680,12 @@ function ReplayWorld({
               // Sound is decoration.
             }
           }
-          if (ARENAS[arena].ringOutLanding === "splash") fx.splash(torso[side].clone());
+          if (ARENAS[arena].ringOutLanding === "splash") {
+            // At the water's surface as it is now (the flood raises it over the pad).
+            const point = torso[side].clone();
+            point.y = waterLevelAt(finale, ARENAS[arena].geometry, point.x, point.z);
+            fx.splash(point);
+          }
           director.shake(0.5);
         }
       }
@@ -665,8 +695,24 @@ function ReplayWorld({
       onState({ done: true, method: fight.outcome ? METHOD_TEXT[fight.outcome.method] : null });
     }
     if (camera.current) director.update(dt, prepared.nodes, camera.current);
+
+    // The storm's grade (the stage's is a post pass the replay does not have): the mood's lights dim, lightning lifts the flash light.
+    const storm = stormLook(finale);
+    const dim = 1 - STORM_DIM * storm.dim;
+    for (const [light, intensity] of [
+      [key.current, mood.key.intensity],
+      [fill.current, mood.fill.intensity],
+      [rim.current, mood.rim.intensity],
+    ] as const) {
+      if (light) light.intensity = intensity * dim;
+    }
+    if (flash.current) flash.current.intensity = storm.flash * STORM_FLASH;
   }, -20);
 
+  const key = useRef<DirectionalLight>(null);
+  const fill = useRef<DirectionalLight>(null);
+  const rim = useRef<DirectionalLight>(null);
+  const flash = useRef<AmbientLight>(null);
   const topY = ARENAS[arena].geometry.topY;
   return (
     <>
@@ -674,27 +720,41 @@ function ReplayWorld({
       <color attach="background" args={[mood.fog.color]} />
       <fog attach="fog" args={[mood.fog.color, mood.fog.near, mood.fog.far]} />
       {probe ? <primitive object={probe} /> : <hemisphereLight args={[mood.bounce.sky, mood.bounce.ground, mood.bounce.intensity]} />}
-      {mood.key.intensity > 0 && <directionalLight color={mood.key.color} intensity={mood.key.intensity} position={mood.key.position as [number, number, number]} />}
-      {mood.fill.intensity > 0 && <directionalLight color={mood.fill.color} intensity={mood.fill.intensity} position={mood.fill.position as [number, number, number]} />}
-      {mood.rim.intensity > 0 && <directionalLight color={mood.rim.color} intensity={mood.rim.intensity} position={mood.rim.position as [number, number, number]} />}
+      {mood.key.intensity > 0 && <directionalLight ref={key} color={mood.key.color} intensity={mood.key.intensity} position={mood.key.position as [number, number, number]} />}
+      {mood.fill.intensity > 0 && <directionalLight ref={fill} color={mood.fill.color} intensity={mood.fill.intensity} position={mood.fill.position as [number, number, number]} />}
+      {mood.rim.intensity > 0 && <directionalLight ref={rim} color={mood.rim.color} intensity={mood.rim.intensity} position={mood.rim.position as [number, number, number]} />}
+      {ARENAS[arena].finale.id === "storm" && <ambientLight ref={flash} color="#dcd8ff" intensity={0} />}
       <ArenaPracticals lights={prepared.nodes.lights} scale={mood.practicalScale} />
       <primitive object={prepared.root} />
       {ready && (
         <>
-          <ReplayFighter player={player} side="A" timeScale={timeScale} topY={topY} />
-          <ReplayFighter player={player} side="B" timeScale={timeScale} topY={topY} />
+          <ReplayFighter player={player} side="A" timeScale={timeScale} topY={topY} finale={finale} />
+          <ReplayFighter player={player} side="B" timeScale={timeScale} topY={topY} finale={finale} />
         </>
       )}
       <FightFx system={fx} />
+      {ARENAS[arena].finale.id === "storm" && <StormFx finale={finale} />}
     </>
   );
 }
 
-/** A fighter in the replay, with a soft blob shadow (the replay has no shadow-casting light). */
-function ReplayFighter({ player, side, timeScale, topY }: { player: FightPlayer; side: Side; timeScale: number; topY: number }) {
+/** How far the storm dims the replay's key, fill and rim at full strength. */
+const STORM_DIM = 0.45;
+/** The lightning's ambient light at full flash. */
+const STORM_FLASH = 3;
+
+/**
+ * A fighter in the replay, with a soft blob shadow (the replay has no
+ * shadow-casting light). Both tip with the kitchen counter in its finale, like
+ * the live stage's `FinaleTilt`.
+ */
+function ReplayFighter({ player, side, timeScale, topY, finale }: { player: FightPlayer; side: Side; timeScale: number; topY: number; finale: StageFinale }) {
+  const tilt = useRef<Group>(null);
   const blob = useRef<Group>(null);
   const driver = player.drivers[side];
   useFrame(() => {
+    const group = tilt.current;
+    if (group) tiltBody(finale, player.samples?.[side].root.p[1] ?? 0, group.position, group.quaternion);
     const node = blob.current;
     if (!node) return;
     const [x, y, z] = driver.driver.position;
@@ -703,9 +763,10 @@ function ReplayFighter({ player, side, timeScale, topY }: { player: FightPlayer;
     node.visible = y > topY - 0.3;
     const s = driver.height * 0.55 * Math.max(0.3, 1 - lift * 0.6);
     node.scale.set(s, s, s);
-  });
+    // After the replay world has published this frame's finale.
+  }, -10);
   return (
-    <>
+    <group ref={tilt}>
       <FightCreature player={player} side={side} timeScale={timeScale} />
       <group ref={blob}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
@@ -713,6 +774,6 @@ function ReplayFighter({ player, side, timeScale, topY }: { player: FightPlayer;
           <meshBasicMaterial color="#000000" transparent opacity={0.28} depthWrite={false} />
         </mesh>
       </group>
-    </>
+    </group>
   );
 }

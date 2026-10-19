@@ -23,7 +23,7 @@ import {
   UniformsUtils,
   Vector3,
 } from "three";
-import { lightningAt } from "./finale";
+import { lightningAt, type StageFinale } from "./finale";
 import { useQuality, useStage } from "../services";
 
 /** Streaks per quality rung (one draw call; thin, so overdraw stays small). */
@@ -200,7 +200,8 @@ const BOLT = { distance: 46, foot: -30, height: 100, width: 30, spread: 0.45 };
 const tmpForward = new Vector3();
 const tmpRay = new Vector3();
 
-export function StormFx() {
+/** `finale` defaults to the stage's; a replay drawn into its own texture passes its own. */
+export function StormFx({ finale: own }: { finale?: StageFinale } = {}) {
   const services = useStage();
   const quality = useQuality();
   const count = RAIN_COUNT[Math.min(RAIN_COUNT.length - 1, quality.level)]!;
@@ -238,7 +239,7 @@ export function StormFx() {
   );
 
   useFrame((state) => {
-    const finale = services.finale;
+    const finale = own ?? services.finale;
     const storm = finale.spec?.id === "storm" ? finale : null;
     const amount = storm ? storm.strength : 0;
     const u = rain.material.uniforms;

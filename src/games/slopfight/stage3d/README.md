@@ -86,8 +86,11 @@ the skeleton and visual geometry used by the simulation and mesher.
   tips, and everything the sim places on it tips with it), `floodDryHalf` /
   `waterLevelAt` (the garage's waterline, exactly the sim's `dryHalfAt`), and
   `stormLook` (the rooftop's grade and lightning). Only the live fight
-  drives it: a replay or the recap shows a calm arena unless it publishes the
-  state at its own time and tips its fighters the same way.
+  drives it. The recap reel's replay (`fight/recap-reel.tsx`) keeps its own
+  `StageFinale` (it draws into a texture over the podium, whose grade and
+  shadows must stay calm), publishes it at the replay's sim time, feeds it to
+  its set's `prepared.finale`, tips its fighters with `tiltBody`, draws
+  `<StormFx finale={...} />` and dims its own lights for the storm.
 - `services.live`: mirrors `input.live` (set by the canvas). It is true in
   a live room, and false in the recap and in fixtures rendered as the recap.
   Play scene sounds through `stageSfx(services).play(name, opts)`
