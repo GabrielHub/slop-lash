@@ -5,10 +5,15 @@
 // key light light it, fog and the post stack grade it, and the camera's shake
 // shakes it. The timeline (scale, squash, flick) lives in TransitionController;
 // this only renders `transitions.slam`.
+//
+// The sub-line ("X wins") mounts only with a slam that has one, so a stand-in
+// is drawn behind the lens for a moment after the titles are prepared: on
+// ANGLE its lit SDF program links on its first real draw (compileAsync does
+// not), a ~100 ms stall better spent in the lobby than on the K.O.!
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Quaternion, Vector3, type Group, type PerspectiveCamera, type PointLight } from "three";
+import { Quaternion, Vector3, type Group, type Object3D, type PerspectiveCamera, type PointLight } from "three";
 import { compileStageObjects } from "../program-cache";
 import { useArenaNodes, useStage } from "../services";
 import { StageText, TitleText } from "../ui3d/text";
@@ -22,6 +27,8 @@ const MAX_WIDTH = 0.74;
 const MAX_CAP_HEIGHT = 0.2;
 /** The title's key light at full strength. */
 const KEY_INTENSITY = 2.4;
+/** The sub-line stand-in draws behind the lens for this long after each prepare (it lays out within it). */
+const PRIME_S = 0.6;
 // Build these during the lobby, then keep their geometry and materials alive.
 // A slam changes visibility; it does not parse a font or extrude a new title.
 const PREPARED_TITLES = ["FIGHT!", "FACE-OFF", "THE FINAL", "THIRD PLACE", "K.O.!", "RING OUT!", "DECISION", "SUDDEN DEATH", "WINNER!", "CHAMPION"];
@@ -30,6 +37,9 @@ const Z_AXIS = new Vector3(0, 0, 1);
 const tmpForward = new Vector3();
 const tmpUp = new Vector3();
 const tmpRoll = new Quaternion();
+const unculled = (object: Object3D) => {
+  object.frustumCulled = false;
+};
 
 interface Shown {
   seq: number;
@@ -46,6 +56,8 @@ export function SlamTitle() {
   const groupRef = useRef<Group>(null);
   const contentRef = useRef<Group>(null);
   const lightRef = useRef<PointLight>(null);
+  const primerRef = useRef<Group>(null);
+  const primed = useRef(0);
   const [shown, setShown] = useState<Shown | null>(null);
   const seqRef = useRef(-1);
   const widths = useRef(new Map<string, number>());
@@ -55,6 +67,7 @@ export function SlamTitle() {
   const warmupTimer = useRef<number | null>(null);
   const prepare = useCallback(() => {
     if (warmupTimer.current !== null) window.clearTimeout(warmupTimer.current);
+    primed.current = 0;
     warmupTimer.current = window.setTimeout(() => {
       warmupTimer.current = null;
       const content = contentRef.current;
@@ -76,6 +89,17 @@ export function SlamTitle() {
     if (slam.seq !== seqRef.current && slam.text) {
       seqRef.current = slam.seq;
       setShown({ seq: slam.seq, text: slam.text, sub: slam.sub, color: slam.color, edgeColor: slam.edgeColor });
+    }
+    const primer = primerRef.current;
+    if (primer) {
+      primed.current += services.clock.realDelta;
+      primer.visible = primed.current < PRIME_S;
+      if (primer.visible) {
+        // Unculled behind the lens: it draws (and links its program), nothing shows.
+        primer.traverse(unculled);
+        tmpForward.set(0, 0, -1).applyQuaternion(state.camera.quaternion);
+        primer.position.copy(state.camera.position).addScaledVector(tmpForward, -1);
+      }
     }
     const content = contentRef.current;
     const light = lightRef.current;
@@ -106,39 +130,49 @@ export function SlamTitle() {
   }, SLAM_PRIORITY);
 
   return (
-    <group ref={groupRef}>
-      {/* Its own warm key, up and to the left of the title, so it reads from every shot. */}
-      <pointLight ref={lightRef} position={[-1.6, 1.4, 2.2]} intensity={0} distance={9} decay={2} color="#ffe2bf" />
-      <group ref={contentRef} visible={false}>
-        {/* TitleText falls back to flat text if the font cannot be read; the
-            sub-line suspends on its own so it never holds the title back. */}
-        {titles.map((text) => (
-          <Suspense key={text} fallback={null}>
-            <TitleText
-              visible={shown?.text === text}
-              text={text}
-              size={1}
-              faceColor={color}
-              sideColor={edgeColor}
-              onLayout={(width) => {
-                const firstLayout = !widths.current.has(text);
-                widths.current.set(text, width);
-                if (firstLayout) prepare();
-              }}
-              glow={0.05}
-              castShadow={false}
-              renderOrder={20}
-            />
-          </Suspense>
-        ))}
-        {shown?.sub && (
-          <Suspense fallback={null}>
-            <StageText size={0.32} color={shown.color} position={[0, -0.95, 0.1]} castShadow={false}>
-              {shown.sub}
-            </StageText>
-          </Suspense>
-        )}
+    <>
+      <group ref={groupRef}>
+        {/* Its own warm key, up and to the left of the title, so it reads from every shot. */}
+        <pointLight ref={lightRef} position={[-1.6, 1.4, 2.2]} intensity={0} distance={9} decay={2} color="#ffe2bf" />
+        <group ref={contentRef} visible={false}>
+          {/* TitleText falls back to flat text if the font cannot be read; the
+              sub-line suspends on its own so it never holds the title back. */}
+          {titles.map((text) => (
+            <Suspense key={text} fallback={null}>
+              <TitleText
+                visible={shown?.text === text}
+                text={text}
+                size={1}
+                faceColor={color}
+                sideColor={edgeColor}
+                onLayout={(width) => {
+                  const firstLayout = !widths.current.has(text);
+                  widths.current.set(text, width);
+                  if (firstLayout) prepare();
+                }}
+                glow={0.05}
+                castShadow={false}
+                renderOrder={20}
+              />
+            </Suspense>
+          ))}
+          {shown?.sub && (
+            <Suspense fallback={null}>
+              <StageText size={0.32} color={shown.color} position={[0, -0.95, 0.1]} castShadow={false}>
+                {shown.sub}
+              </StageText>
+            </Suspense>
+          )}
+        </group>
       </group>
-    </group>
+      {/* Same props as the sub-line, so it builds the same program. */}
+      <group ref={primerRef} visible={false}>
+        <Suspense fallback={null}>
+          <StageText size={0.32} color={color} castShadow={false}>
+            WINS
+          </StageText>
+        </Suspense>
+      </group>
+    </>
   );
 }
