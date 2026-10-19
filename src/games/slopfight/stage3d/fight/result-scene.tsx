@@ -1,41 +1,53 @@
 "use client";
 
-// RESULT: the winner turns to the room and showboats (its best move as a
-// victory pump, smug, confetti in its colours, the fanfare) under the
-// letterboxed `winner_pose`; the loser stays where the fight left it (a KO
-// lies there, a ring-out stays in the drink) or, beaten on points, flops over
-// with the trombone. If the fight never showed the method, it slams here
-// first, over the wide shot, and the close-up follows.
+// RESULT: first the instant replay (result-replay.ts): the decisive moment
+// again, slowed, from a new angle, under a REPLAY bug. Then, on a two-shot,
+// the winner turns to the room and showboats (its best move as a victory
+// pump, smug, confetti in its colours, the fanfare) while the loser stays
+// where the fight left it (a KO lies there, a ring-out stays in the drink)
+// or, beaten on points, flops over with the trombone. If the fight never
+// showed the method, it slams here, right after the replay.
 // Then the cut to the back-wall scoreboard: every award flies onto
 // `Scoreboard_Text` as the player's token carrying its points (the owner's
-// win and finish, each correct bettor's payout), the letterbox opens, and The
-// Voice has its one line. The Final calls out double points; third place
-// says so. A seed-decided fight shows the judges' coin landing instead.
+// win and finish, each correct bettor's payout), and The Voice has its one
+// line. The Final calls out double points; third place says so. A
+// seed-decided fight has no moment to replay: it shows the judges' coin
+// landing instead. Without a replay (no time left for one on a stage that
+// never saw the fight) the winner gets the letterboxed `winner_pose`.
 
 import { useFrame } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MathUtils, Quaternion, Vector3, type Group, type Vector3Tuple } from "three";
-import { FIGHT_OUTRO_MS } from "../../constants";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { MathUtils, Quaternion, Vector3, type Group, type Object3D, type Vector3Tuple } from "three";
+import { FIGHT_OUTRO_MS, RESULT_SECONDS } from "../../constants";
 import type { Side } from "../../modifiers";
+import type { VoiceLine } from "../../narration/lines";
 import type { Champion } from "../../sheet";
+import { loadRapier } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import type { ArenaNodes, PlaneNode } from "../arena/nodes";
 import { Creature, createDriver, type CreatureDriver, type CreatureHandle } from "../creature/creature";
+import type { TargetLike } from "../director/director";
+import type { ShotId } from "../director/shots";
 import type { PhaseSceneProps } from "../scenes/phase-scene";
 import { useStage } from "../services";
 import { Confetti, type ConfettiHandle } from "../ui3d/confetti";
 import { UI_COLORS } from "../ui3d/materials";
+import { arcDuration } from "../ui3d/motion";
 import { stageSfx } from "../ui3d/sound";
 import { MARQUEE_TEXT, OnPlane, StageText, type TroikaTextMesh } from "../ui3d/text";
 import { AvatarToken } from "../ui3d/tokens";
+import { ClearShotSearch } from "./clearance";
 import { ownersOf, playerName, sheetsOf, useFightFeed, type FightFeed, type FightRow } from "./feed";
 import { sparkColors } from "./conduct";
 import { PoseDriver } from "./driver";
 import { STAGE_SPECULAR_MIN_LIGHT } from "./fighters";
+import { FightFx, FxSystem } from "./fx";
 import { COIN_LAND_S, CoinFlip, FightMarquee, methodSlammed, spawnOf, useBaseShot } from "./parts";
 import { fightInputOf, type StoredOutcomeLike } from "./playback";
 import { cachedRecording } from "./player";
 import type { SampledFighter } from "./recording";
+import { ReplayBug } from "./replay-bug";
+import { ResultReplay, type ReplayHooks, type ReplayState } from "./result-replay";
 import { voiceFightOf } from "./voice";
 import { winnerPoseFraming, winnerPoseOrbit, winnerShape } from "./winner-frame";
 
@@ -44,7 +56,15 @@ const other = (side: Side): Side => (side === "A" ? "B" : "A");
 declare global {
   interface Window {
     /** Dev builds: RESULT's beat clock (screenshots and console pokes). */
-    __slopResult?: { t: number; beats: string[]; shot: string };
+    __slopResult?: {
+      t: number;
+      /** The beats' clock: seconds since the cut back after a replay (null while one is to come). */
+      post: number | null;
+      beats: string[];
+      shot: string;
+      /** The instant replay: its state, real ms in, sim ms shown, playback rate, and sim ms recorded (a cold stage records the fight first). */
+      replay?: { state: ReplayState; kind: string | null; t: number; sim: number; rate: number; realMs: number | null; recorded: number | null };
+    };
   }
 }
 
@@ -93,6 +113,96 @@ export const LATE_SLAM_BEATS: ResultBeats = {
 /** The late slam's hold, ms (shorter than FIGHT's, to leave the close-up its time). */
 const LATE_SLAM_HOLD_MS = 650;
 
+/**
+ * After the instant replay, counted from the cut back to the two-shot: the
+ * fanfare and the winner's pump, the loser's flop, The Voice, then the
+ * scoreboard. Tighter than RESULT_BEATS: the replay has already held the
+ * room for about three seconds.
+ */
+export const REPLAY_BEATS: ResultBeats = {
+  ...RESULT_BEATS,
+  showboat: 0.35,
+  flop: 0.6,
+  voice: 0.75,
+  scoreboard: 1.7,
+  payouts: 2.0,
+};
+
+/** After the replay on a stage that never showed the method: the slam first, over the two-shot. */
+export const REPLAY_SLAM_BEATS: ResultBeats = {
+  ...REPLAY_BEATS,
+  slam: 0.3,
+  showboat: 0.95,
+  flop: 1.0,
+  voice: 1.15,
+  scoreboard: 2.2,
+  payouts: 2.5,
+};
+
+/** A payout token lands at most this long after its beat (the longest toss, from the crowd)... */
+const PAYOUT_FLIGHT_S = arcDuration(Infinity);
+/** ...and the landed payouts stay up at least this long before RESULT ends. */
+const PAYOUT_READ_S = 1.25;
+/** A late replay may squeeze the beats after it down to this fraction of their times, no further. */
+const MIN_BEAT_SCALE = 0.4;
+/** Seconds into RESULT the phase's entry wipe has cleared (cover 380 + hold 140 + reveal 420 ms). */
+const ENTRY_CLEAR_S = 0.95;
+/** A replay of its own covers this long after it starts wiping in. */
+const REPLAY_WIPE_IN_S = 0.3;
+/** A loser lying above this (in the garage's water, by the platform) still shares the two-shot; one further down went off the edge. */
+const LOSER_SIGHT_Y = -1.5;
+/** Wall ms per frame for the two-shot's clear-angle search, while the replay plays. */
+const TWO_SHOT_SEARCH_MS = 1;
+/** fight_close's lens (director/shots.ts): fov, and its height and aim above the targets' centre. */
+const CLOSE_FOV = 34;
+const CLOSE_RISE = 1.05;
+const CLOSE_AIM = 0.45;
+
+/**
+ * The clear-angle search for the two-shot after a replay. It prefers halfway
+ * between side-on to the pair and the room (+z, which the winner turns to
+ * face), so neither fighter hides the other.
+ */
+function twoShotSearch(root: Object3D | null, winner: Vector3, loser: Vector3, aspect: number): ClearShotSearch {
+  const centre = winner.clone().lerp(loser, 0.5);
+  let x = -(loser.z - winner.z);
+  let z = loser.x - winner.x;
+  const length = Math.hypot(x, z);
+  if (length > 1e-4) {
+    if (z < 0) {
+      x = -x;
+      z = -z;
+    }
+    x /= length;
+    z = z / length + 1;
+  } else z = 1;
+  const v = MathUtils.degToRad(CLOSE_FOV) / 2;
+  const radius = Math.max(1.05, length / 2 + 0.7);
+  return new ClearShotSearch(root, centre, {
+    distance: radius / Math.sin(Math.min(v, Math.atan(Math.tan(v) * aspect))),
+    height: CLOSE_RISE,
+    aim: CLOSE_AIM,
+    preferred: new Vector3(x, 0, z).normalize(),
+    depth: 1.4,
+    halfWidth: 0.5,
+    halfHeight: 0.3,
+  });
+}
+
+/** The post-replay beats, squeezed when a late replay leaves less than their usual time before the payouts must land. */
+export function fitReplayBeats(beats: ResultBeats, doneAt: number, phaseSeconds = RESULT_SECONDS): ResultBeats {
+  const k = MathUtils.clamp((phaseSeconds - PAYOUT_READ_S - PAYOUT_FLIGHT_S - doneAt) / beats.payouts, MIN_BEAT_SCALE, 1);
+  if (k >= 1) return beats;
+  const scaled = { ...beats };
+  for (const key of ["slam", "showboat", "flop", "voice", "scoreboard", "payouts"] as const) scaled[key] = beats[key] * k;
+  return scaled;
+}
+
+/** The latest RESULT second a replay of `realMs` may start and still leave the (squeezed) beats after it and the payouts their time. */
+export function latestReplayStart(beats: ResultBeats, realMs: number, phaseSeconds = RESULT_SECONDS): number {
+  return phaseSeconds - PAYOUT_READ_S - PAYOUT_FLIGHT_S - beats.payouts * MIN_BEAT_SCALE - realMs / 1000 - REPLAY_WIPE_IN_S;
+}
+
 const METHOD_SLAM: Record<StoredOutcomeLike["method"], string> = {
   KO: "K.O.!",
   RINGOUT: "RING OUT!",
@@ -137,11 +247,49 @@ function Result({ feed, fight, outcome, sheets, phaseStartedAt, nodes }: ResultP
   const [startedAt] = useState(() => phaseStartedAt ?? services.clock.now);
   const elapsed = useRef(() => (services.clock.now - startedAt) / 1000).current;
   const winner = outcome.winner;
+  const loser = other(winner);
   const coin = fight.decidedBySeed || outcome.decidedBySeed === true;
   const winnerName = sheets[winner].name;
+  // The method slams here only when FIGHT never showed it: over the wide shot, or right after the replay.
+  const [lateSlam] = useState(() => !coin && !methodSlammed.has(fight.id));
+  const replayBeats = lateSlam ? REPLAY_SLAM_BEATS : REPLAY_BEATS;
 
-  // Where both fighters ended (the recording FIGHT left in the cache), else their marks.
-  const ends = useMemo(() => endStates(fight, sheets, outcome), [fight, sheets, outcome]);
+  // The instant replay (a coin has no moment to show): from FIGHT's recording, else the fight recorded here first.
+  const fx = useMemo(() => new FxSystem(), []);
+  const [replay] = useState(() => {
+    const input = coin ? null : fightInputOf(fight, sheets);
+    if (!input) return null;
+    return new ResultReplay({
+      services,
+      input,
+      stored: outcome,
+      fx,
+      colors: { A: sparkColors(sheets.A.palette), B: sparkColors(sheets.B.palette) },
+      elapsed: elapsed(),
+      earliest: ENTRY_CLEAR_S,
+      latestStart: (realMs) => latestReplayStart(replayBeats, realMs),
+    });
+  });
+  // FIGHT's recording was at hand: the replay is the phase's first shot, under the entry wipe.
+  const [warm] = useState(() => replay?.state === "ready");
+  useEffect(() => {
+    if (!replay || replay.player.recording) return;
+    let alive = true;
+    loadRapier()
+      .then((R) => {
+        if (alive) replay.start(R);
+      })
+      .catch((error: unknown) => console.warn("[slopfight] Rapier failed to load for the replay", error));
+    return () => {
+      alive = false;
+    };
+  }, [replay]);
+  // The beats count from the cut back after a replay (from the start without one) and hold while one is to come.
+  const post = useCallback(() => (replay ? replay.since(elapsed()) : elapsed()), [replay, elapsed]);
+  const beats = useRef<ResultBeats>({ ...(coin ? COIN_RESULT_BEATS : lateSlam ? LATE_SLAM_BEATS : RESULT_BEATS) }).current;
+
+  // Where both fighters ended (the recording FIGHT left in the cache, or the replay's own), else their marks.
+  const [ends, setEnds] = useState(() => endStates(fight, sheets, outcome));
   const winnerChest = useMemo(() => {
     const point = new Vector3();
     const height = ends[winner].height;
@@ -159,40 +307,114 @@ function Result({ feed, fight, outcome, sheets, phaseStartedAt, nodes }: ResultP
       return point.set(x + Math.sin(orbit) * pull, Math.max(0, y) + lift, z + Math.cos(orbit) * pull);
     };
   }, [ends, winner, sheets, services]);
+  const loserChest = useMemo(() => {
+    const end = ends[loser];
+    const point = new Vector3();
+    return () => {
+      const [x, y, z] = (end.sample ? end.pose.driver : end.driver).position;
+      return point.set(x, y + end.height * 0.5, z);
+    };
+  }, [ends, loser]);
 
   // Both fighters on the wide shot (a ring-out loser is far below: the winner alone).
-  const wideTargets = useMemo(() => {
-    const loser = ends[other(winner)];
-    const point = new Vector3();
-    const loserChest = () => {
-      const [x, y, z] = (loser.sample ? loser.pose.driver : loser.driver).position;
-      return point.set(x, y + loser.height * 0.5, z);
-    };
-    return outcome.method === "RINGOUT" ? [winnerChest] : [winnerChest, loserChest];
-  }, [ends, winner, winnerChest, outcome.method]);
+  const wideTargets = useMemo(
+    () => (outcome.method === "RINGOUT" ? [winnerChest] : [winnerChest, loserChest]),
+    [winnerChest, loserChest, outcome.method],
+  );
 
-  // The method slams here only when FIGHT never showed it; it plays over the wide shot first.
-  const [lateSlam] = useState(() => !coin && !methodSlammed.has(fight.id));
   // A coin-decided fight holds the coin's wide shot (CoinFlip asks for the same one).
-  const supersedeBase = useBaseShot(coin || lateSlam ? "fight_wide" : "winner_pose", { targets: coin ? [] : lateSlam ? wideTargets : [winnerFrame] });
-  const beats = coin ? COIN_RESULT_BEATS : lateSlam ? LATE_SLAM_BEATS : RESULT_BEATS;
+  const [first] = useState<{ shot: ShotId; targets: readonly TargetLike[] }>(() =>
+    warm
+      ? { shot: "replay", targets: [] }
+      : coin || lateSlam
+        ? { shot: "fight_wide", targets: coin ? [] : wideTargets }
+        : { shot: "winner_pose", targets: [winnerFrame] },
+  );
+  const supersedeBase = useBaseShot(first.shot, warm && replay ? replay.request : { targets: first.targets });
   const cutToPose = useCallback(() => {
+    // After a replay the two-shot already holds the winner.
+    if (replay?.state === "done") return;
     supersedeBase();
     services.director.setBase("winner_pose", { targets: [winnerFrame] });
-  }, [supersedeBase, services, winnerFrame]);
-  useResultBeats({ fight, outcome, winnerName, elapsed, coin, beats, supersedeBase, cutToPose: lateSlam ? cutToPose : null });
+  }, [replay, supersedeBase, services, winnerFrame]);
 
-  // The Voice's one line, on its beat.
+  // The Voice's one line, on its beat. With a replay to come, its speech is fetched now and it is scheduled at the cut back.
+  const voiceLine = useRef<VoiceLine | null>(null);
+  const voiceScheduled = useRef(false);
+  const scheduleVoice = useCallback(
+    (at: number) => {
+      const line = voiceLine.current;
+      if (!line || voiceScheduled.current) return;
+      voiceScheduled.current = true;
+      services.voice.schedule([{ ...line, at }]);
+    },
+    [services],
+  );
   useEffect(() => {
     const voice = services.voice;
     const voiceFight = voiceFightOf(feed, fight);
     if (!voiceFight) return;
     const record = recordBefore(feed, fight, winner);
     const line = voice.voice.result(voiceFight, { winner, method: outcome.method }, record);
-    if (line) voice.schedule([{ ...line, at: startedAt + beats.voice * 1000 }]);
+    if (!line) return;
+    voiceLine.current = line;
+    if (replay && replay.doneAt === null) voice.prefetch(line);
+    else scheduleVoice(startedAt + beats.voice * 1000);
     // Once per fight.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [services, fight.id, startedAt]);
+
+  // The replay's cuts, both under a wipe's cover.
+  const twoShot = useRef<ClearShotSearch | null>(null);
+  const hooks = useRef<ReplayHooks>({ cutIn: () => {}, cutBack: () => {} });
+  useLayoutEffect(() => {
+    hooks.current = {
+      cutIn: () => {
+        supersedeBase();
+        // The fight was recorded here: the fighters' end states are known now.
+        setEnds(endStates(fight, sheets, outcome));
+      },
+      cutBack: () => {
+        supersedeBase();
+        Object.assign(beats, fitReplayBeats(replayBeats, replay?.doneAt ?? 0));
+        scheduleVoice(services.clock.now + beats.voice * 1000);
+        // Both fighters in frame, unless the loser went far over the edge: then the winner's close-up.
+        const sample = ends[loser].sample;
+        const inSight = sample === null || sample.root.p[1] > LOSER_SIGHT_Y;
+        const from = twoShot.current?.best?.from;
+        if (inSight) services.director.setBase("fight_close", { targets: [winnerChest, loserChest], from });
+        else services.director.setBase("winner_pose", { targets: [winnerFrame] });
+      },
+    };
+  });
+  const [bugLabel, setBugLabel] = useState(() => replay?.plan?.label ?? "");
+  useFrame((_, realDelta) => {
+    if (!replay) return;
+    replay.frame(elapsed(), realDelta, hooks.current);
+    if (replay.plan && replay.plan.label !== bugLabel) setBugLabel(replay.plan.label);
+    // The fighters' ends are known once the replay rolls: find the two-shot's angle while it plays.
+    if (replay.state === "playing") {
+      twoShot.current ??= twoShotSearch(services.director.nodes?.root ?? null, winnerChest().clone(), loserChest().clone(), services.director.aspect);
+      twoShot.current.step(TWO_SHOT_SEARCH_MS);
+    }
+    // No replay after all: the line keeps its own beat.
+    if (replay.state === "skipped") scheduleVoice(startedAt + beats.voice * 1000);
+  }, -50);
+  const fxDelta = useCallback(() => (replay?.driving ? replay.simDelta : services.clock.delta), [replay, services]);
+  const bugShown = useCallback(() => replay?.bugShown === true, [replay]);
+
+  useResultBeats({
+    fight,
+    outcome,
+    winnerName,
+    elapsed: post,
+    phaseElapsed: elapsed,
+    replay,
+    coin,
+    beats,
+    supersedeBase,
+    cutToPose: lateSlam ? cutToPose : null,
+  });
 
   // The marquee must not call a coin before it lands.
   const marquee = coin ? "THE JUDGES' COIN" : fight.isFinal ? "CHAMPION" : `${winnerName.toUpperCase()} WINS`;
@@ -205,14 +427,20 @@ function Result({ feed, fight, outcome, sheets, phaseStartedAt, nodes }: ResultP
         </Suspense>
       ) : (
         <>
-          <Winner champion={sheets[winner]} end={ends[winner]} elapsed={elapsed} />
-          <Loser champion={sheets[other(winner)]} end={ends[other(winner)]} method={outcome.method} elapsed={elapsed} />
+          <Winner side={winner} champion={sheets[winner]} end={ends[winner]} elapsed={post} beats={beats} replay={replay} />
+          <Loser side={loser} champion={sheets[loser]} end={ends[loser]} method={outcome.method} elapsed={post} beats={beats} replay={replay} />
         </>
       )}
-      <WinnerConfetti champion={sheets[winner]} at={() => winnerChest()} elapsed={elapsed} beats={beats} />
+      {replay && (
+        <>
+          <FightFx system={fx} delta={fxDelta} />
+          <ReplayBug label={bugLabel} shown={bugShown} />
+        </>
+      )}
+      <WinnerConfetti champion={sheets[winner]} at={() => winnerChest()} elapsed={post} beats={beats} />
       {/* Its own boundary: the payout text loading must never hide (and re-run) the whole scene. */}
       <Suspense fallback={null}>
-        <Payouts feed={feed} fight={fight} winnerName={winnerName} nodes={nodes} elapsed={elapsed} beats={beats} from={winnerChest} />
+        <Payouts feed={feed} fight={fight} winnerName={winnerName} nodes={nodes} elapsed={post} beats={beats} from={winnerChest} />
       </Suspense>
     </>
   );
@@ -243,6 +471,8 @@ function useResultBeats({
   outcome,
   winnerName,
   elapsed,
+  phaseElapsed,
+  replay,
   coin,
   beats,
   supersedeBase,
@@ -251,7 +481,11 @@ function useResultBeats({
   fight: FightRow;
   outcome: StoredOutcomeLike;
   winnerName: string;
+  /** The beats' clock: from the cut back after a replay, -Infinity while one is to come. */
   elapsed: () => number;
+  /** Seconds into RESULT. */
+  phaseElapsed: () => number;
+  replay: ResultReplay | null;
   coin: boolean;
   beats: ResultBeats;
   supersedeBase: () => void;
@@ -262,7 +496,25 @@ function useResultBeats({
   const done = useRef(new Set<string>());
   useFrame(() => {
     const t = elapsed();
-    if (process.env.NODE_ENV !== "production") window.__slopResult = { t, beats: [...done.current], shot: services.director.shot };
+    if (process.env.NODE_ENV !== "production") {
+      window.__slopResult = {
+        t: phaseElapsed(),
+        post: Number.isFinite(t) ? t : null,
+        beats: [...done.current],
+        shot: services.director.shot,
+        replay: replay
+          ? {
+              state: replay.state,
+              kind: replay.plan?.kind ?? null,
+              t: replay.t,
+              sim: replay.player.t,
+              rate: replay.rate,
+              realMs: replay.plan?.realMs ?? null,
+              recorded: replay.player.recording?.recordedMs ?? null,
+            }
+          : undefined,
+      };
+    }
     const sfx = stageSfx(services);
     const beat = (name: string, at: number, run: () => void, late = 1.2) => {
       if (done.current.has(name) || t < at) return;
@@ -273,7 +525,8 @@ function useResultBeats({
     beat("fanfare", beats.showboat, () => {
       services.cheer(1);
       sfx.play("winFanfare", { intensity: 0.9 });
-      sfx.play("crowdCheer", { intensity: 0.8 });
+      // After a replay the crowd has just swelled into the cut back.
+      if (replay?.state !== "done") sfx.play("crowdCheer", { intensity: 0.8 });
     });
     beat("slam", beats.slam, () => {
       if (methodSlammed.has(fight.id) && !coin) return;
@@ -315,6 +568,8 @@ interface EndState {
 function endStates(fight: FightRow, sheets: Record<Side, Champion>, outcome: StoredOutcomeLike): Record<Side, EndState> {
   const input = fightInputOf(fight, sheets);
   const recording = input ? cachedRecording(input) : null;
+  // The end the recording shows (the stored one, whenever the local run matches it).
+  const endMs = recording?.outcome?.endMs ?? outcome.endMs;
   const out = {} as Record<Side, EndState>;
   for (const side of ["A", "B"] as const) {
     const pose = new PoseDriver(sheets[side], side);
@@ -322,7 +577,7 @@ function endStates(fight: FightRow, sheets: Record<Side, Champion>, outcome: Sto
     let sample: SampledFighter | null = null;
     if (recording && recording.recordedMs > 0) {
       sample = recording.createSample(side);
-      recording.sample(side, Math.min(recording.recordedMs, outcome.endMs + FIGHT_OUTRO_MS), sample);
+      recording.sample(side, Math.min(recording.recordedMs, endMs + FIGHT_OUTRO_MS), sample);
       pose.update(sample, 1);
     }
     const driver = createDriver(sample ? [...pose.driver.position] : spawn.position, sample ? pose.driver.yaw : spawn.yaw);
@@ -331,9 +586,54 @@ function endStates(fight: FightRow, sheets: Record<Side, Champion>, outcome: Sto
   return out;
 }
 
+/**
+ * A fighter during the replay: it follows the replay's pose driver (its
+ * jiggles and squashes too), its animation slowed with the playback. The
+ * speed is quantized, so a ramp re-renders a few times, not every frame; the
+ * feet replant at each cut in and out (both under a wipe's cover).
+ */
+function useReplayDrive(replay: ResultReplay | null, side: Side, handle: RefObject<CreatureHandle | null>) {
+  const [view, setView] = useState({ driving: false, timeScale: 1 });
+  const current = useRef(view);
+  useFrame(() => {
+    if (!replay) return;
+    const driving = replay.driving;
+    const timeScale = driving ? Math.round(replay.rate * 10) / 10 : 1;
+    if (driving !== current.current.driving || timeScale !== current.current.timeScale) {
+      current.current = { driving, timeScale };
+      setView(current.current);
+    }
+    if (!driving) return;
+    const pose = replay.player.drivers[side];
+    if (pose.jiggle > 0) {
+      handle.current?.jiggle(pose.jiggle);
+      pose.jiggle = 0;
+    }
+    if (pose.squash !== 0) {
+      handle.current?.squash(pose.squash);
+      pose.squash = 0;
+    }
+  }, -46);
+  useLayoutEffect(() => {
+    handle.current?.replant();
+  }, [view.driving, handle]);
+  return { driving: view.driving, timeScale: view.timeScale, driver: view.driving && replay ? replay.player.drivers[side].driver : null };
+}
+
+interface FighterProps {
+  side: Side;
+  champion: Champion;
+  end: EndState;
+  /** The beats' clock (from the cut back after a replay). */
+  elapsed: () => number;
+  beats: ResultBeats;
+  replay: ResultReplay | null;
+}
+
 /** The winner: on its feet, turning to the room, pumping its best move. */
-function Winner({ champion, end, elapsed }: { champion: Champion; end: EndState; elapsed: () => number }) {
+function Winner({ side, champion, end, elapsed, beats, replay }: FighterProps) {
   const handle = useRef<CreatureHandle>(null);
+  const shown = useReplayDrive(replay, side, handle);
   const driver = end.driver;
   const move = useMemo(() => {
     let best = 0;
@@ -344,15 +644,16 @@ function Winner({ champion, end, elapsed }: { champion: Champion; end: EndState;
   }, [champion]);
   const state = useRef({ hops: 0 });
   useFrame((_, realDelta) => {
+    if (replay?.driving) return;
     const t = elapsed();
     // Stand where it ended (back on the floor if it was mid-hop), face the camera side.
     driver.position[1] = MathUtils.damp(driver.position[1], 0, 10, realDelta);
     driver.velocity[0] = driver.velocity[1] = driver.velocity[2] = 0;
     driver.pose = null;
-    driver.yaw = dampYaw(driver.yaw, 0, t > RESULT_BEATS.showboat ? 6 : 2, realDelta);
+    driver.yaw = dampYaw(driver.yaw, 0, t > beats.showboat ? 6 : 2, realDelta);
     // The victory pump: windup, strike up and out, hold, recover, a beat, again.
     const cycle = 1.7;
-    const local = t < RESULT_BEATS.showboat ? -1 : (t - RESULT_BEATS.showboat) % cycle;
+    const local = t < beats.showboat ? -1 : (t - beats.showboat) % cycle;
     const phase = local < 0 ? null : local < 0.35 ? "windup" : local < 0.55 ? "active" : local < 0.85 ? "hold" : local < 1.25 ? "recover" : null;
     const progress =
       phase === "windup" ? local / 0.35 : phase === "active" ? (local - 0.35) / 0.2 : phase === "hold" ? (local - 0.55) / 0.3 : phase === "recover" ? (local - 0.85) / 0.4 : 0;
@@ -371,13 +672,22 @@ function Winner({ champion, end, elapsed }: { champion: Champion; end: EndState;
     };
     driver.expression = "smug";
     // A bounce on each pump.
-    const hops = local < 0 ? 0 : Math.floor((t - RESULT_BEATS.showboat) / cycle) + 1;
+    const hops = local < 0 ? 0 : Math.floor((t - beats.showboat) / cycle) + 1;
     if (hops > state.current.hops) {
       state.current.hops = hops;
       handle.current?.squash(0.22);
     }
   }, -45);
-  return <Creature ref={handle} champion={champion} driver={driver} seed={41} specularMinLight={STAGE_SPECULAR_MIN_LIGHT} />;
+  return (
+    <Creature
+      ref={handle}
+      champion={champion}
+      driver={shown.driver ?? driver}
+      timeScale={shown.timeScale}
+      seed={41}
+      specularMinLight={STAGE_SPECULAR_MIN_LIGHT}
+    />
+  );
 }
 
 const tmpQ = new Quaternion();
@@ -385,17 +695,20 @@ const tmpAxis = new Vector3();
 const tmpV = new Vector3();
 
 /** The loser: a KO lies where it fell, a ring-out stays down below, a points loss flops over backwards. */
-function Loser({ champion, end, method, elapsed }: { champion: Champion; end: EndState; method: StoredOutcomeLike["method"]; elapsed: () => number }) {
+function Loser({ side, champion, end, method, elapsed, beats, replay }: FighterProps & { method: StoredOutcomeLike["method"] }) {
   const services = useStage();
+  const handle = useRef<CreatureHandle>(null);
+  const shown = useReplayDrive(replay, side, handle);
   const flops = (method === "DECISION" || method === "SUDDEN_DEATH") && end.sample !== null;
   const base = end.sample;
   const work = useMemo(() => (base ? structuredClone(base) : null), [base]);
   const state = useRef({ thud: false });
   useFrame(() => {
+    if (replay?.driving) return;
     const t = elapsed();
     if (!base || !work) {
       // No recording: a plain standing loser, eyes shut.
-      end.driver.expression = t > RESULT_BEATS.flop ? "closed" : null;
+      end.driver.expression = t > beats.flop ? "closed" : null;
       return;
     }
     if (!flops) {
@@ -403,9 +716,9 @@ function Loser({ champion, end, method, elapsed }: { champion: Champion; end: En
       return;
     }
     // Tip over backwards about the feet: gravity-eased, a small bounce, then still.
-    const u = MathUtils.clamp((t - RESULT_BEATS.flop) / 0.42, 0, 1);
+    const u = MathUtils.clamp((t - beats.flop) / 0.42, 0, 1);
     const fall = u * u;
-    const bounce = u >= 1 ? Math.max(0, Math.sin(Math.min(1, (t - RESULT_BEATS.flop - 0.42) / 0.25) * Math.PI)) * 0.12 : 0;
+    const bounce = u >= 1 ? Math.max(0, Math.sin(Math.min(1, (t - beats.flop - 0.42) / 0.25) * Math.PI)) * 0.12 : 0;
     const angle = (Math.PI / 2) * (fall - bounce);
     const yaw = base.facing;
     tmpAxis.set(-Math.cos(yaw), 0, Math.sin(yaw));
@@ -446,7 +759,16 @@ function Loser({ champion, end, method, elapsed }: { champion: Champion; end: En
     }
   }, -45);
   const driver = base ? end.pose.driver : end.driver;
-  return <Creature champion={champion} driver={driver} seed={43} specularMinLight={STAGE_SPECULAR_MIN_LIGHT} />;
+  return (
+    <Creature
+      ref={handle}
+      champion={champion}
+      driver={shown.driver ?? driver}
+      timeScale={shown.timeScale}
+      seed={43}
+      specularMinLight={STAGE_SPECULAR_MIN_LIGHT}
+    />
+  );
 }
 
 function dampYaw(from: number, to: number, lambda: number, dt: number): number {

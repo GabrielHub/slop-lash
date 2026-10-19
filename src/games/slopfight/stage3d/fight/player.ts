@@ -137,6 +137,18 @@ export class FightPlayer {
     if (recording.complete) this.onComplete();
   }
 
+  /**
+   * Record for up to `budgetMs` of wall time with nothing on screen yet
+   * (RESULT's replay on a stage that never saw the fight). Never the
+   * catch-up budget: a long frame here would land on the phase's entry.
+   */
+  recordAhead(budgetMs: number): void {
+    const recording = this.recording;
+    if (!recording || recording.complete) return;
+    recording.advance(Infinity, budgetMs);
+    if (recording.complete) this.onComplete();
+  }
+
   private onComplete(): void {
     const recording = this.recording;
     if (!recording) return;

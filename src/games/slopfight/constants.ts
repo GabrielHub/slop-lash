@@ -12,7 +12,16 @@ export const ROSTER_SECONDS = 20;
 export const FACE_OFF_SECONDS = 15;
 /** Face-off never settles early before this many seconds, so the notes read. */
 export const FACE_OFF_MIN_SECONDS = 8;
-export const RESULT_SECONDS = 6;
+/**
+ * RESULT with its instant replay: the entry wipe (about 0.4 s), the replay
+ * and its wipe out (2.6 to 3.3 s), up to 1.7 s of the winner's pose on the
+ * two-shot, then the payouts: up to 1.25 s in the air, at least 1.25 s to
+ * read. Two seconds more than before the replay; the pose after it is a
+ * second shorter than the old close-up (the replay has shown both fighters).
+ */
+export const RESULT_SECONDS = 8;
+/** A seed-decided fight has no moment to replay: the coin, the verdict and the payouts keep the old 6 s. */
+export const COIN_RESULT_SECONDS = 6;
 export const STANDINGS_SECONDS = 8;
 export const UPGRADE_SECONDS = 30;
 /** Foundry waits this long for an in-flight forge before it parks. */

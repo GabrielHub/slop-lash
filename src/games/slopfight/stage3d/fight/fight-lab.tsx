@@ -17,13 +17,13 @@
 //   ?live=1 (sounds) ?quality=high|medium|low ?debug=1 ?names=long
 //
 // window.__fightLab: services, row, outcome, events, go(phase, t),
-// freezeAt(simMs), freezeOn(event, afterMs), resume() for scripted screenshots.
+// freezeAt(simMs), freezeOn(event, afterMs), freezeWhen(test), resume() for scripted screenshots.
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compactOutcome } from "../../../../../convex/slopfight/outcome";
 import { ARENA_IDS, type ArenaId } from "../../arenas";
-import { FACE_OFF_SECONDS, FIGHT_LEAD_MS, FIGHT_LIMIT_MS, FIGHT_OUTRO_MS, RESULT_SECONDS } from "../../constants";
+import { COIN_RESULT_SECONDS, FACE_OFF_SECONDS, FIGHT_LEAD_MS, FIGHT_LIMIT_MS, FIGHT_OUTRO_MS, RESULT_SECONDS } from "../../constants";
 import { resolveModifiers, type MatchupNote } from "../../modifiers";
 import { SAMPLES, sampleById } from "../../samples";
 import { scoreFight } from "../../scoring";
@@ -208,7 +208,7 @@ interface Timeline {
   n: number;
 }
 
-function phaseLengthMs(phase: LabPhase, endMs: number): number {
+function phaseLengthMs(phase: LabPhase, endMs: number, coin: boolean): number {
   switch (phase) {
     case "ROSTER":
       return 1_600;
@@ -217,7 +217,7 @@ function phaseLengthMs(phase: LabPhase, endMs: number): number {
     case "FIGHT":
       return FIGHT_LEAD_MS + endMs + FIGHT_OUTRO_MS;
     case "RESULT":
-      return RESULT_SECONDS * 1000;
+      return (coin ? COIN_RESULT_SECONDS : RESULT_SECONDS) * 1000;
     case "FINISHED":
       return Infinity;
   }
@@ -315,6 +315,8 @@ declare global {
       go(phase: string, t?: number): void;
       freezeAt(simMs: number): Promise<number>;
       freezeOn(event: StageEventName, afterMs?: number): Promise<number>;
+      /** Freeze on the first frame `test()` holds, e.g. `() => (window.__slopResult?.replay?.t ?? 0) >= 1200`. */
+      freezeWhen(test: () => boolean): Promise<number>;
       resume(): void;
       /** Run seeds from `from` (this pair and arena): method, end, first contact, big hits, edges. */
       scan(from: number, count: number): Promise<string[]>;
@@ -361,11 +363,11 @@ function LabStage({ params, fight }: { params: LabParams; fight: LabFight }) {
     if (!params.auto) return;
     const next = NEXT[timeline.phase];
     if (!next) return;
-    const length = phaseLengthMs(timeline.phase, endMs);
+    const length = phaseLengthMs(timeline.phase, endMs, params.coin);
     const wait = timeline.phaseStartedAt + length - Date.now();
     const timer = window.setTimeout(() => go(next), Math.max(0, wait));
     return () => window.clearTimeout(timer);
-  }, [timeline, params.auto, endMs, go]);
+  }, [timeline, params.auto, params.coin, endMs, go]);
 
   // Live bets: one more every 1.4 s during the face-off.
   useEffect(() => {
@@ -492,6 +494,9 @@ function LabBridge({
             freezes.current.push({ until: () => performance.now() >= at, resolve });
           });
         });
+      },
+      freezeWhen(test) {
+        return new Promise((resolve) => freezes.current.push({ until: () => test(), resolve }));
       },
       resume() {
         setFrameloop("always");

@@ -176,5 +176,21 @@ export function findLandingStep(recording: FightRecording, side: Side, fromMs: n
   return null;
 }
 
+/**
+ * The step a ring-out victim went over (its torso left the floor: past the
+ * edge or over a pit), scanning back from the ring-out call, which comes once
+ * it has already dropped. Null when it never stood on the floor in the scan.
+ */
+export function findOverEdgeStep(recording: FightRecording, side: Side, ringoutMs: number): number | null {
+  const geometry = ARENAS[recording.input.arena].geometry;
+  const torso: [number, number, number] = [0, 0, 0];
+  const end = Math.min(recording.steps, Math.round(ringoutMs / STEP_MS));
+  for (let k = end; k >= Math.max(0, end - 120); k -= 1) {
+    recording.torsoAt(side, k, torso);
+    if (isOverFloor(geometry, torso[0], torso[2]) && torso[1] > geometry.topY - 0.3) return Math.min(k + 1, end);
+  }
+  return null;
+}
+
 /** Ms of sim time for a step index. */
 export const msOfStep = (step: number): number => step * STEP_MS;

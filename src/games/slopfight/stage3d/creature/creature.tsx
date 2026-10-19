@@ -65,6 +65,8 @@ export interface CreatureHandle {
   jiggle(strength?: number): void;
   /** A quick squash (positive) or stretch (negative). */
   squash(amount: number): void;
+  /** Moved somewhere else at a cut (a replay): the feet plant afresh. */
+  replant(): void;
   /** A bone's centre in parent space. */
   boneCentre(id: string, out: Vector3): boolean;
   /** The face's position in parent space. */
@@ -134,6 +136,7 @@ export const Creature = forwardRef<CreatureHandle, CreatureProps>(function Creat
       view,
       jiggle: (strength = 1) => view.jiggle(strength),
       squash: (amount: number) => view.squash(amount),
+      replant: () => view.replant(),
       boneCentre: (id, out) => view.boneCentre(id, out),
       facePosition: (out) => view.facePosition(out),
     }),

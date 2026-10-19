@@ -217,7 +217,7 @@ describe("shots", () => {
 
   test("hero shots carry depth of field; the rest do not", () => {
     const hero = SHOT_IDS.filter((id) => SHOTS[id].dof > 0).toSorted();
-    expect(hero).toEqual(["face_off_low", "podium", "slowmo_orbit", "winner_pose"]);
+    expect(hero).toEqual(["face_off_low", "podium", "replay", "slowmo_orbit", "winner_pose"]);
   });
 
   test("ragdoll_follow descends with a fighter below the rooftop", () => {

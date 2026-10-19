@@ -7,6 +7,7 @@ import { enterPhase, settle, timed, type GameMode, type Transition } from "../en
 import { pickArenaOrder } from "../../src/games/slopfight/arenas";
 import {
   BUILD_SECONDS,
+  COIN_RESULT_SECONDS,
   FACE_OFF_SECONDS,
   FIGHT_LEAD_MS,
   FIGHT_OUTRO_MS,
@@ -119,10 +120,11 @@ export function fightTransition(fight: Fight): Transition {
   return { phase: "FIGHT", step: fight.step, seconds, watchdog: true };
 }
 
-const result = (game: Doc<"games">, step: number): Transition => ({
+/** RESULT replays the decisive moment; a seed decision has none, so its RESULT is shorter. */
+const result = (game: Doc<"games">, fight: Fight): Transition => ({
   phase: "RESULT",
-  step,
-  seconds: timed(game, RESULT_SECONDS),
+  step: fight.step,
+  seconds: timed(game, fight.outcome?.decidedBySeed ? COIN_RESULT_SECONDS : RESULT_SECONDS),
 });
 
 /** Champions all done: on to the roster, else the Foundry waits for them. */
@@ -137,7 +139,7 @@ async function afterForges(ctx: MutationCtx, game: Doc<"games">, fighters?: Figh
 /** Scores the fight and shows it; a seed decision has nothing to play, so it lands here too. */
 async function toResult(ctx: MutationCtx, game: Doc<"games">, fight: Fight): Promise<Transition> {
   await scoreFightOnce(ctx, fight);
-  return result(game, fight.step);
+  return result(game, fight);
 }
 
 /**
