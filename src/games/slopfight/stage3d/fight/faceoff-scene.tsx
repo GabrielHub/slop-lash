@@ -5,33 +5,36 @@
 // letterboxed, Dutch-tilted `face_off_low`: both champions walk from their
 // roster marks to their face-off marks together while The Voice reads each
 // walk-on line (the Final and third place get their call first), the shot
-// alternating sides; the
-// arena's hazard card and the matchup notes fly in one by one between the
-// fighters ("the Voice is thinking..." while the matchup call runs), and every
-// bet arrives as the bettor's avatar tossed from the crowd onto the fighter
-// they backed, with the count per side. The fighters end on the sim's
-// spawns, so FIGHT starts where this ends.
+// alternating sides; the arena's hazard card and the matchup notes take the
+// spotlight one at a time, big, then land on a wall between the fighters
+// ("the Voice is thinking..." while the matchup call runs); each side's ring
+// sits on the floor in its phone colour, and every bet arrives as the
+// bettor's avatar tossed from the crowd onto the fighter they backed, with
+// the count per side. The fighters end on the sim's spawns, so FIGHT starts
+// where this ends.
 
 import { useFrame } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { MathUtils, Vector3, type Group, type PerspectiveCamera, type Vector3Tuple } from "three";
-import { ARENAS } from "../../arenas";
 import type { Side } from "../../modifiers";
 import type { Champion } from "../../sheet";
 import { buildProxyDef, loadRapier } from "../../sim";
-import { TOY_COLOR_VALUES } from "../../vocab";
 import type { ArenaNodes } from "../arena/nodes";
+import { easeOutBack } from "../director/noise";
 import { Creature, createDriver, type CreatureDriver } from "../creature/creature";
 import type { ShotRequest } from "../director/director";
 import type { PhaseSceneProps } from "../scenes/phase-scene";
 import { useStage } from "../services";
 import { Card, faceZ } from "../ui3d/card";
+import { clamp01, easeInOutCubic, easeOutCubic } from "../ui3d/motion";
+import { placeOnScreen, screenDepth } from "../ui3d/screen";
 import { Chip } from "../ui3d/chips";
-import { UI_COLORS, uiToon } from "../ui3d/materials";
+import { SIDE_COLORS, UI_COLORS, uiToon } from "../ui3d/materials";
 import { stageSfx } from "../ui3d/sound";
 import { AvatarToken, FaceCamera } from "../ui3d/tokens";
 import { playerName, sheetsOf, useFightFeed, type FightFeed, type FightRow } from "./feed";
-import { barColor, STAGE_SPECULAR_MIN_LIGHT } from "./fighters";
+import { STAGE_SPECULAR_MIN_LIGHT } from "./fighters";
+import { SideMarker } from "./hud";
 import { FightMarquee, rosterMarkOf, spawnOf, useBaseShot } from "./parts";
 import {
   cardBodySize,
@@ -42,12 +45,14 @@ import {
   faceOffLines,
   HAZARD_H,
   HAZARD_W,
-  NOTE_GAP_S,
   NOTE_H,
   NOTE_W,
   notesOf,
   relevantHazard,
   SIDE_SWAP_S,
+  SPOTLIGHT_IN_S,
+  SPOTLIGHT_OUT_S,
+  spotlightPlan,
   walkAt,
   type CardGap,
   type FaceOffPlan,
@@ -197,6 +202,10 @@ function FaceOff({ feed, fight, sheets, phaseStartedAt, nodes }: FaceOffProps) {
       <FightMarquee nodes={nodes} text={title} />
       {SIDES.map((side) => (
         <WalkingFighter key={side} champion={sheets[side]} driver={drivers[side]} walk={walks[side]} elapsed={elapsed} seed={side === "A" ? 11 : 23} />
+      ))}
+      {/* Each side's colour as the phones show it, on the floor under its fighter. */}
+      {SIDES.map((side) => (
+        <SideMarker key={side} side={side} champion={sheets[side]} arena={arena} root={chest[side]} height={heights[side]} chevron={false} />
       ))}
       {/* Own boundaries: cards and tokens arriving later (with new text) must not hide the walkers. */}
       <Suspense fallback={null}>
@@ -376,14 +385,49 @@ function screenSpan(camera: PerspectiveCamera, driver: CreatureDriver, size: Fig
   return minX > maxX ? { minX: 0, maxX: 0, depth } : { minX, maxX, depth };
 }
 
+/** A spotlit note is this many view heights wide; the hazard card this wide. */
+const SPOT_NOTE_W = 0.62;
+const SPOT_HAZARD_W = 0.84;
+/** The spotlight's centre: this high (NDC; between the top bar and The Voice's caption)... */
+const SPOT_Y_NDC = 0.14;
+/** ...and toward the open space between the fighters, at most this far off centre (NDC). */
+const SPOT_X_NDC = 0.3;
+/** Spotlit cards draw over the set from here (each takes 10), under the caption (950). */
+const SPOT_ORDER = 700;
+/** After the wall is placed (0.52) and its cards face the camera (0.55), before the slam (0.6). */
+const SPOT_PRIORITY = 0.56;
+
+interface WallCard {
+  key: string;
+  /** Its slot on the wall (grid space). */
+  slot: Vector3Tuple;
+  width: number;
+  height: number;
+  accent: string;
+  title: string;
+  body: string;
+  bodySize: number;
+  /** Its spotlight [at, until] (phase seconds), or null when it goes straight to the wall (a late open). */
+  window: [number, number] | null;
+  /** Its fighter (a note slides in from that side of the frame); null for the hazard (drops in). */
+  side: Side | null;
+  seed: number;
+}
+
+const tmpSlot = new Vector3();
+const tmpScale = new Vector3();
+
 /**
- * The hazard card and the matchup notes, hung as one camera-facing grid in
- * the open screen space between the fighters: every frame the grid is placed
- * for the camera on air (on the far side of the big foreground fighter of a
- * low face-off shot, between the two when it fits), sized to that gap, and
- * kept under the letterbox and above The Voice's caption. It eases with the
- * slow push and jumps only on a cut. `centre` gets the grid's middle (the
- * shot focuses there).
+ * The hazard card and the matchup notes. Each takes the spotlight in turn:
+ * slammed in big in the middle of the frame (camera-fixed, over the set,
+ * toward the open space between the fighters), held long enough to read
+ * (spotlightTimes), then flown onto its slot on the wall: one camera-facing
+ * grid hung in the open space between the fighters. Every frame the wall is
+ * placed for the camera on air (on the far side of the big foreground
+ * fighter of a low face-off shot, between the two when it fits), sized to
+ * that gap, and kept under the letterbox and above The Voice's caption. It
+ * eases with the slow push and jumps only on a cut. `centre` gets the
+ * wall's middle (the shot focuses there).
  */
 function NotesWall({
   fight,
@@ -405,30 +449,83 @@ function NotesWall({
   centre: Vector3;
 }) {
   const services = useStage();
-  const arena = ARENAS[fight.arena];
   const hazard = useMemo(() => relevantHazard(fight.arena, sheets.A, sheets.B), [fight.arena, sheets]);
   const notes = useMemo(() => notesOf(fight).slice(0, 4), [fight]);
   const pending = fight.matchup === "PENDING";
   const grid = useMemo(() => cardGrid(pending ? 1 : notes.length), [pending, notes.length]);
-  // Seconds after mount for a beat at `at` seconds into the phase (a late open staggers quickly).
-  const delayFor = (at: number, index: number) => {
-    const now = elapsed();
-    const late = now > at;
-    return late ? 0.15 * index : at - now;
-  };
-  // Notes that arrive after mount (the matchup call finished mid-face-off) start from now.
-  const [notesAt] = useState(() => Math.max(plan.cardsAt + NOTE_GAP_S, mountedAt));
   const sfx = stageSfx(services);
-  const accent = TOY_COLOR_VALUES[arena.accent].hex;
+
+  // When the notes were first seen: the mount, or the moment the matchup call finished.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const notesSeenAt = useMemo(() => Math.max(mountedAt, elapsed()), [pending]);
+  const cards = useMemo<WallCard[]>(() => {
+    // The hazard right after the slam; the notes with it, or once they are in (the matchup call can finish mid-face-off).
+    const windows = spotlightPlan(
+      hazard ? `${hazard.title} ${hazard.card}` : null,
+      pending ? null : notes.map((note) => `${sheets[note.side].name} ${note.line}`),
+      plan.cardsAt,
+      notesSeenAt,
+    );
+    const out: WallCard[] = [];
+    if (hazard) {
+      out.push({
+        key: "hazard",
+        slot: grid.hazard,
+        width: HAZARD_W,
+        height: HAZARD_H,
+        // The house's plum, like The Voice: teal and gold always mean a side.
+        accent: UI_COLORS.plum,
+        title: hazard.title,
+        body: hazard.card,
+        bodySize: cardBodySize(hazard.card, HAZARD_W, HAZARD_H, 0.056),
+        window: windows.hazard,
+        side: null,
+        seed: 3,
+      });
+    }
+    notes.forEach((note, index) => {
+      const window = windows.notes[index];
+      if (!window) return;
+      out.push({
+        key: note.key,
+        slot: grid.notes[index]!,
+        width: NOTE_W,
+        height: NOTE_H,
+        accent: SIDE_COLORS[note.side],
+        title: sheets[note.side].name,
+        body: note.line,
+        bodySize: cardBodySize(note.line, NOTE_W, NOTE_H, 0.058),
+        window,
+        side: note.side,
+        seed: 7 + index,
+      });
+    });
+    // A spotlight already over when the wall mounted (a late open): straight to the wall.
+    for (const card of out) if (card.window && card.window[1] + SPOTLIGHT_OUT_S <= mountedAt) card.window = null;
+    return out;
+  }, [hazard, pending, notes, notesSeenAt, mountedAt, grid, sheets, plan.cardsAt]);
+  const hazardWindow = cards[0]?.key === "hazard" ? cards[0].window : null;
+  const hazardLands = hazardWindow ? hazardWindow[1] + SPOTLIGHT_OUT_S : plan.cardsAt;
+  // When a card shows on the wall: as its spotlight lands (keyed by that, so a re-planned window remounts it), else (a late open) in a quick stagger.
+  const landsAt = (card: WallCard) => (card.window ? card.window[1] + SPOTLIGHT_OUT_S : null);
+  const wallDelay = (card: WallCard, index: number) => {
+    const lands = landsAt(card);
+    return lands !== null ? Math.max(0, lands - elapsed()) : 0.15 * index;
+  };
 
   const layout = useRef<Group>(null);
-  const placed = useRef({ snap: true, position: new Vector3(), yaw: 0, scale: 1, kind: null as GapKind | null });
-  // Which side of the grid each fighter is on screen (notes fly in from their fighter's side).
+  const spotRoot = useRef<Group>(null);
+  const spots = useRef<Record<string, Group | null>>({});
+  const slots = useRef<Record<string, Group | null>>({});
+  const placed = useRef({ snap: true, position: new Vector3(), yaw: 0, scale: 1, kind: null as GapKind | null, gapX: 0, spotX: 0, spotSnap: true });
+  const beats = useRef(new Map<string, { in: boolean; landed: boolean }>());
+  // Which side of the wall each fighter is on screen (notes slide in from their fighter's side).
   const sideOf = useRef<Record<Side, number>>({ A: -1, B: 1 });
   useEffect(
     () =>
       services.events.on("cut", () => {
         placed.current.snap = true;
+        placed.current.spotSnap = true;
         placed.current.kind = null;
       }),
     [services],
@@ -472,61 +569,142 @@ function NotesWall({
     p.position.lerp(tmpPoint, ease);
     p.yaw += shortAngle(yaw - p.yaw) * ease;
     p.scale += (scale - p.scale) * ease;
+    p.gapX = cx;
     node.position.copy(p.position);
     node.rotation.set(0, p.yaw, 0);
     node.scale.setScalar(p.scale);
     for (const side of SIDES) sideOf.current[side] = (spans[side].minX + spans[side].maxX) / 2 >= cx ? 1 : -1;
   }, 0.52);
 
+  // The spotlight: camera-fixed (1 unit = the view height), each card slammed in, held, then flown onto its slot.
+  useFrame((state, realDelta) => {
+    const root = spotRoot.current;
+    if (!root) return;
+    const camera = state.camera as PerspectiveCamera;
+    const t = elapsed();
+    placeOnScreen(root, camera, screenDepth(camera, services.fx));
+    const aspect = camera.aspect || 16 / 9;
+    const tanH = Math.tan(MathUtils.degToRad(camera.fov) / 2);
+    const p = placed.current;
+    const spotX = (MathUtils.clamp(p.gapX, -SPOT_X_NDC, SPOT_X_NDC) * aspect) / 2;
+    p.spotX = p.spotSnap ? spotX : MathUtils.damp(p.spotX, spotX, 6, realDelta);
+    p.spotSnap = false;
+    const spotY = SPOT_Y_NDC / 2;
+    for (const card of cards) {
+      const node = spots.current[card.key];
+      if (!node) continue;
+      const window = card.window;
+      if (!window || t < window[0] || t >= window[1] + SPOTLIGHT_OUT_S) {
+        node.visible = false;
+        continue;
+      }
+      node.visible = true;
+      const [at, until] = window;
+      const big = (card.side ? SPOT_NOTE_W : SPOT_HAZARD_W) / card.width;
+      let beat = beats.current.get(card.key);
+      if (!beat) {
+        beat = { in: false, landed: false };
+        beats.current.set(card.key, beat);
+      }
+      if (t < until) {
+        // Slam in: from its fighter's side (the hazard from above), big, smashing down to size with a little overshoot.
+        const k = clamp01((t - at) / SPOTLIGHT_IN_S);
+        const slide = 1 - easeOutCubic(k);
+        const from = card.side ? sideOf.current[card.side] : 0;
+        node.position.set(p.spotX + from * 0.55 * slide, spotY + (card.side ? 0 : 0.3 * slide), 0);
+        node.scale.setScalar(big * (1 + 0.45 * (1 - easeOutBack(k, 2.2))));
+        node.rotation.set(0, 0, -0.05 * from * slide + 0.012 * Math.sin(t * 1.7 + card.seed));
+        if (!beat.in) {
+          beat.in = true;
+          sfx.play("tap", { intensity: 0.7, gain: 0.7 });
+          sfx.play("trickWhiff", { intensity: 0.3, gain: 0.4 });
+        }
+        continue;
+      }
+      // Fly onto its slot: where the wall's card shows on screen now, at its size there.
+      const slot = slots.current[card.key];
+      const k = easeInOutCubic(clamp01((t - until) / SPOTLIGHT_OUT_S));
+      let tx = p.spotX;
+      let ty = spotY;
+      let ts = big;
+      if (slot) {
+        const world = slot.getWorldScale(tmpScale).x;
+        slot.getWorldPosition(tmpSlot).applyMatrix4(camera.matrixWorldInverse);
+        const unit = 1 / (2 * Math.max(0.2, -tmpSlot.z) * tanH);
+        tx = tmpSlot.x * unit;
+        ty = tmpSlot.y * unit;
+        ts = world * unit;
+      }
+      node.position.set(MathUtils.lerp(p.spotX, tx, k), MathUtils.lerp(spotY, ty, k) + Math.sin(Math.PI * k) * 0.04, 0);
+      node.scale.setScalar(MathUtils.lerp(big, ts, k));
+      node.rotation.set(0, 0, 0.04 * Math.sin(Math.PI * k));
+      if (!beat.landed && k >= 0.98) {
+        beat.landed = true;
+        sfx.play("confirm", { intensity: 0.5, gain: 0.65 });
+      }
+    }
+  }, SPOT_PRIORITY);
+
   return (
-    <group ref={layout} name="matchup-cards">
-      {hazard && (
-        <FaceCamera position={grid.hazard} amount={0.4}>
-          <Card
-            width={HAZARD_W}
-            height={HAZARD_H}
-            accent={accent}
-            title={hazard.title}
-            body={hazard.card}
-            bodySize={cardBodySize(hazard.card, HAZARD_W, HAZARD_H, 0.056)}
-            enter="drop"
-            cable={3.4}
-            delay={delayFor(plan.cardsAt, 0)}
-            seed={3}
-          />
-        </FaceCamera>
-      )}
-      <FaceCamera position={grid.thinking} amount={0.4}>
-        <ThinkingCard leaving={!pending} delay={delayFor(plan.cardsAt + NOTE_GAP_S, 1)} />
-      </FaceCamera>
-      {!pending &&
-        notes.map((note, index) => {
-          const spot = grid.notes[index]!;
-          const at = Math.max(notesAt, plan.cardsAt + NOTE_GAP_S * (index + 1));
-          return (
-            <FaceCamera key={note.key} position={spot} amount={0.4}>
+    <>
+      <group ref={layout} name="matchup-cards">
+        {cards.map((card, index) => (
+          <group
+            key={`${card.key}@${landsAt(card)?.toFixed(2) ?? "late"}`}
+            position={card.slot}
+            ref={(group) => {
+              slots.current[card.key] = group;
+            }}
+          >
+            <FaceCamera amount={0.4}>
               <Card
-                width={NOTE_W}
-                height={NOTE_H}
-                accent={barColor(sheets[note.side])}
-                title={sheets[note.side].name}
-                body={note.line}
-                bodySize={cardBodySize(note.line, NOTE_W, NOTE_H, 0.058)}
-                enter="pop"
-                flyFrom={[sideOf.current[note.side] * 1.4 - spot[0], -0.5 - spot[1], 0.25]}
-                arcHeight={0.5}
-                delay={delayFor(at, index + 1)}
-                seed={7 + index}
-                sound={false}
-                onBeat={(beat) => {
-                  if (beat === "start") sfx.play("trickWhiff", { intensity: 0.25, gain: 0.45 });
-                  if (beat === "land") sfx.play("confirm", { intensity: 0.5, gain: 0.7 });
-                }}
+                width={card.width}
+                height={card.height}
+                accent={card.accent}
+                title={card.title}
+                body={card.body}
+                bodySize={card.bodySize}
+                enter={card.window ? "none" : "pop"}
+                delay={wallDelay(card, index)}
+                seed={card.seed}
+                sound={!card.window}
               />
             </FaceCamera>
-          );
-        })}
-    </group>
+          </group>
+        ))}
+        <FaceCamera position={grid.thinking} amount={0.4}>
+          <ThinkingCard leaving={!pending} delay={Math.max(0, hazardLands - mountedAt)} />
+        </FaceCamera>
+      </group>
+      <group ref={spotRoot} name="matchup-spotlight">
+        {cards.map((card, index) =>
+          card.window ? (
+            <group
+              key={card.key}
+              visible={false}
+              ref={(group) => {
+                spots.current[card.key] = group;
+              }}
+            >
+              <Card
+                width={card.width}
+                height={card.height}
+                accent={card.accent}
+                title={card.title}
+                body={card.body}
+                bodySize={card.bodySize}
+                enter="none"
+                idle={0}
+                realtime
+                seed={card.seed}
+                sound={false}
+                overlay={SPOT_ORDER + index * 10}
+              />
+            </group>
+          ) : null,
+        )}
+      </group>
+    </>
   );
 }
 

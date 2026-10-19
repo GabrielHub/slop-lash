@@ -61,20 +61,26 @@ This is the north star. Build toward this sequence.
    The Voice says one line for the round (who opens it). Each fight's
    matchup call starts as soon as both its champions are forged, so it is
    usually ready before the line-up ends.
-5. **Face-off (8 to 12 s).** The names slam in, and under the slam both
+5. **Face-off (11 to 12 s).** The names slam in, and under the slam both
    champions walk to their marks together: low angle, letterbox, a slight
    Dutch tilt. The Voice reads each champion's walk-on line (the Final and
-   third place get their call first). The arena's hazard card and the AI's **Matchup Notes** hang in the
+   third place get their call first). The arena's hazard card and the AI's
+   **Matchup Notes** then slam in one at a time, big in the middle of the
+   frame and in the side's phone colour, and fly to a wall hanging in the
    air between them: two or three cards like "Leaf blower is useless
-   underwater: Strike -1" or "Jellyfish cannot be grappled". Everyone bets on
-   a winner with one tap; the phones count the bets still to come, and the
-   fight starts early once everyone here has bet. Bettors' avatars fly in
-   from the crowd and land on the fighter they picked.
+   underwater: Strike -1" or "Jellyfish cannot be grappled". Everyone bets
+   on a winner with one tap; the phones count the bets still to come, and
+   the fight starts early once everyone here has bet, but never before 11 s,
+   so every note gets its moment. Bettors' avatars fly in from the crowd and
+   land on the fighter they picked.
 6. **Fight (up to 30 s).** The champions fight on their own. They circle,
    lunge, whiff, connect. Hits are real physics impulses into ragdolls: a big
    strike sends a hopper tumbling across the floor and off the edge. Hit
-   stop, impact frames, slow motion on the big ones. Health bars float above
-   each fighter and chunks crunch off them, mirrored on every phone. A
+   stop, impact frames, slow motion on the big ones. Fighting-game health
+   bars run along the top of the frame (A on the left in teal, B on the
+   right in gold, as the phones show them) and chunks crunch off them,
+   mirrored on every phone; a ring on the floor and a chevron over each
+   fighter carry the same colours. A
    fighter near the edge gets a red "ON THE EDGE" flash in the floor
    lights. Non-owners mash **Hype**, which makes the crowd louder and throws
    confetti and nothing else.
@@ -401,7 +407,7 @@ section before starting.
    are drawn, with the player's avatar on the easel's leg. Describers show a
    typing shimmer.
 3. **Impact.** Hit stop, impact frame, slow motion to 0.3x for half a
-   second, ragdoll flight, health chunks crunching off the floating bars.
+   second, ragdoll flight, health chunks crunching off the bars.
 4. **Ring-out.** The sim produces it. The camera cuts to the drop, a long
    falling scream, the arena's landing sound (splash, clang, thud), two beats
    of silence, then the crowd erupts.
@@ -602,19 +608,28 @@ A shot-based director that reacts to simulation events.
   slow-motion window, letterbox for face-offs and results.
 - **Arena anchors:** `Cam_*` empties in each Blender set give the director
   known-good positions per arena.
+- **Two-shots:** the fight's wide and close shots frame the pair's box
+  between the health bars and the caption at a set share of the frame, and
+  look across the line between the fighters (both faces read), keeping A
+  on the left across cuts unless the other side is clearly better.
 - **In-scene UI and the camera:** cards and bars that must stay readable
-  (health bars, name plates, the scoreboard) are billboarded or placed on
-  arena surfaces the shots are designed around. Title slams render on a
-  plane fixed to the camera at a set depth, inside the post pass, so they
-  are still lit and graded with the scene.
+  (the scoreboard, roster cards) are billboarded or placed on arena surfaces
+  the shots are designed around. The fight's health bars, The Voice's
+  caption and the face-off's spotlit notes are fixed to the camera (still in
+  the scene, lit and graded, sharp at the depth-of-field focus). Title slams
+  render on a plane fixed to the camera at a set depth, inside the post
+  pass, so they are still lit and graded with the scene.
 
 ## 11. Stage UI in the scene, and the phone
 
 **Stage UI, all inside the canvas:** the marquee (room code, arena name,
 round), player easels, forging pedestals and name cards, roster cards rising
-from the floor, hazard and Matchup Notes cards hanging between the fighters,
-bettor avatars that fly from the crowd, floating health bars with chunk
-loss and shake, "ON THE EDGE" in the floor lights, KO and RING OUT slams, the
+from the floor, hazard and Matchup Notes cards spotlit one by one and then
+hanging between the fighters, bettor avatars that fly from the crowd, health
+bars along the top of the frame with chunk loss and shake, side rings and
+chevrons on the fighters, "ON THE EDGE" in the floor lights and under the
+bars, The Voice's caption low in the frame away from the fighters, KO and
+RING OUT slams, the
 back-wall scoreboard, the podium. Build these as meshes, instanced sprites,
 SDF text, and canvas-textured planes. Timers are a clock prop or a ring
 around the marquee. The shell's header and countdown are hidden on the

@@ -79,6 +79,8 @@ export function PostStack({ mood, toggles = ALL_POST_ON }: { mood: ArenaMood; to
   useFrame((state) => {
     const { fx, transitions, clock } = services;
     const camera = state.camera;
+    // A slam's title sits nearer than any focus: no depth of field while it is up.
+    if (transitions.slam.visible) fx.setDof(0);
     fx.update(clock.realDelta, camera);
     grade.setAspect(aspect);
 

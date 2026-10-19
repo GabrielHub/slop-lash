@@ -11,6 +11,10 @@
 //
 // Layout is in card-local units: origin at the card's centre, face at
 // z = depth / 2 (use `faceZ(depth)` for children).
+//
+// `overlay={order}` draws it over the set from render order `order` up (a
+// camera-fixed card: the face-off's spotlight), writing depth so depth of
+// field keeps it sharp; no cable or shadows then.
 
 import { Suspense, type ReactNode } from "react";
 import { useStage } from "../services";
@@ -47,6 +51,8 @@ export interface CardProps extends Omit<MotionGroupProps, "children" | "onBeat">
   glow?: number;
   /** Play the kit's default sounds for its beats (live rooms only). Default true. */
   sound?: boolean;
+  /** Draw over the set (camera-fixed), from this render order up (it takes the next 4). */
+  overlay?: number;
   onBeat?: (beat: MotionBeat) => void;
   /** Content on the face, in card-local units (face at z = depth / 2). */
   children?: ReactNode;
@@ -81,11 +87,15 @@ export function Card({
   outline = 2.4,
   glow = 0.08,
   sound = true,
+  overlay,
   onBeat,
   children,
   enter = "pop",
   ...motion
 }: CardProps) {
+  const over = overlay !== undefined;
+  const order = overlay ?? 0;
+  const look = { overlay: over, depthWrite: over };
   const services = useStage();
   const r = radius ?? Math.min(width, height) * 0.09;
   const geometry = slabGeometry(width, height, depth, r);
@@ -109,16 +119,23 @@ export function Card({
         onBeat?.(beat);
       }}
     >
-      {cable > 0 && (
+      {cable > 0 && !over && (
         <mesh geometry={cableGeometry(0.008)} material={uiToon("#3b3a40", { glow: 0 })} position={[0, height / 2 - 0.02, 0]} scale={[1, cable, 1]} />
       )}
-      <mesh geometry={geometry} material={[uiToon(color, { glow }), uiToon(edge, { glow: glow * 0.5 })]} castShadow receiveShadow />
-      {outline > 0 && <mesh geometry={geometry} material={uiOutline(accent ?? UI_COLORS.cardEdge, outline)} />}
+      <mesh
+        geometry={geometry}
+        material={[uiToon(color, { glow, ...look }), uiToon(edge, { glow: glow * 0.5, ...look })]}
+        castShadow={!over}
+        receiveShadow={!over}
+        renderOrder={order + 1}
+      />
+      {outline > 0 && <mesh geometry={geometry} material={uiOutline(accent ?? UI_COLORS.cardEdge, outline, { overlay: over })} renderOrder={order} />}
       {band > 0 && accent && (
         <mesh
           geometry={slabGeometry(width - 0.05, band, 0.012, Math.min(r * 0.8, band / 2))}
-          material={uiToon(accent, { glow: 0.12 })}
+          material={uiToon(accent, { glow: 0.12, ...look })}
           position={[0, height / 2 - band / 2 - 0.025, z - 0.002]}
+          renderOrder={order + 2}
         />
       )}
       <Suspense fallback={null}>
@@ -132,6 +149,8 @@ export function Card({
             glow={band && accent ? textGlowOn(accent) : 0.12}
             maxWidth={width * 0.9}
             castShadow={false}
+            overlay={over}
+            renderOrder={over ? order + 3 : undefined}
           >
             {title}
           </StageText>
@@ -146,6 +165,8 @@ export function Card({
             maxWidth={width * 0.86}
             lineHeight={1.12}
             castShadow={false}
+            overlay={over}
+            renderOrder={over ? order + 3 : undefined}
           >
             {body}
           </StageText>

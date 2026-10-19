@@ -1,11 +1,13 @@
 // The face-off's timing and content, as plain functions (unit-tested): the
 // walk to the marks under the slam, The Voice's lines in turn, the walk arc
-// from the roster mark to the face-off mark, which hazard card to hang, and
-// how a matchup note reads.
+// from the roster mark to the face-off mark, which hazard card to hang, how a
+// matchup note reads, and when each card takes the spotlight (big, one at a
+// time) before it flies to its slot on the wall.
 
 import { MathUtils, type Vector3, type Vector3Tuple } from "three";
 import { ARENAS, type ArenaId, type Hazard } from "../../arenas";
 import { formatEffect, MODIFIER_SPECS, type ModifierKey, type Side } from "../../modifiers";
+import { FACE_OFF_MIN_SECONDS } from "../../constants";
 import { scheduleLines, speechMs, type TimedVoiceLine, type VoiceLine } from "../../narration";
 import type { Champion } from "../../sheet";
 import type { FightRow } from "./feed";
@@ -15,13 +17,12 @@ export interface FaceOffPlan {
   walk: Record<Side, [number, number]>;
   /** Both on their marks. */
   standAt: number;
-  /** The hazard card; notes follow NOTE_GAP_S apart. */
+  /** The hazard card takes the spotlight (once both stand); the notes follow (spotlightTimes). */
   cardsAt: number;
   /** The Voice's face-off call; the walk-on lines follow it in turn. */
   callAt: number;
 }
 
-export const NOTE_GAP_S = 0.5;
 export const SIDE_SWAP_S = 3.4;
 /** Silence between The Voice's face-off lines. */
 export const FACE_OFF_LINE_GAP_MS = 500;
@@ -67,6 +68,85 @@ export function chainFaceOffLines(
   );
   const last = timed.at(-1);
   return { timed, endMs: last ? last.at + speechMs(last.text) + FACE_OFF_LINE_GAP_MS : fromMs };
+}
+
+// ---------------------------------------------------------------------------
+// The spotlight: each card big in the middle of the frame, one at a time
+// ---------------------------------------------------------------------------
+
+/** A spotlit card slams in over this long... */
+export const SPOTLIGHT_IN_S = 0.24;
+/** ...and, its time up, flies to its slot on the wall over this long. */
+export const SPOTLIGHT_OUT_S = 0.42;
+/** The next card slams in this long after the last one starts to fly. */
+export const SPOTLIGHT_STEP_S = 0.18;
+/** Holds shrink to fit the face-off, never under this (or the natural hold, if shorter). */
+const SPOTLIGHT_MIN_HOLD_S = 1;
+/** The spotlights land by then: the face-off may close once every bet is in. */
+export const SPOTLIGHT_END_S = FACE_OFF_MIN_SECONDS - 0.3;
+
+/** How long a card holds in the spotlight once in: long enough to read `text` (the hazard, a fact of the arena, is kept short). */
+export function spotlightHold(text: string, hazard = false): number {
+  return MathUtils.clamp(0.75 + 0.026 * text.length, 1.2, hazard ? 1.4 : 2.4);
+}
+
+/**
+ * Each card's spotlight [at, until] in seconds (at: it slams in; until: it
+ * starts to fly to the wall), back to back from `startAt`, with the holds
+ * shortened alike (none under a second, or its natural hold if shorter) so
+ * the last one lands on the wall by `endBy`. Too many cards to fit even at
+ * the shortest run past it.
+ */
+export function spotlightTimes(holds: readonly number[], startAt: number, endBy = SPOTLIGHT_END_S): Array<[number, number]> {
+  const count = holds.length;
+  if (count === 0) return [];
+  const fixed = SPOTLIGHT_IN_S * count + SPOTLIGHT_STEP_S * (count - 1) + SPOTLIGHT_OUT_S;
+  const room = endBy - startAt - fixed;
+  const held = (k: number) => holds.map((hold) => Math.max(Math.min(hold, SPOTLIGHT_MIN_HOLD_S), hold * k));
+  const total = (k: number) => held(k).reduce((sum, hold) => sum + hold, 0);
+  // The largest shrink (k <= 1) whose holds fit the room, by bisection (total grows with k).
+  let k = 1;
+  if (total(1) > room) {
+    let lo = 0;
+    let hi = 1;
+    for (let step = 0; step < 24; step += 1) {
+      const mid = (lo + hi) / 2;
+      if (total(mid) > room) hi = mid;
+      else lo = mid;
+    }
+    k = lo;
+  }
+  const out: Array<[number, number]> = [];
+  let t = startAt;
+  for (const hold of held(k)) {
+    const until = t + SPOTLIGHT_IN_S + hold;
+    out.push([t, until]);
+    t = until + SPOTLIGHT_STEP_S;
+  }
+  return out;
+}
+
+export interface SpotlightPlan {
+  hazard: [number, number] | null;
+  notes: Array<[number, number]>;
+}
+
+/**
+ * The spotlight's windows: the hazard card right after the slam, then the
+ * notes. Notes already in by then share the time with the hazard; notes that
+ * arrive later (`notesAt`: the matchup call finishing) follow from then, the
+ * hazard's window unchanged. `notes` is null while the call runs.
+ */
+export function spotlightPlan(hazard: string | null, notes: readonly string[] | null, cardsAt: number, notesAt: number, endBy = SPOTLIGHT_END_S): SpotlightPlan {
+  const hazardHolds = hazard === null ? [] : [spotlightHold(hazard, true)];
+  const noteHolds = (notes ?? []).map((text) => spotlightHold(text));
+  if (notes !== null && notesAt <= cardsAt) {
+    const all = spotlightTimes([...hazardHolds, ...noteHolds], cardsAt, endBy);
+    return { hazard: hazard === null ? null : all[0]!, notes: all.slice(hazardHolds.length) };
+  }
+  const first = spotlightTimes(hazardHolds, cardsAt, endBy)[0] ?? null;
+  const startAt = Math.max(first ? first[1] + SPOTLIGHT_STEP_S : cardsAt, notesAt);
+  return { hazard: first, notes: spotlightTimes(noteHolds, startAt, endBy) };
 }
 
 export interface WalkPath {

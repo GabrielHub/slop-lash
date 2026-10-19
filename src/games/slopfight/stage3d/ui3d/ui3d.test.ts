@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { CHARS_PER_LINE, wrapCaption } from "./caption-layout";
-import { Mesh, MeshStandardMaterial } from "three";
+import { CAPTION_BOTTOM_NDC, captionBottom, captionX, CHARS_PER_LINE, chooseCaptionSlot, wrapCaption } from "./caption-layout";
+import { AlwaysDepth, Mesh, MeshStandardMaterial } from "three";
 import { contrastRatio, isLightColor, keepOutlineDark, luminance, onCardTone, textGlowOn, textOn, UI_COLORS, UI_MAX_LUMINANCE, uiOutline, uiToon } from "./materials";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import { ARENA_MOODS } from "../look/moods";
@@ -79,6 +79,41 @@ describe("wrapCaption", () => {
   });
 });
 
+describe("caption placement", () => {
+  const W = 0.5;
+  const H = 0.2;
+  const bottom = CAPTION_BOTTOM_NDC;
+  const box = (minX: number, maxX: number, minY: number, maxY: number) => ({ minX, maxX, minY, maxY });
+
+  it("sits low, and above the letterbox bars when they are in", () => {
+    expect(captionBottom(0)).toBe(CAPTION_BOTTOM_NDC);
+    // Full 2.39:1 bars on 16:9: the bar's edge is at -0.744.
+    expect(captionBottom((1 - 16 / 9 / 2.39) / 2)).toBeGreaterThan(-0.744);
+  });
+
+  it("keeps the side slots inside the frame", () => {
+    expect(captionX(-1, W) - W / 2).toBeGreaterThan(-1);
+    expect(captionX(1, W) + W / 2).toBeLessThan(1);
+    expect(captionX(0, W)).toBe(0);
+  });
+
+  it("takes the centre when nothing is under it", () => {
+    expect(chooseCaptionSlot([box(-0.5, 0.5, -0.3, 0.5)], W, H, bottom, -1, true)).toBe(0);
+  });
+
+  it("moves off a fighter standing in the bottom centre", () => {
+    const fighter = box(-0.3, 0.3, -0.95, 0.2);
+    expect(chooseCaptionSlot([fighter], W, H, bottom, 0, true)).not.toBe(0);
+    // Two fighters low on the left: the right.
+    expect(chooseCaptionSlot([box(-0.9, -0.5, -0.95, 0), box(-0.4, 0.1, -0.95, 0)], W, H, bottom, 0, true)).toBe(1);
+  });
+
+  it("stays put during a line unless it covers a fighter", () => {
+    expect(chooseCaptionSlot([box(-0.2, 0.2, -0.5, 0.5)], W, H, bottom, 1, false)).toBe(1);
+    expect(chooseCaptionSlot([box(0.4, 0.95, -0.95, 0.3)], W, H, bottom, 1, false)).not.toBe(1);
+  });
+});
+
 describe("card colours", () => {
   it("picks ink on light colours and bone on dark ones", () => {
     expect(textOn("#fbf1dc")).toBe(UI_COLORS.ink);
@@ -126,6 +161,16 @@ describe("caption overlay materials", () => {
       expect(world.depthTest).toBe(true);
       expect(world.depthWrite).toBe(true);
     }
+  });
+
+  it("can write depth (so depth of field keeps it sharp) while still drawing over everything", () => {
+    const overlay = uiToon(UI_COLORS.plum, { overlay: true, depthWrite: true });
+    expect(overlay).not.toBe(uiToon(UI_COLORS.plum, { overlay: true }));
+    // WebGL skips depth writes when the depth test is off: test, but always pass.
+    expect(overlay.depthTest).toBe(true);
+    expect(overlay.depthFunc).toBe(AlwaysDepth);
+    expect(overlay.depthWrite).toBe(true);
+    expect(overlay.transparent).toBe(true);
   });
 });
 

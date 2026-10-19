@@ -28,8 +28,11 @@ readout are the only exceptions).
 | -100 | `StageLoop`: `clock.tick`, quality sampling |
 | 0 | scene content (yours goes here) |
 | 0.5 | `CameraRig`: `transitions.update`, `director.update/apply` |
-| 0.55 | `ui3d/FaceCamera` (billboards: plates, health bars) |
+| 0.52 | the face-off's notes wall, placed for the camera on air |
+| 0.55 | `ui3d/FaceCamera` (billboards: plates, cards) |
+| 0.56 | the face-off's spotlit card (camera-fixed) |
 | 0.6 | `SlamTitle` (camera-fixed) |
+| 0.61 | `fight/hud.tsx` `FightHud`: the fight's health bars along the top (camera-fixed) |
 | 0.62 | `ui3d/Caption`: `voice.tick()`, The Voice's lower third (camera-fixed) |
 | 0.7 | `PostStack` uniforms |
 | 0.8 | contact-shadow depth pass, after animated transforms |
@@ -178,7 +181,18 @@ Each shot reads its framing from the set's `Cam_*` anchors.
 - `shake(0..1)` adds trauma (square law). `punchIn()` zooms in 10%.
 - Constant drift: `director.driftScale = 0` locks it off.
 - Letterbox and DoF follow the shot: `face_off_low` and `winner_pose` are
-  letterboxed; DoF is on hero shots only.
+  letterboxed; DoF is on hero shots only, and off while a slam is up.
+- Two-shots (`director/framing.ts`): `fight_wide` and `fight_close` on two
+  targets (the conductor's `pair`: both torsos and the taller fighter's
+  `subjectHeight`) frame the pair's box inside `FIGHT_SAFE`, under the HUD
+  and over the caption, at a set share (`TWO_SHOTS` in `shots.ts`). They
+  turn toward side-on to the line between the fighters (the close shot
+  nearly all the way, the wide part of the way from its anchor) and keep A
+  on the left across cuts in the director's `ShotMemory`. `fight_close` on
+  one target, or with `from`, keeps its old three-quarter framing (the deep
+  drop's landing shot).
+- `director.targets` and `director.subjectHeight`: this frame's resolved
+  targets, read by the caption to keep off the fighters.
 - `edge_drama` is the spec's low angle from outside the edge, except over a
   shallow drop (under 1.5 m from the platform top to `surround.y`, i.e. the
   garage's water). There it rises to chest height (0.95) and looks down over

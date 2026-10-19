@@ -19,6 +19,7 @@ import {
   start,
   throughBuild,
 } from "./backend.test-harness";
+import { FACE_OFF_MIN_SECONDS } from "../../src/games/slopfight/constants";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -410,8 +411,8 @@ describe("fights", () => {
       mine: null,
     });
     expect((await sf(room)).fights[0]!.mine).toBe("A");
-    await pump(room, 9_000);
-    // Ana has not bet yet.
+    // Past the face-off's minimum, short of its timer: Ana has not bet yet.
+    await pump(room, FACE_OFF_MIN_SECONDS * 1_000 + 1_000);
     expect((await phase(room)).phase).toBe("FACE_OFF");
     await betAll(room, "A", [room.caps[1]!]);
     expect((await phase(room)).phase).toBe("FIGHT");

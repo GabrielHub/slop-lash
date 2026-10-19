@@ -30,7 +30,8 @@ silent.
 | `clock-ring.tsx` | `ClockRing`, `clockTone` |
 | `confetti.tsx` | `Confetti` (with a `ConfettiHandle`), `CONFETTI_COLORS` |
 | `caption.tsx` | `Caption` (mounted by the canvas; one per stage); re-exports `wrapCaption` |
-| `caption-layout.ts` | `wrapCaption`, `CHARS_PER_LINE` (pure, tested) |
+| `caption-layout.ts` | `wrapCaption`, `CHARS_PER_LINE`, `chooseCaptionSlot`, `captionBottom`, `captionX` (pure, tested) |
+| `screen.ts` | `placeOnScreen`, `screenDepth`, `SCREEN_DEPTH`: camera-fixed UI (caption, fight HUD, spotlit cards) |
 | `voice.ts` | `VoiceService` (on `services.voice`); see `../README.md` "The Voice" |
 | `voice-narration.tsx` | `VoiceNarration` (DOM, mounted by the canvas), `useVoiceGame` |
 | `room.ts` | `useRoomOrNull()`: the room context, or null outside a room |
@@ -101,6 +102,7 @@ origin is the card's centre and the face is at `faceZ(depth)`.
 | `outline` | 2.4 | outline width in px at 1080p (0: none) |
 | `glow` | 0.08 | self-glow so the stock never sinks into shadow |
 | `sound` | true | default beat sounds: a whoosh at the start of rise/drop, `boing` on a drop's catch, `tap` on other landings, `trickWhiff` on the flick-off |
+| `overlay` | none | a render order: draw over the set from it up (it takes the next 4), writing depth so depth of field keeps it sharp; no cable or shadows (camera-fixed cards: the face-off's spotlight) |
 | `onBeat` | | as MotionGroup |
 | `children` | | content on the face |
 
@@ -178,6 +180,7 @@ Props:
 | `flip` | | drains toward the outer end (B side) |
 | `onChunk(lost)` | | called when a chunk crunches off |
 | `sound` | true | |
+| `overlay` | none | a render order: draw over the set from it up (the fight HUD, camera-fixed), writing depth; no shadows |
 | `position` | | |
 
 `BarHandle` methods:
@@ -251,22 +254,33 @@ on the floor (y = 0), and shrink away at the end of `life`.
 
 The canvas mounts `Caption` once (frame priority 0.62, after the camera
 rig). It is the lower third for The Voice: a plum slab fixed to the camera,
-with a gold "THE VOICE" tab. Its text types on at 42 characters a second
-with a soft blip, shows one caption at a time (at most two balanced lines,
-see `wrapCaption`), rises in, squashes on a new line and flicks down when
-the line's time is up.
+hugging its text (0.036 view heights a line), with a gold "THE VOICE" tab.
+Its text types on at 42 characters a second with a soft blip, shows one
+caption at a time (at most two balanced lines, see `wrapCaption`), rises in,
+squashes on a new line and flicks down when the line's time is up.
 
-It draws over the set (no depth test, no fog) at the depth-of-field focus
-distance, so it stays sharp in hero shots, and it moves up with the
-letterbox. Do not mount another one. Show lines through the Voice service
-(`services.voice.say` / `schedule`, see `../README.md`).
+It sits low in the frame (its lower edge at -0.86 NDC, or just above the
+letterbox bars) in the bottom-left, centre or right: `chooseCaptionSlot`
+takes the one covering least of the director's targets on screen (each a
+fighter-sized box), keeps it during a line unless it comes to cover one,
+and goes back to the centre for a fresh line when nothing is under it.
+
+It draws over the set (no fog, writing depth) at the depth-of-field focus
+distance, so it stays sharp in hero shots. Do not mount another one. Show
+lines through the Voice service (`services.voice.say` / `schedule`, see
+`../README.md`).
 
 ## Materials and colours (`materials.ts`)
 
 - `UI_COLORS`: `card`, `cardEdge`, `ink`, `inkDim`, `plum`, `plumEdge`,
   `bone`, `gold`, `tomato`, `track`.
-- `uiToon(color, { glow, doubleSide, overlay, specular })`: a cached toon
-  material.
+- `uiToon(color, { glow, doubleSide, overlay, depthWrite, specular })`: a
+  cached toon material. `overlay` draws over the set (transparent queue, no
+  fog). With `depthWrite` too it still writes depth (WebGL writes none with
+  the depth test off, so it tests with `AlwaysDepth`): camera-fixed UI at the
+  focus distance stays sharp under depth of field.
+- `SIDE_COLORS`: each fight side's colour as the phones show it (A teal, B
+  gold, `low` red at a quarter health).
 - `uiOutline(color, widthPx, { overlay })`: a cached outline in
   `darkOf(color, 0.62)`.
 - Colour helpers:

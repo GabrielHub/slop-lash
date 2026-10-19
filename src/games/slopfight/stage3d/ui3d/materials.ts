@@ -4,7 +4,7 @@
 // dark version of their colour (never black). Materials are cached per
 // colour and live as long as the page: the kit uses a small, fixed palette.
 
-import { Color, DoubleSide, type Material, type Object3D } from "three";
+import { AlwaysDepth, Color, DoubleSide, type Material, type Object3D } from "three";
 import { TOY_COLOR_VALUES, TOY_COLORS, type ToyColor } from "../../vocab";
 import { createOutlineMaterial, type OutlineMaterial } from "../look/outline";
 import { createToonMaterial, type ToonMaterial } from "../look/toon";
@@ -29,6 +29,14 @@ export const UI_COLORS = {
   /** Empty pip / bar track. */
   track: "#4a3a44",
 } as const;
+
+/**
+ * Each side's colour in a fight, as the phones show it (slopfight-theme.css:
+ * dusk teal for A, trophy gold for B): the HUD's bars, the rings and
+ * chevrons on the fighters, the face-off's notes. `low` is the phones' bar
+ * colour at a quarter health or less.
+ */
+export const SIDE_COLORS = { A: "#4fc9b8", B: "#ffc94a", low: "#ff5f57" } as const;
 
 /** Darken toward a warm ink (outlines are never pure black). */
 export function darkOf(color: string, amount = 0.6): string {
@@ -129,6 +137,8 @@ export interface UiToonOptions {
   doubleSide?: boolean;
   /** Draw on top of the set (camera-fixed captions). */
   overlay?: boolean;
+  /** An overlay that still writes depth, so depth of field keeps it sharp at its own distance (ui3d/screen.ts). */
+  depthWrite?: boolean;
   /** Vinyl highlight strength (default 0.25: cardstock is mostly matte). */
   specular?: number;
 }
@@ -136,7 +146,8 @@ export interface UiToonOptions {
 /** A cached toon material in a flat colour. Do not mutate or dispose it. */
 export function uiToon(color: string, options: UiToonOptions = {}): ToonMaterial {
   const glow = options.glow ?? 0.06;
-  const key = `${color}|${glow}|${options.doubleSide ? 1 : 0}|${options.overlay ? 1 : 0}|${options.specular ?? 0.25}`;
+  const overlay = options.overlay ? (options.depthWrite ? 2 : 1) : 0;
+  const key = `${color}|${glow}|${options.doubleSide ? 1 : 0}|${overlay}|${options.specular ?? 0.25}`;
   let material = toonCache.get(key);
   if (!material) {
     material = createToonMaterial({
@@ -155,8 +166,15 @@ export function uiToon(color: string, options: UiToonOptions = {}): ToonMaterial
       // renderOrder only sorts within a render queue. Keep the caption in the
       // transparent queue so water, contact shadows and FX draw underneath it.
       material.transparent = true;
-      material.depthTest = false;
-      material.depthWrite = false;
+      if (options.depthWrite) {
+        // WebGL writes no depth with the depth test off: test, but always pass.
+        material.depthTest = true;
+        material.depthFunc = AlwaysDepth;
+        material.depthWrite = true;
+      } else {
+        material.depthTest = false;
+        material.depthWrite = false;
+      }
       material.fog = false;
     }
     toonCache.set(key, material);

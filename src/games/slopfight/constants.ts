@@ -11,8 +11,8 @@ export const BUILD_SECONDS = 90;
 /** The line-up: all four walk out together, their cards rise, one line for the round. */
 export const ROSTER_SECONDS = 10;
 export const FACE_OFF_SECONDS = 12;
-/** Face-off never settles early before this many seconds, so the notes read. */
-export const FACE_OFF_MIN_SECONDS = 8;
+/** Face-off never settles early before this many seconds, so the notes read (the TV spotlights each one; faceoff-plan.ts). */
+export const FACE_OFF_MIN_SECONDS = 11;
 export const RESULT_SECONDS = 6;
 export const STANDINGS_SECONDS = 8;
 export const UPGRADE_SECONDS = 30;

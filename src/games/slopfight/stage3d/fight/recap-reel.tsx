@@ -24,7 +24,7 @@ import { loadRapier, type FightEvent, type FightInput } from "../../sim";
 import { TOY_COLOR_VALUES } from "../../vocab";
 import { ARENA_FILES, prepareSet } from "../arena/arena";
 import { CrowdController } from "../arena/crowd";
-import { copyPose, createPose, createShotState, SHOTS, type ShotId, type ShotParams } from "../director/shots";
+import { copyPose, createPose, createShotMemory, createShotState, SHOTS, type ShotId, type ShotParams } from "../director/shots";
 import { moodFor } from "../look/moods";
 import { readIrradianceProbe } from "../look/irradiance";
 import { ArenaPracticals } from "../look/lighting";
@@ -400,6 +400,7 @@ class ReplayDirector {
   targets: Array<() => Vector3> = [];
   base: Array<() => Vector3> = [];
   private state = createShotState();
+  private readonly memory = createShotMemory();
   private readonly prev = createPose();
   readonly out = createPose();
   private first = true;
@@ -431,7 +432,7 @@ class ReplayDirector {
     if (this.t > this.until) this.cut(this.baseId, this.base, 0, {}, true);
     const targets = this.targets.map((target) => target());
     SHOTS[this.id].solve(
-      { nodes, targets, t: this.t - this.startedAt, dt, aspect: ASPECT, prev: this.prev, params: this.params, first: this.first },
+      { nodes, targets, t: this.t - this.startedAt, dt, aspect: ASPECT, prev: this.prev, params: this.params, first: this.first, memory: this.memory },
       this.state,
       this.out,
     );

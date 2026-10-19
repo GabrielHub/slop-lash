@@ -7,9 +7,32 @@ import { speechMs, type VoiceLine } from "../../narration";
 import { sampleById } from "../../samples";
 import type { Champion } from "../../sheet";
 import { loadRapier, runFight, type FightEvent, type FightInput, type Rapier } from "../../sim";
-import { createPose, createShotState, SHOTS } from "../director/shots";
+import { createPose, createShotMemory, createShotState, SHOTS } from "../director/shots";
 import { formatFightTime, readableEventLog } from "./event-log";
-import { cardBodySize, cardGap, cardGrid, chainFaceOffLines, FACE_OFF_LINE_GAP_MS, FACE_OFF_PLAN, faceOffLines, HAZARD_H, HAZARD_W, NOTE_H, NOTE_W, noteLine, notesOf, relevantHazard, walkAt, type WalkPath } from "./faceoff-plan";
+import {
+  cardBodySize,
+  cardGap,
+  cardGrid,
+  chainFaceOffLines,
+  FACE_OFF_LINE_GAP_MS,
+  FACE_OFF_PLAN,
+  faceOffLines,
+  HAZARD_H,
+  HAZARD_W,
+  NOTE_H,
+  NOTE_W,
+  noteLine,
+  notesOf,
+  relevantHazard,
+  SPOTLIGHT_END_S,
+  SPOTLIGHT_IN_S,
+  SPOTLIGHT_OUT_S,
+  spotlightHold,
+  spotlightPlan,
+  spotlightTimes,
+  walkAt,
+  type WalkPath,
+} from "./faceoff-plan";
 import { checkHash, EventCursor, fightInputOf, healthAt } from "./playback";
 import { FightPlayer, inputKey } from "./player";
 import { FightRecording } from "./recording";
@@ -177,6 +200,46 @@ describe("face-off plan", () => {
     expect(chainFaceOffLines(lines, new Set(["call", "a", "b"]), 5_000)).toEqual({ timed: [], endMs: 5_000 });
   });
 
+  it("spotlights the cards one at a time, in order, landing by the face-off's minimum", () => {
+    const hazard = "Crumb Cover Tiny fighters hide among the crumbs: smaller hurtbox.";
+    // Four notes, the most a matchup applies.
+    const notes = [
+      "Briefcase is useless near the sink: Strike -1",
+      "Pinchy McSnips loves a greasy counter: Speed +15%",
+      "Light as a crumb: Knockback taken +1%",
+      "Claws grip the wet tiles well: Can't be pushed",
+    ];
+    const plan = FACE_OFF_PLAN;
+    const known = spotlightPlan(hazard, notes, plan.cardsAt, 0);
+    const all = [known.hazard!, ...known.notes];
+    expect(all).toHaveLength(5);
+    expect(all[0]![0]).toBe(plan.cardsAt);
+    for (const [index, [at, until]] of all.entries()) {
+      // Each one is up long enough to read the gist.
+      expect(until - at - SPOTLIGHT_IN_S).toBeGreaterThanOrEqual(1 - 1e-9);
+      if (index > 0) expect(at).toBeGreaterThan(all[index - 1]![1]);
+    }
+    expect(all.at(-1)![1] + SPOTLIGHT_OUT_S).toBeLessThanOrEqual(SPOTLIGHT_END_S + 1e-6);
+  });
+
+  it("keeps the hazard's spotlight when the notes arrive after it started", () => {
+    const hazard = "Crumb Cover Tiny fighters hide among the crumbs: smaller hurtbox.";
+    const waiting = spotlightPlan(hazard, null, 5, 0);
+    expect(waiting.notes).toEqual([]);
+    const late = spotlightPlan(hazard, ["Briefcase is useless near the sink: Strike -1"], 5, 9);
+    expect(late.hazard).toEqual(waiting.hazard);
+    expect(late.notes[0]![0]).toBe(9);
+  });
+
+  it("gives a card its natural hold when there is room, and never less than a second when there is not", () => {
+    const hold = spotlightHold("A short note: Speed +5%");
+    const [[at, until]] = spotlightTimes([hold], 0, 30) as [[number, number]];
+    expect(until - at).toBeCloseTo(SPOTLIGHT_IN_S + hold);
+    const crammed = spotlightTimes([2, 2, 2, 2], 10, 11);
+    for (const [start, end] of crammed) expect(end - start - SPOTLIGHT_IN_S).toBeCloseTo(1);
+    expect(spotlightTimes([], 0)).toEqual([]);
+  });
+
   it("walks the arc from the mark to the spawn, still at both ends", () => {
     const walk: WalkPath = { from: [-2.25, 0, 0.4], control: [-1.9, 0, 1.3], to: [-1.6, 0, 0], window: [1, 3], restYaw: Math.PI / 2 };
     const p = new Vector3();
@@ -321,7 +384,7 @@ describe("winner framing", () => {
     const orbit = winnerPoseOrbit(t);
     const target = new Vector3(Math.sin(orbit) * pull, lift, Math.cos(orbit) * pull);
     const pose = createPose();
-    SHOTS.winner_pose.solve({ nodes: null, targets: [target], t, dt: 1 / 60, aspect: 16 / 9, prev: createPose(), params: {}, first: false }, createShotState(), pose);
+    SHOTS.winner_pose.solve({ nodes: null, targets: [target], t, dt: 1 / 60, aspect: 16 / 9, prev: createPose(), params: {}, first: false, memory: createShotMemory() }, createShotState(), pose);
     const camera = new PerspectiveCamera(pose.fov, 16 / 9, 0.05, 100);
     camera.position.copy(pose.position);
     camera.lookAt(pose.target);
